@@ -275,7 +275,7 @@ function renderLines(){
       <div><div class="lname">Line ${i+1}</div>
         <div class="line-fields">
           <label class="fl"><span>max compression</span><select data-line="${i}">${opts}</select></label>
-          <label class="fl"><span>total speed ×</span><input type="number" min="0" step="any" placeholder="1" value="${ln.spx??1}" data-spx="${i}"></label>
+          <label class="fl"><span>total speed (×##.##)</span><input type="number" min="0" step="any" placeholder="1" value="${ln.spx??1}" data-spx="${i}"></label>
           <label class="fl"><span>dupe %</span><input type="number" min="0" max="100" step="any" placeholder="0" value="${ln.dup??0}" data-dup="${i}"></label>
         </div></div>
       <button class="iconbtn" data-del="${i}" title="Remove line">×</button>`;
