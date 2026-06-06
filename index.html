@@ -61,7 +61,7 @@ button.btn.ghost{background:transparent}
 .line-row .tag{font-size:11px;color:var(--ink3);text-align:center}
 .line-row .lname{font-size:13px;font-weight:600}
 .line-row .lname small{display:block;color:var(--ink3);font-weight:400;font-size:10.5px}
-.line-fields{display:grid;grid-template-columns:1fr 74px;gap:8px;margin-top:6px}
+.line-fields{display:grid;grid-template-columns:1fr 60px 60px;gap:7px;margin-top:6px}
 .line-fields .fl{display:flex;flex-direction:column;gap:3px}
 .line-fields .fl span{font-size:9px;letter-spacing:.4px;text-transform:uppercase;color:var(--ink3)}
 select,input[type=number],input[type=text]{font-family:"JetBrains Mono",monospace;font-size:12.5px;
@@ -127,6 +127,11 @@ tr:last-child td{border-bottom:none}
 .rtab input{padding:4px 5px;font-size:11.5px;text-align:right}
 .rtab input::placeholder{color:var(--ink3);opacity:.5}
 .help{font-size:11.5px;color:var(--ink3);line-height:1.5;margin-bottom:14px}
+.calib{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:16px}
+.calib-h{font-family:'Chakra Petch',sans-serif;font-size:13px;letter-spacing:.5px;text-transform:uppercase;color:var(--amber);margin-bottom:8px}
+.calib-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+@media(max-width:640px){.calib-row{grid-template-columns:repeat(2,1fr)}}
+.calib-out{margin-top:10px;font-size:12px;color:var(--ink2);font-family:'JetBrains Mono',monospace;line-height:1.6}
 footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:var(--ink3);font-size:11.5px;line-height:1.6}
 .saveind{font-size:11px;color:var(--ink3);letter-spacing:.3px}
 .saveind b{color:var(--teal);font-weight:600}
@@ -186,8 +191,22 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 
   <!-- RECIPE DATA -->
   <div class="rsec">
-    <div class="subhead">Crafting stats — your numbers per compression level</div>
-    <p class="help">Each raw producer needs only a time (seconds) per level. Each craft needs its input cost(s) and a time. Leave a level blank if you can't compress that high yet — the optimizer just won't use it. Compression level = units produced per cycle (e.g. 256× makes 256 units).</p>
+    <div class="subhead">Crafting stats — material costs &amp; base times</div>
+    <p class="help">Craft time is computed, not entered: effective time = (this item's base time) × 1.5^(compression level) ÷ the line's total speed ×. Set each line's max compression, its total speed multiplier (the ×NN.NN reading at the top of that crafting unit — turbo is already inside it), and dupe % above. Each item has its own base time @1× on its card below — they don't have to match. Cost columns are the material each craft consumes per level. Compression level = units produced per cycle; costs scale 3× per level.</p>
+
+    <div class="calib">
+      <div class="calib-h">Calibrate / verify a base time</div>
+      <p class="help" style="margin:0 0 8px">The base times below are universal constants — you shouldn't need to touch them. To double-check one against your own game (or set one for a new item), pick the item, then enter that crafter's compression, its total speed ×, and how long one craft takes (just read the in-game countdown the moment a craft starts — no stopwatch needed).</p>
+      <div class="calib-row">
+        <label class="fl"><span>item</span><select id="cbItem"></select></label>
+        <label class="fl"><span>compression (yield ×)</span><select id="cbComp"></select></label>
+        <label class="fl"><span>that unit's speed ×</span><input type="number" id="cbSpeed" min="0" step="any" placeholder="49.38"></label>
+        <label class="fl"><span>craft seconds</span><input type="number" id="cbSec" min="0" step="any" placeholder="7.5"></label>
+      </div>
+      <div class="calib-out" id="cbOut">Enter values to compute a base time.</div>
+      <button class="btn ghost" id="cbApply" style="margin-top:8px" disabled>Set as base time</button>
+    </div>
+
     <div class="rgrid" id="recipes"></div>
   </div>
 
@@ -209,33 +228,32 @@ const RECIPE={
   Frames:{inputs:["Plates","Rods"]}
 };
 const KIND={Ingots:"raw",Bits:"raw",Concrete:"raw",Glass:"pr",Bricks:"pr",Plates:"pr",Rods:"pr",Frames:"fin"};
-const FLOOR=1; // minimum craft/produce time in seconds
 
 function defaults(){
-  const rawTime={Ingots:{},Bits:{},Concrete:{}};
-  rawTime.Bits     ={512:7,256:5,128:3,64:2,32:2,16:1,8:1,4:1,2:1,1:1};
-  rawTime.Concrete ={512:10,256:7,128:5,64:3,32:2,16:1,8:1,4:1,2:1,1:1};
-  const prodTime={
-    Glass:{512:72,256:61,128:41,64:28,32:19,16:13,8:9,4:6,2:4,1:3},
-    Bricks:{512:122,256:82,128:55,64:37,32:25,16:17,8:11,4:8,2:5,1:4},
-    Plates:{},Rods:{},Frames:{}
-  };
+  const c=(coef)=>{const o={};LEVELS.forEach(L=>{o[L]=coef*Math.pow(3,Math.log2(L));});return o;};
   const prodCost={
-    Glass:{Bits:{512:39366,256:13122,128:4374,64:1458,32:486,16:162,8:54,4:18,2:6,1:2}},
-    Bricks:{Concrete:{512:59049,256:19683,128:6561,64:2187,32:729,16:243,8:81,4:27,2:9,1:3}},
-    Plates:{Ingots:{}},
-    Rods:{Ingots:{}},
-    Frames:{Plates:{},Rods:{}}
+    Glass:{Bits:c(2)},
+    Bricks:{Concrete:c(3)},
+    Plates:{Ingots:c(2)},
+    Rods:{Ingots:c(2)},
+    Frames:{Plates:c(2),Rods:c(4)}
   };
+  const baseTime={Ingots:9.63,Bits:9.63,Concrete:9.63,Glass:87.3,Bricks:114.3,Plates:29.23,Rods:44.46,Frames:311.38};
   return {
-    lines:[{max:1024,dup:0},{max:1024,dup:0},{max:128,dup:0},{max:64,dup:0},{max:32,dup:0}],
-    rawTime,prodTime,prodCost,margin:0,
-    targets:{Glass:{on:false,w:1},Bricks:{on:true,w:1},Plates:{on:false,w:1},Rods:{on:false,w:1},Frames:{on:false,w:1}}
+    lines:[
+      {max:512,spx:49.38,dup:12.40},
+      {max:512,spx:45.02,dup:12.40},
+      {max:128,spx:43.85,dup:12.40},
+      {max:64,spx:45.20,dup:12.40},
+      {max:32,spx:42.87,dup:12.40}
+    ],
+    prodCost,baseTime,margin:0,
+    targets:{Glass:{on:false,w:1},Bricks:{on:false,w:1},Plates:{on:false,w:1},Rods:{on:false,w:1},Frames:{on:true,w:1}}
   };
 }
 
-const LSKEY="forgePlannerState_v1";
-function normalize(st){if(!st)return st;if(!Array.isArray(st.lines))st.lines=[];st.lines.forEach(l=>{if(l.dup==null||isNaN(l.dup))l.dup=0;});if(st.margin==null||isNaN(st.margin))st.margin=0;return st;}
+const LSKEY="forgePlannerState_v3";
+function normalize(st){if(!st)return st;if(!Array.isArray(st.lines))st.lines=[];st.lines.forEach(l=>{if(l.dup==null||isNaN(l.dup))l.dup=0;if(l.spx==null||isNaN(l.spx)||l.spx<=0)l.spx=1;});if(st.margin==null||isNaN(st.margin))st.margin=0;if(!st.baseTime)st.baseTime={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.baseTime[it]==null||isNaN(st.baseTime[it])||st.baseTime[it]<=0)st.baseTime[it]=12.85;});if(!st.prodCost)st.prodCost=defaults().prodCost;PRODUCTS.forEach(P=>{if(!st.prodCost[P])st.prodCost[P]={};RECIPE[P].inputs.forEach(k=>{if(!st.prodCost[P][k])st.prodCost[P][k]={};});});return st;}
 let S=normalize(load())||defaults();
 
 function load(){try{const r=localStorage.getItem(LSKEY);return r?JSON.parse(r):null;}catch(e){return null;}}
@@ -256,6 +274,7 @@ function renderLines(){
       <div><div class="lname">Line ${i+1}</div>
         <div class="line-fields">
           <label class="fl"><span>max compression</span><select data-line="${i}">${opts}</select></label>
+          <label class="fl"><span>total speed ×</span><input type="number" min="0" step="any" placeholder="1" value="${ln.spx??1}" data-spx="${i}"></label>
           <label class="fl"><span>dupe %</span><input type="number" min="0" max="100" step="any" placeholder="0" value="${ln.dup??0}" data-dup="${i}"></label>
         </div></div>
       <button class="iconbtn" data-del="${i}" title="Remove line">×</button>`;
@@ -285,24 +304,24 @@ function renderRecipes(){
   RAWS.forEach(r=>box.appendChild(rawCard(r)));
   PRODUCTS.forEach(p=>box.appendChild(prodCard(p)));
 }
+function baseTimeField(item){
+  const v=S.baseTime[item]??12.85;
+  return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 2px 8px">
+    <span style="font-size:10.5px;color:var(--ink3)">base time @1× (s)</span>
+    <input type="number" min="0" step="any" style="width:70px" value="${v}" data-res="${item}" data-fld="baseT"></div>`;
+}
 function rawCard(r){
   const c=document.createElement("div");c.className="rcard";
-  let rows="";
-  [...LEVELS].reverse().forEach(L=>{
-    const v=S.rawTime[r][L];
-    rows+=`<tr><td class="lv">${L}×</td><td><input type="number" min="0" step="any" placeholder="–"
-      value="${v??""}" data-res="${r}" data-fld="time" data-lv="${L}"></td></tr>`;
-  });
   c.innerHTML=`<div class="rh"><span class="nm">${r}</span><span class="ty raw">raw</span></div>
-    <div class="rb"><table class="rtab"><thead><tr><th>Lvl</th><th style="text-align:right">Time (s)</th></tr></thead>
-    <tbody>${rows}</tbody></table></div>`;
+    <div class="rb">${baseTimeField(r)}
+    <div style="font-size:10.5px;color:var(--ink3);margin:0 2px">No material input. Rate = compression yield ÷ (base time × 1.5^level ÷ line total-speed).</div></div>`;
   return c;
 }
 function prodCard(p){
   const c=document.createElement("div");c.className="rcard";
   const ins=RECIPE[p].inputs;
   const tyCls=p==="Frames"?"fin":"pr";
-  let head=`<th>Lvl</th>`+ins.map(k=>`<th style="text-align:right">${k}</th>`).join("")+`<th style="text-align:right">Time</th>`;
+  let head=`<th>Lvl</th>`+ins.map(k=>`<th style="text-align:right">${k} cost</th>`).join("");
   let rows="";
   [...LEVELS].reverse().forEach(L=>{
     let cells=`<td class="lv">${L}×</td>`;
@@ -311,14 +330,12 @@ function prodCard(p){
       cells+=`<td><input type="number" min="0" step="any" placeholder="–" value="${v??""}"
         data-res="${p}" data-fld="cost" data-in="${k}" data-lv="${L}"></td>`;
     });
-    const tv=S.prodTime[p][L];
-    cells+=`<td><input type="number" min="0" step="any" placeholder="–" value="${tv??""}"
-      data-res="${p}" data-fld="time" data-lv="${L}"></td>`;
     rows+=`<tr>${cells}</tr>`;
   });
   const subt=ins.join(" + ")+" → "+p;
   c.innerHTML=`<div class="rh"><span class="nm">${p}</span><span class="ty ${tyCls}">${p==="Frames"?"assembly":"craft"}</span></div>
     <div class="rb"><div style="font-size:10.5px;color:var(--ink3);margin:0 2px 6px">${subt}</div>
+    ${baseTimeField(p)}
     <table class="rtab"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
   return c;
 }
@@ -337,14 +354,15 @@ function relevantChain(targets){
   return {prods:[...relP],raws:[...relR]};
 }
 
+function craftTime(item,L){return (num(S.baseTime&&S.baseTime[item])||1)*Math.pow(1.5,Math.log2(L));}
 function buildJobs(maxVal,resIndex,relRaws,relProds,targets,w){
   const allowed=LEVELS.filter(L=>L<=maxVal);
   const jobs=[{label:"Idle",kind:"idle",res:null,lvl:null,prod:[],cons:[],h:0}];
   relRaws.forEach(R=>{
     let best=null;
     allowed.forEach(L=>{
-      const t=S.rawTime[R][L];if(t==null||t<=0)return;
-      const rate=L/Math.max(t,FLOOR);
+      const t=craftTime(R,L);if(!(t>0))return;
+      const rate=L/t;
       if(!best||rate>best.rate)best={rate,L};
     });
     if(best)jobs.push({label:"Produce "+R,kind:"produce",res:R,lvl:best.L,
@@ -353,8 +371,8 @@ function buildJobs(maxVal,resIndex,relRaws,relProds,targets,w){
   relProds.forEach(P=>{
     const ins=RECIPE[P].inputs;
     allowed.forEach(L=>{
-      const t=S.prodTime[P][L];if(t==null||t<=0)return;
-      const tt=Math.max(t,FLOOR);let ok=true;const cons=[];
+      const tt=craftTime(P,L);if(!(tt>0))return;
+      let ok=true;const cons=[];
       ins.forEach(k=>{const c=S.prodCost[P][k][L];if(c==null||isNaN(c)||c<0){ok=false;}else cons.push([resIndex[k],c/tt]);});
       if(!ok)return;
       const rate=L/tt;const ti=targets.indexOf(P);
@@ -381,25 +399,23 @@ function optimize(){
   const tIdx=targets.map(t=>resIndex[t]);
   const tol=Math.max(0,Math.min(50,num(S.margin)||0))/100;
 
-  // data-availability check
+  // data-availability check (cost only — time is computed from compression)
   const issues=[];
-  relRaws.forEach(r=>{if(!LEVELS.some(L=>S.rawTime[r][L]>0))issues.push("No production time entered for "+r+".");});
   relProds.forEach(P=>{
     const ins=RECIPE[P].inputs;
-    const any=LEVELS.some(L=>{const t=S.prodTime[P][L];return t>0&&ins.every(k=>S.prodCost[P][k][L]!=null&&!isNaN(S.prodCost[P][k][L]));});
-    if(!any)issues.push("No complete craft data (cost + time) entered for "+P+".");
+    const any=LEVELS.some(L=>ins.every(k=>S.prodCost[P][k][L]!=null&&!isNaN(S.prodCost[P][k][L])));
+    if(!any)issues.push("No material cost entered for "+P+".");
   });
 
-  // jobs per distinct max; per-line duplication factor f = 1 + dup
+  // jobs per distinct max; per-line speed factor sp and dup factor dp
   const jobsByMax={};
-  const sorted=S.lines.map((ln,i)=>({orig:i,max:ln.max,f:1+(num(ln.dup)||0)/100})).sort((a,b)=>a.max-b.max||a.f-b.f);
+  const sorted=S.lines.map((ln,i)=>({orig:i,max:ln.max,sp:Math.max(0.000001,num(ln.spx)||1),dp:1+(num(ln.dup)||0)/100})).sort((a,b)=>a.max-b.max||a.sp-b.sp||a.dp-b.dp);
   sorted.forEach(s=>{if(!jobsByMax[s.max])jobsByMax[s.max]=buildJobs(s.max,resIndex,relRaws,relProds,targets,w);});
   const lineJobs=sorted.map(s=>jobsByMax[s.max]);
-  const fac=sorted.map(s=>s.f);
   const N=sorted.length;
-  const sameAsPrev=sorted.map((s,i)=>i>0&&s.max===sorted[i-1].max&&s.f===sorted[i-1].f);
-  // best (dup-scaled) production rate of each target reachable per line, for the bound
-  const bp=lineJobs.map((js,i)=>targets.map(t=>{let m=0;js.forEach(j=>{if(j.kind==="craft"&&j.res===t)m=Math.max(m,j.prod[0][1]);});return m*fac[i];}));
+  const sameAsPrev=sorted.map((s,i)=>i>0&&s.max===sorted[i-1].max&&s.sp===sorted[i-1].sp&&s.dp===sorted[i-1].dp);
+  // best (speed+dup scaled) production rate of each target reachable per line, for the bound
+  const bp=lineJobs.map((js,i)=>targets.map(t=>{let m=0;js.forEach(j=>{if(j.kind==="craft"&&j.res===t)m=Math.max(m,j.prod[0][1]);});return m*sorted[i].sp*sorted[i].dp;}));
   const SP=targets.map((t,ti)=>{const a=new Array(N+1).fill(0);for(let i=N-1;i>=0;i--)a[i]=a[i+1]+bp[i][ti];return a;});
 
   const produced=new Float64Array(R), consumed=new Float64Array(R);
@@ -418,16 +434,16 @@ function optimize(){
     let ub=Infinity;
     for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]]+SP[k][i];ub=Math.min(ub,net/w[k]);}
     if(ub<=best.score+EPS)return;
-    const js=lineJobs[i];const f=fac[i];
+    const js=lineJobs[i];const sp=sorted[i].sp,dp=sorted[i].dp;
     const start=sameAsPrev[i]?prevIdx:0;
     for(let j=start;j<js.length;j++){
       const job=js[j];
-      for(const[r,a]of job.prod)produced[r]+=a*f;
-      for(const[r,a]of job.cons)consumed[r]+=a;
+      for(const[r,a]of job.prod)produced[r]+=a*sp*dp;
+      for(const[r,a]of job.cons)consumed[r]+=a*sp;
       choice[i]=j;
       dfs(i+1,j);
-      for(const[r,a]of job.prod)produced[r]-=a*f;
-      for(const[r,a]of job.cons)consumed[r]-=a;
+      for(const[r,a]of job.prod)produced[r]-=a*sp*dp;
+      for(const[r,a]of job.cons)consumed[r]-=a*sp;
     }
   }
   const t0=performance.now();
@@ -435,18 +451,22 @@ function optimize(){
   const ms=performance.now()-t0;
 
   // assemble result by original line order
+  const feasible=best.score>1e-9;
   const plan=new Array(N);
-  sorted.forEach((s,i)=>{plan[s.orig]={line:s.orig+1,max:s.max,dup:(s.f-1)*100,f:s.f,job:lineJobs[i][best.choice[i]]};});
+  sorted.forEach((s,i)=>{
+    const idle=lineJobs[i].find(j=>j.kind==="idle")||lineJobs[i][0];
+    plan[s.orig]={line:s.orig+1,max:s.max,spx:s.sp,dup:(s.dp-1)*100,sp:s.sp,dp:s.dp,job:feasible?lineJobs[i][best.choice[i]]:idle};
+  });
 
   const balance=resources.map(r=>{
     const i=resIndex[r];
-    return {res:r,prod:best.produced[i]*3600,cons:best.consumed[i]*3600};
+    return {res:r,prod:feasible?best.produced[i]*3600:0,cons:feasible?best.consumed[i]*3600:0};
   });
-  const out={};targets.forEach((t,k)=>{out[t]=(best.produced[tIdx[k]]-best.consumed[tIdx[k]])*3600;});
+  const out={};targets.forEach((t,k)=>{out[t]=feasible?(best.produced[tIdx[k]]-best.consumed[tIdx[k]])*3600:0;});
   let usesMargin=false;
   for(let r=0;r<R;r++)if(best.produced[r]<best.consumed[r]-1e-6)usesMargin=true;
 
-  return {empty:false,issues,plan,balance,out,ms,resIndex,targets,tol,usesMargin};
+  return {empty:false,issues,plan,balance,out,ms,resIndex,targets,tol,usesMargin,feasible};
 }
 
 /* ---------- RENDER: results ---------- */
@@ -476,19 +496,20 @@ function renderResults(){
   // plan table
   html+=`<div class="subhead">Line assignment</div>
     <table><thead><tr><th>Line</th><th>Cap</th><th>Job</th><th>Lvl</th>
-      <th class="num">Output /hr</th><th>Consumes /hr</th></tr></thead><tbody>`;
+      <th class="num">~s/craft</th><th class="num">Output /hr</th><th>Consumes /hr</th></tr></thead><tbody>`;
   res.plan.forEach(p=>{
-    const j=p.job;const f=p.f||1;
-    let pill,job,lvl="",outv="",cons="";
+    const j=p.job;const sp=p.sp||1,dp=p.dp||1;
+    let pill,job,lvl="",outv="",cons="",ct="";
     if(j.kind==="idle"){pill='<span class="pill idle">idle</span>';job="";}
     else if(j.kind==="produce"){pill='<span class="pill prod">produce</span>';job=j.res;lvl=j.lvl+"×";
-      outv=fmt(j.prod[0][1]*f*3600);}
+      outv=fmt(j.prod[0][1]*sp*dp*3600);ct=fmt(craftTime(j.res,j.lvl)/sp,2);}
     else{pill='<span class="pill craft">craft</span>';job=j.res;lvl=j.lvl+"×";
-      outv=fmt(j.prod[0][1]*f*3600);
-      cons=j.cons.map(c=>fmt(c[1]*3600)+" "+invName(res.resIndex,c[0])).join(", ");}
-    const dupTag=p.dup>0?` <span style="color:var(--ink3);font-size:10.5px">+${fmt(p.dup,2)}%</span>`:"";
-    html+=`<tr><td class="mono">#${p.line}</td><td class="mono">${p.max}×${dupTag}</td>
+      outv=fmt(j.prod[0][1]*sp*dp*3600);ct=fmt(craftTime(j.res,j.lvl)/sp,2);
+      cons=j.cons.map(c=>fmt(c[1]*sp*3600)+" "+invName(res.resIndex,c[0])).join(", ");}
+    const tags=`${p.spx?` <span style="color:var(--ink3);font-size:10.5px">×${fmt(p.spx,2)} spd</span>`:""}${p.dup>0?` <span style="color:var(--ink3);font-size:10.5px">+${fmt(p.dup,2)}% dup</span>`:""}`;
+    html+=`<tr><td class="mono">#${p.line}</td><td class="mono">${p.max}×${tags}</td>
       <td>${pill} ${job}</td><td class="mono">${lvl}</td>
+      <td class="num mono" style="color:var(--ink2)">${ct}</td>
       <td class="num">${outv}</td><td style="color:var(--ink2);font-size:11.5px">${cons}</td></tr>`;
   });
   html+=`</tbody></table>`;
@@ -523,15 +544,16 @@ document.getElementById("lines").addEventListener("change",e=>{
   if(li!==undefined){S.lines[+li].max=+e.target.value;scheduleSolve();}
 });
 document.getElementById("lines").addEventListener("input",e=>{
-  const di=e.target.dataset.dup;
+  const di=e.target.dataset.dup, si=e.target.dataset.spx;
   if(di!==undefined){S.lines[+di].dup=num(e.target.value)||0;scheduleSolve();}
+  if(si!==undefined){S.lines[+si].spx=num(e.target.value)||1;scheduleSolve();}
 });
 document.getElementById("lines").addEventListener("click",e=>{
   const d=e.target.dataset.del;
   if(d!==undefined){if(S.lines.length>1){S.lines.splice(+d,1);renderLines();save();renderResults();}}
 });
 document.getElementById("btnAddLine").addEventListener("click",()=>{
-  S.lines.push({max:1024,dup:0});renderLines();save();renderResults();
+  S.lines.push({max:512,spx:1,dup:0});renderLines();save();renderResults();
 });
 
 document.getElementById("margin").addEventListener("input",e=>{
@@ -551,12 +573,9 @@ document.getElementById("targets").addEventListener("input",e=>{
 
 document.getElementById("recipes").addEventListener("input",e=>{
   const d=e.target.dataset;if(!d.res)return;
-  const L=+d.lv,v=num(e.target.value);
-  if(d.fld==="time"){
-    if(RAWS.includes(d.res))S.rawTime[d.res][L]=v; else S.prodTime[d.res][L]=v;
-  }else if(d.fld==="cost"){
-    S.prodCost[d.res][d.in][L]=v;
-  }
+  const v=num(e.target.value);
+  if(d.fld==="baseT")S.baseTime[d.res]=(v==null||v<=0)?1:v;
+  else if(d.fld==="cost")S.prodCost[d.res][d.in][+d.lv]=v;
   scheduleSolve();
 });
 
@@ -571,7 +590,7 @@ document.getElementById("fileImport").addEventListener("change",e=>{
   const f=e.target.files[0];if(!f)return;
   const r=new FileReader();
   r.onload=()=>{try{const d=JSON.parse(r.result);
-    if(d.lines&&d.rawTime&&d.prodTime&&d.prodCost&&d.targets){S=normalize(d);renderAll();save();}
+    if(d.lines&&d.prodCost&&d.targets){S=normalize(d);renderAll();save();}
     else alert("That doesn't look like a Forge Planner build file.");
   }catch(err){alert("Could not read that file.");}};
   r.readAsText(f);e.target.value="";
@@ -581,12 +600,44 @@ document.getElementById("btnReset").addEventListener("click",()=>{
     {S=defaults();renderAll();save();}
 });
 
+function initCalib(){
+  const it=document.getElementById("cbItem"), cp=document.getElementById("cbComp");
+  if(it.options.length===0){
+    [...RAWS,...PRODUCTS].forEach(n=>it.add(new Option(n,n)));
+    LEVELS.forEach(L=>cp.add(new Option(L+"× (level "+Math.round(Math.log2(L))+")",L)));
+    it.value="Ingots"; cp.value="512";
+  }
+  const out=document.getElementById("cbOut"), apply=document.getElementById("cbApply");
+  let computed=null;
+  function recalc(){
+    const item=it.value, L=+cp.value, spd=num(document.getElementById("cbSpeed").value), sec=num(document.getElementById("cbSec").value);
+    const cur=num(S.baseTime[item])||1, mult=Math.pow(1.5,Math.log2(L));
+    const predict=cur*mult/(spd||1);
+    if(spd>0&&sec>0){
+      computed=sec*spd/mult;
+      out.innerHTML=`base time = ${fmt(sec,2)} × ${fmt(spd,2)} ÷ ${fmt(mult,2)} = <b style="color:var(--amber)">${fmt(computed,2)}s</b><br>`+
+        `currently set for ${item}: ${fmt(cur,2)}s &nbsp;·&nbsp; which predicts a ${fmt(predict,2)}s craft at these settings`+
+        (Math.abs(predict-sec)/sec>0.15?` <span style="color:#e0a">— off by ${fmt(Math.abs(predict-sec)/sec*100,0)}%, worth setting</span>`:` <span style="color:#6c9">— matches, base looks right</span>`);
+      apply.disabled=false;
+    }else{
+      computed=null;apply.disabled=true;
+      out.innerHTML=spd>0?`current ${item} base (${fmt(cur,2)}s) predicts a <b>${fmt(predict,2)}s</b> craft at ${L}× / ×${fmt(spd,2)}. Enter the real craft seconds to compare.`:`Enter that unit's speed × and a craft time to compute or verify.`;
+    }
+  }
+  ["cbItem","cbComp","cbSpeed","cbSec"].forEach(id=>document.getElementById(id).addEventListener("input",recalc));
+  apply.addEventListener("click",()=>{
+    if(computed==null)return;
+    S.baseTime[it.value]=computed; save(); renderRecipes(); renderResults(); recalc();
+  });
+  recalc();
+}
 function renderAll(){
   renderLines();renderTargets();renderRecipes();renderResults();
   document.getElementById("margin").value=S.margin||0;
   document.getElementById("marginv").textContent=fmt(S.margin||0,1)+"%";
 }
 renderAll();
+initCalib();
 document.getElementById("saveind").textContent="auto-saves locally";
 </script>
 </body>
