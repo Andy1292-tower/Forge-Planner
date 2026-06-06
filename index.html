@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Forge Planner — Crafting Line Optimizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#101216; --bg2:#15181d; --surface:#1a1e24; --surface2:#1f242b;
+  --line:#2a3037; --line2:#363d46;
+  --ink:#e7e3d8; --ink2:#a7a99f; --ink3:#6f7680;
+  --copper:#d2813a; --amber:#f2a94e; --copper-d:#7a4d23;
+  --teal:#3fb6a0; --teal-d:#1d4a44;
+  --danger:#e06a5e; --danger-d:#5a2622;
+  --r:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--ink);font-family:"Chakra Petch",sans-serif}
+body{
+  min-height:100vh;
+  background-image:
+    radial-gradient(900px 500px at 80% -10%, rgba(210,129,58,.10), transparent 60%),
+    linear-gradient(var(--line) .6px, transparent .6px),
+    linear-gradient(90deg, var(--line) .6px, transparent .6px);
+  background-size:auto, 38px 38px, 38px 38px;
+  background-position:0 0, -1px -1px, -1px -1px;
+  background-blend-mode:normal, soft-light, soft-light;
+}
+.mono{font-family:"JetBrains Mono",monospace}
+.wrap{max-width:1240px;margin:0 auto;padding:24px 20px 64px}
+header.top{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap;
+  border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:24px}
+.brand h1{font-weight:700;font-size:26px;letter-spacing:.5px}
+.brand h1 .spark{color:var(--copper)}
+.brand p{color:var(--ink2);font-size:13px;margin-top:3px;letter-spacing:.3px}
+.tools{display:flex;gap:8px;flex-wrap:wrap}
+button.btn{font-family:"Chakra Petch",sans-serif;font-weight:600;font-size:12.5px;letter-spacing:.4px;
+  background:var(--surface);color:var(--ink);border:1px solid var(--line2);border-radius:6px;
+  padding:8px 12px;cursor:pointer;transition:.12s;display:inline-flex;align-items:center;gap:6px}
+button.btn:hover{border-color:var(--copper);color:var(--amber)}
+button.btn:active{transform:scale(.97)}
+button.btn.primary{background:linear-gradient(180deg,var(--copper),#b96d2c);border-color:var(--copper);color:#15110a}
+button.btn.primary:hover{filter:brightness(1.08);color:#15110a}
+button.btn.ghost{background:transparent}
+.grid{display:grid;grid-template-columns:380px 1fr;gap:18px;align-items:start}
+@media(max-width:880px){.grid{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.card>.head{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:12px 14px;border-bottom:1px solid var(--line);background:var(--bg2)}
+.card>.head h2{font-size:14px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--ink)}
+.card>.head .sub{font-size:11.5px;color:var(--ink3)}
+.card>.body{padding:14px}
+.stack{display:flex;flex-direction:column;gap:16px}
+
+/* lines */
+.line-row{display:grid;grid-template-columns:28px 1fr 30px;gap:10px;align-items:center;
+  padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);margin-bottom:8px}
+.line-row .tag{font-size:11px;color:var(--ink3);text-align:center}
+.line-row .lname{font-size:13px;font-weight:600}
+.line-row .lname small{display:block;color:var(--ink3);font-weight:400;font-size:10.5px}
+select,input[type=number],input[type=text]{font-family:"JetBrains Mono",monospace;font-size:12.5px;
+  background:var(--surface2);color:var(--ink);border:1px solid var(--line2);border-radius:5px;padding:6px 8px;width:100%}
+select:focus,input:focus{outline:none;border-color:var(--copper);box-shadow:0 0 0 2px rgba(210,129,58,.18)}
+.iconbtn{background:transparent;border:1px solid var(--line2);color:var(--ink3);border-radius:5px;
+  width:30px;height:30px;cursor:pointer;font-size:15px;line-height:1}
+.iconbtn:hover{border-color:var(--danger);color:var(--danger)}
+
+/* targets */
+.tg{display:flex;flex-direction:column;gap:8px}
+.tg-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;
+  padding:9px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);transition:.12s}
+.tg-row.on{border-color:var(--copper);background:rgba(210,129,58,.07)}
+.tg-row label{display:flex;align-items:center;gap:9px;cursor:pointer;font-size:13.5px;font-weight:600}
+.tg-row input[type=checkbox]{appearance:none;width:17px;height:17px;border:1px solid var(--line2);border-radius:4px;
+  background:var(--surface2);cursor:pointer;position:relative;flex:0 0 auto}
+.tg-row input[type=checkbox]:checked{background:var(--copper);border-color:var(--copper)}
+.tg-row input[type=checkbox]:checked::after{content:"";position:absolute;left:5px;top:1px;width:4px;height:9px;
+  border:solid #15110a;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.prio{display:flex;align-items:center;gap:8px}
+.prio span{font-size:10.5px;color:var(--ink3);letter-spacing:.4px}
+.prio input[type=range]{width:84px;accent-color:var(--copper)}
+.prio .pv{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--amber);width:16px;text-align:center}
+
+/* results */
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
+.metric{background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:11px 12px}
+.metric .l{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink3)}
+.metric .v{font-family:"JetBrains Mono",monospace;font-size:21px;font-weight:700;color:var(--amber);margin-top:3px}
+.metric .u{font-size:10.5px;color:var(--ink2);margin-top:1px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line)}
+th{font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--ink3);font-weight:600}
+td.num,th.num{text-align:right;font-family:"JetBrains Mono",monospace}
+tr:last-child td{border-bottom:none}
+.pill{display:inline-block;font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:20px;letter-spacing:.3px}
+.pill.prod{background:rgba(63,182,160,.14);color:var(--teal);border:1px solid var(--teal-d)}
+.pill.craft{background:rgba(210,129,58,.14);color:var(--amber);border:1px solid var(--copper-d)}
+.pill.idle{background:rgba(120,128,138,.12);color:var(--ink3);border:1px solid var(--line2)}
+.bal-ok{color:var(--teal)} .bal-tight{color:var(--amber)} .bal-bad{color:var(--danger)}
+.notice{border-radius:6px;padding:10px 12px;font-size:12.5px;line-height:1.5;margin-bottom:12px}
+.notice.warn{background:var(--danger-d);border:1px solid var(--danger);color:#f3c4be}
+.notice.info{background:var(--bg2);border:1px solid var(--line2);color:var(--ink2)}
+.subhead{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink3);margin:16px 0 8px;font-weight:600}
+
+/* recipe data */
+.rsec{margin-top:18px}
+.rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.rcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.rcard .rh{padding:9px 12px;border-bottom:1px solid var(--line);background:var(--bg2);
+  display:flex;align-items:center;justify-content:space-between;gap:8px}
+.rcard .rh .nm{font-size:13.5px;font-weight:600;letter-spacing:.4px}
+.rcard .rh .ty{font-size:10px;letter-spacing:.5px;text-transform:uppercase;padding:2px 7px;border-radius:20px}
+.rcard .rh .ty.raw{background:rgba(120,128,138,.14);color:var(--ink2);border:1px solid var(--line2)}
+.rcard .rh .ty.pr{background:rgba(63,182,160,.13);color:var(--teal);border:1px solid var(--teal-d)}
+.rcard .rh .ty.fin{background:rgba(210,129,58,.14);color:var(--amber);border:1px solid var(--copper-d)}
+.rcard .rb{padding:8px 10px;max-height:330px;overflow:auto}
+.rtab{width:100%;border-collapse:collapse}
+.rtab th{font-size:9.5px;padding:4px 5px;color:var(--ink3);text-transform:uppercase;letter-spacing:.4px;position:sticky;top:0;background:var(--surface)}
+.rtab td{padding:3px 4px;border:none}
+.rtab td.lv{font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--ink2);width:40px}
+.rtab input{padding:4px 5px;font-size:11.5px;text-align:right}
+.rtab input::placeholder{color:var(--ink3);opacity:.5}
+.help{font-size:11.5px;color:var(--ink3);line-height:1.5;margin-bottom:14px}
+footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:var(--ink3);font-size:11.5px;line-height:1.6}
+.saveind{font-size:11px;color:var(--ink3);letter-spacing:.3px}
+.saveind b{color:var(--teal);font-weight:600}
+.hidden-file{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Forge<span class="spark">·</span>Planner</h1>
+      <p>Steady-state production-line optimizer · enter your stats, get the optimal crafter setup</p>
+    </div>
+    <div class="tools">
+      <span class="saveind" id="saveind"></span>
+      <button class="btn ghost" id="btnExport">Export build</button>
+      <button class="btn ghost" id="btnImport">Import</button>
+      <input type="file" id="fileImport" accept="application/json" class="hidden-file">
+      <button class="btn ghost" id="btnReset">Reset</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- LEFT -->
+    <div class="stack">
+      <div class="card">
+        <div class="head"><h2>Crafter lines</h2><span class="sub" id="lineCount"></span></div>
+        <div class="body">
+          <div id="lines"></div>
+          <button class="btn ghost" id="btnAddLine" style="width:100%;justify-content:center;margin-top:4px">+ Add line</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="head"><h2>Outputs &amp; priority</h2><span class="sub">higher = make more</span></div>
+        <div class="body">
+          <div class="tg" id="targets"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="card">
+      <div class="head"><h2>Optimal setup</h2><span class="sub" id="solveStat"></span></div>
+      <div class="body" id="results"></div>
+    </div>
+  </div>
+
+  <!-- RECIPE DATA -->
+  <div class="rsec">
+    <div class="subhead">Crafting stats — your numbers per compression level</div>
+    <p class="help">Each raw producer needs only a time (seconds) per level. Each craft needs its input cost(s) and a time. Leave a level blank if you can't compress that high yet — the optimizer just won't use it. Compression level = units produced per cycle (e.g. 256× makes 256 units).</p>
+    <div class="rgrid" id="recipes"></div>
+  </div>
+
+  <footer>
+    Steady-state model: the plan guarantees every input is produced at least as fast as it's consumed, so it runs forever without re-shuffling. Seed a small starting stockpile to smooth the batch timing. Frames assume Bits are pre-produced. All math runs locally in your browser — nothing is uploaded.
+  </footer>
+</div>
+
+<script>
+"use strict";
+const LEVELS=[1,2,4,8,16,32,64,128,256,512,1024];
+const RAWS=["Ingots","Bits","Concrete"];
+const PRODUCTS=["Glass","Bricks","Plates","Rods","Frames"];
+const RECIPE={
+  Glass:{inputs:["Bits"]},
+  Bricks:{inputs:["Concrete"]},
+  Plates:{inputs:["Ingots"]},
+  Rods:{inputs:["Ingots"]},
+  Frames:{inputs:["Plates","Rods"]}
+};
+const KIND={Ingots:"raw",Bits:"raw",Concrete:"raw",Glass:"pr",Bricks:"pr",Plates:"pr",Rods:"pr",Frames:"fin"};
+const FLOOR=1; // minimum craft/produce time in seconds
+
+function defaults(){
+  const rawTime={Ingots:{},Bits:{},Concrete:{}};
+  rawTime.Bits     ={512:7,256:5,128:3,64:2,32:2,16:1,8:1,4:1,2:1,1:1};
+  rawTime.Concrete ={512:10,256:7,128:5,64:3,32:2,16:1,8:1,4:1,2:1,1:1};
+  const prodTime={
+    Glass:{512:72,256:61,128:41,64:28,32:19,16:13,8:9,4:6,2:4,1:3},
+    Bricks:{512:122,256:82,128:55,64:37,32:25,16:17,8:11,4:8,2:5,1:4},
+    Plates:{},Rods:{},Frames:{}
+  };
+  const prodCost={
+    Glass:{Bits:{512:39366,256:13122,128:4374,64:1458,32:486,16:162,8:54,4:18,2:6,1:2}},
+    Bricks:{Concrete:{512:59049,256:19683,128:6561,64:2187,32:729,16:243,8:81,4:27,2:9,1:3}},
+    Plates:{Ingots:{}},
+    Rods:{Ingots:{}},
+    Frames:{Plates:{},Rods:{}}
+  };
+  return {
+    lines:[{max:1024},{max:1024},{max:128},{max:64},{max:32}],
+    rawTime,prodTime,prodCost,
+    targets:{Glass:{on:false,w:1},Bricks:{on:true,w:1},Plates:{on:false,w:1},Rods:{on:false,w:1},Frames:{on:false,w:1}}
+  };
+}
+
+const LSKEY="forgePlannerState_v1";
+let S=load()||defaults();
+
+function load(){try{const r=localStorage.getItem(LSKEY);return r?JSON.parse(r):null;}catch(e){return null;}}
+function save(){try{localStorage.setItem(LSKEY,JSON.stringify(S));flashSaved();}catch(e){document.getElementById("saveind").innerHTML="<b style='color:var(--ink3)'>local save unavailable here</b>";}}
+let savT;
+function flashSaved(){const el=document.getElementById("saveind");el.innerHTML="<b>saved</b>";clearTimeout(savT);savT=setTimeout(()=>el.textContent="auto-saves locally",1400);}
+
+const num=v=>{if(v===""||v===null||v===undefined)return null;const n=Number(v);return isFinite(n)?n:null;};
+const fmt=(n,d=0)=>n.toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:0});
+
+/* ---------- RENDER: lines ---------- */
+function renderLines(){
+  const box=document.getElementById("lines");box.innerHTML="";
+  S.lines.forEach((ln,i)=>{
+    const opts=LEVELS.map(L=>`<option value="${L}" ${L===ln.max?"selected":""}>${L}×</option>`).join("");
+    const row=document.createElement("div");row.className="line-row";
+    row.innerHTML=`<div class="tag mono">#${i+1}</div>
+      <div><div class="lname">Line ${i+1} <small>max compression</small></div>
+        <select data-line="${i}" style="margin-top:5px">${opts}</select></div>
+      <button class="iconbtn" data-del="${i}" title="Remove line">×</button>`;
+    box.appendChild(row);
+  });
+  document.getElementById("lineCount").textContent=S.lines.length+" line"+(S.lines.length>1?"s":"");
+}
+
+/* ---------- RENDER: targets ---------- */
+function renderTargets(){
+  const box=document.getElementById("targets");box.innerHTML="";
+  PRODUCTS.forEach(p=>{
+    const t=S.targets[p];
+    const row=document.createElement("div");row.className="tg-row"+(t.on?" on":"");
+    row.innerHTML=`<label><input type="checkbox" data-tg="${p}" ${t.on?"checked":""}> ${p}</label>
+      <div class="prio" style="${t.on?"":"visibility:hidden"}">
+        <span>PRIORITY</span>
+        <input type="range" min="1" max="9" step="1" value="${t.w}" data-w="${p}">
+        <span class="pv mono">${t.w}</span></div>`;
+    box.appendChild(row);
+  });
+}
+
+/* ---------- RENDER: recipe data ---------- */
+function renderRecipes(){
+  const box=document.getElementById("recipes");box.innerHTML="";
+  RAWS.forEach(r=>box.appendChild(rawCard(r)));
+  PRODUCTS.forEach(p=>box.appendChild(prodCard(p)));
+}
+function rawCard(r){
+  const c=document.createElement("div");c.className="rcard";
+  let rows="";
+  [...LEVELS].reverse().forEach(L=>{
+    const v=S.rawTime[r][L];
+    rows+=`<tr><td class="lv">${L}×</td><td><input type="number" min="0" step="any" placeholder="–"
+      value="${v??""}" data-res="${r}" data-fld="time" data-lv="${L}"></td></tr>`;
+  });
+  c.innerHTML=`<div class="rh"><span class="nm">${r}</span><span class="ty raw">raw</span></div>
+    <div class="rb"><table class="rtab"><thead><tr><th>Lvl</th><th style="text-align:right">Time (s)</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+  return c;
+}
+function prodCard(p){
+  const c=document.createElement("div");c.className="rcard";
+  const ins=RECIPE[p].inputs;
+  const tyCls=p==="Frames"?"fin":"pr";
+  let head=`<th>Lvl</th>`+ins.map(k=>`<th style="text-align:right">${k}</th>`).join("")+`<th style="text-align:right">Time</th>`;
+  let rows="";
+  [...LEVELS].reverse().forEach(L=>{
+    let cells=`<td class="lv">${L}×</td>`;
+    ins.forEach(k=>{
+      const v=S.prodCost[p][k][L];
+      cells+=`<td><input type="number" min="0" step="any" placeholder="–" value="${v??""}"
+        data-res="${p}" data-fld="cost" data-in="${k}" data-lv="${L}"></td>`;
+    });
+    const tv=S.prodTime[p][L];
+    cells+=`<td><input type="number" min="0" step="any" placeholder="–" value="${tv??""}"
+      data-res="${p}" data-fld="time" data-lv="${L}"></td>`;
+    rows+=`<tr>${cells}</tr>`;
+  });
+  const subt=ins.join(" + ")+" → "+p;
+  c.innerHTML=`<div class="rh"><span class="nm">${p}</span><span class="ty ${tyCls}">${p==="Frames"?"assembly":"craft"}</span></div>
+    <div class="rb"><div style="font-size:10.5px;color:var(--ink3);margin:0 2px 6px">${subt}</div>
+    <table class="rtab"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  return c;
+}
+
+/* ---------- OPTIMIZER ---------- */
+function relevantChain(targets){
+  const relP=new Set(targets);
+  let changed=true;
+  while(changed){changed=false;
+    [...relP].forEach(P=>RECIPE[P].inputs.forEach(k=>{
+      if(PRODUCTS.includes(k)&&!relP.has(k)){relP.add(k);changed=true;}
+    }));
+  }
+  const relR=new Set();
+  relP.forEach(P=>RECIPE[P].inputs.forEach(k=>{if(RAWS.includes(k))relR.add(k);}));
+  return {prods:[...relP],raws:[...relR]};
+}
+
+function buildJobs(maxVal,resIndex,relRaws,relProds,targets,w){
+  const allowed=LEVELS.filter(L=>L<=maxVal);
+  const jobs=[{label:"Idle",kind:"idle",res:null,lvl:null,prod:[],cons:[],h:0}];
+  relRaws.forEach(R=>{
+    let best=null;
+    allowed.forEach(L=>{
+      const t=S.rawTime[R][L];if(t==null||t<=0)return;
+      const rate=L/Math.max(t,FLOOR);
+      if(!best||rate>best.rate)best={rate,L};
+    });
+    if(best)jobs.push({label:"Produce "+R,kind:"produce",res:R,lvl:best.L,
+      prod:[[resIndex[R],best.rate]],cons:[],h:0});
+  });
+  relProds.forEach(P=>{
+    const ins=RECIPE[P].inputs;
+    allowed.forEach(L=>{
+      const t=S.prodTime[P][L];if(t==null||t<=0)return;
+      const tt=Math.max(t,FLOOR);let ok=true;const cons=[];
+      ins.forEach(k=>{const c=S.prodCost[P][k][L];if(c==null||isNaN(c)||c<0){ok=false;}else cons.push([resIndex[k],c/tt]);});
+      if(!ok)return;
+      const rate=L/tt;const ti=targets.indexOf(P);
+      jobs.push({label:"Craft "+P,kind:"craft",res:P,lvl:L,
+        prod:[[resIndex[P],rate]],cons,h:ti>=0?rate/w[ti]:0});
+    });
+  });
+  jobs.sort((a,b)=>b.h-a.h);
+  return jobs;
+}
+
+// Objective: weighted max-min. Priority weights set the desired output RATIO;
+// the solver maximizes the common multiplier, so every selected output is
+// produced (a real mix) in proportion to its priority.
+function optimize(){
+  const targets=PRODUCTS.filter(p=>S.targets[p].on);
+  if(targets.length===0)return {empty:true};
+  const w=targets.map(p=>S.targets[p].w);
+  const {prods:relProds,raws:relRaws}=relevantChain(targets);
+  const resources=[...relRaws,...relProds];
+  const resIndex={};resources.forEach((r,i)=>resIndex[r]=i);
+  const R=resources.length;
+  const tIdx=targets.map(t=>resIndex[t]);
+
+  // data-availability check
+  const issues=[];
+  relRaws.forEach(r=>{if(!LEVELS.some(L=>S.rawTime[r][L]>0))issues.push("No production time entered for "+r+".");});
+  relProds.forEach(P=>{
+    const ins=RECIPE[P].inputs;
+    const any=LEVELS.some(L=>{const t=S.prodTime[P][L];return t>0&&ins.every(k=>S.prodCost[P][k][L]!=null&&!isNaN(S.prodCost[P][k][L]));});
+    if(!any)issues.push("No complete craft data (cost + time) entered for "+P+".");
+  });
+
+  // jobs per distinct max
+  const jobsByMax={};
+  const sorted=S.lines.map((ln,i)=>({orig:i,max:ln.max})).sort((a,b)=>a.max-b.max);
+  sorted.forEach(s=>{if(!jobsByMax[s.max])jobsByMax[s.max]=buildJobs(s.max,resIndex,relRaws,relProds,targets,w);});
+  const lineJobs=sorted.map(s=>jobsByMax[s.max]);
+  const N=sorted.length;
+  const sameAsPrev=sorted.map((s,i)=>i>0&&s.max===sorted[i-1].max);
+  // best production rate of each target reachable per line (for the bound)
+  const bp=lineJobs.map(js=>targets.map(t=>{let m=0;js.forEach(j=>{if(j.kind==="craft"&&j.res===t)m=Math.max(m,j.prod[0][1]);});return m;}));
+  const SP=targets.map((t,ti)=>{const a=new Array(N+1).fill(0);for(let i=N-1;i>=0;i--)a[i]=a[i+1]+bp[i][ti];return a;});
+
+  const produced=new Float64Array(R), consumed=new Float64Array(R);
+  const choice=new Array(N).fill(0);
+  let best={score:0,choice:new Array(N).fill(0),produced:new Float64Array(R),consumed:new Float64Array(R)};
+  const EPS=1e-9;
+
+  function dfs(i,prevIdx){
+    if(i===N){
+      for(let r=0;r<R;r++)if(produced[r]<consumed[r]-1e-7)return;
+      let sc=Infinity;
+      for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]];sc=Math.min(sc,net/w[k]);}
+      if(sc>best.score+EPS){best={score:sc,choice:choice.slice(),produced:produced.slice(),consumed:consumed.slice()};}
+      return;
+    }
+    let ub=Infinity;
+    for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]]+SP[k][i];ub=Math.min(ub,net/w[k]);}
+    if(ub<=best.score+EPS)return;
+    const js=lineJobs[i];
+    const start=sameAsPrev[i]?prevIdx:0;
+    for(let j=start;j<js.length;j++){
+      const job=js[j];
+      for(const[r,a]of job.prod)produced[r]+=a;
+      for(const[r,a]of job.cons)consumed[r]+=a;
+      choice[i]=j;
+      dfs(i+1,j);
+      for(const[r,a]of job.prod)produced[r]-=a;
+      for(const[r,a]of job.cons)consumed[r]-=a;
+    }
+  }
+  const t0=performance.now();
+  dfs(0,0);
+  const ms=performance.now()-t0;
+
+  // assemble result by original line order
+  const plan=new Array(N);
+  sorted.forEach((s,i)=>{plan[s.orig]={line:s.orig+1,max:s.max,job:lineJobs[i][best.choice[i]]};});
+
+  const balance=resources.map(r=>{
+    const i=resIndex[r];
+    return {res:r,prod:best.produced[i]*3600,cons:best.consumed[i]*3600};
+  });
+  const out={};targets.forEach((t,k)=>{out[t]=(best.produced[tIdx[k]]-best.consumed[tIdx[k]])*3600;});
+
+  return {empty:false,issues,plan,balance,out,ms,resIndex,targets};
+}
+
+/* ---------- RENDER: results ---------- */
+function renderResults(){
+  const el=document.getElementById("results");
+  const stat=document.getElementById("solveStat");
+  const res=optimize();
+  if(res.empty){el.innerHTML=`<div class="notice info">Select one or more outputs on the left to optimize.</div>`;stat.textContent="";return;}
+  let html="";
+  if(res.issues.length){
+    html+=`<div class="notice warn"><b>Missing data:</b><br>${res.issues.join("<br>")}</div>`;
+  }
+  const anyOut=Object.values(res.out).some(v=>v>1e-6);
+  if(!anyOut&&!res.issues.length){
+    html+=`<div class="notice warn">No sustainable plan found with the current lines and data. Try raising a line's max compression, adding a line, or check your input costs.</div>`;
+  }
+  // metric cards
+  html+=`<div class="metrics">`;
+  res.targets.forEach(t=>{
+    html+=`<div class="metric"><div class="l">${t}</div>
+      <div class="v">${fmt(res.out[t]||0)}</div><div class="u">per hour</div></div>`;
+  });
+  html+=`</div>`;
+  // plan table
+  html+=`<div class="subhead">Line assignment</div>
+    <table><thead><tr><th>Line</th><th>Cap</th><th>Job</th><th>Lvl</th>
+      <th class="num">Output /hr</th><th>Consumes /hr</th></tr></thead><tbody>`;
+  res.plan.forEach(p=>{
+    const j=p.job;
+    let pill,job,lvl="",outv="",cons="";
+    if(j.kind==="idle"){pill='<span class="pill idle">idle</span>';job="";}
+    else if(j.kind==="produce"){pill='<span class="pill prod">produce</span>';job=j.res;lvl=j.lvl+"×";
+      outv=fmt(j.prod[0][1]*3600);}
+    else{pill='<span class="pill craft">craft</span>';job=j.res;lvl=j.lvl+"×";
+      outv=fmt(j.prod[0][1]*3600);
+      cons=j.cons.map(c=>fmt(c[1]*3600)+" "+invName(res.resIndex,c[0])).join(", ");}
+    html+=`<tr><td class="mono">#${p.line}</td><td class="mono">${p.max}×</td>
+      <td>${pill} ${job}</td><td class="mono">${lvl}</td>
+      <td class="num">${outv}</td><td style="color:var(--ink2);font-size:11.5px">${cons}</td></tr>`;
+  });
+  html+=`</tbody></table>`;
+  // balance table
+  html+=`<div class="subhead">Resource balance (per hour)</div>
+    <table><thead><tr><th>Resource</th><th class="num">Produced</th><th class="num">Consumed</th>
+      <th class="num">Surplus</th><th>Status</th></tr></thead><tbody>`;
+  res.balance.forEach(b=>{
+    const surplus=b.prod-b.cons;
+    const ratio=b.cons>0?surplus/b.cons:1;
+    let cls="bal-ok",lbl="healthy";
+    if(surplus<-1e-6){cls="bal-bad";lbl="STARVED";}
+    else if(b.cons>0&&ratio<0.05){cls="bal-tight";lbl="tight";}
+    else if(b.cons===0&&b.prod===0){cls="";lbl="—";}
+    html+=`<tr><td>${b.res}</td><td class="num">${fmt(b.prod)}</td>
+      <td class="num">${fmt(b.cons)}</td>
+      <td class="num ${surplus<0?'bal-bad':''}">${fmt(surplus)}</td>
+      <td class="${cls}" style="font-weight:600;font-size:11.5px">${lbl}</td></tr>`;
+  });
+  html+=`</tbody></table>`;
+  el.innerHTML=html;
+  stat.textContent="solved in "+res.ms.toFixed(1)+" ms";
+}
+function invName(resIndex,idx){for(const k in resIndex)if(resIndex[k]===idx)return k;return "";}
+
+/* ---------- EVENTS ---------- */
+let renderT;
+function scheduleSolve(){clearTimeout(renderT);renderT=setTimeout(()=>{save();renderResults();},120);}
+
+document.getElementById("lines").addEventListener("change",e=>{
+  const li=e.target.dataset.line;
+  if(li!==undefined){S.lines[+li].max=+e.target.value;scheduleSolve();}
+});
+document.getElementById("lines").addEventListener("click",e=>{
+  const d=e.target.dataset.del;
+  if(d!==undefined){if(S.lines.length>1){S.lines.splice(+d,1);renderLines();save();renderResults();}}
+});
+document.getElementById("btnAddLine").addEventListener("click",()=>{
+  S.lines.push({max:1024});renderLines();save();renderResults();
+});
+
+document.getElementById("targets").addEventListener("change",e=>{
+  const tg=e.target.dataset.tg;
+  if(tg){S.targets[tg].on=e.target.checked;renderTargets();scheduleSolve();}
+});
+document.getElementById("targets").addEventListener("input",e=>{
+  const w=e.target.dataset.w;
+  if(w){S.targets[w].w=+e.target.value;e.target.parentElement.querySelector(".pv").textContent=e.target.value;scheduleSolve();}
+});
+
+document.getElementById("recipes").addEventListener("input",e=>{
+  const d=e.target.dataset;if(!d.res)return;
+  const L=+d.lv,v=num(e.target.value);
+  if(d.fld==="time"){
+    if(RAWS.includes(d.res))S.rawTime[d.res][L]=v; else S.prodTime[d.res][L]=v;
+  }else if(d.fld==="cost"){
+    S.prodCost[d.res][d.in][L]=v;
+  }
+  scheduleSolve();
+});
+
+/* export / import / reset */
+document.getElementById("btnExport").addEventListener("click",()=>{
+  const blob=new Blob([JSON.stringify(S,null,2)],{type:"application/json"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download="forge-build.json";a.click();URL.revokeObjectURL(a.href);
+});
+document.getElementById("btnImport").addEventListener("click",()=>document.getElementById("fileImport").click());
+document.getElementById("fileImport").addEventListener("change",e=>{
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{try{const d=JSON.parse(r.result);
+    if(d.lines&&d.rawTime&&d.prodTime&&d.prodCost&&d.targets){S=d;renderAll();save();}
+    else alert("That doesn't look like a Forge Planner build file.");
+  }catch(err){alert("Could not read that file.");}};
+  r.readAsText(f);e.target.value="";
+});
+document.getElementById("btnReset").addEventListener("click",()=>{
+  if(confirm("Reset everything to defaults? This clears your entered stats."))
+    {S=defaults();renderAll();save();}
+});
+
+function renderAll(){renderLines();renderTargets();renderRecipes();renderResults();}
+renderAll();
+document.getElementById("saveind").textContent="auto-saves locally";
+</script>
+</body>
+</html>
