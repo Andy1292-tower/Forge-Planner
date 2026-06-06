@@ -61,6 +61,9 @@ button.btn.ghost{background:transparent}
 .line-row .tag{font-size:11px;color:var(--ink3);text-align:center}
 .line-row .lname{font-size:13px;font-weight:600}
 .line-row .lname small{display:block;color:var(--ink3);font-weight:400;font-size:10.5px}
+.line-fields{display:grid;grid-template-columns:1fr 74px;gap:8px;margin-top:6px}
+.line-fields .fl{display:flex;flex-direction:column;gap:3px}
+.line-fields .fl span{font-size:9px;letter-spacing:.4px;text-transform:uppercase;color:var(--ink3)}
 select,input[type=number],input[type=text]{font-family:"JetBrains Mono",monospace;font-size:12.5px;
   background:var(--surface2);color:var(--ink);border:1px solid var(--line2);border-radius:5px;padding:6px 8px;width:100%}
 select:focus,input:focus{outline:none;border-color:var(--copper);box-shadow:0 0 0 2px rgba(210,129,58,.18)}
@@ -162,6 +165,14 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
         <div class="head"><h2>Outputs &amp; priority</h2><span class="sub">higher = make more</span></div>
         <div class="body">
           <div class="tg" id="targets"></div>
+          <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+            <div><div style="font-size:12.5px;font-weight:600">"May-work" margin</div>
+              <div style="font-size:10.5px;color:var(--ink3)">allow a small input shortfall</div></div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="margin" min="0" max="20" step="0.5" value="0" style="width:90px;accent-color:var(--copper)">
+              <span class="mono" id="marginv" style="color:var(--amber);font-size:12px;width:38px;text-align:right">0%</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -176,7 +187,7 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
   <!-- RECIPE DATA -->
   <div class="rsec">
     <div class="subhead">Crafting stats — your numbers per compression level</div>
-    <p class="help">Each raw producer(Bits/Ingots) needs only a time (in seconds) per level. Each craft needs its input cost(s) and a time. Leave a level blank if you can't compress that high yet — the optimizer just won't use it. Compression level = units produced per cycle (e.g. 256× makes 256 units).</p>
+    <p class="help">Each raw producer needs only a time (seconds) per level. Each craft needs its input cost(s) and a time. Leave a level blank if you can't compress that high yet — the optimizer just won't use it. Compression level = units produced per cycle (e.g. 256× makes 256 units).</p>
     <div class="rgrid" id="recipes"></div>
   </div>
 
@@ -217,14 +228,15 @@ function defaults(){
     Frames:{Plates:{},Rods:{}}
   };
   return {
-    lines:[{max:1024},{max:1024},{max:128},{max:64},{max:32}],
-    rawTime,prodTime,prodCost,
+    lines:[{max:1024,dup:0},{max:1024,dup:0},{max:128,dup:0},{max:64,dup:0},{max:32,dup:0}],
+    rawTime,prodTime,prodCost,margin:0,
     targets:{Glass:{on:false,w:1},Bricks:{on:true,w:1},Plates:{on:false,w:1},Rods:{on:false,w:1},Frames:{on:false,w:1}}
   };
 }
 
 const LSKEY="forgePlannerState_v1";
-let S=load()||defaults();
+function normalize(st){if(!st)return st;if(!Array.isArray(st.lines))st.lines=[];st.lines.forEach(l=>{if(l.dup==null||isNaN(l.dup))l.dup=0;});if(st.margin==null||isNaN(st.margin))st.margin=0;return st;}
+let S=normalize(load())||defaults();
 
 function load(){try{const r=localStorage.getItem(LSKEY);return r?JSON.parse(r):null;}catch(e){return null;}}
 function save(){try{localStorage.setItem(LSKEY,JSON.stringify(S));flashSaved();}catch(e){document.getElementById("saveind").innerHTML="<b style='color:var(--ink3)'>local save unavailable here</b>";}}
@@ -241,8 +253,11 @@ function renderLines(){
     const opts=LEVELS.map(L=>`<option value="${L}" ${L===ln.max?"selected":""}>${L}×</option>`).join("");
     const row=document.createElement("div");row.className="line-row";
     row.innerHTML=`<div class="tag mono">#${i+1}</div>
-      <div><div class="lname">Line ${i+1} <small>max compression</small></div>
-        <select data-line="${i}" style="margin-top:5px">${opts}</select></div>
+      <div><div class="lname">Line ${i+1}</div>
+        <div class="line-fields">
+          <label class="fl"><span>max compression</span><select data-line="${i}">${opts}</select></label>
+          <label class="fl"><span>dupe %</span><input type="number" min="0" max="100" step="any" placeholder="0" value="${ln.dup??0}" data-dup="${i}"></label>
+        </div></div>
       <button class="iconbtn" data-del="${i}" title="Remove line">×</button>`;
     box.appendChild(row);
   });
@@ -351,9 +366,10 @@ function buildJobs(maxVal,resIndex,relRaws,relProds,targets,w){
   return jobs;
 }
 
-// Objective: weighted max-min. Priority weights set the desired output RATIO;
-// the solver maximizes the common multiplier, so every selected output is
-// produced (a real mix) in proportion to its priority.
+// Objective: weighted max-min. Priority weights set the desired output RATIO.
+// Each line has a duplication chance: its OUTPUT is scaled by (1 + dup), while
+// input cost stays the same (free duplicated output). A margin tolerance lets
+// inputs run a small paper shortfall ("may-work" plans).
 function optimize(){
   const targets=PRODUCTS.filter(p=>S.targets[p].on);
   if(targets.length===0)return {empty:true};
@@ -363,6 +379,7 @@ function optimize(){
   const resIndex={};resources.forEach((r,i)=>resIndex[r]=i);
   const R=resources.length;
   const tIdx=targets.map(t=>resIndex[t]);
+  const tol=Math.max(0,Math.min(50,num(S.margin)||0))/100;
 
   // data-availability check
   const issues=[];
@@ -373,15 +390,16 @@ function optimize(){
     if(!any)issues.push("No complete craft data (cost + time) entered for "+P+".");
   });
 
-  // jobs per distinct max
+  // jobs per distinct max; per-line duplication factor f = 1 + dup
   const jobsByMax={};
-  const sorted=S.lines.map((ln,i)=>({orig:i,max:ln.max})).sort((a,b)=>a.max-b.max);
+  const sorted=S.lines.map((ln,i)=>({orig:i,max:ln.max,f:1+(num(ln.dup)||0)/100})).sort((a,b)=>a.max-b.max||a.f-b.f);
   sorted.forEach(s=>{if(!jobsByMax[s.max])jobsByMax[s.max]=buildJobs(s.max,resIndex,relRaws,relProds,targets,w);});
   const lineJobs=sorted.map(s=>jobsByMax[s.max]);
+  const fac=sorted.map(s=>s.f);
   const N=sorted.length;
-  const sameAsPrev=sorted.map((s,i)=>i>0&&s.max===sorted[i-1].max);
-  // best production rate of each target reachable per line (for the bound)
-  const bp=lineJobs.map(js=>targets.map(t=>{let m=0;js.forEach(j=>{if(j.kind==="craft"&&j.res===t)m=Math.max(m,j.prod[0][1]);});return m;}));
+  const sameAsPrev=sorted.map((s,i)=>i>0&&s.max===sorted[i-1].max&&s.f===sorted[i-1].f);
+  // best (dup-scaled) production rate of each target reachable per line, for the bound
+  const bp=lineJobs.map((js,i)=>targets.map(t=>{let m=0;js.forEach(j=>{if(j.kind==="craft"&&j.res===t)m=Math.max(m,j.prod[0][1]);});return m*fac[i];}));
   const SP=targets.map((t,ti)=>{const a=new Array(N+1).fill(0);for(let i=N-1;i>=0;i--)a[i]=a[i+1]+bp[i][ti];return a;});
 
   const produced=new Float64Array(R), consumed=new Float64Array(R);
@@ -391,7 +409,7 @@ function optimize(){
 
   function dfs(i,prevIdx){
     if(i===N){
-      for(let r=0;r<R;r++)if(produced[r]<consumed[r]-1e-7)return;
+      for(let r=0;r<R;r++)if(produced[r]<consumed[r]*(1-tol)-1e-7)return;
       let sc=Infinity;
       for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]];sc=Math.min(sc,net/w[k]);}
       if(sc>best.score+EPS){best={score:sc,choice:choice.slice(),produced:produced.slice(),consumed:consumed.slice()};}
@@ -400,15 +418,15 @@ function optimize(){
     let ub=Infinity;
     for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]]+SP[k][i];ub=Math.min(ub,net/w[k]);}
     if(ub<=best.score+EPS)return;
-    const js=lineJobs[i];
+    const js=lineJobs[i];const f=fac[i];
     const start=sameAsPrev[i]?prevIdx:0;
     for(let j=start;j<js.length;j++){
       const job=js[j];
-      for(const[r,a]of job.prod)produced[r]+=a;
+      for(const[r,a]of job.prod)produced[r]+=a*f;
       for(const[r,a]of job.cons)consumed[r]+=a;
       choice[i]=j;
       dfs(i+1,j);
-      for(const[r,a]of job.prod)produced[r]-=a;
+      for(const[r,a]of job.prod)produced[r]-=a*f;
       for(const[r,a]of job.cons)consumed[r]-=a;
     }
   }
@@ -418,15 +436,17 @@ function optimize(){
 
   // assemble result by original line order
   const plan=new Array(N);
-  sorted.forEach((s,i)=>{plan[s.orig]={line:s.orig+1,max:s.max,job:lineJobs[i][best.choice[i]]};});
+  sorted.forEach((s,i)=>{plan[s.orig]={line:s.orig+1,max:s.max,dup:(s.f-1)*100,f:s.f,job:lineJobs[i][best.choice[i]]};});
 
   const balance=resources.map(r=>{
     const i=resIndex[r];
     return {res:r,prod:best.produced[i]*3600,cons:best.consumed[i]*3600};
   });
   const out={};targets.forEach((t,k)=>{out[t]=(best.produced[tIdx[k]]-best.consumed[tIdx[k]])*3600;});
+  let usesMargin=false;
+  for(let r=0;r<R;r++)if(best.produced[r]<best.consumed[r]-1e-6)usesMargin=true;
 
-  return {empty:false,issues,plan,balance,out,ms,resIndex,targets};
+  return {empty:false,issues,plan,balance,out,ms,resIndex,targets,tol,usesMargin};
 }
 
 /* ---------- RENDER: results ---------- */
@@ -441,7 +461,10 @@ function renderResults(){
   }
   const anyOut=Object.values(res.out).some(v=>v>1e-6);
   if(!anyOut&&!res.issues.length){
-    html+=`<div class="notice warn">No sustainable plan found with the current lines and data. Try raising a line's max compression, adding a line, or check your input costs.</div>`;
+    html+=`<div class="notice warn">No sustainable plan found with the current lines and data. Try raising a line's max compression, adding a line, entering duplication %, or check your input costs.</div>`;
+  }
+  if(res.usesMargin){
+    html+=`<div class="notice info"><b>May-work plan.</b> This uses your ${fmt(res.tol*100,1)}% margin — one or more inputs runs a small paper shortfall (see balance below). Likely fine if it's inside your game's rounding/duplication slack, but not strictly guaranteed.</div>`;
   }
   // metric cards
   html+=`<div class="metrics">`;
@@ -455,15 +478,16 @@ function renderResults(){
     <table><thead><tr><th>Line</th><th>Cap</th><th>Job</th><th>Lvl</th>
       <th class="num">Output /hr</th><th>Consumes /hr</th></tr></thead><tbody>`;
   res.plan.forEach(p=>{
-    const j=p.job;
+    const j=p.job;const f=p.f||1;
     let pill,job,lvl="",outv="",cons="";
     if(j.kind==="idle"){pill='<span class="pill idle">idle</span>';job="";}
     else if(j.kind==="produce"){pill='<span class="pill prod">produce</span>';job=j.res;lvl=j.lvl+"×";
-      outv=fmt(j.prod[0][1]*3600);}
+      outv=fmt(j.prod[0][1]*f*3600);}
     else{pill='<span class="pill craft">craft</span>';job=j.res;lvl=j.lvl+"×";
-      outv=fmt(j.prod[0][1]*3600);
+      outv=fmt(j.prod[0][1]*f*3600);
       cons=j.cons.map(c=>fmt(c[1]*3600)+" "+invName(res.resIndex,c[0])).join(", ");}
-    html+=`<tr><td class="mono">#${p.line}</td><td class="mono">${p.max}×</td>
+    const dupTag=p.dup>0?` <span style="color:var(--ink3);font-size:10.5px">+${fmt(p.dup,2)}%</span>`:"";
+    html+=`<tr><td class="mono">#${p.line}</td><td class="mono">${p.max}×${dupTag}</td>
       <td>${pill} ${job}</td><td class="mono">${lvl}</td>
       <td class="num">${outv}</td><td style="color:var(--ink2);font-size:11.5px">${cons}</td></tr>`;
   });
@@ -476,12 +500,12 @@ function renderResults(){
     const surplus=b.prod-b.cons;
     const ratio=b.cons>0?surplus/b.cons:1;
     let cls="bal-ok",lbl="healthy";
-    if(surplus<-1e-6){cls="bal-bad";lbl="STARVED";}
+    if(surplus<-1e-6){cls="bal-tight";lbl="margin";}
     else if(b.cons>0&&ratio<0.05){cls="bal-tight";lbl="tight";}
     else if(b.cons===0&&b.prod===0){cls="";lbl="—";}
     html+=`<tr><td>${b.res}</td><td class="num">${fmt(b.prod)}</td>
       <td class="num">${fmt(b.cons)}</td>
-      <td class="num ${surplus<0?'bal-bad':''}">${fmt(surplus)}</td>
+      <td class="num ${surplus<-1e-6?'bal-tight':''}">${fmt(surplus)}</td>
       <td class="${cls}" style="font-weight:600;font-size:11.5px">${lbl}</td></tr>`;
   });
   html+=`</tbody></table>`;
@@ -498,12 +522,22 @@ document.getElementById("lines").addEventListener("change",e=>{
   const li=e.target.dataset.line;
   if(li!==undefined){S.lines[+li].max=+e.target.value;scheduleSolve();}
 });
+document.getElementById("lines").addEventListener("input",e=>{
+  const di=e.target.dataset.dup;
+  if(di!==undefined){S.lines[+di].dup=num(e.target.value)||0;scheduleSolve();}
+});
 document.getElementById("lines").addEventListener("click",e=>{
   const d=e.target.dataset.del;
   if(d!==undefined){if(S.lines.length>1){S.lines.splice(+d,1);renderLines();save();renderResults();}}
 });
 document.getElementById("btnAddLine").addEventListener("click",()=>{
-  S.lines.push({max:1024});renderLines();save();renderResults();
+  S.lines.push({max:1024,dup:0});renderLines();save();renderResults();
+});
+
+document.getElementById("margin").addEventListener("input",e=>{
+  S.margin=num(e.target.value)||0;
+  document.getElementById("marginv").textContent=fmt(S.margin,1)+"%";
+  scheduleSolve();
 });
 
 document.getElementById("targets").addEventListener("change",e=>{
@@ -537,7 +571,7 @@ document.getElementById("fileImport").addEventListener("change",e=>{
   const f=e.target.files[0];if(!f)return;
   const r=new FileReader();
   r.onload=()=>{try{const d=JSON.parse(r.result);
-    if(d.lines&&d.rawTime&&d.prodTime&&d.prodCost&&d.targets){S=d;renderAll();save();}
+    if(d.lines&&d.rawTime&&d.prodTime&&d.prodCost&&d.targets){S=normalize(d);renderAll();save();}
     else alert("That doesn't look like a Forge Planner build file.");
   }catch(err){alert("Could not read that file.");}};
   r.readAsText(f);e.target.value="";
@@ -547,7 +581,11 @@ document.getElementById("btnReset").addEventListener("click",()=>{
     {S=defaults();renderAll();save();}
 });
 
-function renderAll(){renderLines();renderTargets();renderRecipes();renderResults();}
+function renderAll(){
+  renderLines();renderTargets();renderRecipes();renderResults();
+  document.getElementById("margin").value=S.margin||0;
+  document.getElementById("marginv").textContent=fmt(S.margin||0,1)+"%";
+}
 renderAll();
 document.getElementById("saveind").textContent="auto-saves locally";
 </script>
