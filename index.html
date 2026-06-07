@@ -1032,7 +1032,6 @@ function renderPrices(){
     return `<div class="price-row">
       <div class="pnm">${tag(it)}${it}</div>
       <input type="text" data-price="${it}" placeholder="—" value="${txt}">
-      <div class="pprev" data-prev="${it}">${v!=null?"= "+fmt(v):""}</div>
     </div>`;
   }).join("");
   box.innerHTML=`<div class="price-grp first">Finished &amp; crafted</div>${rows(PRODUCTS)}<div class="price-grp">Raw materials</div>${rows(RAWS)}`;
