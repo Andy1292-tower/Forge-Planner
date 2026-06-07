@@ -45,8 +45,9 @@ body::before{
   .tools{width:100%}
   button.btn{padding:8px 10px;font-size:11.5px}
 }
-header.top{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap;
+header.top{display:flex;align-items:flex-start;justify-content:space-between;gap:18px 28px;flex-wrap:wrap;
   border-bottom:1px solid var(--line);padding-bottom:20px;margin-bottom:26px;position:relative}
+.brand{flex:1 1 360px;min-width:0}
 header.top::after{
   content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;
   background:linear-gradient(90deg,transparent,var(--copper),transparent);opacity:.55;
@@ -67,7 +68,10 @@ header.top::after{
 }
 .brand p{color:var(--ink2);font-size:13px;margin-top:5px;letter-spacing:.3px;max-width:62ch}
 .brand p:first-of-type{color:var(--ink2);font-size:13.5px}
-.tools{display:flex;gap:8px;flex-wrap:wrap;position:relative}
+.tools{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;position:relative;
+  flex:0 0 auto;width:392px;max-width:100%;align-content:start}
+.tools .saveind{grid-column:1/-1;text-align:right;margin-bottom:1px}
+.tools button.btn{width:100%;justify-content:center;text-align:center}
 button.btn{font-family:"Chakra Petch",sans-serif;font-weight:600;font-size:12px;letter-spacing:.6px;
   background:var(--surface);color:var(--ink);border:1px solid var(--line2);border-radius:6px;
   padding:8px 13px;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:6px;
@@ -338,12 +342,13 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
     </div>
     <div class="tools">
       <span class="saveind" id="saveind"></span>
-      <button class="btn primary" id="btnPrices">Sell prices</button>
-      <button class="btn ghost" id="btnRecipes">Crafting data</button>
       <button class="btn ghost" id="btnExport">Export build</button>
       <button class="btn ghost" id="btnImport">Import</button>
       <input type="file" id="fileImport" accept="application/json" class="hidden-file">
       <button class="btn ghost" id="btnReset">Reset</button>
+      <button class="btn primary" id="btnPrices">Sell prices</button>
+      <button class="btn primary" id="btnForgie">Lil' Forgie</button>
+      <button class="btn ghost" id="btnRecipes">Crafting data</button>
     </div>
   </header>
 
@@ -432,6 +437,18 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
   </div>
 </div>
 
+<!-- LIL' FORGIE MODAL -->
+<div class="modal-bg" id="forgieModal" hidden>
+  <div class="modal">
+    <div class="modal-h"><h3>Lil' Forgie supply</h3><button class="iconbtn" id="forgieClose" title="Close">×</button></div>
+    <div class="modal-b">
+      <p class="help" style="margin-bottom:6px">Lil' Forgie produces some items for free in the background. Enter his <b>online hourly production rate</b> for each item he makes — accepts game notation (<b>5.96k</b>, <b>167.34k</b>, <b>11.91k</b>). This supply is added to your factory: it frees up crafting lines and counts toward output. Leave blank for anything he doesn't make.</p>
+      <div id="forgieRows"></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" id="forgieClear">Clear all</button><button class="btn primary" id="forgieDone">Done</button></div>
+  </div>
+</div>
+
 <script>
 "use strict";
 const LEVELS=[1,2,4,8,16,32,64,128,256,512,1024];
@@ -467,12 +484,14 @@ function defaults(){
     prodCost,baseTime,margin:0,mode:"items",
     sellPrice:{Ingots:null,Bits:null,Concrete:null,Glass:null,Bricks:null,Plates:null,Rods:null,Frames:null},
     priceText:{},
+    forgie:{Ingots:null,Bits:null,Concrete:null,Glass:null,Bricks:null,Plates:null,Rods:null,Frames:null},
+    forgieText:{},
     targets:{Glass:{on:false,w:1},Bricks:{on:false,w:1},Plates:{on:false,w:1},Rods:{on:false,w:1},Frames:{on:true,w:1}}
   };
 }
 
 const LSKEY="forgePlannerState_v3";
-function normalize(st){if(!st)return st;if(!Array.isArray(st.lines))st.lines=[];st.lines.forEach(l=>{if(l.dup==null||isNaN(l.dup))l.dup=0;if(l.spx==null||isNaN(l.spx)||l.spx<=0)l.spx=1;});if(st.margin==null||isNaN(st.margin))st.margin=0;if(!st.baseTime)st.baseTime={};const _DB=defaults().baseTime,_PB={Ingots:9.63,Bits:9.63,Concrete:9.63,Glass:87.3,Bricks:114.3,Plates:29.23,Rods:44.46,Frames:311.38};const _migrate=!st.baseTimeRev||st.baseTimeRev<2;[...RAWS,...PRODUCTS].forEach(it=>{const v=st.baseTime[it];if(v==null||isNaN(v)||v<=0)st.baseTime[it]=_DB[it];else if(_migrate&&(Math.abs(v-(_PB[it]||-1))<1e-4||Math.abs(v-12.85)<1e-4))st.baseTime[it]=_DB[it];});st.baseTimeRev=2;if(!st.prodCost)st.prodCost=defaults().prodCost;PRODUCTS.forEach(P=>{if(!st.prodCost[P])st.prodCost[P]={};RECIPE[P].inputs.forEach(k=>{if(!st.prodCost[P][k])st.prodCost[P][k]={};});});if(!st.sellPrice)st.sellPrice={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.sellPrice[it]===undefined)st.sellPrice[it]=null;});if(!st.priceText)st.priceText={};if(st.mode!=="credits"&&st.mode!=="items")st.mode="items";return st;}
+function normalize(st){if(!st)return st;if(!Array.isArray(st.lines))st.lines=[];st.lines.forEach(l=>{if(l.dup==null||isNaN(l.dup))l.dup=0;if(l.spx==null||isNaN(l.spx)||l.spx<=0)l.spx=1;});if(st.margin==null||isNaN(st.margin))st.margin=0;if(!st.baseTime)st.baseTime={};const _DB=defaults().baseTime,_PB={Ingots:9.63,Bits:9.63,Concrete:9.63,Glass:87.3,Bricks:114.3,Plates:29.23,Rods:44.46,Frames:311.38};const _migrate=!st.baseTimeRev||st.baseTimeRev<2;[...RAWS,...PRODUCTS].forEach(it=>{const v=st.baseTime[it];if(v==null||isNaN(v)||v<=0)st.baseTime[it]=_DB[it];else if(_migrate&&(Math.abs(v-(_PB[it]||-1))<1e-4||Math.abs(v-12.85)<1e-4))st.baseTime[it]=_DB[it];});st.baseTimeRev=2;if(!st.prodCost)st.prodCost=defaults().prodCost;PRODUCTS.forEach(P=>{if(!st.prodCost[P])st.prodCost[P]={};RECIPE[P].inputs.forEach(k=>{if(!st.prodCost[P][k])st.prodCost[P][k]={};});});if(!st.sellPrice)st.sellPrice={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.sellPrice[it]===undefined)st.sellPrice[it]=null;});if(!st.priceText)st.priceText={};if(!st.forgie)st.forgie={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.forgie[it]===undefined)st.forgie[it]=null;});if(!st.forgieText)st.forgieText={};if(st.mode!=="credits"&&st.mode!=="items")st.mode="items";return st;}
 let S=normalize(load())||defaults();
 
 function load(){try{const r=localStorage.getItem(LSKEY);return r?JSON.parse(r):null;}catch(e){return null;}}
@@ -656,6 +675,8 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   const R=resources.length;
   const tIdx=targets.map(t=>resIndex[t]);
   const tol=Math.max(0,Math.min(50,num(S.margin)||0))/100;
+  // Lil' Forgie: free passive supply (per second) of each resource, added to the produced side.
+  const baseArr=Float64Array.from(resources.map(r=>(num(S.forgie&&S.forgie[r])||0)/3600));
 
   // data-availability check (cost only — time is computed from compression)
   const issues=[];
@@ -693,7 +714,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   // resource, then repeatedly switch the line that most reduces the total input
   // shortfall until the plan balances. Seeds `best`, so the DFS prunes from the start.
   function evalChoice(ch){
-    produced.fill(0);consumed.fill(0);
+    produced.set(baseArr);consumed.fill(0);
     for(let i=0;i<N;i++){const job=lineJobs[i][ch[i]],sp=sorted[i].sp,dp=sorted[i].dp;for(const[r,a]of job.prod)produced[r]+=a*sp*dp;for(const[r,a]of job.cons)consumed[r]+=a*sp;}
   }
   const totalDeficit=()=>{let D=0;for(let r=0;r<R;r++){const d=consumed[r]-produced[r];if(d>0)D+=d;}return D;};
@@ -775,19 +796,23 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
     }
     evalChoice(inc.ch);best={score:scoreNow(),choice:inc.ch.slice(),produced:produced.slice(),consumed:consumed.slice()};
   }
-  produced.fill(0);consumed.fill(0);
+  produced.set(baseArr);consumed.fill(0);
   dfs(0,0);
   let usesMargin=false;for(let r=0;r<R;r++)if(best.produced[r]<best.consumed[r]-1e-6)usesMargin=true;
-  return {best,sorted,lineJobs,resources,resIndex,R,N,tIdx,tol,capped,usesMargin,issues,feasible:best.score>1e-9,ms:performance.now()-tStart};
+  const forgie={};resources.forEach((r,i)=>forgie[r]=baseArr[i]*3600);
+  return {best,sorted,lineJobs,resources,resIndex,R,N,tIdx,tol,capped,usesMargin,issues,forgie,feasible:best.score>1e-9,ms:performance.now()-tStart};
 }
 
 // Build the per-line plan + resource balance (per hour) from a core solve.
 function planFrom(sr){
-  const {best,sorted,lineJobs,resources,resIndex,feasible}=sr;
+  const {best,sorted,lineJobs,resources,resIndex,feasible,forgie}=sr;
   const plan=new Array(sorted.length);
   sorted.forEach((s,i)=>{const idle=lineJobs[i].find(j=>j.kind==="idle")||lineJobs[i][0];
     plan[s.orig]={line:s.orig+1,max:s.max,spx:s.sp,dup:(s.dp-1)*100,sp:s.sp,dp:s.dp,job:feasible?lineJobs[i][best.choice[i]]:idle};});
-  const balance=resources.map(r=>{const i=resIndex[r];return {res:r,prod:feasible?best.produced[i]*3600:0,cons:feasible?best.consumed[i]*3600:0};});
+  // best.produced already includes Forgie's supply; split it back out for display
+  const balance=resources.map(r=>{const i=resIndex[r];const f=(forgie&&forgie[r])||0;
+    const total=feasible?best.produced[i]*3600:0;
+    return {res:r,prod:Math.max(0,total-f),forgie:feasible?f:0,cons:feasible?best.consumed[i]*3600:0};});
   return {plan,balance};
 }
 function idlePlan(){
@@ -805,8 +830,9 @@ function solveRaw(Rw){
     if(bst)total+=bst.rate*s.sp*s.dp;
     plan[s.orig]={line:s.orig+1,max:s.max,spx:s.sp,dup:(s.dp-1)*100,sp:s.sp,dp:s.dp,job};
   });
-  const out=total*3600;
-  return {item:Rw,kind:"raw",out,plan,balance:[{res:Rw,prod:out,cons:0}],resIndex,capped:false,feasible:out>1e-9};
+  const fHr=num(S.forgie&&S.forgie[Rw])||0;   // Lil' Forgie's free supply of this raw
+  const lineOut=total*3600, out=lineOut+fHr;
+  return {item:Rw,kind:"raw",out,plan,balance:[{res:Rw,prod:lineOut,forgie:fHr,cons:0}],resIndex,capped:false,feasible:out>1e-9};
 }
 
 function optimize(){
@@ -926,17 +952,19 @@ function renderResults(){
   html+=`</tbody></table>`;
   // balance table
   if(res.balance&&res.balance.length){
+    const showForgie=res.balance.some(b=>(b.forgie||0)>1e-6);
     html+=`<div class="subhead">Resource balance (per hour)</div>
-      <table><thead><tr><th>Resource</th><th class="num">Produced</th><th class="num">Consumed</th>
+      <table><thead><tr><th>Resource</th><th class="num">Lines</th>${showForgie?'<th class="num">Lil\' Forgie</th>':''}<th class="num">Consumed</th>
         <th class="num">Surplus</th><th>Status</th></tr></thead><tbody>`;
     res.balance.forEach(b=>{
-      const surplus=b.prod-b.cons;
+      const f=b.forgie||0, surplus=b.prod+f-b.cons;
       const ratio=b.cons>0?surplus/b.cons:1;
       let cls="bal-ok",lbl="healthy";
       if(surplus<-1e-6){cls="bal-tight";lbl="margin";}
       else if(b.cons>0&&ratio<0.05){cls="bal-tight";lbl="tight";}
-      else if(b.cons===0&&b.prod===0){cls="";lbl="—";}
-      html+=`<tr><td>${b.res}</td><td class="num">${disp(b.prod)}</td>
+      else if(b.cons===0&&b.prod===0&&f===0){cls="";lbl="—";}
+      const fCell=showForgie?`<td class="num" style="color:${f>1e-6?'var(--teal)':'var(--ink3)'}">${f>1e-6?disp(f):"—"}</td>`:"";
+      html+=`<tr><td>${b.res}</td><td class="num">${disp(b.prod)}</td>${fCell}
         <td class="num">${disp(b.cons)}</td>
         <td class="num ${surplus<-1e-6?'bal-tight':''}">${disp(surplus)}</td>
         <td class="${cls}" style="font-weight:600;font-size:11.5px">${lbl}</td></tr>`;
@@ -1057,6 +1085,41 @@ document.getElementById("priceRows").addEventListener("input",e=>{
   S.sellPrice[it]=v;
   const prev=document.querySelector(`[data-prev="${it}"]`);
   if(prev)prev.textContent=v!=null?"= "+fmt(v):(raw.trim()?"unrecognized":"");
+  scheduleSolve();
+});
+
+/* ---------- Lil' Forgie supply modal ---------- */
+function renderForgie(){
+  const box=document.getElementById("forgieRows");
+  const tag=it=>KIND[it]==="raw"?'<span class="ty raw">raw</span>':KIND[it]==="fin"?'<span class="ty fin">assembly</span>':'<span class="ty pr">craft</span>';
+  const rows=(items)=>items.map(it=>{
+    const v=S.forgie[it];
+    const txt=S.forgieText[it]!=null?S.forgieText[it]:(v!=null?formatGameNum(v,4):"");
+    return `<div class="price-row">
+      <div class="pnm">${tag(it)}${it}</div>
+      <input type="text" data-forgie="${it}" placeholder="—" value="${txt}">
+    </div>`;
+  }).join("");
+  box.innerHTML=`<div class="price-grp first">Finished &amp; crafted</div>${rows(PRODUCTS)}<div class="price-grp">Raw materials</div>${rows(RAWS)}`;
+}
+const forgieModal=document.getElementById("forgieModal");
+function openForgie(){renderForgie();forgieModal.hidden=false;}
+function closeForgie(){forgieModal.hidden=true;}
+document.getElementById("btnForgie").addEventListener("click",openForgie);
+document.getElementById("forgieClose").addEventListener("click",closeForgie);
+document.getElementById("forgieDone").addEventListener("click",closeForgie);
+forgieModal.addEventListener("click",e=>{if(e.target===forgieModal)closeForgie();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!forgieModal.hidden)closeForgie();});
+document.getElementById("forgieClear").addEventListener("click",()=>{
+  if(!confirm("Clear all Lil' Forgie supply rates?"))return;
+  [...RAWS,...PRODUCTS].forEach(it=>{S.forgie[it]=null;S.forgieText[it]="";});
+  renderForgie();scheduleSolve();
+});
+document.getElementById("forgieRows").addEventListener("input",e=>{
+  const it=e.target.dataset.forgie;if(!it)return;
+  const raw=e.target.value;
+  S.forgieText[it]=raw;
+  S.forgie[it]=parseGameNum(raw);
   scheduleSolve();
 });
 
