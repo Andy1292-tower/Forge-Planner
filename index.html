@@ -329,6 +329,12 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 .rsec-toggle .rsec-title{font-size:13px;font-weight:600;letter-spacing:.5px;text-transform:uppercase}
 .rsec-toggle .rsec-hint{margin-left:auto;font-size:11px;color:var(--ink3);text-align:right}
 @media(max-width:620px){.rsec-toggle .rsec-hint{display:none}}
+/* collapsible Gel panel header (a clickable card head) */
+button.gel-head{width:100%;appearance:none;-webkit-appearance:none;border:none;border-bottom:1px solid var(--line);
+  font-family:inherit;cursor:pointer;color:inherit}
+button.gel-head .gchev{color:var(--copper);font-size:11px;display:inline-block;transition:transform .15s;margin-right:5px}
+button.gel-head[aria-expanded="true"] .gchev{transform:rotate(90deg)}
+button.gel-head .sub{color:var(--amber)}
 </style>
 </head>
 <body>
@@ -360,6 +366,19 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
         <div class="body">
           <div id="lines"></div>
           <button class="btn ghost" id="btnAddLine" style="width:100%;justify-content:center;margin-top:4px">+ Add line</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <button class="head gel-head" id="gelToggle" aria-expanded="false">
+          <h2><span class="gchev">▸</span> Gel lines</h2><span class="sub" id="gelSummary"></span>
+        </button>
+        <div class="body" id="gelBody" hidden>
+          <p class="help" style="margin:0 0 12px">Gel is forged from mined ore, not crafter inputs — so you decide how much of your factory runs it. Set how many lines you can sustain on Gel and at what compression; the planner dedicates that many of your best-suited crafters to Gel and feeds it into everything else.</p>
+          <div class="line-fields" style="grid-template-columns:1fr 1fr">
+            <label class="fl"><span>lines on gel</span><input type="number" min="0" step="1" id="gelLines" value="0"></label>
+            <label class="fl"><span>gel compression</span><select id="gelComp"></select></label>
+          </div>
         </div>
       </div>
 
@@ -453,15 +472,21 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 "use strict";
 const LEVELS=[1,2,4,8,16,32,64,128,256,512,1024];
 const RAWS=["Ingots","Bits","Concrete"];
-const PRODUCTS=["Glass","Bricks","Plates","Rods","Frames"];
+const PRODUCTS=["Glass","Bricks","Plates","Rods","Frames","Gel","Wire"];
+// Gel is produced only on user-reserved lines (free mined ore inputs), never freely crafted by the optimizer.
+const GEL="Gel";
 const RECIPE={
   Glass:{inputs:["Bits"]},
   Bricks:{inputs:["Concrete"]},
   Plates:{inputs:["Ingots"]},
   Rods:{inputs:["Ingots"]},
-  Frames:{inputs:["Plates","Rods"]}
+  Frames:{inputs:["Plates","Rods"]},
+  Gel:{inputs:[]},
+  Wire:{inputs:["Gel","Rods","Bits"]}
 };
-const KIND={Ingots:"raw",Bits:"raw",Concrete:"raw",Glass:"pr",Bricks:"pr",Plates:"pr",Rods:"pr",Frames:"fin"};
+const KIND={Ingots:"raw",Bits:"raw",Concrete:"raw",Glass:"pr",Bricks:"pr",Plates:"pr",Rods:"pr",Frames:"fin",Gel:"pr",Wire:"fin"};
+// Bits per uncompressed Frame — kept OUT of the line optimization (assumed pre-produced), used only for the planning readout.
+const FRAME_BITS=8;
 
 function defaults(){
   const c=(coef)=>{const o={};LEVELS.forEach(L=>{o[L]=coef*Math.pow(3,Math.log2(L));});return o;};
@@ -470,9 +495,13 @@ function defaults(){
     Bricks:{Concrete:c(3)},
     Plates:{Ingots:c(2)},
     Rods:{Ingots:c(2)},
-    Frames:{Plates:c(2),Rods:c(4)}
+    Frames:{Plates:c(2),Rods:c(4)},
+    Gel:{},                                  // free mined ore inputs — not modelled
+    Wire:{Gel:c(2),Rods:c(16),Bits:c(2)}
   };
-  const baseTime={Ingots:10,Bits:6.178,Concrete:9.273,Glass:92.68,Bricks:108.2,Plates:30.89,Rods:46.34,Frames:308.9};
+  const baseTime={Ingots:10,Bits:6.178,Concrete:9.273,Glass:92.68,Bricks:108.2,Plates:30.89,Rods:46.34,Frames:308.9,Gel:3201,Wire:5400.8};
+  const nulls=()=>{const o={};[...RAWS,...PRODUCTS].forEach(it=>o[it]=null);return o;};
+  const tg={};PRODUCTS.forEach(p=>tg[p]={on:p==="Frames",w:1});
   return {
     lines:[
       {max:512,spx:49.38,dup:12.40},
@@ -482,16 +511,15 @@ function defaults(){
       {max:32,spx:42.87,dup:12.40}
     ],
     prodCost,baseTime,margin:0,mode:"items",
-    sellPrice:{Ingots:null,Bits:null,Concrete:null,Glass:null,Bricks:null,Plates:null,Rods:null,Frames:null},
-    priceText:{},
-    forgie:{Ingots:null,Bits:null,Concrete:null,Glass:null,Bricks:null,Plates:null,Rods:null,Frames:null},
-    forgieText:{},
-    targets:{Glass:{on:false,w:1},Bricks:{on:false,w:1},Plates:{on:false,w:1},Rods:{on:false,w:1},Frames:{on:true,w:1}}
+    sellPrice:nulls(),priceText:{},
+    forgie:nulls(),forgieText:{},
+    gelLines:0,gelComp:1024,
+    targets:tg
   };
 }
 
 const LSKEY="forgePlannerState_v3";
-function normalize(st){if(!st)return st;if(!Array.isArray(st.lines))st.lines=[];st.lines.forEach(l=>{if(l.dup==null||isNaN(l.dup))l.dup=0;if(l.spx==null||isNaN(l.spx)||l.spx<=0)l.spx=1;});if(st.margin==null||isNaN(st.margin))st.margin=0;if(!st.baseTime)st.baseTime={};const _DB=defaults().baseTime,_PB={Ingots:9.63,Bits:9.63,Concrete:9.63,Glass:87.3,Bricks:114.3,Plates:29.23,Rods:44.46,Frames:311.38};const _migrate=!st.baseTimeRev||st.baseTimeRev<2;[...RAWS,...PRODUCTS].forEach(it=>{const v=st.baseTime[it];if(v==null||isNaN(v)||v<=0)st.baseTime[it]=_DB[it];else if(_migrate&&(Math.abs(v-(_PB[it]||-1))<1e-4||Math.abs(v-12.85)<1e-4))st.baseTime[it]=_DB[it];});st.baseTimeRev=2;if(!st.prodCost)st.prodCost=defaults().prodCost;PRODUCTS.forEach(P=>{if(!st.prodCost[P])st.prodCost[P]={};RECIPE[P].inputs.forEach(k=>{if(!st.prodCost[P][k])st.prodCost[P][k]={};});});if(!st.sellPrice)st.sellPrice={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.sellPrice[it]===undefined)st.sellPrice[it]=null;});if(!st.priceText)st.priceText={};if(!st.forgie)st.forgie={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.forgie[it]===undefined)st.forgie[it]=null;});if(!st.forgieText)st.forgieText={};if(st.mode!=="credits"&&st.mode!=="items")st.mode="items";return st;}
+function normalize(st){if(!st)return st;if(!Array.isArray(st.lines))st.lines=[];st.lines.forEach(l=>{if(l.dup==null||isNaN(l.dup))l.dup=0;if(l.spx==null||isNaN(l.spx)||l.spx<=0)l.spx=1;});if(st.margin==null||isNaN(st.margin))st.margin=0;if(!st.baseTime)st.baseTime={};const _DB=defaults().baseTime,_PB={Ingots:9.63,Bits:9.63,Concrete:9.63,Glass:87.3,Bricks:114.3,Plates:29.23,Rods:44.46,Frames:311.38};const _migrate=!st.baseTimeRev||st.baseTimeRev<2;[...RAWS,...PRODUCTS].forEach(it=>{const v=st.baseTime[it];if(v==null||isNaN(v)||v<=0)st.baseTime[it]=_DB[it];else if(_migrate&&(Math.abs(v-(_PB[it]||-1))<1e-4||Math.abs(v-12.85)<1e-4))st.baseTime[it]=_DB[it];});st.baseTimeRev=2;const _DP=defaults().prodCost;if(!st.prodCost)st.prodCost={};PRODUCTS.forEach(P=>{if(!st.prodCost[P])st.prodCost[P]={};RECIPE[P].inputs.forEach(k=>{if(!st.prodCost[P][k]||Object.keys(st.prodCost[P][k]).length===0)st.prodCost[P][k]=_DP[P][k];});});if(!st.sellPrice)st.sellPrice={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.sellPrice[it]===undefined)st.sellPrice[it]=null;});if(!st.priceText)st.priceText={};if(!st.forgie)st.forgie={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.forgie[it]===undefined)st.forgie[it]=null;});if(!st.forgieText)st.forgieText={};if(!st.targets)st.targets={};PRODUCTS.forEach(p=>{if(!st.targets[p])st.targets[p]={on:false,w:1};});if(st.gelLines==null||isNaN(st.gelLines)||st.gelLines<0)st.gelLines=0;if(!LEVELS.includes(st.gelComp))st.gelComp=1024;if(st.mode!=="credits"&&st.mode!=="items")st.mode="items";return st;}
 let S=normalize(load())||defaults();
 
 function load(){try{const r=localStorage.getItem(LSKEY);return r?JSON.parse(r):null;}catch(e){return null;}}
@@ -575,6 +603,25 @@ function renderTargets(){
   });
 }
 
+/* ---------- RENDER: Gel panel ---------- */
+function renderGel(){
+  const sel=document.getElementById("gelComp");
+  if(sel.options.length===0)LEVELS.forEach(L=>sel.add(new Option(L+"×",L)));
+  sel.value=S.gelComp;
+  document.getElementById("gelLines").value=S.gelLines||0;
+  const n=Math.min(Math.max(0,Math.floor(num(S.gelLines)||0)),S.lines.length);
+  document.getElementById("gelSummary").textContent=n>0?(n+" line"+(n>1?"s":"")+" @ "+S.gelComp+"×"):"off";
+}
+document.getElementById("gelToggle").addEventListener("click",()=>{
+  const b=document.getElementById("gelBody"),t=document.getElementById("gelToggle");
+  b.hidden=!b.hidden;t.setAttribute("aria-expanded",b.hidden?"false":"true");
+});
+document.getElementById("gelBody").addEventListener("input",e=>{
+  if(e.target.id==="gelLines"){S.gelLines=Math.max(0,Math.floor(num(e.target.value)||0));}
+  else if(e.target.id==="gelComp"){S.gelComp=+e.target.value;}
+  renderGel();scheduleSolve();
+});
+
 /* ---------- RENDER: recipe data ---------- */
 function renderRecipes(){
   const box=document.getElementById("recipes");box.innerHTML="";
@@ -597,7 +644,8 @@ function rawCard(r){
 function prodCard(p){
   const c=document.createElement("div");c.className="rcard";
   const ins=RECIPE[p].inputs;
-  const tyCls=p==="Frames"?"fin":"pr";
+  const tyCls=KIND[p]==="fin"?"fin":"pr";
+  const tyLbl=KIND[p]==="fin"?"assembly":"craft";
   let head=`<th>Lvl</th>`+ins.map(k=>`<th style="text-align:right">${k} cost</th>`).join("");
   let rows="";
   [...LEVELS].reverse().forEach(L=>{
@@ -609,11 +657,14 @@ function prodCard(p){
     });
     rows+=`<tr>${cells}</tr>`;
   });
-  const subt=ins.join(" + ")+" → "+p;
-  c.innerHTML=`<div class="rh"><span class="nm">${p}</span><span class="ty ${tyCls}">${p==="Frames"?"assembly":"craft"}</span></div>
+  const subt=ins.length?ins.join(" + ")+" → "+p:"mined ore → "+p;
+  const body=ins.length
+    ? `<table class="rtab"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`
+    : `<div style="font-size:10.5px;color:var(--ink3);margin:0 2px">Forged from mined ore (free, not crafted). Produced only on lines you reserve in the <b>Gel lines</b> panel.</div>`;
+  c.innerHTML=`<div class="rh"><span class="nm">${p}</span><span class="ty ${tyCls}">${tyLbl}</span></div>
     <div class="rb"><div style="font-size:10.5px;color:var(--ink3);margin:0 2px 6px">${subt}</div>
     ${baseTimeField(p)}
-    <table class="rtab"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+    ${body}</div>`;
   return c;
 }
 
@@ -646,6 +697,7 @@ function buildJobs(maxVal,resIndex,relRaws,relProds,targets,w){
       prod:[[resIndex[R],best.rate]],cons:[],h:0});
   });
   relProds.forEach(P=>{
+    if(P===GEL)return;   // Gel is supplied only by reserved lines, never freely crafted
     const ins=RECIPE[P].inputs;
     allowed.forEach(L=>{
       const tt=craftTime(P,L);if(!(tt>0))return;
@@ -662,7 +714,11 @@ function buildJobs(maxVal,resIndex,relRaws,relProds,targets,w){
   return jobs;
 }
 
-const sortedLines=()=>S.lines.map((ln,i)=>({orig:i,max:ln.max,sp:Math.max(0.000001,num(ln.spx)||1),dp:1+(num(ln.dup)||0)/100})).sort((a,b)=>a.max-b.max||a.sp-b.sp||a.dp-b.dp);
+// _LINES / _SUPPLY let the Gel-reservation wrapper solve over a SUBSET of lines with extra free supply.
+let _LINES=null, _SUPPLY=null;
+function lineRows(){return S.lines.map((ln,i)=>({__i:i,max:ln.max,spx:ln.spx,dup:ln.dup}));}
+const sortedLines=()=>(_LINES||lineRows()).map(ln=>({orig:ln.__i,max:ln.max,sp:Math.max(0.000001,num(ln.spx)||1),dp:1+(num(ln.dup)||0)/100})).sort((a,b)=>a.max-b.max||a.sp-b.sp||a.dp-b.dp);
+const forgieHr=r=>(num(S.forgie&&S.forgie[r])||0)+((_SUPPLY&&_SUPPLY[r])||0);
 
 // Core solver: weighted max-min throughput for a set of product targets over their input
 // chain. Priority weights set the desired output RATIO. Each line has a duplication chance
@@ -676,7 +732,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   const tIdx=targets.map(t=>resIndex[t]);
   const tol=Math.max(0,Math.min(50,num(S.margin)||0))/100;
   // Lil' Forgie: free passive supply (per second) of each resource, added to the produced side.
-  const baseArr=Float64Array.from(resources.map(r=>(num(S.forgie&&S.forgie[r])||0)/3600));
+  const baseArr=Float64Array.from(resources.map(r=>forgieHr(r)/3600));
 
   // data-availability check (cost only — time is computed from compression)
   const issues=[];
@@ -688,7 +744,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
 
   // jobs per distinct max; per-line speed factor sp and dup factor dp
   const jobsByMax={};
-  const sorted=S.lines.map((ln,i)=>({orig:i,max:ln.max,sp:Math.max(0.000001,num(ln.spx)||1),dp:1+(num(ln.dup)||0)/100})).sort((a,b)=>a.max-b.max||a.sp-b.sp||a.dp-b.dp);
+  const sorted=sortedLines();
   sorted.forEach(s=>{if(!jobsByMax[s.max])jobsByMax[s.max]=buildJobs(s.max,resIndex,relRaws,relProds,targets,w);});
   const lineJobs=sorted.map(s=>jobsByMax[s.max]);
   const N=sorted.length;
@@ -830,12 +886,13 @@ function solveRaw(Rw){
     if(bst)total+=bst.rate*s.sp*s.dp;
     plan[s.orig]={line:s.orig+1,max:s.max,spx:s.sp,dup:(s.dp-1)*100,sp:s.sp,dp:s.dp,job};
   });
-  const fHr=num(S.forgie&&S.forgie[Rw])||0;   // Lil' Forgie's free supply of this raw
+  const fHr=forgieHr(Rw);   // Lil' Forgie (+ any reserved) free supply of this raw
   const lineOut=total*3600, out=lineOut+fHr;
   return {item:Rw,kind:"raw",out,plan,balance:[{res:Rw,prod:lineOut,forgie:fHr,cons:0}],resIndex,capped:false,feasible:out>1e-9};
 }
 
-function optimize(){
+function optimizeInner(timeBudget){
+  const itemsBudget=timeBudget||700, credBudget=timeBudget||650;
   const mode=S.mode==="credits"?"credits":"items";
   if(mode==="items"){
     const targets=PRODUCTS.filter(p=>S.targets[p].on);
@@ -843,10 +900,11 @@ function optimize(){
     const w=targets.map(p=>S.targets[p].w);
     const rc=relevantChain(targets);
     const t0=performance.now();
-    const sr=solveCore(targets,w,rc.prods,rc.raws,700);
+    const sr=solveCore(targets,w,rc.prods,rc.raws,itemsBudget);
     const {plan,balance}=planFrom(sr);
     const out={};targets.forEach((t,k)=>{out[t]=sr.feasible?(sr.best.produced[sr.tIdx[k]]-sr.best.consumed[sr.tIdx[k]])*3600:0;});
-    return {empty:false,mode,issues:sr.issues,plan,balance,out,resIndex:sr.resIndex,targets,tol:sr.tol,usesMargin:sr.usesMargin,feasible:sr.feasible,capped:sr.capped,ms:performance.now()-t0};
+    const objective=sr.feasible?Math.min(...targets.map((t,k)=>(out[t]||0)/w[k])):0;
+    return {empty:false,mode,issues:sr.issues,plan,balance,out,resIndex:sr.resIndex,targets,objective,tol:sr.tol,usesMargin:sr.usesMargin,feasible:sr.feasible,capped:sr.capped,ms:performance.now()-t0};
   }
   // credits: the optimum is always mono-product — dedicate the whole factory to ONE item.
   // So just compute each priced item's max output/hr × its price and take the winner.
@@ -855,7 +913,7 @@ function optimize(){
   const pricedR=RAWS.filter(r=>(num(S.sellPrice&&S.sellPrice[r])||0)>0);
   const issues=[];let capped=false,usesMargin=false;
   if(pricedP.length+pricedR.length===0)issues.push("No sell prices entered. Open the “Sell prices” button and add at least one.");
-  const budgetEach=Math.max(120,Math.floor(650/Math.max(1,pricedP.length)));
+  const budgetEach=Math.max(120,Math.floor(credBudget/Math.max(1,pricedP.length)));
   const cand=[];
   pricedP.forEach(P=>{
     const price=num(S.sellPrice[P])||0;
@@ -873,9 +931,57 @@ function optimize(){
   cand.sort((a,b)=>b.credits-a.credits);
   const top=cand[0];
   const feasible=!!top&&top.credits>1e-9;
-  return {empty:false,mode,issues,ranking:cand,bestItem:feasible?top.item:null,credits:feasible?top.credits:0,
+  return {empty:false,mode,issues,ranking:cand,bestItem:feasible?top.item:null,credits:feasible?top.credits:0,objective:feasible?top.credits:0,
     plan:feasible?top.plan:idlePlan(),balance:feasible?top.balance:[],resIndex:feasible?top.resIndex:{},
     tol:Math.max(0,Math.min(50,num(S.margin)||0))/100,usesMargin,feasible,capped,ms:performance.now()-t0};
+}
+
+/* ---------- Gel reservation wrapper ----------
+   Gel comes only from reserved lines (free mined ore). When the user reserves N lines at
+   compression C, try every way to pick N of the lines, run them on Gel@C (each line's own
+   speed/dupe), feed that Gel to the rest as free supply, optimise the remaining lines for the
+   targets, and keep the line-choice with the best objective. */
+function combos(n,k){const out=[];const pick=(start,acc)=>{if(acc.length===k){out.push(acc.slice());return;}for(let i=start;i<n;i++){acc.push(i);pick(i+1,acc);acc.pop();}};pick(0,[]);return out;}
+function gelRatePerHr(row,C){const sp=Math.max(1e-6,num(row.spx)||1),dp=1+(num(row.dup)||0)/100,ct=craftTime(GEL,C);return ct>0?(C/ct)*sp*dp*3600:0;}
+function optimize(){
+  const M=S.lines.length;
+  const N=Math.min(Math.max(0,Math.floor(num(S.gelLines)||0)),M);
+  if(N<=0)return optimizeInner();
+  const C=LEVELS.includes(S.gelComp)?S.gelComp:1024;
+  const rows=lineRows();
+  const subs=combos(M,N);
+  const innerBudget=Math.max(90,Math.floor(900/Math.max(1,subs.length)));   // share a wall-clock budget across the combinations
+  const t0=performance.now();
+  let best=null,emptyInner=false;
+  subs.forEach(idx=>{
+    const set=new Set(idx);
+    const gelRows=idx.map(i=>rows[i]);
+    const remRows=rows.filter((_,i)=>!set.has(i));
+    let gelHr=0;gelRows.forEach(r=>gelHr+=gelRatePerHr(r,C));
+    _LINES=remRows;_SUPPLY={[GEL]:gelHr};
+    const res=optimizeInner(innerBudget);
+    _LINES=null;_SUPPLY=null;
+    if(res.empty){emptyInner=true;return;}
+    if(!best||(res.objective||0)>best.res.objective+1e-12)best={res,gelRows,gelHr,C};
+  });
+  if(!best)return emptyInner?{empty:true,mode:S.mode}:optimizeInner();
+  return assembleGel(best,performance.now()-t0);
+}
+// Merge the reserved Gel lines into the inner plan + balance for display.
+function assembleGel(best,ms){
+  const {res,gelRows,gelHr,C}=best;
+  const ct=craftTime(GEL,C);
+  const plan=res.plan.slice();
+  gelRows.forEach(r=>{const sp=Math.max(1e-6,num(r.spx)||1),dp=1+(num(r.dup)||0)/100;
+    plan[r.__i]={line:r.__i+1,max:r.max,spx:sp,dup:(num(r.dup)||0),sp,dp,reserved:true,
+      job:{kind:"craft",res:GEL,lvl:C,prod:[[0,ct>0?C/ct:0]],cons:[]}};});
+  plan.sort((a,b)=>a.line-b.line);
+  // re-attribute Gel supply in the balance: it's produced by the reserved lines, not Lil' Forgie
+  const fGel=num(S.forgie&&S.forgie[GEL])||0;
+  const balance=(res.balance||[]).map(b=>b.res===GEL?{...b,prod:gelHr,forgie:fGel}:b);
+  if(res.balance&&!res.balance.some(b=>b.res===GEL)&&gelHr>0)
+    balance.push({res:GEL,prod:gelHr,forgie:fGel,cons:0});
+  return {...res,plan,balance,gelReserved:{lines:gelRows.length,comp:C,outHr:gelHr},ms};
 }
 
 /* ---------- RENDER: results ---------- */
@@ -942,10 +1048,11 @@ function renderResults(){
       outv=disp(j.prod[0][1]*sp*dp*3600);ct=fmt(craftTime(j.res,j.lvl)/sp,2);}
     else{pill='<span class="pill craft">craft</span>';job=j.res;lvl=j.lvl+"×";
       outv=disp(j.prod[0][1]*sp*dp*3600);ct=fmt(craftTime(j.res,j.lvl)/sp,2);
-      cons=j.cons.map(c=>disp(c[1]*sp*3600)+" "+invName(res.resIndex,c[0])).join(", ");}
+      cons=p.reserved?'<span style="color:var(--ink3)">mined ore (free)</span>':j.cons.map(c=>disp(c[1]*sp*3600)+" "+invName(res.resIndex,c[0])).join(", ");}
+    const resv=p.reserved?' <span class="pill" style="background:rgba(63,182,160,.14);color:var(--teal);border:1px solid var(--teal-d)">reserved</span>':"";
     const tags=`${p.spx?` <span style="color:var(--ink3);font-size:10.5px">×${fmt(p.spx,2)} spd</span>`:""}${p.dup>0?` <span style="color:var(--ink3);font-size:10.5px">+${fmt(p.dup,2)}% dup</span>`:""}`;
-    html+=`<tr><td class="mono">#${p.line}</td><td class="mono">${p.max}×${tags}</td>
-      <td>${pill} ${job}</td><td class="mono">${lvl}</td>
+    html+=`<tr${p.reserved?' style="background:rgba(63,182,160,.05)"':''}><td class="mono">#${p.line}</td><td class="mono">${p.max}×${tags}</td>
+      <td>${pill} ${job}${resv}</td><td class="mono">${lvl}</td>
       <td class="num mono" style="color:var(--ink2)">${ct}</td>
       <td class="num">${outv}</td><td style="color:var(--ink2);font-size:11.5px">${cons}</td></tr>`;
   });
@@ -970,6 +1077,20 @@ function renderResults(){
         <td class="${cls}" style="font-weight:600;font-size:11.5px">${lbl}</td></tr>`;
     });
     html+=`</tbody></table>`;
+  }
+  // Bits-to-preproduce planner for Frames (Bits are assumed pre-produced, kept out of the line math)
+  let framesBits=0;
+  res.plan.forEach(p=>{const j=p.job;if(j&&j.kind==="craft"&&j.res==="Frames"){const L=j.lvl,ct=craftTime("Frames",L);if(ct>0)framesBits+=(FRAME_BITS*Math.pow(3,Math.log2(L))/ct)*(p.sp||1)*3600;}});
+  if(framesBits>1e-6){
+    const fBits=num(S.forgie&&S.forgie.Bits)||0, net=framesBits-fBits;
+    html+=`<div class="subhead">Bits to pre-produce (Frames)</div>
+      <div class="notice info" style="font-size:12px">Frames consume <b>${disp(framesBits)}</b> Bits/hr (8 per uncompressed frame, not part of the line plan above).`+
+      (fBits>0?` Lil' Forgie supplies <b>${disp(fBits)}</b>/hr, so `:` So `)+
+      (net>1e-6?`pre-produce about <b style="color:var(--amber)">${disp(net)}</b> Bits/hr to keep up.`
+              :`Forgie already covers it — a <b style="color:var(--teal)">${disp(-net)}</b>/hr surplus.`)+`</div>`;
+  }
+  if(res.gelReserved&&res.gelReserved.lines>0){
+    html+=`<div class="notice info" style="font-size:11.5px"><b>${res.gelReserved.lines}</b> line${res.gelReserved.lines>1?"s":""} reserved for Gel @${res.gelReserved.comp}× → <b>${disp(res.gelReserved.outHr)}</b> Gel/hr (from free mined ore), fed into the plan above.</div>`;
   }
   el.innerHTML=html;
   stat.textContent="solved in "+res.ms.toFixed(1)+" ms";
@@ -1179,7 +1300,7 @@ function initCalib(){
 }
 function renderAll(){
   renderModeSwitch();
-  renderLines();renderTargets();renderRecipes();renderResults();
+  renderLines();renderTargets();renderGel();renderRecipes();renderResults();
   document.getElementById("margin").value=S.margin||0;
   document.getElementById("marginv").textContent=fmt(S.margin||0,1)+"%";
 }
