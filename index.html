@@ -67,7 +67,7 @@ header.top::after{
 }
 .brand p{color:var(--ink2);font-size:13px;margin-top:5px;letter-spacing:.3px;max-width:62ch}
 .brand p:first-of-type{color:var(--ink2);font-size:13.5px}
-.tools{display:flex;gap:8px;flex-wrap:wrap}
+.tools{display:flex;gap:8px;flex-wrap:wrap;position:relative}
 button.btn{font-family:"Chakra Petch",sans-serif;font-weight:600;font-size:12px;letter-spacing:.6px;
   background:var(--surface);color:var(--ink);border:1px solid var(--line2);border-radius:6px;
   padding:8px 13px;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:6px;
@@ -82,15 +82,25 @@ button.btn.primary{
 button.btn.primary:hover{filter:brightness(1.08);color:#15110a;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.22), 0 7px 18px rgba(210,129,58,.32), 0 0 0 1px rgba(242,169,78,.28);}
 button.btn.ghost{background:transparent}
+/* attention nudge: pulse the Sell prices button + a bouncing arrow when credits mode has no prices */
+@keyframes pokePulse{0%,100%{box-shadow:0 0 0 0 rgba(242,169,78,.65)}50%{box-shadow:0 0 0 9px rgba(242,169,78,0)}}
+button.btn.poke-on{animation:pokePulse 1.15s ease-out infinite}
+.poke{position:absolute;white-space:nowrap;background:var(--amber);color:#15110a;font-family:"Chakra Petch",sans-serif;
+  font-weight:700;font-size:11.5px;letter-spacing:.3px;padding:5px 10px;border-radius:6px;
+  box-shadow:0 6px 18px rgba(0,0,0,.45);z-index:6;pointer-events:none;animation:pokeBounce 1s ease-in-out infinite}
+.poke::before{content:"";position:absolute;bottom:100%;left:50%;margin-left:-6px;border:6px solid transparent;border-bottom-color:var(--amber)}
+@keyframes pokeBounce{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(-5px)}}
+.poke[hidden]{display:none}
 .grid{display:grid;grid-template-columns:minmax(320px,380px) minmax(0,1fr);gap:18px;align-items:start}
 @media(max-width:880px){.grid{grid-template-columns:minmax(0,1fr)}}
 .grid > *{min-width:0}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;
-  transition:border-color .18s, box-shadow .18s}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  transition:border-color .18s, box-shadow .18s;position:relative}
 .card:hover{border-color:#343a44}
 .card>.head{display:flex;align-items:center;justify-content:space-between;gap:10px;
   padding:13px 16px;border-bottom:1px solid var(--line);
-  background:linear-gradient(180deg,var(--bg2),var(--surface));position:relative}
+  background:linear-gradient(180deg,var(--bg2),var(--surface));position:relative;
+  border-top-left-radius:var(--r);border-top-right-radius:var(--r)}
 .card>.head::after{
   content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;
   background:linear-gradient(90deg,transparent,var(--copper-d) 30%,var(--copper) 50%,var(--copper-d) 70%,transparent);
@@ -131,8 +141,7 @@ button.btn.ghost{background:transparent}
 .line-fields{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr);gap:7px;margin-top:6px;align-items:end}
 .line-fields .fl{display:flex;flex-direction:column;gap:3px;justify-content:flex-end;min-width:0}
 .line-fields .fl span{font-size:9.5px;letter-spacing:.45px;text-transform:uppercase;color:var(--ink3);
-  display:inline-flex;align-items:center;flex-wrap:nowrap;gap:4px;line-height:1.2;white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis}
+  display:inline-flex;align-items:center;flex-wrap:nowrap;gap:4px;line-height:1.2;white-space:nowrap}
 .line-fields .fl > select,.line-fields .fl > input{height:32px}
 @media(max-width:520px){
   .line-fields{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 7px}
@@ -174,6 +183,7 @@ select:focus,input:focus{outline:none;border-color:var(--copper);
   padding:9px 12px;
   font-family:"Chakra Petch",sans-serif;font-style:normal;font-weight:400;
   font-size:11.5px;letter-spacing:.15px;line-height:1.5;text-align:left;text-transform:none;
+  white-space:normal;
   width:max-content;max-width:230px;
   pointer-events:none;opacity:0;visibility:hidden;
   transition:opacity .18s, transform .18s, visibility .18s;
@@ -847,6 +857,8 @@ function renderResults(){
   const el=document.getElementById("results");
   const stat=document.getElementById("solveStat");
   const res=optimize();
+  // nudge toward Sell prices when credits mode is selected but no prices exist yet
+  if(typeof setPricePoke==="function")setPricePoke(res.mode==="credits"&&![...RAWS,...PRODUCTS].some(it=>(num(S.sellPrice[it])||0)>0));
   if(res.empty){el.innerHTML=`<div class="notice info">Select one or more outputs on the left to optimize — or switch to <b>Max credits/hr</b> mode to auto-search the most profitable mix.</div>`;stat.textContent="";return;}
   let html="";
   if(res.mode==="credits"){
@@ -1056,6 +1068,21 @@ function setRecipesOpen(open){
 }
 document.getElementById("recipeToggle").addEventListener("click",()=>setRecipesOpen(document.getElementById("recipeBody").hidden));
 document.getElementById("btnRecipes").addEventListener("click",()=>{setRecipesOpen(true);document.querySelector(".rsec").scrollIntoView({behavior:"smooth",block:"start"});});
+
+/* ---------- "add sell prices" attention nudge ---------- */
+const pricePoke=document.createElement("div");
+pricePoke.className="poke";pricePoke.hidden=true;pricePoke.textContent="↑ Enter your sell prices";
+document.querySelector(".tools").appendChild(pricePoke);
+function positionPoke(){
+  const b=document.getElementById("btnPrices");
+  pricePoke.style.left=(b.offsetLeft+b.offsetWidth/2)+"px";
+  pricePoke.style.top=(b.offsetTop+b.offsetHeight+9)+"px";
+}
+function setPricePoke(on){
+  document.getElementById("btnPrices").classList.toggle("poke-on",on);
+  if(on){positionPoke();pricePoke.hidden=false;}else pricePoke.hidden=true;
+}
+window.addEventListener("resize",()=>{if(!pricePoke.hidden)positionPoke();});
 
 function initCalib(){
   const it=document.getElementById("cbItem"), cp=document.getElementById("cbComp");
