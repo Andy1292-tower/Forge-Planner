@@ -165,6 +165,16 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 .price-row .pnm .ty.fin{background:rgba(210,129,58,.14);color:var(--amber);border:1px solid var(--copper-d)}
 .price-grp{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink3);margin:14px 0 4px;font-weight:600}
 .price-grp.first{margin-top:0}
+
+/* collapsible crafting-data panel */
+.rsec-toggle{width:100%;display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r);padding:12px 14px;cursor:pointer;color:var(--ink);font-family:"Chakra Petch",sans-serif;text-align:left;transition:.12s}
+.rsec-toggle:hover{border-color:var(--copper)}
+.rsec-toggle .chev{color:var(--copper);font-size:12px;transition:transform .15s;flex:0 0 auto}
+.rsec-toggle[aria-expanded="true"] .chev{transform:rotate(90deg)}
+.rsec-toggle .rsec-title{font-size:13px;font-weight:600;letter-spacing:.5px;text-transform:uppercase}
+.rsec-toggle .rsec-hint{margin-left:auto;font-size:11px;color:var(--ink3);text-align:right}
+@media(max-width:620px){.rsec-toggle .rsec-hint{display:none}}
 </style>
 </head>
 <body>
@@ -179,6 +189,7 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
     <div class="tools">
       <span class="saveind" id="saveind"></span>
       <button class="btn primary" id="btnPrices">Sell prices</button>
+      <button class="btn ghost" id="btnRecipes">Crafting data</button>
       <button class="btn ghost" id="btnExport">Export build</button>
       <button class="btn ghost" id="btnImport">Import</button>
       <input type="file" id="fileImport" accept="application/json" class="hidden-file">
@@ -229,8 +240,13 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 
   <!-- RECIPE DATA -->
   <div class="rsec">
-    <div class="subhead">Crafting stats — material costs &amp; base times</div>
-    <p class="help">Craft time is computed, not entered: effective time = (this item's base time) × 1.5^(compression level) ÷ the line's total speed ×. Set each line's max compression, its total speed multiplier (the ×NN.NN reading at the top of that crafting unit — turbo is already inside it), and dupe % above. Each item has its own base time @1× on its card below — they don't have to match. Cost columns are the material each craft consumes per level. Compression level = units produced per cycle; costs scale 3× per level.</p>
+    <button class="rsec-toggle" id="recipeToggle" aria-expanded="false">
+      <span class="chev">▸</span>
+      <span class="rsec-title">Crafting stats — material costs &amp; base times</span>
+      <span class="rsec-hint">base times · recipe costs · calibration tool — defaults are good, open only to tweak</span>
+    </button>
+    <div class="rsec-body" id="recipeBody" hidden>
+    <p class="help" style="margin-top:14px">Craft time is computed, not entered: effective time = (this item's base time) × 1.5^(compression level) ÷ the line's total speed ×. Set each line's max compression, its total speed multiplier (the ×NN.NN reading at the top of that crafting unit — turbo is already inside it), and dupe % above. Each item has its own base time @1× on its card below — they don't have to match. Cost columns are the material each craft consumes per level. Compression level = units produced per cycle; costs scale 3× per level.</p>
 
     <div class="calib">
       <div class="calib-h">Calibrate / verify a base time</div>
@@ -246,6 +262,7 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
     </div>
 
     <div class="rgrid" id="recipes"></div>
+    </div>
   </div>
 
   <footer>
@@ -884,6 +901,14 @@ document.getElementById("priceRows").addEventListener("input",e=>{
   if(prev)prev.textContent=v!=null?"= "+fmt(v):(raw.trim()?"unrecognized":"");
   scheduleSolve();
 });
+
+/* ---------- collapsible crafting-data panel ---------- */
+function setRecipesOpen(open){
+  document.getElementById("recipeBody").hidden=!open;
+  document.getElementById("recipeToggle").setAttribute("aria-expanded",open?"true":"false");
+}
+document.getElementById("recipeToggle").addEventListener("click",()=>setRecipesOpen(document.getElementById("recipeBody").hidden));
+document.getElementById("btnRecipes").addEventListener("click",()=>{setRecipesOpen(true);document.querySelector(".rsec").scrollIntoView({behavior:"smooth",block:"start"});});
 
 function initCalib(){
   const it=document.getElementById("cbItem"), cp=document.getElementById("cbComp");
