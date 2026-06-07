@@ -6,93 +6,228 @@
 <title>Forge Planner — Crafting Line Optimizer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Stencil+Display:wght@700;800;900&family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#101216; --bg2:#15181d; --surface:#1a1e24; --surface2:#1f242b;
+  --bg:#0e1014; --bg2:#15181d; --surface:#1a1e24; --surface2:#1f242b;
   --line:#2a3037; --line2:#363d46;
   --ink:#e7e3d8; --ink2:#a7a99f; --ink3:#6f7680;
-  --copper:#d2813a; --amber:#f2a94e; --copper-d:#7a4d23;
+  --copper:#d2813a; --amber:#f2a94e; --ember:#ffb869; --copper-d:#7a4d23;
   --teal:#3fb6a0; --teal-d:#1d4a44;
   --danger:#e06a5e; --danger-d:#5a2622;
   --r:8px;
+  --glow:0 0 14px rgba(242,169,78,.32);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{background:var(--bg);color:var(--ink);font-family:"Chakra Petch",sans-serif}
 body{
   min-height:100vh;
   background-image:
-    radial-gradient(900px 500px at 80% -10%, rgba(210,129,58,.10), transparent 60%),
+    radial-gradient(1100px 600px at 82% -12%, rgba(242,169,78,.12), transparent 60%),
+    radial-gradient(800px 500px at -10% 105%, rgba(210,129,58,.07), transparent 60%),
     linear-gradient(var(--line) .6px, transparent .6px),
     linear-gradient(90deg, var(--line) .6px, transparent .6px);
-  background-size:auto, 38px 38px, 38px 38px;
-  background-position:0 0, -1px -1px, -1px -1px;
-  background-blend-mode:normal, soft-light, soft-light;
+  background-size:auto, auto, 38px 38px, 38px 38px;
+  background-position:0 0, 0 0, -1px -1px, -1px -1px;
+  background-blend-mode:normal, normal, soft-light, soft-light;
 }
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(circle at 50% 0%, transparent 70%, rgba(0,0,0,.4) 100%);
+  mix-blend-mode:multiply;
+}
+.wrap{position:relative;z-index:1}
 .mono{font-family:"JetBrains Mono",monospace}
 .wrap{max-width:1240px;margin:0 auto;padding:24px 20px 64px}
+@media(max-width:560px){
+  .wrap{padding:18px 12px 48px}
+  .brand h1{font-size:34px;letter-spacing:1.2px}
+  .tools{width:100%}
+  button.btn{padding:8px 10px;font-size:11.5px}
+}
 header.top{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap;
-  border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:24px}
-.brand h1{font-weight:700;font-size:26px;letter-spacing:.5px}
-.brand h1 .spark{color:var(--copper)}
-.brand p{color:var(--ink2);font-size:13px;margin-top:3px;letter-spacing:.3px}
+  border-bottom:1px solid var(--line);padding-bottom:20px;margin-bottom:26px;position:relative}
+header.top::after{
+  content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;
+  background:linear-gradient(90deg,transparent,var(--copper),transparent);opacity:.55;
+}
+.brand h1{
+  font-family:"Big Shoulders Stencil Display","Chakra Petch",sans-serif;
+  font-weight:800;font-size:42px;letter-spacing:2px;line-height:.95;
+  text-transform:uppercase;display:flex;align-items:center;gap:2px;
+}
+.brand h1 .spark{
+  color:var(--ember);margin:0 4px;
+  text-shadow:0 0 16px rgba(255,184,105,.7), 0 0 32px rgba(210,129,58,.35);
+  animation:ember 2.6s ease-in-out infinite;
+}
+@keyframes ember{
+  0%,100%{opacity:1;filter:drop-shadow(0 0 6px rgba(255,184,105,.5))}
+  50%{opacity:.78;filter:drop-shadow(0 0 2px rgba(255,184,105,.25))}
+}
+.brand p{color:var(--ink2);font-size:13px;margin-top:5px;letter-spacing:.3px;max-width:62ch}
+.brand p:first-of-type{color:var(--ink2);font-size:13.5px}
 .tools{display:flex;gap:8px;flex-wrap:wrap}
-button.btn{font-family:"Chakra Petch",sans-serif;font-weight:600;font-size:12.5px;letter-spacing:.4px;
+button.btn{font-family:"Chakra Petch",sans-serif;font-weight:600;font-size:12px;letter-spacing:.6px;
   background:var(--surface);color:var(--ink);border:1px solid var(--line2);border-radius:6px;
-  padding:8px 12px;cursor:pointer;transition:.12s;display:inline-flex;align-items:center;gap:6px}
-button.btn:hover{border-color:var(--copper);color:var(--amber)}
+  padding:8px 13px;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:6px;
+  text-transform:uppercase}
+button.btn:hover{border-color:var(--copper);color:var(--amber);background:rgba(210,129,58,.06)}
 button.btn:active{transform:scale(.97)}
-button.btn.primary{background:linear-gradient(180deg,var(--copper),#b96d2c);border-color:var(--copper);color:#15110a}
-button.btn.primary:hover{filter:brightness(1.08);color:#15110a}
+button.btn.primary{
+  background:linear-gradient(180deg,var(--ember),var(--copper) 60%,#a45a1f);
+  border-color:var(--copper);color:#15110a;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.18), 0 5px 14px rgba(210,129,58,.22), 0 0 0 1px rgba(242,169,78,.15);
+}
+button.btn.primary:hover{filter:brightness(1.08);color:#15110a;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22), 0 7px 18px rgba(210,129,58,.32), 0 0 0 1px rgba(242,169,78,.28);}
 button.btn.ghost{background:transparent}
-.grid{display:grid;grid-template-columns:380px 1fr;gap:18px;align-items:start}
-@media(max-width:880px){.grid{grid-template-columns:1fr}}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.grid{display:grid;grid-template-columns:minmax(320px,380px) minmax(0,1fr);gap:18px;align-items:start}
+@media(max-width:880px){.grid{grid-template-columns:minmax(0,1fr)}}
+.grid > *{min-width:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;
+  transition:border-color .18s, box-shadow .18s}
+.card:hover{border-color:#343a44}
 .card>.head{display:flex;align-items:center;justify-content:space-between;gap:10px;
-  padding:12px 14px;border-bottom:1px solid var(--line);background:var(--bg2)}
-.card>.head h2{font-size:14px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--ink)}
-.card>.head .sub{font-size:11.5px;color:var(--ink3)}
+  padding:13px 16px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,var(--bg2),var(--surface));position:relative}
+.card>.head::after{
+  content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;
+  background:linear-gradient(90deg,transparent,var(--copper-d) 30%,var(--copper) 50%,var(--copper-d) 70%,transparent);
+  opacity:.45;
+}
+.card>.head h2{font-size:13px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:var(--ink);
+  display:flex;align-items:center;gap:8px}
+.card>.head h2::before{
+  content:"";width:6px;height:6px;border-radius:50%;background:var(--copper);
+  box-shadow:0 0 8px rgba(242,169,78,.6);
+}
+.card>.head .sub{font-size:11.5px;color:var(--ink3);letter-spacing:.3px}
 .card>.body{padding:14px}
+#results{overflow-x:auto;scrollbar-color:var(--copper-d) var(--bg2)}
+#results table{min-width:520px}
 .stack{display:flex;flex-direction:column;gap:16px}
 
 /* lines */
-.line-row{display:grid;grid-template-columns:28px 1fr 30px;gap:10px;align-items:center;
-  padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);margin-bottom:8px}
-.line-row .tag{font-size:11px;color:var(--ink3);text-align:center}
-.line-row .lname{font-size:13px;font-weight:600}
+.line-row{display:grid;grid-template-columns:30px 1fr 28px;gap:9px;align-items:center;
+  padding:8px 8px 8px 10px;border:1px solid var(--line);border-radius:7px;
+  background:linear-gradient(180deg,var(--bg2),var(--surface2));margin-bottom:7px;
+  position:relative;transition:border-color .15s, background .15s}
+.line-row::before{
+  content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;border-radius:2px;
+  background:linear-gradient(180deg,var(--copper-d),var(--copper) 50%,var(--copper-d));
+  opacity:.45;transition:opacity .15s;
+}
+.line-row:hover{border-color:#3d434c}
+.line-row:hover::before{opacity:.95}
+.line-row .tag{
+  font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:700;
+  color:var(--amber);text-align:center;letter-spacing:.3px;
+  background:rgba(210,129,58,.08);border:1px solid var(--copper-d);
+  border-radius:4px;padding:4px 0;
+}
+.line-row .lname{font-size:13px;font-weight:600;letter-spacing:.3px;display:flex;align-items:center;gap:7px}
 .line-row .lname small{display:block;color:var(--ink3);font-weight:400;font-size:10.5px}
-.line-fields{display:grid;grid-template-columns:1fr 60px 60px;gap:7px;margin-top:6px}
-.line-fields .fl{display:flex;flex-direction:column;gap:3px}
-.line-fields .fl span{font-size:9px;letter-spacing:.4px;text-transform:uppercase;color:var(--ink3)}
+.line-fields{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr);gap:7px;margin-top:6px;align-items:end}
+.line-fields .fl{display:flex;flex-direction:column;gap:3px;justify-content:flex-end;min-width:0}
+.line-fields .fl span{font-size:9.5px;letter-spacing:.45px;text-transform:uppercase;color:var(--ink3);
+  display:inline-flex;align-items:center;flex-wrap:nowrap;gap:4px;line-height:1.2;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.line-fields .fl > select,.line-fields .fl > input{height:32px}
+@media(max-width:520px){
+  .line-fields{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 7px}
+  .line-fields .fl:first-child{grid-column:1 / -1}
+}
 select,input[type=number],input[type=text]{font-family:"JetBrains Mono",monospace;font-size:12.5px;
-  background:var(--surface2);color:var(--ink);border:1px solid var(--line2);border-radius:5px;padding:6px 8px;width:100%}
-select:focus,input:focus{outline:none;border-color:var(--copper);box-shadow:0 0 0 2px rgba(210,129,58,.18)}
+  background:var(--surface2);color:var(--ink);border:1px solid var(--line2);border-radius:5px;
+  padding:7px 9px;width:100%;transition:border-color .15s, box-shadow .15s;
+  line-height:1.2;-webkit-appearance:none;appearance:none}
+select{appearance:none;-webkit-appearance:none;
+  background-image:linear-gradient(45deg,transparent 50%,var(--ink3) 50%),linear-gradient(135deg,var(--ink3) 50%,transparent 50%);
+  background-position:calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:24px}
+select:hover,input[type=number]:hover,input[type=text]:hover{border-color:#454c57}
+select:focus,input:focus{outline:none;border-color:var(--copper);
+  box-shadow:0 0 0 2px rgba(210,129,58,.22), inset 0 0 0 1px rgba(242,169,78,.08)}
 .iconbtn{background:transparent;border:1px solid var(--line2);color:var(--ink3);border-radius:5px;
-  width:30px;height:30px;cursor:pointer;font-size:15px;line-height:1}
-.iconbtn:hover{border-color:var(--danger);color:var(--danger)}
+  width:30px;height:30px;cursor:pointer;font-size:16px;line-height:1;transition:.15s}
+.iconbtn:hover{border-color:var(--danger);color:var(--danger);background:rgba(224,106,94,.07)}
+
+/* tooltip system */
+.tip{display:inline-flex;align-items:center;justify-content:center;
+  width:13px;height:13px;border-radius:50%;
+  border:1px solid var(--line2);background:var(--bg2);
+  color:var(--ink3);font-family:"JetBrains Mono",monospace;font-size:9px;font-weight:700;font-style:normal;
+  cursor:help;position:relative;vertical-align:middle;line-height:1;
+  transition:.15s;flex:0 0 auto;user-select:none;letter-spacing:0}
+.tip:hover,.tip:focus-visible{
+  border-color:var(--copper);color:var(--amber);
+  background:rgba(210,129,58,.15);outline:none;
+  box-shadow:0 0 0 2px rgba(210,129,58,.15);
+}
+.tip::after{
+  content:attr(data-tip);
+  position:absolute;bottom:calc(100% + 9px);left:50%;
+  transform:translateX(-50%) translateY(3px);
+  background:#0b0d10;color:var(--ink);
+  border:1px solid var(--copper-d);border-radius:6px;
+  padding:9px 12px;
+  font-family:"Chakra Petch",sans-serif;font-style:normal;font-weight:400;
+  font-size:11.5px;letter-spacing:.15px;line-height:1.5;text-align:left;text-transform:none;
+  width:max-content;max-width:230px;
+  pointer-events:none;opacity:0;visibility:hidden;
+  transition:opacity .18s, transform .18s, visibility .18s;
+  z-index:60;
+  box-shadow:0 12px 28px rgba(0,0,0,.6), 0 0 0 1px rgba(242,169,78,.06), 0 0 40px rgba(210,129,58,.18);
+}
+.tip:hover::after,.tip:focus-visible::after{
+  opacity:1;visibility:visible;transform:translateX(-50%) translateY(0);
+}
+.tip.tip-right::after{left:auto;right:-4px;transform:translateX(0) translateY(3px)}
+.tip.tip-right:hover::after,.tip.tip-right:focus-visible::after{transform:translateX(0) translateY(0)}
 
 /* targets */
 .tg{display:flex;flex-direction:column;gap:8px}
 .tg-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;
-  padding:9px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);transition:.12s}
-.tg-row.on{border-color:var(--copper);background:rgba(210,129,58,.07)}
-.tg-row label{display:flex;align-items:center;gap:9px;cursor:pointer;font-size:13.5px;font-weight:600}
+  padding:10px 12px;border:1px solid var(--line);border-radius:6px;
+  background:linear-gradient(180deg,var(--bg2),var(--surface2));transition:.15s;position:relative;overflow:hidden}
+.tg-row.on{border-color:var(--copper);
+  background:linear-gradient(180deg,rgba(210,129,58,.08),rgba(210,129,58,.04));
+  box-shadow:inset 0 0 0 1px rgba(242,169,78,.08), 0 0 20px rgba(210,129,58,.06)}
+.tg-row.on::before{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:2px;
+  background:linear-gradient(180deg,var(--ember),var(--copper));
+}
+.tg-row label{display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13.5px;font-weight:600;letter-spacing:.3px}
 .tg-row input[type=checkbox]{appearance:none;width:17px;height:17px;border:1px solid var(--line2);border-radius:4px;
-  background:var(--surface2);cursor:pointer;position:relative;flex:0 0 auto}
-.tg-row input[type=checkbox]:checked{background:var(--copper);border-color:var(--copper)}
+  background:var(--surface2);cursor:pointer;position:relative;flex:0 0 auto;transition:.15s}
+.tg-row input[type=checkbox]:checked{background:var(--copper);border-color:var(--copper);
+  box-shadow:0 0 8px rgba(242,169,78,.35)}
 .tg-row input[type=checkbox]:checked::after{content:"";position:absolute;left:5px;top:1px;width:4px;height:9px;
   border:solid #15110a;border-width:0 2px 2px 0;transform:rotate(45deg)}
 .prio{display:flex;align-items:center;gap:8px}
-.prio span{font-size:10.5px;color:var(--ink3);letter-spacing:.4px}
+.prio span{font-size:10px;color:var(--ink3);letter-spacing:.6px;text-transform:uppercase;font-weight:600}
 .prio input[type=range]{width:84px;accent-color:var(--copper)}
-.prio .pv{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--amber);width:16px;text-align:center}
+.prio .pv{font-family:"JetBrains Mono",monospace;font-size:12.5px;font-weight:700;color:var(--amber);width:16px;text-align:center;
+  text-shadow:0 0 8px rgba(242,169,78,.35)}
 
 /* results */
-.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
-.metric{background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:11px 12px}
-.metric .l{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink3)}
-.metric .v{font-family:"JetBrains Mono",monospace;font-size:21px;font-weight:700;color:var(--amber);margin-top:3px}
-.metric .u{font-size:10.5px;color:var(--ink2);margin-top:1px}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px}
+.metric{
+  background:linear-gradient(180deg,var(--bg2),var(--surface2));
+  border:1px solid var(--line);border-radius:7px;padding:12px 14px;
+  position:relative;overflow:hidden;transition:.18s;
+}
+.metric::before{
+  content:"";position:absolute;top:0;left:10px;right:10px;height:1px;
+  background:linear-gradient(90deg,transparent,var(--copper),transparent);opacity:.5;
+}
+.metric:hover{border-color:var(--copper-d);transform:translateY(-1px);
+  box-shadow:0 10px 22px rgba(0,0,0,.25), 0 0 26px rgba(210,129,58,.08)}
+.metric .l{font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--ink3);font-weight:600}
+.metric .v{font-family:"JetBrains Mono",monospace;font-size:22px;font-weight:700;color:var(--amber);
+  margin-top:4px;text-shadow:0 0 14px rgba(242,169,78,.32)}
+.metric .u{font-size:10.5px;color:var(--ink2);margin-top:2px;letter-spacing:.3px}
 table{width:100%;border-collapse:collapse;font-size:12.5px}
 th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line)}
 th{font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--ink3);font-weight:600}
@@ -138,12 +273,17 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 .hidden-file{display:none}
 
 /* mode switch */
-.modesw{display:inline-flex;border:1px solid var(--line2);border-radius:6px;overflow:hidden}
-.modesw button{font-family:"Chakra Petch",sans-serif;font-weight:600;font-size:11.5px;letter-spacing:.3px;
-  background:transparent;color:var(--ink2);border:none;padding:6px 10px;cursor:pointer;transition:.12s;white-space:nowrap}
+.modesw{display:inline-flex;border:1px solid var(--line2);border-radius:6px;overflow:hidden;
+  background:var(--surface2)}
+.modesw button{font-family:"Chakra Petch",sans-serif;font-weight:600;font-size:11px;letter-spacing:.5px;
+  background:transparent;color:var(--ink2);border:none;padding:7px 12px;cursor:pointer;transition:.15s;
+  white-space:nowrap;text-transform:uppercase}
 .modesw button+button{border-left:1px solid var(--line2)}
-.modesw button:hover{color:var(--amber)}
-.modesw button.on{background:var(--copper);color:#15110a}
+.modesw button:hover{color:var(--amber);background:rgba(210,129,58,.06)}
+.modesw button.on{
+  background:linear-gradient(180deg,var(--ember),var(--copper));color:#15110a;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.18), inset 0 -1px 0 rgba(0,0,0,.15);
+}
 
 /* modal */
 .modal-bg{position:fixed;inset:0;background:rgba(8,9,11,.72);display:flex;align-items:flex-start;justify-content:center;
@@ -366,19 +506,26 @@ function formatGameNum(n,dec=2){
 const disp=n=>formatGameNum(n,2);
 
 /* ---------- RENDER: lines ---------- */
+const TIPS={
+  line:"Crafter unit slot. The solver auto-sorts lines by max compression — this number only identifies which row you're editing.",
+  max:"Highest compression tier this crafter is upgraded to (1×–1024×). Each level doubles yield per craft but triples material cost per cycle — so the solver picks the most efficient level ≤ this cap.",
+  spx:"Total speed × shown above the crafter unit in-game (e.g. ×49.38). Includes turbo and every speed bonus already applied — enter it raw, don't multiply.",
+  dup:"Duplication chance — average % of crafts that drop a free duplicate. Adds output without spending extra material. Leave 0 if you don't have dupe bonuses.",
+  del:"Remove this crafter line"
+};
 function renderLines(){
   const box=document.getElementById("lines");box.innerHTML="";
   S.lines.forEach((ln,i)=>{
     const opts=LEVELS.map(L=>`<option value="${L}" ${L===ln.max?"selected":""}>${L}×</option>`).join("");
     const row=document.createElement("div");row.className="line-row";
     row.innerHTML=`<div class="tag mono">#${i+1}</div>
-      <div><div class="lname">Line ${i+1}</div>
+      <div><div class="lname">Line ${i+1}<i class="tip" tabindex="0" data-tip="${TIPS.line}">?</i></div>
         <div class="line-fields">
-          <label class="fl"><span>max compression</span><select data-line="${i}">${opts}</select></label>
-          <label class="fl"><span>total speed (×##.##)</span><input type="number" min="0" step="any" placeholder="1" value="${ln.spx??1}" data-spx="${i}"></label>
-          <label class="fl"><span>dupe %</span><input type="number" min="0" max="100" step="any" placeholder="0" value="${ln.dup??0}" data-dup="${i}"></label>
+          <label class="fl"><span>max compression</span><select data-line="${i}" aria-label="Max compression">${opts}</select></label>
+          <label class="fl"><span>speed × <i class="tip tip-right" tabindex="0" data-tip="${TIPS.spx}">?</i></span><input type="number" min="0" step="any" placeholder="1" value="${ln.spx??1}" data-spx="${i}" aria-label="Total speed multiplier"></label>
+          <label class="fl"><span>dupe % <i class="tip tip-right" tabindex="0" data-tip="${TIPS.dup}">?</i></span><input type="number" min="0" max="100" step="any" placeholder="0" value="${ln.dup??0}" data-dup="${i}" aria-label="Duplication chance percent"></label>
         </div></div>
-      <button class="iconbtn" data-del="${i}" title="Remove line">×</button>`;
+      <button class="iconbtn" data-del="${i}" title="${TIPS.del}" aria-label="${TIPS.del}">×</button>`;
     box.appendChild(row);
   });
   document.getElementById("lineCount").textContent=S.lines.length+" line"+(S.lines.length>1?"s":"");
