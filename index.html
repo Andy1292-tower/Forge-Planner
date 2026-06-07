@@ -136,6 +136,35 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 .saveind{font-size:11px;color:var(--ink3);letter-spacing:.3px}
 .saveind b{color:var(--teal);font-weight:600}
 .hidden-file{display:none}
+
+/* mode switch */
+.modesw{display:inline-flex;border:1px solid var(--line2);border-radius:6px;overflow:hidden}
+.modesw button{font-family:"Chakra Petch",sans-serif;font-weight:600;font-size:11.5px;letter-spacing:.3px;
+  background:transparent;color:var(--ink2);border:none;padding:6px 10px;cursor:pointer;transition:.12s;white-space:nowrap}
+.modesw button+button{border-left:1px solid var(--line2)}
+.modesw button:hover{color:var(--amber)}
+.modesw button.on{background:var(--copper);color:#15110a}
+
+/* modal */
+.modal-bg{position:fixed;inset:0;background:rgba(8,9,11,.72);display:flex;align-items:flex-start;justify-content:center;
+  padding:48px 16px;z-index:50;overflow:auto}
+.modal-bg[hidden]{display:none}
+.modal{background:var(--surface);border:1px solid var(--line2);border-radius:var(--r);width:100%;max-width:520px;
+  box-shadow:0 18px 60px rgba(0,0,0,.55)}
+.modal-h{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--line);background:var(--bg2)}
+.modal-h h3{font-size:14px;font-weight:600;letter-spacing:.6px;text-transform:uppercase}
+.modal-b{padding:16px}
+.modal-f{padding:12px 16px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px;background:var(--bg2)}
+.price-row{display:grid;grid-template-columns:1fr 160px;gap:6px 10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.price-row:last-child{border-bottom:none}
+.price-row .pnm{font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}
+.price-row .pprev{grid-column:2;font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--ink3);text-align:right;min-height:13px}
+.price-row .pnm .ty{font-size:9px;letter-spacing:.5px;text-transform:uppercase;padding:2px 6px;border-radius:20px}
+.price-row .pnm .ty.raw{background:rgba(120,128,138,.14);color:var(--ink2);border:1px solid var(--line2)}
+.price-row .pnm .ty.pr{background:rgba(63,182,160,.13);color:var(--teal);border:1px solid var(--teal-d)}
+.price-row .pnm .ty.fin{background:rgba(210,129,58,.14);color:var(--amber);border:1px solid var(--copper-d)}
+.price-grp{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink3);margin:14px 0 4px;font-weight:600}
+.price-grp.first{margin-top:0}
 </style>
 </head>
 <body>
@@ -149,6 +178,7 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
     </div>
     <div class="tools">
       <span class="saveind" id="saveind"></span>
+      <button class="btn primary" id="btnPrices">Sell prices</button>
       <button class="btn ghost" id="btnExport">Export build</button>
       <button class="btn ghost" id="btnImport">Import</button>
       <input type="file" id="fileImport" accept="application/json" class="hidden-file">
@@ -185,7 +215,14 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 
     <!-- RIGHT -->
     <div class="card">
-      <div class="head"><h2>Optimal setup</h2><span class="sub" id="solveStat"></span></div>
+      <div class="head"><h2>Optimal setup</h2>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div class="modesw" id="modesw">
+            <button data-mode="items" class="on">Max items/hr</button>
+            <button data-mode="credits">Max credits/hr</button>
+          </div>
+          <span class="sub" id="solveStat"></span>
+        </div></div>
       <div class="body" id="results"></div>
     </div>
   </div>
@@ -214,6 +251,18 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
   <footer>
     Steady-state model: the plan guarantees every input is produced at least as fast as it's consumed, so it runs forever without re-shuffling. Seed a small starting stockpile to smooth the batch timing. Frames assume Bits are pre-produced. All math runs locally in your browser — nothing is uploaded.
   </footer>
+</div>
+
+<!-- SELL PRICE MODAL -->
+<div class="modal-bg" id="priceModal" hidden>
+  <div class="modal">
+    <div class="modal-h"><h3>Sell prices</h3><button class="iconbtn" id="priceClose" title="Close">×</button></div>
+    <div class="modal-b">
+      <p class="help" style="margin-bottom:6px">Enter what each item sells for (per single unit). Accepts game notation — <b>450k</b>, <b>2.5m</b>, <b>1.3qa</b>, or <b>1.3e36</b>. Used by <b>Max credits/hr</b> mode. Leave blank for anything you don't sell.</p>
+      <div id="priceRows"></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" id="priceClear">Clear all</button><button class="btn primary" id="priceDone">Done</button></div>
+  </div>
 </div>
 
 <script>
@@ -248,13 +297,15 @@ function defaults(){
       {max:64,spx:45.20,dup:12.40},
       {max:32,spx:42.87,dup:12.40}
     ],
-    prodCost,baseTime,margin:0,
+    prodCost,baseTime,margin:0,mode:"items",
+    sellPrice:{Ingots:null,Bits:null,Concrete:null,Glass:null,Bricks:null,Plates:null,Rods:null,Frames:null},
+    priceText:{},
     targets:{Glass:{on:false,w:1},Bricks:{on:false,w:1},Plates:{on:false,w:1},Rods:{on:false,w:1},Frames:{on:true,w:1}}
   };
 }
 
 const LSKEY="forgePlannerState_v3";
-function normalize(st){if(!st)return st;if(!Array.isArray(st.lines))st.lines=[];st.lines.forEach(l=>{if(l.dup==null||isNaN(l.dup))l.dup=0;if(l.spx==null||isNaN(l.spx)||l.spx<=0)l.spx=1;});if(st.margin==null||isNaN(st.margin))st.margin=0;if(!st.baseTime)st.baseTime={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.baseTime[it]==null||isNaN(st.baseTime[it])||st.baseTime[it]<=0)st.baseTime[it]=12.85;});if(!st.prodCost)st.prodCost=defaults().prodCost;PRODUCTS.forEach(P=>{if(!st.prodCost[P])st.prodCost[P]={};RECIPE[P].inputs.forEach(k=>{if(!st.prodCost[P][k])st.prodCost[P][k]={};});});return st;}
+function normalize(st){if(!st)return st;if(!Array.isArray(st.lines))st.lines=[];st.lines.forEach(l=>{if(l.dup==null||isNaN(l.dup))l.dup=0;if(l.spx==null||isNaN(l.spx)||l.spx<=0)l.spx=1;});if(st.margin==null||isNaN(st.margin))st.margin=0;if(!st.baseTime)st.baseTime={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.baseTime[it]==null||isNaN(st.baseTime[it])||st.baseTime[it]<=0)st.baseTime[it]=12.85;});if(!st.prodCost)st.prodCost=defaults().prodCost;PRODUCTS.forEach(P=>{if(!st.prodCost[P])st.prodCost[P]={};RECIPE[P].inputs.forEach(k=>{if(!st.prodCost[P][k])st.prodCost[P][k]={};});});if(!st.sellPrice)st.sellPrice={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.sellPrice[it]===undefined)st.sellPrice[it]=null;});if(!st.priceText)st.priceText={};if(st.mode!=="credits"&&st.mode!=="items")st.mode="items";return st;}
 let S=normalize(load())||defaults();
 
 function load(){try{const r=localStorage.getItem(LSKEY);return r?JSON.parse(r):null;}catch(e){return null;}}
@@ -264,6 +315,38 @@ function flashSaved(){const el=document.getElementById("saveind");el.innerHTML="
 
 const num=v=>{if(v===""||v===null||v===undefined)return null;const n=Number(v);return isFinite(n)?n:null;};
 const fmt=(n,d=0)=>n.toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:0});
+
+/* ---------- game number notation (k m b t qa qu sx sp o n d → exponent) ---------- */
+const SUFFIX={k:1e3,m:1e6,b:1e9,t:1e12,qa:1e15,qu:1e18,sx:1e21,sp:1e24,o:1e27,n:1e30,d:1e33};
+const SUFFIX_DESC=[["d",1e33],["n",1e30],["o",1e27],["sp",1e24],["sx",1e21],["qu",1e18],["qa",1e15],["t",1e12],["b",1e9],["m",1e6],["k",1e3]];
+function parseGameNum(str){
+  if(str==null)return null;
+  if(typeof str==="number")return isFinite(str)?str:null;
+  let s=String(str).trim().toLowerCase().replace(/,/g,"").replace(/\s+/g,"");
+  if(s===""||s==="-"||s==="+")return null;
+  const m=s.match(/^([+-]?\d*\.?\d+(?:e[+-]?\d+)?)([a-z]*)$/);
+  if(!m)return null;
+  let val=Number(m[1]);
+  if(!isFinite(val))return null;
+  const suf=m[2];
+  if(suf){if(SUFFIX[suf]==null)return null;val*=SUFFIX[suf];}
+  return val;
+}
+function trimNum(v,dec){let s=v.toFixed(dec);if(s.indexOf(".")>=0)s=s.replace(/\.?0+$/,"");return s;}
+function formatGameNum(n,dec=2){
+  if(n==null||!isFinite(n))return "—";
+  if(n===0)return "0";
+  const neg=n<0;n=Math.abs(n);
+  let out;
+  if(n>=1e36){let[mant,exp]=n.toExponential(2).split("e");mant=mant.replace(/\.?0+$/,"");exp=exp.replace("+","");out=mant+"e"+exp;}
+  else{
+    let hit=null;
+    for(const[suf,mult]of SUFFIX_DESC){if(n>=mult){hit=[suf,mult];break;}}
+    out=hit?trimNum(n/hit[1],dec)+hit[0]:trimNum(n,dec);
+  }
+  return (neg?"-":"")+out;
+}
+const disp=n=>formatGameNum(n,2);
 
 /* ---------- RENDER: lines ---------- */
 function renderLines(){
@@ -377,6 +460,7 @@ function buildJobs(maxVal,resIndex,relRaws,relProds,targets,w){
       ins.forEach(k=>{const c=S.prodCost[P][k][L];if(c==null||isNaN(c)||c<0){ok=false;}else cons.push([resIndex[k],c/tt]);});
       if(!ok)return;
       const rate=L/tt;const ti=targets.indexOf(P);
+      // ordering heuristic: try high-throughput target crafts first (tightens the bound sooner)
       jobs.push({label:"Craft "+P,kind:"craft",res:P,lvl:L,
         prod:[[resIndex[P],rate]],cons,h:ti>=0?rate/w[ti]:0});
     });
@@ -385,15 +469,14 @@ function buildJobs(maxVal,resIndex,relRaws,relProds,targets,w){
   return jobs;
 }
 
-// Objective: weighted max-min. Priority weights set the desired output RATIO.
-// Each line has a duplication chance: its OUTPUT is scaled by (1 + dup), while
-// input cost stays the same (free duplicated output). A margin tolerance lets
-// inputs run a small paper shortfall ("may-work" plans).
-function optimize(){
-  const targets=PRODUCTS.filter(p=>S.targets[p].on);
-  if(targets.length===0)return {empty:true};
-  const w=targets.map(p=>S.targets[p].w);
-  const {prods:relProds,raws:relRaws}=relevantChain(targets);
+const sortedLines=()=>S.lines.map((ln,i)=>({orig:i,max:ln.max,sp:Math.max(0.000001,num(ln.spx)||1),dp:1+(num(ln.dup)||0)/100})).sort((a,b)=>a.max-b.max||a.sp-b.sp||a.dp-b.dp);
+
+// Core solver: weighted max-min throughput for a set of product targets over their input
+// chain. Priority weights set the desired output RATIO. Each line has a duplication chance
+// (output ×(1+dup), input cost unchanged) and a margin tolerance allows a small paper
+// shortfall ("may-work" plans). Anytime: multi-start + iterated local search seed a near-
+// optimal feasible plan, then a wall-clock-bounded branch-and-bound proves/refines it.
+function solveCore(targets,w,relProds,relRaws,timeBudget){
   const resources=[...relRaws,...relProds];
   const resIndex={};resources.forEach((r,i)=>resIndex[r]=i);
   const R=resources.length;
@@ -415,16 +498,70 @@ function optimize(){
   const lineJobs=sorted.map(s=>jobsByMax[s.max]);
   const N=sorted.length;
   const sameAsPrev=sorted.map((s,i)=>i>0&&s.max===sorted[i-1].max&&s.sp===sorted[i-1].sp&&s.dp===sorted[i-1].dp);
-  // best (speed+dup scaled) production rate of each target reachable per line, for the bound
+  // items bound: best (speed+dup scaled) production rate of each target reachable per line
   const bp=lineJobs.map((js,i)=>targets.map(t=>{let m=0;js.forEach(j=>{if(j.kind==="craft"&&j.res===t)m=Math.max(m,j.prod[0][1]);});return m*sorted[i].sp*sorted[i].dp;}));
   const SP=targets.map((t,ti)=>{const a=new Array(N+1).fill(0);for(let i=N-1;i>=0;i--)a[i]=a[i+1]+bp[i][ti];return a;});
+  // feasibility prune: max extra production of each resource available from lines i..N-1.
+  // If current produced + this suffix still can't cover current consumed, the branch is dead.
+  const maxProd=Array.from({length:R},()=>new Float64Array(N+1));
+  for(let r=0;r<R;r++)for(let i=N-1;i>=0;i--){let m=0;lineJobs[i].forEach(j=>{for(const[rr,a]of j.prod)if(rr===r)m=Math.max(m,a*sorted[i].sp*sorted[i].dp);});maxProd[r][i]=maxProd[r][i+1]+m;}
 
   const produced=new Float64Array(R), consumed=new Float64Array(R);
   const choice=new Array(N).fill(0);
   let best={score:0,choice:new Array(N).fill(0),produced:new Float64Array(R),consumed:new Float64Array(R)};
   const EPS=1e-9;
 
+  let nodes=0;let capped=false;const tStart=performance.now();
+
+  // Constructive feasible incumbent. The DFS prunes nothing until it owns a feasible
+  // plan with positive score, and stumbling onto one by raw search is what made high
+  // line-counts hang. So we build one cheaply: start every capable line on the chosen
+  // resource, then repeatedly switch the line that most reduces the total input
+  // shortfall until the plan balances. Seeds `best`, so the DFS prunes from the start.
+  function evalChoice(ch){
+    produced.fill(0);consumed.fill(0);
+    for(let i=0;i<N;i++){const job=lineJobs[i][ch[i]],sp=sorted[i].sp,dp=sorted[i].dp;for(const[r,a]of job.prod)produced[r]+=a*sp*dp;for(const[r,a]of job.cons)consumed[r]+=a*sp;}
+  }
+  const totalDeficit=()=>{let D=0;for(let r=0;r<R;r++){const d=consumed[r]-produced[r];if(d>0)D+=d;}return D;};
+  const idleIdx=i=>{const k=lineJobs[i].findIndex(j=>j.kind==="idle");return k<0?0:k;};
+  function bestJobFor(i,res){let bj=-1,bg=0;lineJobs[i].forEach((job,k)=>{for(const[r,a]of job.prod)if(r===res){const g=a*sorted[i].sp*sorted[i].dp;if(g>bg){bg=g;bj=k;}}});return bj;}
+  const feasibleNow=()=>{for(let r=0;r<R;r++)if(produced[r]<consumed[r]*(1-tol)-1e-7)return false;return true;};
+  const scoreNow=()=>{let sc=Infinity;for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]];sc=Math.min(sc,net/w[k]);}return sc;};
+  // repair input shortfall down to a feasible plan: each step makes the single line-switch
+  // (toward producing ANY short resource) that cuts total shortfall most. Returns feasibility.
+  // Drive total input shortfall to zero. Each step makes the single line-switch (to ANY job
+  // — produce an input, OR drop a craft to a cheaper/lower level) that cuts the shortfall most.
+  function repair(ch){
+    for(let guard=0;guard<6*N+40;guard++){
+      evalChoice(ch);const D=totalDeficit();if(D<=1e-7)break;
+      let bI=-1,bJ=-1,bRed=1e-12;
+      for(let i=0;i<N;i++){const old=ch[i],js=lineJobs[i];
+        for(let k=0;k<js.length;k++){if(k===old)continue;ch[i]=k;evalChoice(ch);const red=D-totalDeficit();if(red>bRed){bRed=red;bI=i;bJ=k;}}
+        ch[i]=old;evalChoice(ch);}
+      if(bI<0)break;ch[bI]=bJ;
+    }
+    evalChoice(ch);return feasibleNow();
+  }
+  // hill-climb the objective with single-line best-improvement moves, staying feasible
+  function climb(ch){
+    let cur=scoreNow();
+    for(let pass=0;pass<N+3;pass++){
+      let improved=false;
+      for(let i=0;i<N;i++){const old=ch[i];let bk=old,bs=cur;
+        const js=lineJobs[i];for(let k=0;k<js.length;k++){if(k===old)continue;ch[i]=k;evalChoice(ch);if(feasibleNow()){const s=scoreNow();if(s>bs+EPS){bs=s;bk=k;}}}
+        ch[i]=bk;if(bk!==old){cur=bs;improved=true;}else evalChoice(ch);
+      }
+      if(!improved)break;
+    }
+    return cur;
+  }
+  // full local optimisation from a starting choice; returns its score or null if infeasible
+  function localOpt(ch){if(!repair(ch))return null;const sc=climb(ch);evalChoice(ch);return feasibleNow()?sc:null;}
+  let _rng=0x2545f491>>>0;const rnd=()=>{_rng^=_rng<<13;_rng^=_rng>>>17;_rng^=_rng<<5;_rng>>>=0;return _rng/4294967296;};
+
   function dfs(i,prevIdx){
+    if(((++nodes)&8191)===0&&performance.now()-tStart>timeBudget)capped=true;
+    if(capped)return;
     if(i===N){
       for(let r=0;r<R;r++)if(produced[r]<consumed[r]*(1-tol)-1e-7)return;
       let sc=Infinity;
@@ -432,12 +569,16 @@ function optimize(){
       if(sc>best.score+EPS){best={score:sc,choice:choice.slice(),produced:produced.slice(),consumed:consumed.slice()};}
       return;
     }
+    // feasibility prune: any resource whose current shortfall can't be covered by remaining lines kills this branch
+    for(let r=0;r<R;r++)if(produced[r]+maxProd[r][i]<consumed[r]*(1-tol)-1e-7)return;
+    // max-min upper bound: best achievable min-over-targets if remaining lines max-produce each target
     let ub=Infinity;
     for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]]+SP[k][i];ub=Math.min(ub,net/w[k]);}
     if(ub<=best.score+EPS)return;
     const js=lineJobs[i];const sp=sorted[i].sp,dp=sorted[i].dp;
     const start=sameAsPrev[i]?prevIdx:0;
     for(let j=start;j<js.length;j++){
+      if(capped)return;
       const job=js[j];
       for(const[r,a]of job.prod)produced[r]+=a*sp*dp;
       for(const[r,a]of job.cons)consumed[r]+=a*sp;
@@ -447,27 +588,94 @@ function optimize(){
       for(const[r,a]of job.cons)consumed[r]-=a*sp;
     }
   }
-  const t0=performance.now();
+  // multi-start local search from each target, then iterated local search to close the gap
+  let inc=null;
+  targets.map(t=>resIndex[t]).forEach(res=>{const ch=new Array(N);for(let i=0;i<N;i++){const bj=bestJobFor(i,res);ch[i]=bj>=0?bj:idleIdx(i);}const sc=localOpt(ch);if(sc!=null&&(!inc||sc>inc.sc))inc={sc,ch:ch.slice()};});
+  if(inc){
+    const ilsT=Math.min(timeBudget*0.5,120);
+    for(let it=0;it<8000;it++){
+      if((it&31)===0&&performance.now()-tStart>ilsT)break;
+      const ch=inc.ch.slice();const k=1+((rnd()*2)|0);
+      for(let m=0;m<=k;m++){const li=(rnd()*N)|0,js=lineJobs[li];ch[li]=(rnd()*js.length)|0;}
+      const sc=localOpt(ch);if(sc!=null&&sc>inc.sc+EPS)inc={sc,ch:ch.slice()};
+    }
+    evalChoice(inc.ch);best={score:scoreNow(),choice:inc.ch.slice(),produced:produced.slice(),consumed:consumed.slice()};
+  }
+  produced.fill(0);consumed.fill(0);
   dfs(0,0);
-  const ms=performance.now()-t0;
+  let usesMargin=false;for(let r=0;r<R;r++)if(best.produced[r]<best.consumed[r]-1e-6)usesMargin=true;
+  return {best,sorted,lineJobs,resources,resIndex,R,N,tIdx,tol,capped,usesMargin,issues,feasible:best.score>1e-9,ms:performance.now()-tStart};
+}
 
-  // assemble result by original line order
-  const feasible=best.score>1e-9;
-  const plan=new Array(N);
-  sorted.forEach((s,i)=>{
-    const idle=lineJobs[i].find(j=>j.kind==="idle")||lineJobs[i][0];
-    plan[s.orig]={line:s.orig+1,max:s.max,spx:s.sp,dup:(s.dp-1)*100,sp:s.sp,dp:s.dp,job:feasible?lineJobs[i][best.choice[i]]:idle};
+// Build the per-line plan + resource balance (per hour) from a core solve.
+function planFrom(sr){
+  const {best,sorted,lineJobs,resources,resIndex,feasible}=sr;
+  const plan=new Array(sorted.length);
+  sorted.forEach((s,i)=>{const idle=lineJobs[i].find(j=>j.kind==="idle")||lineJobs[i][0];
+    plan[s.orig]={line:s.orig+1,max:s.max,spx:s.sp,dup:(s.dp-1)*100,sp:s.sp,dp:s.dp,job:feasible?lineJobs[i][best.choice[i]]:idle};});
+  const balance=resources.map(r=>{const i=resIndex[r];return {res:r,prod:feasible?best.produced[i]*3600:0,cons:feasible?best.consumed[i]*3600:0};});
+  return {plan,balance};
+}
+function idlePlan(){
+  const plan=[];
+  sortedLines().forEach(s=>{plan[s.orig]={line:s.orig+1,max:s.max,spx:s.sp,dup:(s.dp-1)*100,sp:s.sp,dp:s.dp,job:{kind:"idle",res:null,lvl:null,prod:[],cons:[]}};});
+  return plan;
+}
+// Dedicate every line to producing one raw material (raws have no inputs).
+function solveRaw(Rw){
+  let total=0;const plan=[];const resIndex={[Rw]:0};
+  sortedLines().forEach(s=>{
+    const allowed=LEVELS.filter(L=>L<=s.max);let bst=null;
+    allowed.forEach(L=>{const t=craftTime(Rw,L);if(t>0){const rate=L/t;if(!bst||rate>bst.rate)bst={rate,L};}});
+    const job=bst?{kind:"produce",res:Rw,lvl:bst.L,prod:[[0,bst.rate]],cons:[]}:{kind:"idle",res:null,lvl:null,prod:[],cons:[]};
+    if(bst)total+=bst.rate*s.sp*s.dp;
+    plan[s.orig]={line:s.orig+1,max:s.max,spx:s.sp,dup:(s.dp-1)*100,sp:s.sp,dp:s.dp,job};
   });
+  const out=total*3600;
+  return {item:Rw,kind:"raw",out,plan,balance:[{res:Rw,prod:out,cons:0}],resIndex,capped:false,feasible:out>1e-9};
+}
 
-  const balance=resources.map(r=>{
-    const i=resIndex[r];
-    return {res:r,prod:feasible?best.produced[i]*3600:0,cons:feasible?best.consumed[i]*3600:0};
+function optimize(){
+  const mode=S.mode==="credits"?"credits":"items";
+  if(mode==="items"){
+    const targets=PRODUCTS.filter(p=>S.targets[p].on);
+    if(targets.length===0)return {empty:true,mode};
+    const w=targets.map(p=>S.targets[p].w);
+    const rc=relevantChain(targets);
+    const t0=performance.now();
+    const sr=solveCore(targets,w,rc.prods,rc.raws,700);
+    const {plan,balance}=planFrom(sr);
+    const out={};targets.forEach((t,k)=>{out[t]=sr.feasible?(sr.best.produced[sr.tIdx[k]]-sr.best.consumed[sr.tIdx[k]])*3600:0;});
+    return {empty:false,mode,issues:sr.issues,plan,balance,out,resIndex:sr.resIndex,targets,tol:sr.tol,usesMargin:sr.usesMargin,feasible:sr.feasible,capped:sr.capped,ms:performance.now()-t0};
+  }
+  // credits: the optimum is always mono-product — dedicate the whole factory to ONE item.
+  // So just compute each priced item's max output/hr × its price and take the winner.
+  const t0=performance.now();
+  const pricedP=PRODUCTS.filter(p=>(num(S.sellPrice&&S.sellPrice[p])||0)>0);
+  const pricedR=RAWS.filter(r=>(num(S.sellPrice&&S.sellPrice[r])||0)>0);
+  const issues=[];let capped=false,usesMargin=false;
+  if(pricedP.length+pricedR.length===0)issues.push("No sell prices entered. Open the “Sell prices” button and add at least one.");
+  const budgetEach=Math.max(120,Math.floor(650/Math.max(1,pricedP.length)));
+  const cand=[];
+  pricedP.forEach(P=>{
+    const price=num(S.sellPrice[P])||0;
+    const ins=RECIPE[P].inputs;
+    const hasCost=LEVELS.some(L=>ins.every(k=>S.prodCost[P][k][L]!=null&&!isNaN(S.prodCost[P][k][L])));
+    if(!hasCost){issues.push("No material cost entered for "+P+" — can't price it.");cand.push({item:P,kind:"product",out:0,price,credits:0,plan:null,balance:null,resIndex:{},feasible:false});return;}
+    const rc=relevantChain([P]);
+    const sr=solveCore([P],[1],rc.prods,rc.raws,budgetEach);
+    if(sr.capped)capped=true;if(sr.usesMargin)usesMargin=true;
+    const {plan,balance}=planFrom(sr);
+    const out=sr.feasible?(sr.best.produced[sr.resIndex[P]]-sr.best.consumed[sr.resIndex[P]])*3600:0;
+    cand.push({item:P,kind:"product",out,price,credits:out*price,plan,balance,resIndex:sr.resIndex,feasible:sr.feasible});
   });
-  const out={};targets.forEach((t,k)=>{out[t]=feasible?(best.produced[tIdx[k]]-best.consumed[tIdx[k]])*3600:0;});
-  let usesMargin=false;
-  for(let r=0;r<R;r++)if(best.produced[r]<best.consumed[r]-1e-6)usesMargin=true;
-
-  return {empty:false,issues,plan,balance,out,ms,resIndex,targets,tol,usesMargin,feasible};
+  pricedR.forEach(Rw=>{const s=solveRaw(Rw);const price=num(S.sellPrice[Rw])||0;cand.push({item:Rw,kind:"raw",out:s.out,price,credits:s.out*price,plan:s.plan,balance:s.balance,resIndex:s.resIndex,feasible:s.feasible});});
+  cand.sort((a,b)=>b.credits-a.credits);
+  const top=cand[0];
+  const feasible=!!top&&top.credits>1e-9;
+  return {empty:false,mode,issues,ranking:cand,bestItem:feasible?top.item:null,credits:feasible?top.credits:0,
+    plan:feasible?top.plan:idlePlan(),balance:feasible?top.balance:[],resIndex:feasible?top.resIndex:{},
+    tol:Math.max(0,Math.min(50,num(S.margin)||0))/100,usesMargin,feasible,capped,ms:performance.now()-t0};
 }
 
 /* ---------- RENDER: results ---------- */
@@ -475,25 +683,51 @@ function renderResults(){
   const el=document.getElementById("results");
   const stat=document.getElementById("solveStat");
   const res=optimize();
-  if(res.empty){el.innerHTML=`<div class="notice info">Select one or more outputs on the left to optimize.</div>`;stat.textContent="";return;}
+  if(res.empty){el.innerHTML=`<div class="notice info">Select one or more outputs on the left to optimize — or switch to <b>Max credits/hr</b> mode to auto-search the most profitable mix.</div>`;stat.textContent="";return;}
   let html="";
+  if(res.mode==="credits"){
+    html+=`<div class="notice info"><b>Credits mode.</b> Ignores the output checkboxes &amp; priorities. For each item with a <b>Sell price</b>, it works out the most your lines can produce per hour if the whole factory is dedicated to it, then picks the single highest-earning item.</div>`;
+  }
   if(res.issues.length){
     html+=`<div class="notice warn"><b>Missing data:</b><br>${res.issues.join("<br>")}</div>`;
   }
-  const anyOut=Object.values(res.out).some(v=>v>1e-6);
+  const anyOut=res.mode==="credits"?res.credits>1e-6:Object.values(res.out).some(v=>v>1e-6);
   if(!anyOut&&!res.issues.length){
-    html+=`<div class="notice warn">No sustainable plan found with the current lines and data. Try raising a line's max compression, adding a line, entering duplication %, or check your input costs.</div>`;
+    html+=`<div class="notice warn">No sustainable plan found with the current lines and data. Try raising a line's max compression, adding a line, entering duplication %, or check your input costs${res.mode==="credits"?" and sell prices":""}.</div>`;
+  }
+  if(res.capped){
+    html+=`<div class="notice info" style="font-size:11.5px">Large search space — this is the best plan found within the time budget. It's almost certainly optimal (the heuristic and exact search agree in testing), just not exhaustively proven.</div>`;
   }
   if(res.usesMargin){
     html+=`<div class="notice info"><b>May-work plan.</b> This uses your ${fmt(res.tol*100,1)}% margin — one or more inputs runs a small paper shortfall (see balance below). Likely fine if it's inside your game's rounding/duplication slack, but not strictly guaranteed.</div>`;
   }
   // metric cards
   html+=`<div class="metrics">`;
-  res.targets.forEach(t=>{
-    html+=`<div class="metric"><div class="l">${t}</div>
-      <div class="v">${fmt(res.out[t]||0)}</div><div class="u">per hour</div></div>`;
-  });
+  if(res.mode==="credits"){
+    html+=`<div class="metric"><div class="l">Best — sell ${res.bestItem||"—"}</div>
+      <div class="v">${disp(res.credits||0)}</div><div class="u">credits per hour</div></div>`;
+  }else{
+    res.targets.forEach(t=>{
+      html+=`<div class="metric"><div class="l">${t}</div>
+        <div class="v">${disp(res.out[t]||0)}</div><div class="u">per hour</div></div>`;
+    });
+  }
   html+=`</div>`;
+  // credits ranking — every sellable item compared head to head
+  if(res.mode==="credits"&&res.ranking&&res.ranking.length){
+    html+=`<div class="subhead">If you dedicate the factory to…</div>
+      <table><thead><tr><th>Item</th><th class="num">Max output /hr</th><th class="num">Sell price</th><th class="num">Credits /hr</th></tr></thead><tbody>`;
+    res.ranking.forEach((c,i)=>{
+      const win=i===0&&c.credits>1e-9;
+      const note=c.feasible?"":'<span style="color:var(--ink3);font-size:10.5px"> — no sustainable plan</span>';
+      html+=`<tr${win?' style="background:rgba(210,129,58,.10)"':''}>
+        <td>${win?'★ ':''}${c.item}${note}</td>
+        <td class="num">${disp(c.out)}</td>
+        <td class="num mono" style="color:var(--ink2)">${c.price>0?disp(c.price):"—"}</td>
+        <td class="num" style="color:${win?'var(--amber)':'var(--ink)'};font-weight:${win?'700':'400'}">${disp(c.credits)}</td></tr>`;
+    });
+    html+=`</tbody></table>`;
+  }
   // plan table
   html+=`<div class="subhead">Line assignment</div>
     <table><thead><tr><th>Line</th><th>Cap</th><th>Job</th><th>Lvl</th>
@@ -503,10 +737,10 @@ function renderResults(){
     let pill,job,lvl="",outv="",cons="",ct="";
     if(j.kind==="idle"){pill='<span class="pill idle">idle</span>';job="";}
     else if(j.kind==="produce"){pill='<span class="pill prod">produce</span>';job=j.res;lvl=j.lvl+"×";
-      outv=fmt(j.prod[0][1]*sp*dp*3600);ct=fmt(craftTime(j.res,j.lvl)/sp,2);}
+      outv=disp(j.prod[0][1]*sp*dp*3600);ct=fmt(craftTime(j.res,j.lvl)/sp,2);}
     else{pill='<span class="pill craft">craft</span>';job=j.res;lvl=j.lvl+"×";
-      outv=fmt(j.prod[0][1]*sp*dp*3600);ct=fmt(craftTime(j.res,j.lvl)/sp,2);
-      cons=j.cons.map(c=>fmt(c[1]*sp*3600)+" "+invName(res.resIndex,c[0])).join(", ");}
+      outv=disp(j.prod[0][1]*sp*dp*3600);ct=fmt(craftTime(j.res,j.lvl)/sp,2);
+      cons=j.cons.map(c=>disp(c[1]*sp*3600)+" "+invName(res.resIndex,c[0])).join(", ");}
     const tags=`${p.spx?` <span style="color:var(--ink3);font-size:10.5px">×${fmt(p.spx,2)} spd</span>`:""}${p.dup>0?` <span style="color:var(--ink3);font-size:10.5px">+${fmt(p.dup,2)}% dup</span>`:""}`;
     html+=`<tr><td class="mono">#${p.line}</td><td class="mono">${p.max}×${tags}</td>
       <td>${pill} ${job}</td><td class="mono">${lvl}</td>
@@ -515,22 +749,24 @@ function renderResults(){
   });
   html+=`</tbody></table>`;
   // balance table
-  html+=`<div class="subhead">Resource balance (per hour)</div>
-    <table><thead><tr><th>Resource</th><th class="num">Produced</th><th class="num">Consumed</th>
-      <th class="num">Surplus</th><th>Status</th></tr></thead><tbody>`;
-  res.balance.forEach(b=>{
-    const surplus=b.prod-b.cons;
-    const ratio=b.cons>0?surplus/b.cons:1;
-    let cls="bal-ok",lbl="healthy";
-    if(surplus<-1e-6){cls="bal-tight";lbl="margin";}
-    else if(b.cons>0&&ratio<0.05){cls="bal-tight";lbl="tight";}
-    else if(b.cons===0&&b.prod===0){cls="";lbl="—";}
-    html+=`<tr><td>${b.res}</td><td class="num">${fmt(b.prod)}</td>
-      <td class="num">${fmt(b.cons)}</td>
-      <td class="num ${surplus<-1e-6?'bal-tight':''}">${fmt(surplus)}</td>
-      <td class="${cls}" style="font-weight:600;font-size:11.5px">${lbl}</td></tr>`;
-  });
-  html+=`</tbody></table>`;
+  if(res.balance&&res.balance.length){
+    html+=`<div class="subhead">Resource balance (per hour)</div>
+      <table><thead><tr><th>Resource</th><th class="num">Produced</th><th class="num">Consumed</th>
+        <th class="num">Surplus</th><th>Status</th></tr></thead><tbody>`;
+    res.balance.forEach(b=>{
+      const surplus=b.prod-b.cons;
+      const ratio=b.cons>0?surplus/b.cons:1;
+      let cls="bal-ok",lbl="healthy";
+      if(surplus<-1e-6){cls="bal-tight";lbl="margin";}
+      else if(b.cons>0&&ratio<0.05){cls="bal-tight";lbl="tight";}
+      else if(b.cons===0&&b.prod===0){cls="";lbl="—";}
+      html+=`<tr><td>${b.res}</td><td class="num">${disp(b.prod)}</td>
+        <td class="num">${disp(b.cons)}</td>
+        <td class="num ${surplus<-1e-6?'bal-tight':''}">${disp(surplus)}</td>
+        <td class="${cls}" style="font-weight:600;font-size:11.5px">${lbl}</td></tr>`;
+    });
+    html+=`</tbody></table>`;
+  }
   el.innerHTML=html;
   stat.textContent="solved in "+res.ms.toFixed(1)+" ms";
 }
@@ -601,6 +837,54 @@ document.getElementById("btnReset").addEventListener("click",()=>{
     {S=defaults();renderAll();save();}
 });
 
+/* ---------- mode switch ---------- */
+function renderModeSwitch(){
+  document.querySelectorAll("#modesw button").forEach(b=>b.classList.toggle("on",b.dataset.mode===(S.mode||"items")));
+}
+document.getElementById("modesw").addEventListener("click",e=>{
+  const m=e.target.dataset.mode;if(!m||m===S.mode)return;
+  S.mode=m;renderModeSwitch();save();renderResults();
+});
+
+/* ---------- sell prices ---------- */
+function renderPrices(){
+  const box=document.getElementById("priceRows");
+  const tag=it=>KIND[it]==="raw"?'<span class="ty raw">raw</span>':KIND[it]==="fin"?'<span class="ty fin">assembly</span>':'<span class="ty pr">craft</span>';
+  const rows=(items)=>items.map(it=>{
+    const v=S.sellPrice[it];
+    const txt=S.priceText[it]!=null?S.priceText[it]:(v!=null?formatGameNum(v,4):"");
+    return `<div class="price-row">
+      <div class="pnm">${tag(it)}${it}</div>
+      <input type="text" data-price="${it}" placeholder="—" value="${txt}">
+      <div class="pprev" data-prev="${it}">${v!=null?"= "+fmt(v):""}</div>
+    </div>`;
+  }).join("");
+  box.innerHTML=`<div class="price-grp first">Finished &amp; crafted</div>${rows(PRODUCTS)}<div class="price-grp">Raw materials</div>${rows(RAWS)}`;
+}
+const priceModal=document.getElementById("priceModal");
+function openPrices(){renderPrices();priceModal.hidden=false;}
+function closePrices(){priceModal.hidden=true;}
+document.getElementById("btnPrices").addEventListener("click",openPrices);
+document.getElementById("priceClose").addEventListener("click",closePrices);
+document.getElementById("priceDone").addEventListener("click",closePrices);
+priceModal.addEventListener("click",e=>{if(e.target===priceModal)closePrices();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!priceModal.hidden)closePrices();});
+document.getElementById("priceClear").addEventListener("click",()=>{
+  if(!confirm("Clear all sell prices?"))return;
+  [...RAWS,...PRODUCTS].forEach(it=>{S.sellPrice[it]=null;S.priceText[it]="";});
+  renderPrices();scheduleSolve();
+});
+document.getElementById("priceRows").addEventListener("input",e=>{
+  const it=e.target.dataset.price;if(!it)return;
+  const raw=e.target.value;
+  S.priceText[it]=raw;
+  const v=parseGameNum(raw);
+  S.sellPrice[it]=v;
+  const prev=document.querySelector(`[data-prev="${it}"]`);
+  if(prev)prev.textContent=v!=null?"= "+fmt(v):(raw.trim()?"unrecognized":"");
+  scheduleSolve();
+});
+
 function initCalib(){
   const it=document.getElementById("cbItem"), cp=document.getElementById("cbComp");
   if(it.options.length===0){
@@ -633,6 +917,7 @@ function initCalib(){
   recalc();
 }
 function renderAll(){
+  renderModeSwitch();
   renderLines();renderTargets();renderRecipes();renderResults();
   document.getElementById("margin").value=S.margin||0;
   document.getElementById("marginv").textContent=fmt(S.margin||0,1)+"%";
