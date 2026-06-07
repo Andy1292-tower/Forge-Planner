@@ -288,7 +288,7 @@ function defaults(){
     Rods:{Ingots:c(2)},
     Frames:{Plates:c(2),Rods:c(4)}
   };
-  const baseTime={Ingots:9.63,Bits:9.63,Concrete:9.63,Glass:87.3,Bricks:114.3,Plates:29.23,Rods:44.46,Frames:311.38};
+  const baseTime={Ingots:10,Bits:6.178,Concrete:9.273,Glass:92.68,Bricks:108.2,Plates:30.89,Rods:46.34,Frames:308.9};
   return {
     lines:[
       {max:512,spx:49.38,dup:12.40},
@@ -305,7 +305,7 @@ function defaults(){
 }
 
 const LSKEY="forgePlannerState_v3";
-function normalize(st){if(!st)return st;if(!Array.isArray(st.lines))st.lines=[];st.lines.forEach(l=>{if(l.dup==null||isNaN(l.dup))l.dup=0;if(l.spx==null||isNaN(l.spx)||l.spx<=0)l.spx=1;});if(st.margin==null||isNaN(st.margin))st.margin=0;if(!st.baseTime)st.baseTime={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.baseTime[it]==null||isNaN(st.baseTime[it])||st.baseTime[it]<=0)st.baseTime[it]=12.85;});if(!st.prodCost)st.prodCost=defaults().prodCost;PRODUCTS.forEach(P=>{if(!st.prodCost[P])st.prodCost[P]={};RECIPE[P].inputs.forEach(k=>{if(!st.prodCost[P][k])st.prodCost[P][k]={};});});if(!st.sellPrice)st.sellPrice={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.sellPrice[it]===undefined)st.sellPrice[it]=null;});if(!st.priceText)st.priceText={};if(st.mode!=="credits"&&st.mode!=="items")st.mode="items";return st;}
+function normalize(st){if(!st)return st;if(!Array.isArray(st.lines))st.lines=[];st.lines.forEach(l=>{if(l.dup==null||isNaN(l.dup))l.dup=0;if(l.spx==null||isNaN(l.spx)||l.spx<=0)l.spx=1;});if(st.margin==null||isNaN(st.margin))st.margin=0;if(!st.baseTime)st.baseTime={};const _DB=defaults().baseTime,_PB={Ingots:9.63,Bits:9.63,Concrete:9.63,Glass:87.3,Bricks:114.3,Plates:29.23,Rods:44.46,Frames:311.38};const _migrate=!st.baseTimeRev||st.baseTimeRev<2;[...RAWS,...PRODUCTS].forEach(it=>{const v=st.baseTime[it];if(v==null||isNaN(v)||v<=0)st.baseTime[it]=_DB[it];else if(_migrate&&(Math.abs(v-(_PB[it]||-1))<1e-4||Math.abs(v-12.85)<1e-4))st.baseTime[it]=_DB[it];});st.baseTimeRev=2;if(!st.prodCost)st.prodCost=defaults().prodCost;PRODUCTS.forEach(P=>{if(!st.prodCost[P])st.prodCost[P]={};RECIPE[P].inputs.forEach(k=>{if(!st.prodCost[P][k])st.prodCost[P][k]={};});});if(!st.sellPrice)st.sellPrice={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.sellPrice[it]===undefined)st.sellPrice[it]=null;});if(!st.priceText)st.priceText={};if(st.mode!=="credits"&&st.mode!=="items")st.mode="items";return st;}
 let S=normalize(load())||defaults();
 
 function load(){try{const r=localStorage.getItem(LSKEY);return r?JSON.parse(r):null;}catch(e){return null;}}
