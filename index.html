@@ -942,7 +942,9 @@ function optimizeInner(timeBudget){
    speed/dupe), feed that Gel to the rest as free supply, optimise the remaining lines for the
    targets, and keep the line-choice with the best objective. */
 function combos(n,k){const out=[];const pick=(start,acc)=>{if(acc.length===k){out.push(acc.slice());return;}for(let i=start;i<n;i++){acc.push(i);pick(i+1,acc);acc.pop();}};pick(0,[]);return out;}
-function gelRatePerHr(row,C){const sp=Math.max(1e-6,num(row.spx)||1),dp=1+(num(row.dup)||0)/100,ct=craftTime(GEL,C);return ct>0?(C/ct)*sp*dp*3600:0;}
+// a line can't compress above its own max cap, so clamp Gel's compression to it
+const gelCompFor=(row,C)=>Math.min(C,row.max||C);
+function gelRatePerHr(row,C){const eff=gelCompFor(row,C),sp=Math.max(1e-6,num(row.spx)||1),dp=1+(num(row.dup)||0)/100,ct=craftTime(GEL,eff);return ct>0?(eff/ct)*sp*dp*3600:0;}
 function optimize(){
   const M=S.lines.length;
   const N=Math.min(Math.max(0,Math.floor(num(S.gelLines)||0)),M);
@@ -970,11 +972,11 @@ function optimize(){
 // Merge the reserved Gel lines into the inner plan + balance for display.
 function assembleGel(best,ms){
   const {res,gelRows,gelHr,C}=best;
-  const ct=craftTime(GEL,C);
   const plan=res.plan.slice();
   gelRows.forEach(r=>{const sp=Math.max(1e-6,num(r.spx)||1),dp=1+(num(r.dup)||0)/100;
+    const eff=gelCompFor(r,C),ct=craftTime(GEL,eff);
     plan[r.__i]={line:r.__i+1,max:r.max,spx:sp,dup:(num(r.dup)||0),sp,dp,reserved:true,
-      job:{kind:"craft",res:GEL,lvl:C,prod:[[0,ct>0?C/ct:0]],cons:[]}};});
+      job:{kind:"craft",res:GEL,lvl:eff,prod:[[0,ct>0?eff/ct:0]],cons:[]}};});
   plan.sort((a,b)=>a.line-b.line);
   // re-attribute Gel supply in the balance: it's produced by the reserved lines, not Lil' Forgie
   const fGel=num(S.forgie&&S.forgie[GEL])||0;
