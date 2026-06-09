@@ -691,9 +691,9 @@ function buildJobs(maxVal,resIndex,relRaws,relProds,targets,w){
     allowed.forEach(L=>{
       const t=craftTime(R,L);if(!(t>0))return;
       const rate=L/t;
-      if(!best||rate>best.rate)best={rate,L};
+      if(!best||rate>best.rate)best={rate,L,t};
     });
-    if(best)jobs.push({label:"Produce "+R,kind:"produce",res:R,lvl:best.L,
+    if(best)jobs.push({label:"Produce "+R,kind:"produce",res:R,lvl:best.L,ct:best.t,
       prod:[[resIndex[R],best.rate]],cons:[],h:0});
   });
   relProds.forEach(P=>{
@@ -705,8 +705,8 @@ function buildJobs(maxVal,resIndex,relRaws,relProds,targets,w){
       ins.forEach(k=>{const c=S.prodCost[P][k][L];if(c==null||isNaN(c)||c<0){ok=false;}else cons.push([resIndex[k],c/tt]);});
       if(!ok)return;
       const rate=L/tt;const ti=targets.indexOf(P);
-      // ordering heuristic: try high-throughput target crafts first (tightens the bound sooner)
-      jobs.push({label:"Craft "+P,kind:"craft",res:P,lvl:L,
+      // ct = craft-cycle seconds at 1x speed; the line's effective speed is capped at ct (1s floor)
+      jobs.push({label:"Craft "+P,kind:"craft",res:P,lvl:L,ct:tt,
         prod:[[resIndex[P],rate]],cons,h:ti>=0?rate/w[ti]:0});
     });
   });
@@ -748,6 +748,8 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   sorted.forEach(s=>{if(!jobsByMax[s.max])jobsByMax[s.max]=buildJobs(s.max,resIndex,relRaws,relProds,targets,w);});
   const lineJobs=sorted.map(s=>jobsByMax[s.max]);
   const N=sorted.length;
+  // effective speed per (line, job): a craft can't run under 1s real time, so speed is capped at the craft's cycle seconds (ct)
+  const spEff=lineJobs.map((js,i)=>{const sp=sorted[i].sp;return js.map(j=>(j.ct>0&&sp>j.ct)?j.ct:sp);});
   const sameAsPrev=sorted.map((s,i)=>i>0&&s.max===sorted[i-1].max&&s.sp===sorted[i-1].sp&&s.dp===sorted[i-1].dp);
   // items bound: best (speed+dup scaled) production rate of each target reachable per line
   const bp=lineJobs.map((js,i)=>targets.map(t=>{let m=0;js.forEach(j=>{if(j.kind==="craft"&&j.res===t)m=Math.max(m,j.prod[0][1]);});return m*sorted[i].sp*sorted[i].dp;}));
@@ -771,7 +773,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   // shortfall until the plan balances. Seeds `best`, so the DFS prunes from the start.
   function evalChoice(ch){
     produced.set(baseArr);consumed.fill(0);
-    for(let i=0;i<N;i++){const job=lineJobs[i][ch[i]],sp=sorted[i].sp,dp=sorted[i].dp;for(const[r,a]of job.prod)produced[r]+=a*sp*dp;for(const[r,a]of job.cons)consumed[r]+=a*sp;}
+    for(let i=0;i<N;i++){const job=lineJobs[i][ch[i]],sp=spEff[i][ch[i]],dp=sorted[i].dp;for(const[r,a]of job.prod)produced[r]+=a*sp*dp;for(const[r,a]of job.cons)consumed[r]+=a*sp;}
   }
   const totalDeficit=()=>{let D=0;for(let r=0;r<R;r++){const d=consumed[r]-produced[r];if(d>0)D+=d;}return D;};
   const idleIdx=i=>{const k=lineJobs[i].findIndex(j=>j.kind==="idle");return k<0?0:k;};
@@ -826,11 +828,11 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
     let ub=Infinity;
     for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]]+SP[k][i];ub=Math.min(ub,net/w[k]);}
     if(ub<=best.score+EPS)return;
-    const js=lineJobs[i];const sp=sorted[i].sp,dp=sorted[i].dp;
+    const js=lineJobs[i];const dp=sorted[i].dp,spE=spEff[i];
     const start=sameAsPrev[i]?prevIdx:0;
     for(let j=start;j<js.length;j++){
       if(capped)return;
-      const job=js[j];
+      const job=js[j],sp=spE[j];
       for(const[r,a]of job.prod)produced[r]+=a*sp*dp;
       for(const[r,a]of job.cons)consumed[r]+=a*sp;
       choice[i]=j;
@@ -881,9 +883,10 @@ function solveRaw(Rw){
   let total=0;const plan=[];const resIndex={[Rw]:0};
   sortedLines().forEach(s=>{
     const allowed=LEVELS.filter(L=>L<=s.max);let bst=null;
-    allowed.forEach(L=>{const t=craftTime(Rw,L);if(t>0){const rate=L/t;if(!bst||rate>bst.rate)bst={rate,L};}});
-    const job=bst?{kind:"produce",res:Rw,lvl:bst.L,prod:[[0,bst.rate]],cons:[]}:{kind:"idle",res:null,lvl:null,prod:[],cons:[]};
-    if(bst)total+=bst.rate*s.sp*s.dp;
+    // pick the level that maximises floored output (effective speed capped at the cycle time)
+    allowed.forEach(L=>{const t=craftTime(Rw,L);if(t>0){const out=(L/t)*(s.sp>t?t:s.sp);if(!bst||out>bst.out)bst={rate:L/t,L,t,out};}});
+    const job=bst?{kind:"produce",res:Rw,lvl:bst.L,ct:bst.t,prod:[[0,bst.rate]],cons:[]}:{kind:"idle",res:null,lvl:null,prod:[],cons:[]};
+    if(bst)total+=bst.out*s.dp;
     plan[s.orig]={line:s.orig+1,max:s.max,spx:s.sp,dup:(s.dp-1)*100,sp:s.sp,dp:s.dp,job};
   });
   const fHr=forgieHr(Rw);   // Lil' Forgie (+ any reserved) free supply of this raw
@@ -944,7 +947,7 @@ function optimizeInner(timeBudget){
 function combos(n,k){const out=[];const pick=(start,acc)=>{if(acc.length===k){out.push(acc.slice());return;}for(let i=start;i<n;i++){acc.push(i);pick(i+1,acc);acc.pop();}};pick(0,[]);return out;}
 // a line can't compress above its own max cap, so clamp Gel's compression to it
 const gelCompFor=(row,C)=>Math.min(C,row.max||C);
-function gelRatePerHr(row,C){const eff=gelCompFor(row,C),sp=Math.max(1e-6,num(row.spx)||1),dp=1+(num(row.dup)||0)/100,ct=craftTime(GEL,eff);return ct>0?(eff/ct)*sp*dp*3600:0;}
+function gelRatePerHr(row,C){const eff=gelCompFor(row,C),sp=Math.max(1e-6,num(row.spx)||1),dp=1+(num(row.dup)||0)/100,ct=craftTime(GEL,eff);return ct>0?(eff/ct)*(sp>ct?ct:sp)*dp*3600:0;}
 function optimize(){
   const M=S.lines.length;
   const N=Math.min(Math.max(0,Math.floor(num(S.gelLines)||0)),M);
@@ -978,7 +981,7 @@ function assembleGel(best,ms){
   gelRows.forEach(r=>{const sp=Math.max(1e-6,num(r.spx)||1),dp=1+(num(r.dup)||0)/100;
     const eff=gelCompFor(r,C),ct=craftTime(GEL,eff);
     plan[r.__i]={line:r.__i+1,max:r.max,spx:sp,dup:(num(r.dup)||0),sp,dp,reserved:true,
-      job:{kind:"craft",res:GEL,lvl:eff,prod:[[0,ct>0?eff/ct:0]],cons:[]}};});
+      job:{kind:"craft",res:GEL,lvl:eff,ct,prod:[[0,ct>0?eff/ct:0]],cons:[]}};});
   plan.sort((a,b)=>a.line-b.line);
   // re-attribute Gel supply in the balance: it's produced by the reserved lines, not Lil' Forgie
   const fGel=num(S.forgie&&S.forgie[GEL])||0;
@@ -1045,7 +1048,9 @@ function renderResults(){
     <table><thead><tr><th>Line</th><th>Cap</th><th>Job</th><th>Lvl</th>
       <th class="num">~s/craft</th><th class="num">Output /hr</th><th>Consumes /hr</th></tr></thead><tbody>`;
   res.plan.forEach(p=>{
-    const j=p.job;const sp=p.sp||1,dp=p.dp||1;
+    const j=p.job;const rawSp=p.sp||1,dp=p.dp||1;
+    // effective speed is capped at the craft cycle time (1s real-time floor)
+    const sp=(j.ct>0&&rawSp>j.ct)?j.ct:rawSp;
     let pill,job,lvl="",outv="",cons="",ct="";
     if(j.kind==="idle"){pill='<span class="pill idle">idle</span>';job="";}
     else if(j.kind==="produce"){pill='<span class="pill prod">produce</span>';job=j.res;lvl=j.lvl+"×";
@@ -1084,7 +1089,7 @@ function renderResults(){
   }
   // Bits-to-preproduce planner for Frames (Bits are assumed pre-produced, kept out of the line math)
   let framesBits=0;
-  res.plan.forEach(p=>{const j=p.job;if(j&&j.kind==="craft"&&j.res==="Frames"){const L=j.lvl,ct=craftTime("Frames",L);if(ct>0)framesBits+=(FRAME_BITS*Math.pow(3,Math.log2(L))/ct)*(p.sp||1)*3600;}});
+  res.plan.forEach(p=>{const j=p.job;if(j&&j.kind==="craft"&&j.res==="Frames"){const L=j.lvl,ct=craftTime("Frames",L),sp=(p.sp>ct?ct:p.sp)||1;if(ct>0)framesBits+=(FRAME_BITS*Math.pow(3,Math.log2(L))/ct)*sp*3600;}});
   if(framesBits>1e-6){
     const fBits=num(S.forgie&&S.forgie.Bits)||0, net=framesBits-fBits;
     html+=`<div class="subhead">Bits to pre-produce (Frames)</div>
