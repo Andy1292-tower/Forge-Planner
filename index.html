@@ -338,6 +338,43 @@ button.gel-head{width:100%;appearance:none;-webkit-appearance:none;border:none;b
 button.gel-head .gchev{color:var(--copper);font-size:11px;display:inline-block;transition:transform .15s;margin-right:5px}
 button.gel-head[aria-expanded="true"] .gchev{transform:rotate(90deg)}
 button.gel-head .sub{color:var(--amber)}
+/* projects / shopping-list modal */
+.proj{border:1px solid var(--line);border-radius:7px;background:linear-gradient(180deg,var(--bg2),var(--surface2));margin-bottom:10px;overflow:hidden}
+.proj-h{display:grid;grid-template-columns:14px 18px 1fr auto;gap:9px;align-items:center;padding:9px 11px}
+.proj.open .proj-h{border-bottom:1px solid var(--line)}
+.proj-h input[type=checkbox]{appearance:none;width:17px;height:17px;border:1px solid var(--line2);border-radius:4px;background:var(--surface2);cursor:pointer;position:relative;flex:0 0 auto}
+.proj-h input[type=checkbox]:checked{background:var(--copper);border-color:var(--copper)}
+.proj-h input[type=checkbox]:checked::after{content:"";position:absolute;left:5px;top:1px;width:4px;height:9px;border:solid #15110a;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.proj-h .pname{font-size:13.5px;font-weight:600;background:transparent;border:1px solid transparent;border-radius:4px;padding:4px 6px;width:100%;font-family:"Chakra Petch",sans-serif}
+.proj-h .pname:hover,.proj-h .pname:focus{border-color:var(--line2);background:var(--surface2);outline:none}
+.pchev{color:var(--copper);font-size:11px;transition:transform .15s;cursor:pointer;user-select:none}
+.proj.open .pchev{transform:rotate(90deg)}
+.proj-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.proj-lvls{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--ink3);text-transform:uppercase;letter-spacing:.4px}
+.proj-lvls input{width:50px;text-align:center;padding:4px 5px}
+.proj-b{padding:9px 11px;display:none}
+.proj.open .proj-b{display:block}
+.lvl-card{border:1px solid var(--line);border-radius:6px;padding:8px 9px;margin-bottom:7px;background:var(--surface)}
+.lvl-h{display:flex;align-items:center;justify-content:space-between;font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink3);margin-bottom:6px;font-weight:600}
+.lvl-h .lvl-del{cursor:pointer;color:var(--ink3)}
+.lvl-h .lvl-del:hover{color:var(--danger)}
+.cost-row{display:grid;grid-template-columns:1fr 130px 26px;gap:6px;align-items:center;margin-bottom:5px}
+.cost-row:last-child{margin-bottom:0}
+.cost-row select,.cost-row input{padding:5px 7px;font-size:11.5px;height:30px}
+.proj-mini{font-size:10.5px;color:var(--ink3);letter-spacing:.3px}
+.proj-add-lvl{font-size:10.5px;padding:5px 9px}
+.seq-toggle{display:flex;gap:8px;align-items:flex-start;margin-bottom:14px;cursor:pointer;font-size:11.5px;color:var(--ink2);line-height:1.45}
+.seq-toggle input,.proj-first .pfirst{appearance:none;width:16px;height:16px;border:1px solid var(--line2);border-radius:4px;background:var(--surface2);cursor:pointer;position:relative;flex:0 0 auto;margin-top:1px}
+.seq-toggle input:checked,.proj-first .pfirst:checked{background:var(--copper);border-color:var(--copper)}
+.seq-toggle input:checked::after,.proj-first .pfirst:checked::after{content:"";position:absolute;left:5px;top:1px;width:4px;height:9px;border:solid #15110a;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.proj-first{display:flex;align-items:center;gap:4px;cursor:pointer;font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:var(--ink3)}
+.proj-first .pfirst{width:15px;height:15px;margin-top:0}
+/* step-by-step modal */
+.step-phase{border:1px solid var(--line);border-radius:7px;padding:10px 12px;margin-bottom:10px;background:linear-gradient(180deg,var(--bg2),var(--surface2))}
+.step-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13.5px;margin-bottom:6px}
+.step-n{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--copper);color:#15110a;font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:700;flex:0 0 auto}
+.step-list{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+.step-list li{font-size:12.5px;line-height:1.5;color:var(--ink)}
 </style>
 </head>
 <body>
@@ -357,6 +394,7 @@ button.gel-head .sub{color:var(--amber)}
       <button class="btn ghost" id="btnReset">Reset</button>
       <button class="btn primary" id="btnPrices">Sell prices</button>
       <button class="btn primary" id="btnForgie">Lil' Forgie</button>
+      <button class="btn primary" id="btnProjects">Shopping list</button>
       <button class="btn ghost" id="btnRecipes">Crafting data</button>
     </div>
   </header>
@@ -408,6 +446,7 @@ button.gel-head .sub{color:var(--amber)}
           <div class="modesw" id="modesw">
             <button data-mode="items" class="on">Max items/hr</button>
             <button data-mode="credits">Max credits/hr</button>
+            <button data-mode="project">Project plan</button>
           </div>
           <span class="sub" id="solveStat"></span>
         </div></div>
@@ -471,6 +510,31 @@ button.gel-head .sub{color:var(--amber)}
   </div>
 </div>
 
+<div class="modal-bg" id="projModal" hidden>
+  <div class="modal" style="max-width:700px">
+    <div class="modal-h"><h3>Shopping list — projects</h3><button class="iconbtn" id="projClose" title="Close">×</button></div>
+    <div class="modal-b">
+      <p class="help" style="margin-bottom:10px">Build named <b>projects</b> — each a list of <b>levels</b>, each level a set of item costs. Tick the ones to run and set each project's <b>from → to</b> level; <b>Project plan</b> mode sums those level costs (minus your inventory) and lays out the fastest pipelined craft schedule. Accepts game notation (<b>1.2m</b>, <b>3.4qa</b>). A one-level project is just a flat needs-list.</p>
+      <label class="seq-toggle"><input type="checkbox" id="projSeqToggle"><span>Complete projects <b>one at a time</b> — cheapest first, with “<b>1st</b>” projects pinned ahead (unlock bonuses sooner). Uncheck to craft everything together as fast as possible.</span></label>
+      <div id="projList"></div>
+      <button class="btn ghost" id="projAdd" style="width:100%;justify-content:center;margin-top:8px">+ New project</button>
+
+      <div class="price-grp" style="margin-top:20px">Current inventory — subtracted from total demand</div>
+      <div id="invRows"></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" id="projInvClear">Clear inventory</button><button class="btn primary" id="projDone">Done</button></div>
+  </div>
+</div>
+
+<!-- STEP-BY-STEP MODAL -->
+<div class="modal-bg" id="stepsModal" hidden>
+  <div class="modal" style="max-width:720px">
+    <div class="modal-h"><h3>Step-by-step plan</h3><button class="iconbtn" id="stepsClose" title="Close">×</button></div>
+    <div class="modal-b" id="stepsBody"></div>
+    <div class="modal-f"><button class="btn primary" id="stepsDone">Done</button></div>
+  </div>
+</div>
+
 <script>
 "use strict";
 const LEVELS=[1,2,4,8,16,32,64,128,256,512,1024];
@@ -490,6 +554,23 @@ const RECIPE={
 const KIND={Ingots:"raw",Bits:"raw",Concrete:"raw",Glass:"pr",Bricks:"pr",Plates:"pr",Rods:"pr",Frames:"fin",Gel:"pr",Wire:"fin"};
 // Bits per uncompressed Frame — kept OUT of the line optimization (assumed pre-produced), used only for the planning readout.
 const FRAME_BITS=8;
+/* ---- project-mode + shopping-list helpers (additive; match live's existing inline behavior) ---- */
+const ALLITEMS=[...RAWS,...PRODUCTS];
+const MIN_CRAFT_S=1;
+function effSpeed(sp,ct){return Math.min(sp,(ct||Infinity)/MIN_CRAFT_S);}
+function gelLevel(row,C){return Math.min(C,row.max||C);}
+const newId=()=>"p"+Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36);
+const escapeAttr=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
+function fmtDuration(h){
+  if(!isFinite(h)||h<=0)return "—";
+  let s=Math.round(h*3600);
+  const d=Math.floor(s/86400);s-=d*86400;
+  const hr=Math.floor(s/3600);s-=hr*3600;
+  const m=Math.floor(s/60);s-=m*60;
+  const parts=[];if(d)parts.push(d+"d");if(hr)parts.push(hr+"h");if(m)parts.push(m+"m");
+  if(!d&&!hr&&(s>0||!m))parts.push(s+"s");
+  return parts.slice(0,3).join(" ")||"0s";
+}
 
 function defaults(){
   const c=(coef)=>{const o={};LEVELS.forEach(L=>{o[L]=coef*Math.pow(3,Math.log2(L));});return o;};
@@ -517,12 +598,13 @@ function defaults(){
     sellPrice:nulls(),priceText:{},
     forgie:nulls(),forgieText:{},
     gelLines:0,gelComp:1024,
-    targets:tg
+    targets:tg,
+    projects:[],inventory:nulls(),inventoryText:{},projectSeq:true
   };
 }
 
 const LSKEY="forgePlannerState_v3";
-function normalize(st){if(!st)return st;if(!Array.isArray(st.lines))st.lines=[];st.lines.forEach(l=>{if(l.dup==null||isNaN(l.dup))l.dup=0;if(l.spx==null||isNaN(l.spx)||l.spx<=0)l.spx=1;});if(st.margin==null||isNaN(st.margin))st.margin=0;if(!st.baseTime)st.baseTime={};const _DB=defaults().baseTime,_PB={Ingots:9.63,Bits:9.63,Concrete:9.63,Glass:87.3,Bricks:114.3,Plates:29.23,Rods:44.46,Frames:311.38};const _migrate=!st.baseTimeRev||st.baseTimeRev<2;[...RAWS,...PRODUCTS].forEach(it=>{const v=st.baseTime[it];if(v==null||isNaN(v)||v<=0)st.baseTime[it]=_DB[it];else if(_migrate&&(Math.abs(v-(_PB[it]||-1))<1e-4||Math.abs(v-12.85)<1e-4))st.baseTime[it]=_DB[it];});st.baseTimeRev=2;const _DP=defaults().prodCost;if(!st.prodCost)st.prodCost={};PRODUCTS.forEach(P=>{if(!st.prodCost[P])st.prodCost[P]={};RECIPE[P].inputs.forEach(k=>{if(!st.prodCost[P][k]||Object.keys(st.prodCost[P][k]).length===0)st.prodCost[P][k]=_DP[P][k];});});if(!st.sellPrice)st.sellPrice={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.sellPrice[it]===undefined)st.sellPrice[it]=null;});if(!st.priceText)st.priceText={};if(!st.forgie)st.forgie={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.forgie[it]===undefined)st.forgie[it]=null;});if(!st.forgieText)st.forgieText={};if(!st.targets)st.targets={};PRODUCTS.forEach(p=>{if(!st.targets[p])st.targets[p]={on:false,w:1};});if(st.gelLines==null||isNaN(st.gelLines)||st.gelLines<0)st.gelLines=0;if(!LEVELS.includes(st.gelComp))st.gelComp=1024;if(st.mode!=="credits"&&st.mode!=="items")st.mode="items";return st;}
+function normalize(st){if(!st)return st;if(!Array.isArray(st.lines))st.lines=[];st.lines.forEach(l=>{if(l.dup==null||isNaN(l.dup))l.dup=0;if(l.spx==null||isNaN(l.spx)||l.spx<=0)l.spx=1;});if(st.margin==null||isNaN(st.margin))st.margin=0;if(!st.baseTime)st.baseTime={};const _DB=defaults().baseTime,_PB={Ingots:9.63,Bits:9.63,Concrete:9.63,Glass:87.3,Bricks:114.3,Plates:29.23,Rods:44.46,Frames:311.38};const _migrate=!st.baseTimeRev||st.baseTimeRev<2;[...RAWS,...PRODUCTS].forEach(it=>{const v=st.baseTime[it];if(v==null||isNaN(v)||v<=0)st.baseTime[it]=_DB[it];else if(_migrate&&(Math.abs(v-(_PB[it]||-1))<1e-4||Math.abs(v-12.85)<1e-4))st.baseTime[it]=_DB[it];});st.baseTimeRev=2;const _DP=defaults().prodCost;if(!st.prodCost)st.prodCost={};PRODUCTS.forEach(P=>{if(!st.prodCost[P])st.prodCost[P]={};RECIPE[P].inputs.forEach(k=>{if(!st.prodCost[P][k]||Object.keys(st.prodCost[P][k]).length===0)st.prodCost[P][k]=_DP[P][k];});});if(!st.sellPrice)st.sellPrice={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.sellPrice[it]===undefined)st.sellPrice[it]=null;});if(!st.priceText)st.priceText={};if(!st.forgie)st.forgie={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.forgie[it]===undefined)st.forgie[it]=null;});if(!st.forgieText)st.forgieText={};if(!st.targets)st.targets={};PRODUCTS.forEach(p=>{if(!st.targets[p])st.targets[p]={on:false,w:1};});if(st.gelLines==null||isNaN(st.gelLines)||st.gelLines<0)st.gelLines=0;if(!LEVELS.includes(st.gelComp))st.gelComp=1024;if(st.mode!=="credits"&&st.mode!=="items"&&st.mode!=="project")st.mode="items";if(!Array.isArray(st.projects))st.projects=[];st.projects.forEach(p=>{if(!p.id)p.id="p"+Math.random().toString(36).slice(2,9);if(typeof p.name!=="string")p.name="Project";p.on=p.on!==false;p.first=!!p.first;if(!Array.isArray(p.levels)||p.levels.length===0)p.levels=[{costs:[]}];p.levels.forEach(L=>{if(!Array.isArray(L.costs))L.costs=[];L.costs.forEach(c=>{if(!RAWS.includes(c.item)&&!PRODUCTS.includes(c.item))c.item=PRODUCTS[0];if(c.qty!=null&&(typeof c.qty!=="number"||isNaN(c.qty)||c.qty<0))c.qty=null;});});p.from=Math.max(1,Math.floor(Number(p.from)||1));p.to=Math.max(p.from,Math.min(p.levels.length,Math.floor(Number(p.to)||p.levels.length)));});if(!st.inventory)st.inventory={};ALLITEMS.forEach(it=>{if(st.inventory[it]===undefined)st.inventory[it]=null;});if(!st.inventoryText)st.inventoryText={};if(typeof st.projectSeq!=="boolean")st.projectSeq=true;return st;}
 let S=normalize(load())||defaults();
 
 function load(){try{const r=localStorage.getItem(LSKEY);return r?JSON.parse(r):null;}catch(e){return null;}}
@@ -951,7 +1033,196 @@ function combos(n,k){const out=[];const pick=(start,acc)=>{if(acc.length===k){ou
 // a line can't compress above its own max cap, so clamp Gel's compression to it
 const gelCompFor=(row,C)=>Math.min(C,row.max||C);
 function gelRatePerHr(row,C){const eff=gelCompFor(row,C),sp=Math.max(1e-6,num(row.spx)||1),dp=1+(num(row.dup)||0)/100,ct=craftTime(GEL,eff);return ct>0?(eff/ct)*(sp>ct?ct:sp)*dp*3600:0;}
+function projectDemand(){
+  const gross={};ALLITEMS.forEach(it=>gross[it]=0);
+  const perProject=[];
+  (S.projects||[]).forEach(p=>{
+    if(!p.on)return;
+    const lv=p.levels||[];
+    const from=Math.max(1,Math.floor(num(p.from)||1));
+    const to=Math.min(lv.length,Math.max(from,Math.floor(num(p.to)||lv.length)));
+    const sub={};ALLITEMS.forEach(it=>sub[it]=0);
+    for(let i=from-1;i<to&&i<lv.length;i++){
+      (lv[i].costs||[]).forEach(c=>{const it=c.item,q=num(c.qty)||0;if(ALLITEMS.includes(it)&&q>0){sub[it]+=q;gross[it]+=q;}});
+    }
+    perProject.push({name:p.name||"Project",first:!!p.first,from,to,levels:lv.length,sub});
+  });
+  const inv=it=>num(S.inventory&&S.inventory[it])||0;
+  const net={};ALLITEMS.forEach(it=>{net[it]=Math.max(0,gross[it]-inv(it));});
+  // Frames each consume FRAME_BITS Bits that aren't in the recipe graph — fold them into Bits demand
+  if((net.Frames||0)>0)net.Bits=Math.max(0,(gross.Bits||0)+FRAME_BITS*net.Frames-inv("Bits"));
+  return {gross,net,perProject};
+}
+// Does crafting this item require Gel anywhere in its chain? (Gel is only made on reserved lines.)
+function chainNeedsGel(item,seen){
+  if(item===GEL)return true;
+  seen=seen||new Set();if(seen.has(item))return false;seen.add(item);
+  const r=RECIPE[item];if(!r)return false;
+  return (r.inputs||[]).some(k=>chainNeedsGel(k,seen));
+}
+// Dense single-phase simplex. Maximize c·x s.t. A x <= b (b>=0), x>=0. Bland's rule (no cycling).
+function lpMaximize(c,A,b){
+  const m=A.length,n=c.length,W=n+m+1;
+  const T=[];
+  for(let i=0;i<m;i++){const row=new Float64Array(W);for(let j=0;j<n;j++)row[j]=A[i][j];row[n+i]=1;row[W-1]=b[i];T.push(row);}
+  const obj=new Float64Array(W);for(let j=0;j<n;j++)obj[j]=-c[j];T.push(obj);
+  const basis=[];for(let i=0;i<m;i++)basis.push(n+i);
+  for(let it=0;it<20000;it++){
+    let piv=-1;for(let j=0;j<n+m;j++){if(T[m][j]<-1e-9){piv=j;break;}}   // entering (Bland)
+    if(piv<0)break;
+    let leave=-1,best=Infinity;
+    for(let i=0;i<m;i++){const a=T[i][piv];if(a>1e-9){const r=T[i][W-1]/a;if(r<best-1e-12||(Math.abs(r-best)<1e-12&&(leave<0||basis[i]<basis[leave]))){best=r;leave=i;}}}
+    if(leave<0)return {x:null,unbounded:true};
+    const prow=T[leave],pv=prow[piv];
+    for(let j=0;j<W;j++)prow[j]/=pv;
+    for(let i=0;i<=m;i++){if(i===leave)continue;const f=T[i][piv];if(Math.abs(f)>1e-12){const ri=T[i];for(let j=0;j<W;j++)ri[j]-=f*prow[j];}}
+    basis[leave]=piv;
+  }
+  const x=new Float64Array(n);for(let i=0;i<m;i++)if(basis[i]<n)x[basis[i]]=T[i][W-1];
+  return {x};
+}
+// Build & solve the makespan LP: each line splits its time-fraction across (item,level) jobs so that
+// net production meets the demand ratio. z = throughput multiplier (1/hr); makespan = 1/z.
+function projectSchedule(net,targets){
+  const lns=sortedLines();   // respects any Gel-reserved subset via _LINES
+  const prodT=targets.filter(it=>PRODUCTS.includes(it));
+  const rawT=targets.filter(it=>RAWS.includes(it));
+  const rc=relevantChain(prodT);
+  const items=[...new Set([...rc.raws,...rawT,...rc.prods,...prodT])].filter(it=>it!==GEL);
+  const itemIdx={};items.forEach((it,i)=>itemIdx[it]=i);
+  // jobs: one variable per (line,item,level<=cap). Letting the LP pick the level finds the true
+  // makespan-optimal compression (leans high for raw speed, eases off when materials bottleneck).
+  const vars=[];
+  lns.forEach((ln,li)=>{
+    items.forEach(it=>{
+      LEVELS.filter(L=>L<=ln.max).forEach(L=>{
+        if(RAWS.includes(it)){const t=craftTime(it,L);if(!(t>0))return;const es=effSpeed(ln.sp,t);vars.push({li,item:it,lvl:L,rate:(L/t)*es*ln.dp*3600,cons:[]});}
+        else if(PRODUCTS.includes(it)&&it!==GEL){const ins=RECIPE[it].inputs;const tt=craftTime(it,L);if(!(tt>0))return;
+          if(!ins.every(k=>S.prodCost[it][k][L]!=null&&!isNaN(S.prodCost[it][k][L])))return;
+          const es=effSpeed(ln.sp,tt);vars.push({li,item:it,lvl:L,rate:(L/tt)*es*ln.dp*3600,cons:ins.map(k=>({item:k,perHr:(S.prodCost[it][k][L]/tt)*es*3600}))});}
+      });
+    });
+  });
+  const nY=vars.length,zCol=nY,n=nY+1;
+  const D0=Math.max(1,...targets.map(it=>net[it]||0));   // normalize demand to keep LP coeffs sane
+  const A=[],b=[];
+  lns.forEach((ln,li)=>{const row=new Array(n).fill(0);vars.forEach((v,vi)=>{if(v.li===li)row[vi]=1;});A.push(row);b.push(1);});
+  items.forEach(it=>{
+    const row=new Array(n).fill(0);
+    vars.forEach((v,vi)=>{if(v.item===it)row[vi]-=v.rate;v.cons.forEach(c=>{if(c.item===it)row[vi]+=c.perHr;});});
+    row[zCol]=(net[it]||0)/D0;
+    A.push(row);b.push(forgieHr(it));
+  });
+  const c=new Array(n).fill(0);c[zCol]=1;
+  const sol=lpMaximize(c,A,b);
+  const y=sol.x||new Float64Array(n);
+  const rate={};items.forEach(it=>rate[it]=forgieHr(it));
+  vars.forEach((v,vi)=>{const yi=y[vi]||0;if(yi<=1e-9)return;rate[v.item]+=v.rate*yi;v.cons.forEach(c=>{rate[c.item]=(rate[c.item]||0)-c.perHr*yi;});});
+  const plan=lns.map(ln=>({line:ln.orig+1,max:ln.max,sp:ln.sp,dp:ln.dp,entries:[]}));
+  const planByLi=lns.map((_,i)=>i);
+  vars.forEach((v,vi)=>{const yi=y[vi]||0;if(yi<=1e-4)return;plan[v.li].entries.push({item:v.item,lvl:v.lvl,frac:yi,outHr:v.rate*yi,cons:v.cons.map(c=>({item:c.item,hr:c.perHr*yi}))});});
+  plan.forEach(p=>p.entries.sort((a,b)=>b.frac-a.frac));
+  plan.sort((a,b)=>a.line-b.line);
+  return {rate,plan,items,z:(y[zCol]||0)/D0};
+}
+// Solve one batch of demand (a single project, or all of them combined) into a pipelined phase.
+function solvePhaseFor(net,name){
+  const demandItems=ALLITEMS.filter(it=>net[it]>1e-9);
+  const gelAvail=forgieHr(GEL)>1e-9;
+  const unsat=gelAvail?[]:demandItems.filter(it=>chainNeedsGel(it));
+  const targets=demandItems.filter(it=>unsat.indexOf(it)<0);
+  if(targets.length===0)
+    return {name,plan:[],balance:[],demandItems,net,rate:{},eta:0,bottleneck:null,infeasItems:[],unsat,items:[],z:0,feasible:false};
+  const sch=projectSchedule(net,targets);
+  const rate={};targets.forEach(it=>rate[it]=Math.max(0,sch.rate[it]||0));
+  let eta=0,bottleneck=null;const infeasItems=[];
+  targets.forEach(it=>{if(rate[it]<=1e-9)infeasItems.push(it);else{const t=net[it]/rate[it];if(t>eta){eta=t;bottleneck=it;}}});
+  const feasible=infeasItems.length===0&&sch.z>1e-15;
+  const prodHr={},consHr={};sch.items.forEach(it=>{prodHr[it]=0;consHr[it]=0;});
+  sch.plan.forEach(p=>p.entries.forEach(e=>{prodHr[e.item]=(prodHr[e.item]||0)+e.outHr;e.cons.forEach(c=>{consHr[c.item]=(consHr[c.item]||0)+c.hr;});}));
+  const balance=sch.items.map(it=>({res:it,prod:prodHr[it]||0,forgie:forgieHr(it),cons:consHr[it]||0}));
+  return {name,plan:sch.plan,balance,demandItems,net,rate,eta,bottleneck,infeasItems,unsat,items:sch.items,z:sch.z,feasible};
+}
+// net demand for a project's level-sum `sub`, against an inventory map (folds in Frame bits).
+function projNetVec(sub,invMap){
+  const net={};ALLITEMS.forEach(it=>net[it]=Math.max(0,(sub[it]||0)-(invMap[it]||0)));
+  if((net.Frames||0)>0)net.Bits=Math.max(0,(sub.Bits||0)+FRAME_BITS*net.Frames-(invMap.Bits||0));
+  return net;
+}
+// Run `fn` with the best N lines reserved for Gel (supplied as free input to the rest).
+// Build the project phases (combined or sequenced) using the current _LINES/_SUPPLY pool.
+function buildProjectPhases(seq,net,perProject){
+  if(!seq){
+    const ph=solvePhaseFor(net,perProject.length>1?"All projects":perProject[0].name);
+    ph.doneAt=ph.eta;return [ph];
+  }
+  const invInit={};ALLITEMS.forEach(it=>invInit[it]=num(S.inventory&&S.inventory[it])||0);
+  const cost=perProject.map(p=>{const ph=solvePhaseFor(projNetVec(p.sub,invInit),p.name);return ph.feasible?ph.eta:Infinity;});
+  const order=perProject.map((p,i)=>({p,i})).sort((a,b)=>{
+    if(!!a.p.first!==!!b.p.first)return a.p.first?-1:1;
+    return cost[a.i]-cost[b.i];
+  });
+  const invRun={};ALLITEMS.forEach(it=>invRun[it]=num(S.inventory&&S.inventory[it])||0);
+  let cum=0;const phases=[];
+  order.forEach(({p})=>{
+    const ph=solvePhaseFor(projNetVec(p.sub,invRun),p.name);
+    ph.first=!!p.first;
+    ALLITEMS.forEach(it=>{invRun[it]=Math.max(0,(invRun[it]||0)-(p.sub[it]||0));});
+    cum+=ph.eta;ph.doneAt=cum;phases.push(ph);
+  });
+  return phases;
+}
+// Prefer the reservation that leaves the fewest demanded items unmade, then finishes fastest.
+function betterProjCand(a,b){if(a.badN!==b.badN)return a.badN<b.badN;return a.eta<b.eta;}
+function addGelLinesToPlan(plan,gelRows,C){
+  plan=plan.slice();
+  gelRows.forEach(r=>{const sp=Math.max(1e-6,num(r.spx)||1),dp=1+(num(r.dup)||0)/100,L=gelLevel(r,C),ct=craftTime(GEL,L);
+    plan.push({line:r.__i+1,max:r.max,sp,dp,reserved:true,entries:[{item:GEL,lvl:L,frac:1,outHr:ct>0?(L/ct)*effSpeed(sp,ct)*dp*3600:0,cons:[]}]});});
+  return plan.sort((a,b)=>a.line-b.line);
+}
+// Top of project mode: builds one combined phase, or a sequence of per-project phases
+// (forced-"do first" projects ahead, then cheapest-makespan first), with inventory carried across.
+function optimizeProjectTop(){
+  const {gross,net,perProject}=projectDemand();
+  const t0=performance.now();
+  if(perProject.length===0)return {empty:true,mode:"project",plan:[],phases:[],gross,net,perProject};
+  const seq=S.projectSeq!==false&&perProject.length>1;
+  const M=S.lines.length;
+  const Nmax=Math.min(Math.max(0,Math.floor(num(S.gelLines)||0)),M);
+  const C=LEVELS.includes(S.gelComp)?S.gelComp:1024;
+  const ranked=lineRows().map(r=>({r,g:gelRatePerHr(r,C)})).sort((a,b)=>b.g-a.g);
+  // "lines on gel" is a MAXIMUM: try reserving k=0..Nmax of the best Gel lines, and keep whichever
+  // count makes the most of what was asked for (e.g. Wire) and finishes soonest.
+  let best=null;
+  for(let k=0;k<=Nmax;k++){
+    const gelRows=ranked.slice(0,k).map(o=>o.r);
+    let gelHr=0;gelRows.forEach(r=>gelHr+=gelRatePerHr(r,C));
+    if(k>0){const set=new Set(gelRows.map(r=>r.__i));_LINES=lineRows().filter(r=>!set.has(r.__i));_SUPPLY={[GEL]:gelHr};}
+    let phases=buildProjectPhases(seq,net,perProject);
+    _LINES=null;_SUPPLY=null;
+    if(gelRows.length)phases=phases.map(ph=>Object.assign({},ph,{plan:addGelLinesToPlan(ph.plan,gelRows,C)}));
+    const eta=phases.reduce((s,ph)=>s+ph.eta,0);
+    const badN=new Set([].concat(...phases.map(ph=>(ph.unsat||[]).concat(ph.infeasItems||[])))).size;
+    const cand={phases,gelRows,gelHr,eta,badN};
+    if(!best||betterProjCand(cand,best))best=cand;
+  }
+  const {phases,gelRows,gelHr}=best;
+  const eta=phases.reduce((s,ph)=>s+ph.eta,0);
+  const feasible=phases.length>0&&phases.every(ph=>ph.feasible);
+  const unsat=[...new Set([].concat(...phases.map(ph=>ph.unsat||[])))];
+  const infeasItems=[...new Set([].concat(...phases.map(ph=>ph.infeasItems||[])))];
+  const main=phases[0]||{plan:[],balance:[],rate:{},demandItems:[],bottleneck:null};
+  return {empty:false,mode:"project",sequenced:seq,phases,perProject,gross,net,
+    plan:main.plan,balance:main.balance,
+    demandItems:seq?ALLITEMS.filter(it=>net[it]>1e-9):main.demandItems,
+    rate:main.rate,bottleneck:main.bottleneck,eta,unsat,infeasItems,feasible,
+    gelReserved:gelRows.length?{lines:gelRows.length,comp:C,outHr:gelHr}:null,
+    objective:feasible&&eta>0?1/eta:0,ms:performance.now()-t0};
+}
+
+
 function optimize(){
+  if(S.mode==="project")return optimizeProjectTop();
   const M=S.lines.length;
   const N=Math.min(Math.max(0,Math.floor(num(S.gelLines)||0)),M);
   if(N<=0)return optimizeInner();
@@ -995,10 +1266,105 @@ function assembleGel(best,ms){
 }
 
 /* ---------- RENDER: results ---------- */
+let _lastProjectRes=null;
+function lineAssignTableHtml(plan){
+  let h=`<table><thead><tr><th>Line</th><th>Cap</th><th>Job</th><th>Lvl</th>
+      <th class="num">Time share</th><th class="num">Output /hr</th><th>Consumes /hr</th></tr></thead><tbody>`;
+  plan.forEach(p=>{
+    if(!p.entries||!p.entries.length){h+=`<tr><td class="mono">#${p.line}</td><td class="mono">${p.max}×</td><td><span class="pill idle">idle</span></td><td></td><td class="num"></td><td class="num"></td><td></td></tr>`;return;}
+    p.entries.forEach((e,ei)=>{
+      const reserved=p.reserved, isRaw=RAWS.includes(e.item);
+      const pill=reserved?'<span class="pill" style="background:rgba(63,182,160,.14);color:var(--teal);border:1px solid var(--teal-d)">gel</span>':isRaw?'<span class="pill prod">produce</span>':'<span class="pill craft">craft</span>';
+      const cons=reserved?'<span style="color:var(--ink3)">mined ore (free)</span>':(e.cons.length?e.cons.map(c=>disp(c.hr)+" "+c.item).join(", "):'<span style="color:var(--ink3)">—</span>');
+      h+=`<tr${reserved?' style="background:rgba(63,182,160,.05)"':''}>
+        <td class="mono">${ei===0?"#"+p.line:""}</td><td class="mono">${ei===0?p.max+"×":""}</td>
+        <td>${pill} ${e.item}</td><td class="mono">${e.lvl}×</td>
+        <td class="num mono" style="color:var(--ink2)">${fmt(e.frac*100,0)}%</td>
+        <td class="num">${disp(e.outHr)}</td>
+        <td style="color:var(--ink2);font-size:11.5px">${cons}</td></tr>`;
+    });
+  });
+  return h+`</tbody></table>`;
+}
+function renderProjectResults(res,el,stat){
+  _lastProjectRes=res;
+  if(res.empty){
+    el.innerHTML=`<div class="notice info">No project demand yet. Open <b>Shopping list</b>, add a project with item costs, tick it <b>on</b>, then come back. Enter your current <b>inventory</b> there too — it's subtracted from what you need to craft.</div>`;
+    stat.textContent="";return;
+  }
+  let html="";
+  html+=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+    <div class="proj-mini" style="font-size:11.5px">${res.sequenced?'Order: <b style="color:var(--ink2)">one project at a time</b> — cheapest first, “do first” pinned ahead. Change in Shopping list.':'Order: <b style="color:var(--ink2)">all projects together</b> (fastest total). Change in Shopping list.'}</div>
+    <button class="btn primary" id="btnSteps">Step-by-step ▸</button></div>`;
+  html+=`<div class="notice info"><b>Project plan.</b> ${res.sequenced?"Completes projects one at a time so you unlock bonuses sooner; within each project, lines split their time in a pipelined plan.":"Sums all ticked projects and crafts everything together with a pipelined line setup, inputs &amp; outputs flowing together."} Overshoot from compression is ignored.</div>`;
+  if(res.unsat&&res.unsat.length)html+=`<div class="notice warn"><b>Needs Gel:</b> ${res.unsat.join(", ")} require Gel, which is only made on reserved lines. Set <b>lines on gel</b> in the Gel panel to include them — they're excluded from the time below for now.</div>`;
+  if(res.infeasItems&&res.infeasItems.length)html+=`<div class="notice warn"><b>Can't sustainably produce:</b> ${res.infeasItems.join(", ")}. Raise a line's max compression, add a line, or check recipe costs — the time below excludes these.</div>`;
+  html+=`<div class="metrics">
+    <div class="metric"><div class="l">Total time</div><div class="v">${fmtDuration(res.eta)}</div><div class="u">${res.sequenced?"to finish every project":"to finish all ticked projects"}</div></div>
+    <div class="metric"><div class="l">Projects</div><div class="v">${res.perProject.length}</div><div class="u">${res.sequenced?"one at a time":"scheduled together"}</div></div>
+    ${!res.sequenced&&res.bottleneck?`<div class="metric"><div class="l">Bottleneck</div><div class="v" style="font-size:17px">${res.bottleneck}</div><div class="u">sets the finish time</div></div>`:""}
+  </div>`;
+  if(res.sequenced){
+    html+=`<div class="subhead">Completion order — done one project at a time</div>
+      <table><thead><tr><th>#</th><th>Project</th><th>Needs</th><th class="num">Phase</th><th class="num">Done by</th></tr></thead><tbody>`;
+    res.phases.forEach((ph,i)=>{
+      const pj=res.perProject.find(p=>p.name===ph.name)||{sub:{}};
+      const items=ALLITEMS.filter(it=>(pj.sub[it]||0)>0);
+      const needs=items.slice(0,5).map(it=>disp(pj.sub[it])+" "+it).join(", ")+(items.length>5?" …":"");
+      const badge=ph.first?' <span class="pill craft" style="font-size:9px">do first</span>':"";
+      const warn=!ph.feasible?' <span style="color:var(--danger);font-size:10.5px">(blocked — see notes)</span>':"";
+      html+=`<tr><td class="mono">${i+1}</td><td>${ph.name}${badge}${warn}</td>
+        <td style="color:var(--ink2);font-size:11.5px">${needs||"—"}</td>
+        <td class="num mono">${fmtDuration(ph.eta)}</td><td class="num mono" style="color:var(--amber)">${fmtDuration(ph.doneAt)}</td></tr>`;
+    });
+    html+=`</tbody></table>`;
+    html+=`<div class="notice info" style="font-size:11.5px">Tap <b>Step-by-step</b> for the exact line setup in each phase and when to switch lines over.</div>`;
+  } else {
+    html+=`<div class="subhead">Combined demand</div>
+      <table><thead><tr><th>Item</th><th class="num">Have</th><th class="num">Net needed</th><th class="num">Made /hr</th><th class="num">Done in</th></tr></thead><tbody>`;
+    res.demandItems.forEach(it=>{
+      const inv=num(S.inventory&&S.inventory[it])||0;
+      const isUnsat=res.unsat&&res.unsat.indexOf(it)>=0;
+      const r=res.rate[it]||0,done=r>1e-12?res.net[it]/r:Infinity;
+      const rateCell=isUnsat?'<span style="color:var(--ink3)">needs Gel</span>':(r>1e-9?disp(r):'<span style="color:var(--danger)">0</span>');
+      const doneCell=isUnsat?'<span style="color:var(--ink3)">needs Gel</span>':(isFinite(done)?fmtDuration(done):"—");
+      html+=`<tr><td>${it}</td><td class="num mono" style="color:var(--ink2)">${inv>0?disp(inv):"—"}</td>
+        <td class="num">${disp(res.net[it])}</td><td class="num">${rateCell}</td>
+        <td class="num mono" style="color:${isUnsat||!isFinite(done)?'var(--ink3)':'var(--ink2)'}">${doneCell}</td></tr>`;
+    });
+    html+=`</tbody></table>`;
+    html+=`<div class="subhead">Projects (≈ done in = when its items finish in the shared pipeline)</div>
+      <table><thead><tr><th>Project</th><th>Levels</th><th>Needs</th><th class="num">≈ Done in</th></tr></thead><tbody>`;
+    res.perProject.forEach(p=>{
+      const items=ALLITEMS.filter(it=>(p.sub[it]||0)>0);
+      let pdone=0;items.forEach(it=>{const r=res.rate[it]||0;if(r>1e-12){const d=(res.net[it]||0)/r;if(d>pdone)pdone=d;}});
+      const needs=items.slice(0,6).map(it=>disp(p.sub[it])+" "+it).join(", ")+(items.length>6?" …":"");
+      html+=`<tr><td>${p.name||"Project"}</td><td class="mono" style="color:var(--ink2)">${p.from}–${p.to} / ${p.levels}</td>
+        <td style="color:var(--ink2);font-size:11.5px">${needs||"—"}</td>
+        <td class="num mono">${items.length?fmtDuration(pdone):"—"}</td></tr>`;
+    });
+    html+=`</tbody></table>`;
+    html+=`<div class="subhead">Line assignment — % is the share of this line's time on that job</div>${lineAssignTableHtml(res.plan)}`;
+    if(res.balance&&res.balance.length){
+      html+=`<div class="subhead">Resource balance (per hour)</div>
+        <table><thead><tr><th>Resource</th><th class="num">Produced</th><th class="num">Consumed</th><th class="num">Surplus</th></tr></thead><tbody>`;
+      res.balance.forEach(b=>{const f=b.forgie||0,surplus=b.prod+f-b.cons;
+        html+=`<tr><td>${b.res}</td><td class="num">${disp(b.prod+f)}</td><td class="num">${disp(b.cons)}</td>
+          <td class="num ${surplus<-1e-6?'bal-tight':''}">${disp(surplus)}</td></tr>`;});
+      html+=`</tbody></table>`;
+    }
+  }
+  if(res.gelReserved&&res.gelReserved.lines>0)html+=`<div class="notice info" style="font-size:11.5px"><b>${res.gelReserved.lines}</b> line${res.gelReserved.lines>1?"s":""} reserved for Gel @ up to ${res.gelReserved.comp}× (capped to each line's own max) → <b>${disp(res.gelReserved.outHr)}</b> Gel/hr, fed into the plan.</div>`;
+  el.innerHTML=html;
+  stat.textContent="solved in "+(res.ms||0).toFixed(1)+" ms";
+}
+
+
 function renderResults(){
   const el=document.getElementById("results");
   const stat=document.getElementById("solveStat");
   const res=optimize();
+  if(res.mode==="project"){renderProjectResults(res,el,stat);return;}
   // nudge toward Sell prices when credits mode is selected but no prices exist yet
   if(typeof setPricePoke==="function")setPricePoke(res.mode==="credits"&&![...RAWS,...PRODUCTS].some(it=>(num(S.sellPrice[it])||0)>0));
   if(res.empty){el.innerHTML=`<div class="notice info">Select one or more outputs on the left to optimize — or switch to <b>Max credits/hr</b> mode to auto-search the most profitable mix.</div>`;stat.textContent="";return;}
@@ -1330,6 +1696,150 @@ function renderAll(){
 renderAll();
 initCalib();
 document.getElementById("saveind").textContent="auto-saves locally";
+function costRow(pi,li,ci,c){
+  const opts=ALLITEMS.map(it=>`<option value="${it}" ${it===c.item?"selected":""}>${it}</option>`).join("");
+  const txt=(c.qty!=null&&isFinite(c.qty))?formatGameNum(c.qty,4):"";
+  return `<div class="cost-row">
+    <select data-citem="${pi}_${li}_${ci}">${opts}</select>
+    <input type="text" placeholder="qty" value="${txt}" data-cqty="${pi}_${li}_${ci}">
+    <button class="iconbtn" data-cdel="${pi}_${li}_${ci}" title="Remove item">×</button>
+  </div>`;
+}
+function projCard(p,pi){
+  const lv=p.levels||[];
+  const lvlHtml=lv.map((L,li)=>{
+    const rows=(L.costs||[]).map((c,ci)=>costRow(pi,li,ci,c)).join("");
+    return `<div class="lvl-card">
+      <div class="lvl-h"><span>Level ${li+1}</span><span class="lvl-del" data-pdellvl="${pi}" data-li="${li}" title="Delete level">✕ remove</span></div>
+      ${rows||'<div class="proj-mini" style="margin-bottom:5px">No items — add one.</div>'}
+      <button class="btn ghost proj-add-lvl" data-paddcost="${pi}" data-li="${li}">+ item</button>
+    </div>`;
+  }).join("");
+  return `<div class="proj ${p._open?"open":""}" data-pi="${pi}">
+    <div class="proj-h">
+      <span class="pchev" data-ptoggle="${pi}">▸</span>
+      <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule">
+      <input class="pname" data-pname="${pi}" value="${escapeAttr(p.name)}" placeholder="Project name">
+      <div class="proj-tools">
+        <label class="proj-first" title="Schedule this project before the others"><input type="checkbox" class="pfirst" data-pfirst="${pi}" ${p.first?"checked":""}>1st</label>
+        <span class="proj-lvls">lv <input type="number" min="1" step="1" data-pfrom="${pi}" value="${p.from||1}"> → <input type="number" min="1" step="1" data-pto="${pi}" value="${p.to||lv.length||1}"></span>
+        <button class="iconbtn" data-pdup="${pi}" title="Duplicate" style="font-size:13px">⧉</button>
+        <button class="iconbtn" data-pdel="${pi}" title="Delete project">×</button>
+      </div>
+    </div>
+    <div class="proj-b">
+      ${lvlHtml}
+      <button class="btn ghost proj-add-lvl" data-paddlvl="${pi}" style="margin-top:2px">+ level</button>
+    </div>
+  </div>`;
+}
+function renderInv(){
+  const box=document.getElementById("invRows");
+  const tag=it=>KIND[it]==="raw"?'<span class="ty raw">raw</span>':KIND[it]==="fin"?'<span class="ty fin">assembly</span>':'<span class="ty pr">craft</span>';
+  const rows=(items)=>items.map(it=>{
+    const v=S.inventory[it];
+    const txt=S.inventoryText[it]!=null?S.inventoryText[it]:(v!=null?formatGameNum(v,4):"");
+    return `<div class="price-row"><div class="pnm">${tag(it)}${it}</div><input type="text" data-inv="${it}" placeholder="0" value="${txt}"></div>`;
+  }).join("");
+  box.innerHTML=`<div class="price-grp first">Finished &amp; crafted</div>${rows(PRODUCTS)}<div class="price-grp">Raw materials</div>${rows(RAWS)}`;
+}
+function renderProjects(){
+  if(!S.projects)S.projects=[];
+  const box=document.getElementById("projList");
+  box.innerHTML=S.projects.length?S.projects.map((p,pi)=>projCard(p,pi)).join("")
+    :`<div class="proj-mini" style="padding:6px 2px">No projects yet — add one to start building a schedule.</div>`;
+  const st=document.getElementById("projSeqToggle");if(st)st.checked=S.projectSeq!==false;
+  renderInv();
+}
+document.getElementById("projSeqToggle").addEventListener("change",e=>{S.projectSeq=e.target.checked;save();scheduleSolve();});
+const projModal=document.getElementById("projModal");
+function openProjects(){renderProjects();projModal.hidden=false;}
+function closeProjects(){projModal.hidden=true;}
+document.getElementById("btnProjects").addEventListener("click",openProjects);
+document.getElementById("projClose").addEventListener("click",closeProjects);
+document.getElementById("projDone").addEventListener("click",closeProjects);
+projModal.addEventListener("click",e=>{if(e.target===projModal)closeProjects();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!projModal.hidden)closeProjects();});
+document.getElementById("projAdd").addEventListener("click",()=>{
+  S.projects.push({id:newId(),name:"New project",on:true,from:1,to:1,levels:[{costs:[]}],_open:true});
+  renderProjects();save();scheduleSolve();
+});
+document.getElementById("projInvClear").addEventListener("click",()=>{
+  if(!confirm("Clear all inventory amounts?"))return;
+  ALLITEMS.forEach(it=>{S.inventory[it]=null;S.inventoryText[it]="";});
+  renderInv();scheduleSolve();
+});
+document.getElementById("projList").addEventListener("click",e=>{
+  const t=e.target,g=a=>t.getAttribute(a);
+  let v;
+  if((v=g("data-ptoggle"))!=null){S.projects[+v]._open=!S.projects[+v]._open;renderProjects();return;}
+  if((v=g("data-pdel"))!=null){if(confirm("Delete this project?")){S.projects.splice(+v,1);renderProjects();save();scheduleSolve();}return;}
+  if((v=g("data-pdup"))!=null){const c=JSON.parse(JSON.stringify(S.projects[+v]));c.id=newId();c.name=(c.name||"Project")+" copy";c._open=true;S.projects.splice(+v+1,0,c);renderProjects();save();scheduleSolve();return;}
+  if((v=g("data-paddlvl"))!=null){const p=S.projects[+v];p.levels.push({costs:[]});p.to=p.levels.length;renderProjects();save();scheduleSolve();return;}
+  if((v=g("data-pdellvl"))!=null){const pi=+v,li=+g("data-li"),p=S.projects[pi];p.levels.splice(li,1);if(p.levels.length===0)p.levels.push({costs:[]});if(p.to>p.levels.length)p.to=p.levels.length;if(p.from>p.levels.length)p.from=p.levels.length;renderProjects();save();scheduleSolve();return;}
+  if((v=g("data-paddcost"))!=null){const pi=+v,li=+g("data-li");S.projects[pi].levels[li].costs.push({item:PRODUCTS[0],qty:null});renderProjects();save();scheduleSolve();return;}
+  if((v=g("data-cdel"))!=null){const[pi,li,ci]=v.split("_").map(Number);S.projects[pi].levels[li].costs.splice(ci,1);renderProjects();save();scheduleSolve();return;}
+});
+document.getElementById("projList").addEventListener("input",e=>{
+  const t=e.target,g=a=>t.getAttribute(a);let v;
+  if((v=g("data-pname"))!=null){S.projects[+v].name=t.value;save();scheduleSolve();return;}
+  if((v=g("data-pfrom"))!=null){S.projects[+v].from=Math.max(1,Math.floor(num(t.value)||1));save();scheduleSolve();return;}
+  if((v=g("data-pto"))!=null){S.projects[+v].to=Math.max(1,Math.floor(num(t.value)||1));save();scheduleSolve();return;}
+  if((v=g("data-cqty"))!=null){const[pi,li,ci]=v.split("_").map(Number);S.projects[pi].levels[li].costs[ci].qty=parseGameNum(t.value);save();scheduleSolve();return;}
+});
+document.getElementById("projList").addEventListener("change",e=>{
+  const t=e.target,g=a=>t.getAttribute(a);let v;
+  if((v=g("data-pon"))!=null){S.projects[+v].on=t.checked;save();scheduleSolve();return;}
+  if((v=g("data-pfirst"))!=null){S.projects[+v].first=t.checked;save();scheduleSolve();return;}
+  if((v=g("data-citem"))!=null){const[pi,li,ci]=v.split("_").map(Number);S.projects[pi].levels[li].costs[ci].item=t.value;save();scheduleSolve();return;}
+});
+document.getElementById("invRows").addEventListener("input",e=>{
+  const it=e.target.getAttribute("data-inv");if(!it)return;
+  S.inventoryText[it]=e.target.value;S.inventory[it]=parseGameNum(e.target.value);save();scheduleSolve();
+});
+
+/* ---------- Step-by-step plan modal ---------- */
+function itemTier(it){if(it===GEL||RAWS.includes(it))return 0;if(it==="Frames")return 2;if(it==="Wire")return 3;return 1;}
+function renderSteps(){
+  const res=_lastProjectRes, body=document.getElementById("stepsBody");
+  if(!res||res.empty||!res.phases||!res.phases.length){body.innerHTML=`<div class="notice info">Build a project plan first — add a project in Shopping list and switch to Project plan mode.</div>`;return;}
+  let h=`<p class="help" style="margin-bottom:12px">${res.sequenced
+      ?"Do these phases <b>in order</b>. Within a phase, a line listing two jobs splits its time — do the input job first so you don't stall. Reset the lines when you start the next phase."
+      :"Set every line as shown and let it run. A line listing two jobs splits its time across the run; do the input job first."} Total ≈ <b>${fmtDuration(res.eta)}</b>.</p>`;
+  res.phases.forEach((ph,i)=>{
+    const lines=(ph.plan||[]).filter(p=>p.entries&&p.entries.length).map(p=>({
+      line:p.line,max:p.max,reserved:p.reserved,
+      segs:p.entries.slice().sort((a,b)=>itemTier(a.item)-itemTier(b.item)||b.frac-a.frac)
+    }));
+    h+=`<div class="step-phase">`;
+    h+=res.sequenced
+      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>${escapeAttr(ph.name)}</b> ${ph.first?'<span class="pill craft" style="font-size:9px">do first</span>':""} <span class="proj-mini">· ~${fmtDuration(ph.eta)} · done by ${fmtDuration(ph.doneAt)}</span></div>`
+      : `<div class="step-h"><b>Set all lines like this and run</b> <span class="proj-mini">· ~${fmtDuration(ph.eta)}</span></div>`;
+    if(!ph.feasible)h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">Can't fully produce this one with the current lines${ph.unsat&&ph.unsat.length?" — "+ph.unsat.join(", ")+" need Gel":""}.</div>`;
+    if(!lines.length){h+=`<div class="proj-mini" style="padding:2px 0">No line activity.</div></div>`;return;}
+    h+=`<ol class="step-list">`;
+    lines.forEach(L=>{
+      const parts=L.segs.map(s=>{
+        if(L.reserved)return `reserve for <b>Gel</b> @${s.lvl}× (whole phase)`;
+        const verb=RAWS.includes(s.item)?"produce":"craft";
+        return `${verb} <b>${s.item}</b> @${s.lvl}×${s.frac>=0.999?" (whole phase)":` for ~${fmtDuration(s.frac*ph.eta)}`}`;
+      });
+      h+=`<li><span class="mono" style="color:var(--amber)">Line #${L.line}</span> <span class="proj-mini">(${L.max}× cap)</span> → ${parts.join(' <span style="color:var(--ink3)">then</span> ')}</li>`;
+    });
+    h+=`</ol></div>`;
+  });
+  body.innerHTML=h;
+}
+const stepsModal=document.getElementById("stepsModal");
+function openSteps(){renderSteps();stepsModal.hidden=false;}
+function closeSteps(){stepsModal.hidden=true;}
+document.getElementById("stepsClose").addEventListener("click",closeSteps);
+document.getElementById("stepsDone").addEventListener("click",closeSteps);
+stepsModal.addEventListener("click",e=>{if(e.target===stepsModal)closeSteps();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!stepsModal.hidden)closeSteps();});
+// the Step-by-step button lives inside #results, which is re-rendered each solve
+document.getElementById("results").addEventListener("click",e=>{if(e.target.closest&&e.target.closest("#btnSteps"))openSteps();});
+
 </script>
 </body>
 </html>
