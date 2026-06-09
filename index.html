@@ -892,7 +892,7 @@ function solveRaw(Rw){
 }
 
 function optimizeInner(timeBudget){
-  const itemsBudget=timeBudget||700, credBudget=timeBudget||650;
+  const itemsBudget=timeBudget||250, credBudget=timeBudget||650;
   const mode=S.mode==="credits"?"credits":"items";
   if(mode==="items"){
     const targets=PRODUCTS.filter(p=>S.targets[p].on);
@@ -953,7 +953,8 @@ function optimize(){
   const rows=lineRows();
   // "up to N": consider using 0..N lines for Gel (k=0 is no reservation) and keep whichever is best
   const subs=[];for(let k=0;k<=N;k++)subs.push(...combos(M,k));
-  const innerBudget=Math.max(20,Math.floor(800/Math.max(1,subs.length)));   // share a wall-clock budget across the combinations
+  // items max-min is verified-stable, so trim it; leave the credits sweep at full budget (exact)
+  const innerBudget=Math.max(20,Math.floor((S.mode==="items"?350:800)/Math.max(1,subs.length)));
   const t0=performance.now();
   let best=null,emptyInner=false;
   subs.forEach(idx=>{
