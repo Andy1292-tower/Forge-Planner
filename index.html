@@ -200,8 +200,27 @@ select:focus,input:focus{outline:none;border-color:var(--copper);
 .tip:hover::after,.tip:focus-visible::after{
   opacity:1;visibility:visible;transform:translateX(-50%) translateY(0);
 }
-.tip.tip-right::after{left:auto;right:-4px;transform:translateX(0) translateY(3px)}
+.tip.tip-right::after{left:-4px;right:auto;transform:translateX(0) translateY(3px)}
 .tip.tip-right:hover::after,.tip.tip-right:focus-visible::after{transform:translateX(0) translateY(0)}
+/* icon variant: paints the in-game indicator beside the text (left), text wraps to its right */
+.tip.tip-ic::after{
+  background-image:var(--tip-img);
+  background-repeat:no-repeat;
+  background-position:left 12px center;
+  background-size:54px auto;
+  padding-left:78px;
+  max-width:250px;
+}
+/* not enough horizontal room → stack the icon on top, text below */
+@media(max-width:560px){
+  .tip.tip-ic::after{
+    background-position:top 10px center;
+    background-size:auto 46px;
+    padding-left:12px;
+    padding-top:64px;
+    max-width:230px;
+  }
+}
 
 /* targets */
 .tg{display:flex;flex-direction:column;gap:8px}
@@ -582,8 +601,8 @@ function renderLines(){
       <div><div class="lname">Line ${i+1}<i class="tip" tabindex="0" data-tip="${TIPS.line}">?</i></div>
         <div class="line-fields">
           <label class="fl"><span>max compression</span><select data-line="${i}" aria-label="Max compression">${opts}</select></label>
-          <label class="fl"><span>speed × <i class="tip tip-right" tabindex="0" data-tip="${TIPS.spx}">?</i></span><input type="number" min="0" step="any" placeholder="1" value="${ln.spx??1}" data-spx="${i}" aria-label="Total speed multiplier"></label>
-          <label class="fl"><span>dupe % <i class="tip tip-right" tabindex="0" data-tip="${TIPS.dup}">?</i></span><input type="number" min="0" max="100" step="any" placeholder="0" value="${ln.dup??0}" data-dup="${i}" aria-label="Duplication chance percent"></label>
+          <label class="fl"><span>speed × <i class="tip tip-right tip-ic" tabindex="0" style="--tip-img:url('assets/speed.jpg')" data-tip="${TIPS.spx}">?</i></span><input type="number" min="0" step="any" placeholder="1" value="${ln.spx??1}" data-spx="${i}" aria-label="Total speed multiplier"></label>
+          <label class="fl"><span>dupe % <i class="tip tip-right tip-ic" tabindex="0" style="--tip-img:url('assets/dupe.jpg')" data-tip="${TIPS.dup}">?</i></span><input type="number" min="0" max="100" step="any" placeholder="0" value="${ln.dup??0}" data-dup="${i}" aria-label="Duplication chance percent"></label>
         </div></div>
       <button class="iconbtn" data-del="${i}" title="${TIPS.del}" aria-label="${TIPS.del}">×</button>`;
     box.appendChild(row);
