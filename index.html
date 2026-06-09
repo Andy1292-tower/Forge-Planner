@@ -155,6 +155,9 @@ select,input[type=number],input[type=text]{font-family:"JetBrains Mono",monospac
   background:var(--surface2);color:var(--ink);border:1px solid var(--line2);border-radius:5px;
   padding:7px 9px;width:100%;transition:border-color .15s, box-shadow .15s;
   line-height:1.2;-webkit-appearance:none;appearance:none}
+/* hide number-input spinner arrows */
+input[type=number]{-moz-appearance:textfield}
+input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 select{appearance:none;-webkit-appearance:none;
   background-image:linear-gradient(45deg,transparent 50%,var(--ink3) 50%),linear-gradient(135deg,var(--ink3) 50%,transparent 50%);
   background-position:calc(100% - 14px) 50%, calc(100% - 9px) 50%;
