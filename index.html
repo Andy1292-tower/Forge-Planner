@@ -374,9 +374,9 @@ button.gel-head .sub{color:var(--amber)}
           <h2><span class="gchev">▸</span> Gel lines</h2><span class="sub" id="gelSummary"></span>
         </button>
         <div class="body" id="gelBody" hidden>
-          <p class="help" style="margin:0 0 12px">Gel is forged from mined ore, not crafter inputs — so you decide how much of your factory runs it. Set how many lines you can sustain on Gel and at what compression; the planner dedicates that many of your best-suited crafters to Gel and feeds it into everything else.</p>
+          <p class="help" style="margin:0 0 12px">Gel is forged from mined ore, not crafter inputs — so you decide how much of your factory can run it. Set the <b>most</b> lines you could sustain on Gel and at what compression. The planner uses <b>up to</b> that many of your best-suited crafters for Gel — only as many as actually help make more of what you asked for — and feeds it into everything else.</p>
           <div class="line-fields" style="grid-template-columns:1fr 1fr">
-            <label class="fl"><span>lines on gel</span><input type="number" min="0" step="1" id="gelLines" value="0"></label>
+            <label class="fl"><span>max lines on gel</span><input type="number" min="0" step="1" id="gelLines" value="0"></label>
             <label class="fl"><span>gel compression</span><select id="gelComp"></select></label>
           </div>
         </div>
@@ -610,7 +610,7 @@ function renderGel(){
   sel.value=S.gelComp;
   document.getElementById("gelLines").value=S.gelLines||0;
   const n=Math.min(Math.max(0,Math.floor(num(S.gelLines)||0)),S.lines.length);
-  document.getElementById("gelSummary").textContent=n>0?(n+" line"+(n>1?"s":"")+" @ "+S.gelComp+"×"):"off";
+  document.getElementById("gelSummary").textContent=n>0?("up to "+n+" @ "+S.gelComp+"×"):"off";
 }
 document.getElementById("gelToggle").addEventListener("click",()=>{
   const b=document.getElementById("gelBody"),t=document.getElementById("gelToggle");
@@ -842,7 +842,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   // multi-start local search from each target, then iterated local search to close the gap
   let inc=null;
   targets.map(t=>resIndex[t]).forEach(res=>{const ch=new Array(N);for(let i=0;i<N;i++){const bj=bestJobFor(i,res);ch[i]=bj>=0?bj:idleIdx(i);}const sc=localOpt(ch);if(sc!=null&&(!inc||sc>inc.sc))inc={sc,ch:ch.slice()};});
-  if(inc){
+  if(inc&&N>0){
     const ilsT=Math.min(timeBudget*0.5,120);
     for(let it=0;it<8000;it++){
       if((it&31)===0&&performance.now()-tStart>ilsT)break;
@@ -913,7 +913,7 @@ function optimizeInner(timeBudget){
   const pricedR=RAWS.filter(r=>(num(S.sellPrice&&S.sellPrice[r])||0)>0);
   const issues=[];let capped=false,usesMargin=false;
   if(pricedP.length+pricedR.length===0)issues.push("No sell prices entered. Open the “Sell prices” button and add at least one.");
-  const budgetEach=Math.max(120,Math.floor(credBudget/Math.max(1,pricedP.length)));
+  const budgetEach=Math.max(25,Math.floor(credBudget/Math.max(1,pricedP.length)));
   const cand=[];
   pricedP.forEach(P=>{
     const price=num(S.sellPrice[P])||0;
@@ -951,8 +951,9 @@ function optimize(){
   if(N<=0)return optimizeInner();
   const C=LEVELS.includes(S.gelComp)?S.gelComp:1024;
   const rows=lineRows();
-  const subs=combos(M,N);
-  const innerBudget=Math.max(90,Math.floor(900/Math.max(1,subs.length)));   // share a wall-clock budget across the combinations
+  // "up to N": consider using 0..N lines for Gel (k=0 is no reservation) and keep whichever is best
+  const subs=[];for(let k=0;k<=N;k++)subs.push(...combos(M,k));
+  const innerBudget=Math.max(20,Math.floor(800/Math.max(1,subs.length)));   // share a wall-clock budget across the combinations
   const t0=performance.now();
   let best=null,emptyInner=false;
   subs.forEach(idx=>{
@@ -1091,8 +1092,12 @@ function renderResults(){
       (net>1e-6?`pre-produce about <b style="color:var(--amber)">${disp(net)}</b> Bits/hr to keep up.`
               :`Forgie already covers it — a <b style="color:var(--teal)">${disp(-net)}</b>/hr surplus.`)+`</div>`;
   }
-  if(res.gelReserved&&res.gelReserved.lines>0){
-    html+=`<div class="notice info" style="font-size:11.5px"><b>${res.gelReserved.lines}</b> line${res.gelReserved.lines>1?"s":""} reserved for Gel @${res.gelReserved.comp}× → <b>${disp(res.gelReserved.outHr)}</b> Gel/hr (from free mined ore), fed into the plan above.</div>`;
+  if(res.gelReserved){
+    const maxN=Math.min(Math.max(0,Math.floor(num(S.gelLines)||0)),S.lines.length), K=res.gelReserved.lines;
+    if(maxN>0&&K>0)
+      html+=`<div class="notice info" style="font-size:11.5px"><b>${K}</b> of up to ${maxN} line${maxN>1?"s":""} put on Gel @${res.gelReserved.comp}× → <b>${disp(res.gelReserved.outHr)}</b> Gel/hr (from free mined ore), fed into the plan above.</div>`;
+    else if(maxN>0)
+      html+=`<div class="notice info" style="font-size:11.5px">Gel available (up to ${maxN} line${maxN>1?"s":""}), but the planner makes more of your target by using <b>0</b> on Gel here.</div>`;
   }
   el.innerHTML=html;
   stat.textContent="solved in "+res.ms.toFixed(1)+" ms";
