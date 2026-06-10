@@ -466,6 +466,7 @@ button.gel-head .sub{color:var(--amber)}
             <button data-mode="items" class="on">Max items/hr</button>
             <button data-mode="credits">Max credits/hr</button>
             <button data-mode="project">Project plan</button>
+            <button data-mode="manual">Manual</button>
           </div>
           <span class="sub" id="solveStat"></span>
         </div></div>
@@ -618,13 +619,30 @@ function defaults(){
     forgie:nulls(),forgieText:{},
     gelLines:0,gelComp:1024,
     targets:tg,
-    projects:[],inventory:nulls(),inventoryText:{},projectSeq:true
+    projects:[],inventory:nulls(),inventoryText:{},projectSeq:true,
+    manual:[]
   };
 }
 
+// Manual mode: keep S.manual (one {job,lvl} per line) in sync with the line list,
+// clamping each level to its line's max cap and falling back to idle on bad data.
+function syncManual(st){
+  if(!st)return;
+  if(!Array.isArray(st.manual))st.manual=[];
+  (st.lines||[]).forEach((ln,i)=>{
+    let m=st.manual[i];
+    if(!m||typeof m!=="object")m={job:"Idle",lvl:ln.max};
+    if(m.job!=="Idle"&&!ALLITEMS.includes(m.job))m.job="Idle";
+    if(!LEVELS.includes(m.lvl))m.lvl=ln.max;
+    if(m.lvl>ln.max)m.lvl=ln.max;
+    st.manual[i]=m;
+  });
+  st.manual.length=(st.lines||[]).length;
+}
+
 const LSKEY="forgePlannerState_v3";
-function normalize(st){if(!st)return st;if(!Array.isArray(st.lines))st.lines=[];st.lines.forEach(l=>{if(l.dup==null||isNaN(l.dup))l.dup=0;if(l.spx==null||isNaN(l.spx)||l.spx<=0)l.spx=1;});if(st.margin==null||isNaN(st.margin))st.margin=0;if(!st.baseTime)st.baseTime={};const _DB=defaults().baseTime,_PB={Ingots:9.63,Bits:9.63,Concrete:9.63,Glass:87.3,Bricks:114.3,Plates:29.23,Rods:44.46,Frames:311.38};const _migrate=!st.baseTimeRev||st.baseTimeRev<2;[...RAWS,...PRODUCTS].forEach(it=>{const v=st.baseTime[it];if(v==null||isNaN(v)||v<=0)st.baseTime[it]=_DB[it];else if(_migrate&&(Math.abs(v-(_PB[it]||-1))<1e-4||Math.abs(v-12.85)<1e-4))st.baseTime[it]=_DB[it];});st.baseTimeRev=2;const _DP=defaults().prodCost;if(!st.prodCost)st.prodCost={};PRODUCTS.forEach(P=>{if(!st.prodCost[P])st.prodCost[P]={};RECIPE[P].inputs.forEach(k=>{if(!st.prodCost[P][k]||Object.keys(st.prodCost[P][k]).length===0)st.prodCost[P][k]=_DP[P][k];});});if(!st.sellPrice)st.sellPrice={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.sellPrice[it]===undefined)st.sellPrice[it]=null;});if(!st.priceText)st.priceText={};if(!st.forgie)st.forgie={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.forgie[it]===undefined)st.forgie[it]=null;});if(!st.forgieText)st.forgieText={};if(!st.targets)st.targets={};PRODUCTS.forEach(p=>{if(!st.targets[p])st.targets[p]={on:false,w:1};});if(st.gelLines==null||isNaN(st.gelLines)||st.gelLines<0)st.gelLines=0;if(!LEVELS.includes(st.gelComp))st.gelComp=1024;if(st.mode!=="credits"&&st.mode!=="items"&&st.mode!=="project")st.mode="items";if(!Array.isArray(st.projects))st.projects=[];st.projects.forEach(p=>{if(!p.id)p.id="p"+Math.random().toString(36).slice(2,9);if(typeof p.name!=="string")p.name="Project";p.on=p.on!==false;p.first=!!p.first;if(!Array.isArray(p.levels)||p.levels.length===0)p.levels=[{costs:[]}];p.levels.forEach(L=>{if(!Array.isArray(L.costs))L.costs=[];L.costs.forEach(c=>{if(!RAWS.includes(c.item)&&!PRODUCTS.includes(c.item))c.item=PRODUCTS[0];if(c.qty!=null&&(typeof c.qty!=="number"||isNaN(c.qty)||c.qty<0))c.qty=null;});});p.from=Math.max(1,Math.floor(Number(p.from)||1));p.to=Math.max(p.from,Math.min(p.levels.length,Math.floor(Number(p.to)||p.levels.length)));});if(!st.inventory)st.inventory={};ALLITEMS.forEach(it=>{if(st.inventory[it]===undefined)st.inventory[it]=null;});if(!st.inventoryText)st.inventoryText={};if(typeof st.projectSeq!=="boolean")st.projectSeq=true;return st;}
-let S=normalize(load())||defaults();
+function normalize(st){if(!st)return st;if(!Array.isArray(st.lines))st.lines=[];st.lines.forEach(l=>{if(l.dup==null||isNaN(l.dup))l.dup=0;if(l.spx==null||isNaN(l.spx)||l.spx<=0)l.spx=1;});if(st.margin==null||isNaN(st.margin))st.margin=0;if(!st.baseTime)st.baseTime={};const _DB=defaults().baseTime,_PB={Ingots:9.63,Bits:9.63,Concrete:9.63,Glass:87.3,Bricks:114.3,Plates:29.23,Rods:44.46,Frames:311.38};const _migrate=!st.baseTimeRev||st.baseTimeRev<2;[...RAWS,...PRODUCTS].forEach(it=>{const v=st.baseTime[it];if(v==null||isNaN(v)||v<=0)st.baseTime[it]=_DB[it];else if(_migrate&&(Math.abs(v-(_PB[it]||-1))<1e-4||Math.abs(v-12.85)<1e-4))st.baseTime[it]=_DB[it];});st.baseTimeRev=2;const _DP=defaults().prodCost;if(!st.prodCost)st.prodCost={};PRODUCTS.forEach(P=>{if(!st.prodCost[P])st.prodCost[P]={};RECIPE[P].inputs.forEach(k=>{if(!st.prodCost[P][k]||Object.keys(st.prodCost[P][k]).length===0)st.prodCost[P][k]=_DP[P][k];});});if(!st.sellPrice)st.sellPrice={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.sellPrice[it]===undefined)st.sellPrice[it]=null;});if(!st.priceText)st.priceText={};if(!st.forgie)st.forgie={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.forgie[it]===undefined)st.forgie[it]=null;});if(!st.forgieText)st.forgieText={};if(!st.targets)st.targets={};PRODUCTS.forEach(p=>{if(!st.targets[p])st.targets[p]={on:false,w:1};});if(st.gelLines==null||isNaN(st.gelLines)||st.gelLines<0)st.gelLines=0;if(!LEVELS.includes(st.gelComp))st.gelComp=1024;if(st.mode!=="credits"&&st.mode!=="items"&&st.mode!=="project"&&st.mode!=="manual")st.mode="items";if(!Array.isArray(st.projects))st.projects=[];st.projects.forEach(p=>{if(!p.id)p.id="p"+Math.random().toString(36).slice(2,9);if(typeof p.name!=="string")p.name="Project";p.on=p.on!==false;p.first=!!p.first;if(!Array.isArray(p.levels)||p.levels.length===0)p.levels=[{costs:[]}];p.levels.forEach(L=>{if(!Array.isArray(L.costs))L.costs=[];L.costs.forEach(c=>{if(!RAWS.includes(c.item)&&!PRODUCTS.includes(c.item))c.item=PRODUCTS[0];if(c.qty!=null&&(typeof c.qty!=="number"||isNaN(c.qty)||c.qty<0))c.qty=null;});});p.from=Math.max(1,Math.floor(Number(p.from)||1));p.to=Math.max(p.from,Math.min(p.levels.length,Math.floor(Number(p.to)||p.levels.length)));});if(!st.inventory)st.inventory={};ALLITEMS.forEach(it=>{if(st.inventory[it]===undefined)st.inventory[it]=null;});if(!st.inventoryText)st.inventoryText={};if(typeof st.projectSeq!=="boolean")st.projectSeq=true;syncManual(st);return st;}
+let S=normalize(load())||defaults();syncManual(S);
 
 function load(){try{const r=localStorage.getItem(LSKEY);return r?JSON.parse(r):null;}catch(e){return null;}}
 function save(){try{localStorage.setItem(LSKEY,JSON.stringify(S));flashSaved();}catch(e){document.getElementById("saveind").innerHTML="<b style='color:var(--ink3)'>local save unavailable here</b>";}}
@@ -1382,6 +1400,7 @@ function renderProjectResults(res,el,stat){
 function renderResults(){
   const el=document.getElementById("results");
   const stat=document.getElementById("solveStat");
+  if(S.mode==="manual"){renderManual(el,stat);return;}
   const res=optimize();
   if(res.mode==="project"){renderProjectResults(res,el,stat);return;}
   // nudge toward Sell prices when credits mode is selected but no prices exist yet
@@ -1498,6 +1517,108 @@ function renderResults(){
 }
 function invName(resIndex,idx){for(const k in resIndex)if(resIndex[k]===idx)return k;return "";}
 
+/* ---------- Manual configuration mode ---------- */
+// No solver: every line's job is set by hand. Compute the resulting production,
+// consumption and balance directly, so the user can try setups that aren't optimal
+// but suit their purposes — and see at a glance whether each input keeps up.
+function manualResult(){
+  const resources=[...RAWS,...PRODUCTS];
+  const resIndex={};resources.forEach((r,i)=>resIndex[r]=i);
+  const produced=resources.map(()=>0), consumed=resources.map(()=>0);
+  const forgie={};resources.forEach(r=>{forgie[r]=forgieHr(r);produced[resIndex[r]]+=forgie[r];});
+  const plan=[]; const issueSet=new Set();
+  S.lines.forEach((ln,i)=>{
+    const m=S.manual[i]||{job:"Idle",lvl:ln.max};
+    const sp=Math.max(1e-6,num(ln.spx)||1), dp=1+(num(ln.dup)||0)/100;
+    let job;
+    if(m.job==="Idle"||!ALLITEMS.includes(m.job)){
+      job={kind:"idle",res:null,lvl:null,ct:0,prod:[],cons:[]};
+    }else{
+      const item=m.job, L=Math.min(LEVELS.includes(m.lvl)?m.lvl:ln.max,ln.max), ct=craftTime(item,L);
+      const eff=effSpeed(sp,ct), rate=ct>0?L/ct:0, cons=[];
+      if(!RAWS.includes(item)&&item!==GEL){
+        RECIPE[item].inputs.forEach(k=>{const c=S.prodCost[item][k][L];
+          if(c==null||isNaN(c)){issueSet.add("No material cost entered for "+item+" @"+L+"×.");}
+          else{cons.push([resIndex[k],c/ct]);consumed[resIndex[k]]+=(c/ct)*eff*3600;}});
+      }
+      produced[resIndex[item]]+=rate*eff*dp*3600;
+      job={kind:(RAWS.includes(item)||item===GEL)?"produce":"craft",res:item,lvl:L,ct,prod:[[resIndex[item],rate]],cons};
+    }
+    plan.push({line:i+1,max:ln.max,spx:sp,dup:(num(ln.dup)||0),sp,dp,job});
+  });
+  const balance=resources.map(r=>{const i=resIndex[r];return {res:r,prod:Math.max(0,produced[i]-forgie[r]),forgie:forgie[r],cons:consumed[i]};});
+  const out={};resources.forEach(r=>{const i=resIndex[r];out[r]=produced[i]-consumed[i];});
+  return {plan,balance,out,resIndex,issues:[...issueSet]};
+}
+function renderManual(el,stat){
+  syncManual(S);
+  const res=manualResult();
+  let html=`<div class="notice info"><b>Manual mode.</b> Assign each line a resource and a compression level by hand. The <b>balance</b> table below shows whether every input is produced fast enough to sustain the setup — a negative surplus (<b>short</b>) means that input runs dry. Compression is capped at each line's max.</div>`;
+  if(res.issues.length)html+=`<div class="notice warn"><b>Missing data:</b><br>${res.issues.join("<br>")}</div>`;
+  // net surplus headline cards (anything left over after the chain feeds itself)
+  const nets=[...PRODUCTS,...RAWS].filter(it=>res.out[it]>1e-6);
+  if(nets.length){html+=`<div class="metrics">`;nets.forEach(t=>{
+    html+=`<div class="metric"><div class="l">${t}</div><div class="v">${disp(res.out[t])}</div><div class="u">net surplus /hr</div></div>`;});
+    html+=`</div>`;}
+  // editable per-line setup
+  html+=`<div class="subhead">Manual line setup</div>
+    <table><thead><tr><th>Line</th><th>Cap</th><th>Resource</th><th>Compression</th>
+      <th class="num">Output /hr</th><th>Consumes /hr</th></tr></thead><tbody>`;
+  res.plan.forEach((p,i)=>{
+    const ln=S.lines[i], m=S.manual[i], j=p.job;
+    const resOpts=`<option value="Idle"${m.job==="Idle"?" selected":""}>— idle —</option>`+
+      `<optgroup label="Raw materials">`+RAWS.map(it=>`<option value="${it}"${it===m.job?" selected":""}>${it}</option>`).join("")+`</optgroup>`+
+      `<optgroup label="Crafted">`+PRODUCTS.map(it=>`<option value="${it}"${it===m.job?" selected":""}>${it}</option>`).join("")+`</optgroup>`;
+    const lvlOpts=LEVELS.filter(L=>L<=ln.max).map(L=>`<option value="${L}"${L===m.lvl?" selected":""}>${L}×</option>`).join("");
+    let outv="—",cons="";
+    if(j.kind!=="idle"){const eff=effSpeed(p.sp,j.ct);
+      outv=disp(j.prod[0][1]*eff*p.dp*3600);
+      cons=j.cons.length?j.cons.map(c=>disp(c[1]*eff*3600)+" "+invName(res.resIndex,c[0])).join(", ")
+                        :'<span style="color:var(--ink3)">none</span>';}
+    const tags=`<span style="color:var(--ink3);font-size:10.5px"> ×${fmt(p.sp,2)} spd</span>${p.dup>0?` <span style="color:var(--ink3);font-size:10.5px">+${fmt(p.dup,2)}% dup</span>`:""}`;
+    html+=`<tr><td class="mono">#${p.line}</td><td class="mono">${ln.max}×${tags}</td>
+      <td><select data-mres="${i}" aria-label="Line ${p.line} resource">${resOpts}</select></td>
+      <td><select data-mlvl="${i}" aria-label="Line ${p.line} compression"${j.kind==="idle"?" disabled":""}>${lvlOpts}</select></td>
+      <td class="num">${outv}</td><td style="color:var(--ink2);font-size:11.5px">${cons}</td></tr>`;
+  });
+  html+=`</tbody></table>`;
+  // resource balance — only resources actually in play
+  const bal=res.balance.filter(b=>b.prod>1e-6||b.cons>1e-6||(b.forgie||0)>1e-6);
+  if(!bal.length){
+    html+=`<div class="notice info" style="font-size:11.5px">All lines are idle — pick a resource for at least one line above to see a balance.</div>`;
+  }else{
+    const showForgie=bal.some(b=>(b.forgie||0)>1e-6);
+    html+=`<div class="subhead">Resource balance (per hour)</div>
+      <table><thead><tr><th>Resource</th><th class="num">Lines</th>${showForgie?'<th class="num">Lil\' Forgie</th>':''}<th class="num">Consumed</th>
+        <th class="num">Surplus</th><th>Status</th></tr></thead><tbody>`;
+    bal.forEach(b=>{
+      const f=b.forgie||0, surplus=b.prod+f-b.cons, ratio=b.cons>0?surplus/b.cons:1;
+      let cls="bal-ok",lbl="healthy";
+      if(surplus<-1e-6){cls="bal-tight";lbl="short";}
+      else if(b.cons>0&&ratio<0.05){cls="bal-tight";lbl="tight";}
+      const fCell=showForgie?`<td class="num" style="color:${f>1e-6?'var(--teal)':'var(--ink3)'}">${f>1e-6?disp(f):"—"}</td>`:"";
+      html+=`<tr><td>${b.res}</td><td class="num">${disp(b.prod)}</td>${fCell}
+        <td class="num">${disp(b.cons)}</td>
+        <td class="num ${surplus<-1e-6?'bal-tight':''}">${disp(surplus)}</td>
+        <td class="${cls}" style="font-weight:600;font-size:11.5px">${lbl}</td></tr>`;
+    });
+    html+=`</tbody></table>`;
+  }
+  // Frames pre-produce Bits (same convention as the solver readout: kept out of the line math)
+  let framesBits=0;
+  res.plan.forEach(p=>{const j=p.job;if(j&&j.kind==="craft"&&j.res==="Frames"){const L=j.lvl,ct=craftTime("Frames",L),sp=effSpeed(p.sp,ct);if(ct>0)framesBits+=(FRAME_BITS*Math.pow(3,Math.log2(L))/ct)*sp*3600;}});
+  if(framesBits>1e-6){
+    const fBits=num(S.forgie&&S.forgie.Bits)||0, net=framesBits-fBits;
+    html+=`<div class="subhead">Bits to pre-produce (Frames)</div>
+      <div class="notice info" style="font-size:12px">Frames consume <b>${disp(framesBits)}</b> Bits/hr (8 per uncompressed frame, not part of the line setup above).`+
+      (fBits>0?` Lil' Forgie supplies <b>${disp(fBits)}</b>/hr, so `:` So `)+
+      (net>1e-6?`pre-produce about <b style="color:var(--amber)">${disp(net)}</b> Bits/hr to keep up.`
+              :`Forgie already covers it — a <b style="color:var(--teal)">${disp(-net)}</b>/hr surplus.`)+`</div>`;
+  }
+  el.innerHTML=html;
+  stat.textContent="manual setup";
+}
+
 /* ---------- EVENTS ---------- */
 let renderT;
 function doSolve(){renderT=null;save();renderResults();}
@@ -1520,10 +1641,10 @@ document.getElementById("lines").addEventListener("input",e=>{
 });
 document.getElementById("lines").addEventListener("click",e=>{
   const d=e.target.dataset.del;
-  if(d!==undefined){if(S.lines.length>1){S.lines.splice(+d,1);renderLines();save();renderResults();}}
+  if(d!==undefined){if(S.lines.length>1){S.lines.splice(+d,1);S.manual.splice(+d,1);syncManual(S);renderLines();save();renderResults();}}
 });
 document.getElementById("btnAddLine").addEventListener("click",()=>{
-  S.lines.push({max:512,spx:1,dup:0});renderLines();save();renderResults();
+  S.lines.push({max:512,spx:1,dup:0});syncManual(S);renderLines();save();renderResults();
 });
 
 document.getElementById("margin").addEventListener("input",e=>{
@@ -1858,6 +1979,14 @@ stepsModal.addEventListener("click",e=>{if(e.target===stepsModal)closeSteps();})
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!stepsModal.hidden)closeSteps();});
 // the Step-by-step button lives inside #results, which is re-rendered each solve
 document.getElementById("results").addEventListener("click",e=>{if(e.target.closest&&e.target.closest("#btnSteps"))openSteps();});
+// Manual-mode dropdowns also live inside #results (re-rendered each change)
+document.getElementById("results").addEventListener("change",e=>{
+  const t=e.target;if(!t||!t.getAttribute)return;
+  const ri=t.getAttribute("data-mres");
+  if(ri!=null){const i=+ri;if(S.manual[i]){S.manual[i].job=t.value;if(S.manual[i].lvl>S.lines[i].max)S.manual[i].lvl=S.lines[i].max;}save();renderResults();return;}
+  const lv=t.getAttribute("data-mlvl");
+  if(lv!=null){const i=+lv;if(S.manual[i])S.manual[i].lvl=+t.value;save();renderResults();return;}
+});
 
 </script>
 </body>

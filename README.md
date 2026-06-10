@@ -10,6 +10,8 @@ Everything runs client-side.
 - **Crafts:** Glass (←Bits), Bricks (←Concrete), Plates (←Ingots), Rods (←Ingots), Frames (←Plates + Rods; Bits pre-produced)
 - **Per-line caps:** each crafter line has its own max compression, 1×–1024×
 - **Multi-output:** select several outputs at once; the priority slider sets the *ratio* (higher = more of that one), and the solver maximizes the weighted floor so you always get a real mix
+- **Project plan + shopping list:** build named **projects** (each a list of levels, each level a set of item costs), enter your current inventory, and **Project plan** mode sums what's left to craft and lays out the fastest pipelined schedule — either all projects together or one at a time (cheapest first, with "do first" projects pinned ahead). Accepts game notation (`1.2m`, `3.4qa`), and a **step-by-step** view gives the exact per-phase line setup.
+- **Manual mode:** skip the solver and assign each line a resource and compression level by hand. A live resource-balance readout flags each input as healthy / tight / short, so you can build setups that aren't purely optimal but still sustain themselves.
 - **Persistence:** auto-saves to `localStorage`; Export/Import craftables stats as JSON
 
 The solver is branch-and-bound with symmetry reduction over identical lines — instant at 5 lines, fine at 6+.
