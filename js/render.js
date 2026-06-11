@@ -58,6 +58,15 @@ document.getElementById("gelBody").addEventListener("input",e=>{
   else if(e.target.id==="gelComp"){S.gelComp=+e.target.value;}
   renderGel();scheduleSolve();
 });
+// custom stepper buttons for the Gel-lines field (native spin arrows don't render)
+document.getElementById("gelBody").addEventListener("click",e=>{
+  const btn=e.target.closest(".stepper-up,.stepper-down");if(!btn)return;
+  const inp=document.getElementById("gelLines");
+  const cur=Math.max(0,Math.floor(num(inp.value)||0));
+  const next=Math.max(0,Math.min(S.lines.length,cur+(btn.classList.contains("stepper-up")?1:-1)));
+  if(next===cur)return;
+  inp.value=next;inp.dispatchEvent(new Event("input",{bubbles:true}));
+});
 
 /* ---------- RENDER: recipe data ---------- */
 function renderRecipes(){

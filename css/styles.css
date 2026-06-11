@@ -148,9 +148,17 @@ select,input[type=number],input[type=text]{font-family:"JetBrains Mono",monospac
 /* hide number-input spinner arrows */
 input[type=number]{-moz-appearance:textfield}
 input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
-/* …except the Gel-lines field, which keeps its native spinner (per request) */
-#gelLines{-moz-appearance:number-input;-webkit-appearance:auto;appearance:auto}
-#gelLines::-webkit-outer-spin-button,#gelLines::-webkit-inner-spin-button{-webkit-appearance:inner-spin-button;opacity:1;margin:0}
+/* custom number stepper (native webkit/gecko spin buttons don't render here) */
+.stepper{position:relative;display:block;width:100%}
+.stepper>input[type=number]{padding-right:30px}
+.stepper-btns{position:absolute;top:1px;right:1px;bottom:1px;width:24px;display:flex;flex-direction:column;
+  border-left:1px solid var(--line2);border-radius:0 5px 5px 0;overflow:hidden}
+.stepper-btns button{flex:1 1 0;min-height:0;appearance:none;-webkit-appearance:none;border:none;padding:0;
+  background:var(--surface);color:var(--ink2);font-size:8px;line-height:1;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:background .12s,color .12s}
+.stepper-btns button:first-child{border-bottom:1px solid var(--line2)}
+.stepper-btns button:hover{background:var(--surface2);color:var(--copper)}
+.stepper-btns button:active{background:var(--copper);color:#15110a}
 select{appearance:none;-webkit-appearance:none;
   background-image:linear-gradient(45deg,transparent 50%,var(--ink3) 50%),linear-gradient(135deg,var(--ink3) 50%,transparent 50%);
   background-position:calc(100% - 14px) 50%, calc(100% - 9px) 50%;
