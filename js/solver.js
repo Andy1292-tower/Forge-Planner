@@ -247,9 +247,16 @@ function optimizeInner(timeBudget){
   const pricedR=RAWS.filter(r=>(num(S.sellPrice&&S.sellPrice[r])||0)>0);
   const issues=[];let capped=false,usesMargin=false;
   if(pricedP.length+pricedR.length===0)issues.push("No sell prices entered. Open the “Sell prices” button and add at least one.");
-  const budgetEach=Math.max(25,Math.floor(credBudget/Math.max(1,pricedP.length)));
+  // When Gel lines are reserved (free Gel supply active), only items whose chain consumes Gel
+  // can possibly do better than the no-reservation pass — every other item is strictly best at
+  // full line-count, already evaluated in the k=0 sweep. Skipping them here turns the
+  // credits×reservation sweep from (priced items × subsets) into (Gel-chain items × subsets).
+  const gelReserved=!!(_SUPPLY&&(num(_SUPPLY[GEL])||0)>1e-9);
+  const evalP=gelReserved?pricedP.filter(p=>chainNeedsGel(p)):pricedP;
+  const evalR=gelReserved?[]:pricedR;
+  const budgetEach=Math.max(25,Math.floor(credBudget/Math.max(1,evalP.length)));
   const cand=[];
-  pricedP.forEach(P=>{
+  evalP.forEach(P=>{
     const price=num(S.sellPrice[P])||0;
     const ins=RECIPE[P].inputs;
     const hasCost=LEVELS.some(L=>ins.every(k=>S.prodCost[P][k][L]!=null&&!isNaN(S.prodCost[P][k][L])));
@@ -261,7 +268,7 @@ function optimizeInner(timeBudget){
     const out=sr.feasible?(sr.best.produced[sr.resIndex[P]]-sr.best.consumed[sr.resIndex[P]])*3600:0;
     cand.push({item:P,kind:"product",out,price,credits:out*price,plan,balance,resIndex:sr.resIndex,feasible:sr.feasible});
   });
-  pricedR.forEach(Rw=>{const s=solveRaw(Rw);const price=num(S.sellPrice[Rw])||0;cand.push({item:Rw,kind:"raw",out:s.out,price,credits:s.out*price,plan:s.plan,balance:s.balance,resIndex:s.resIndex,feasible:s.feasible});});
+  evalR.forEach(Rw=>{const s=solveRaw(Rw);const price=num(S.sellPrice[Rw])||0;cand.push({item:Rw,kind:"raw",out:s.out,price,credits:s.out*price,plan:s.plan,balance:s.balance,resIndex:s.resIndex,feasible:s.feasible});});
   cand.sort((a,b)=>b.credits-a.credits);
   const top=cand[0];
   const feasible=!!top&&top.credits>1e-9;
@@ -479,7 +486,7 @@ function optimize(){
   // items max-min is verified-stable, so trim it; leave the credits sweep at full budget (exact)
   const innerBudget=Math.max(20,Math.floor((S.mode==="items"?350:800)/Math.max(1,subs.length)));
   const t0=performance.now();
-  let best=null,emptyInner=false;
+  let best=null,emptyInner=false,baseRes=null;
   subs.forEach(idx=>{
     const set=new Set(idx);
     const gelRows=idx.map(i=>rows[i]);
@@ -489,9 +496,20 @@ function optimize(){
     const res=optimizeInner(innerBudget);
     _LINES=null;_SUPPLY=null;
     if(res.empty){emptyInner=true;return;}
+    if(idx.length===0)baseRes=res;   // no-reservation pass: the full-pool ranking for every item
     if(!best||(res.objective||0)>best.res.objective+1e-12)best={res,gelRows,gelHr,C};
   });
   if(!best)return emptyInner?{empty:true,mode:S.mode}:optimizeInner();
+  // Credits skips non-Gel items inside reserved subsets, so a reserved winner carries only the
+  // Gel-chain candidates. Splice the full-pool ranking/issues back in so the head-to-head table
+  // and warnings stay complete; the winner (a Gel-chain item that out-scored every full-pool
+  // item) and its plan are unchanged.
+  if(S.mode==="credits"&&baseRes&&best.res!==baseRes&&best.res.ranking){
+    const have=new Set(best.res.ranking.map(c=>c.item));
+    const ranking=best.res.ranking.concat((baseRes.ranking||[]).filter(c=>!have.has(c.item))).sort((a,b)=>b.credits-a.credits);
+    const mergedIssues=[...new Set([...(best.res.issues||[]),...(baseRes.issues||[])])];
+    best={...best,res:{...best.res,ranking,issues:mergedIssues}};
+  }
   return assembleGel(best,performance.now()-t0);
 }
 // Merge the reserved Gel lines into the inner plan + balance for display.
