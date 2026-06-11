@@ -633,7 +633,7 @@ function defaults(){
     gelLines:0,gelComp:1024,
     targets:tg,
     projects:[],inventory:nulls(),inventoryText:{},projectSeq:true,
-    manual:[]
+    manual:[],manualSaved:[],manualActiveId:null
   };
 }
 
@@ -655,7 +655,7 @@ function syncManual(st){
 }
 
 const LSKEY="forgePlannerState_v3";
-function normalize(st){if(!st)return st;if(!Array.isArray(st.lines))st.lines=[];st.lines.forEach(l=>{if(l.dup==null||isNaN(l.dup))l.dup=0;if(l.spx==null||isNaN(l.spx)||l.spx<=0)l.spx=1;});if(st.margin==null||isNaN(st.margin))st.margin=0;if(!st.baseTime)st.baseTime={};const _DB=defaults().baseTime,_PB={Ingots:9.63,Bits:9.63,Concrete:9.63,Glass:87.3,Bricks:114.3,Plates:29.23,Rods:44.46,Frames:311.38};const _migrate=!st.baseTimeRev||st.baseTimeRev<2;[...RAWS,...PRODUCTS].forEach(it=>{const v=st.baseTime[it];if(v==null||isNaN(v)||v<=0)st.baseTime[it]=_DB[it];else if(_migrate&&(Math.abs(v-(_PB[it]||-1))<1e-4||Math.abs(v-12.85)<1e-4))st.baseTime[it]=_DB[it];});st.baseTimeRev=2;const _DP=defaults().prodCost;if(!st.prodCost)st.prodCost={};PRODUCTS.forEach(P=>{if(!st.prodCost[P])st.prodCost[P]={};RECIPE[P].inputs.forEach(k=>{if(!st.prodCost[P][k]||Object.keys(st.prodCost[P][k]).length===0)st.prodCost[P][k]=_DP[P][k];});});if(!st.sellPrice)st.sellPrice={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.sellPrice[it]===undefined)st.sellPrice[it]=null;});if(!st.priceText)st.priceText={};if(!st.forgie)st.forgie={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.forgie[it]===undefined)st.forgie[it]=null;});if(!st.forgieText)st.forgieText={};if(!st.targets)st.targets={};PRODUCTS.forEach(p=>{if(!st.targets[p])st.targets[p]={on:false,w:1};});if(st.gelLines==null||isNaN(st.gelLines)||st.gelLines<0)st.gelLines=0;if(!LEVELS.includes(st.gelComp))st.gelComp=1024;if(st.mode!=="credits"&&st.mode!=="items"&&st.mode!=="project"&&st.mode!=="manual")st.mode="items";if(!Array.isArray(st.projects))st.projects=[];st.projects.forEach(p=>{if(!p.id)p.id="p"+Math.random().toString(36).slice(2,9);if(typeof p.name!=="string")p.name="Project";p.on=p.on!==false;p.first=!!p.first;if(!Array.isArray(p.levels)||p.levels.length===0)p.levels=[{costs:[]}];p.levels.forEach(L=>{if(!Array.isArray(L.costs))L.costs=[];L.costs.forEach(c=>{if(!RAWS.includes(c.item)&&!PRODUCTS.includes(c.item))c.item=PRODUCTS[0];if(c.qty!=null&&(typeof c.qty!=="number"||isNaN(c.qty)||c.qty<0))c.qty=null;});});p.from=Math.max(1,Math.floor(Number(p.from)||1));p.to=Math.max(p.from,Math.min(p.levels.length,Math.floor(Number(p.to)||p.levels.length)));});if(!st.inventory)st.inventory={};ALLITEMS.forEach(it=>{if(st.inventory[it]===undefined)st.inventory[it]=null;});if(!st.inventoryText)st.inventoryText={};if(typeof st.projectSeq!=="boolean")st.projectSeq=true;syncManual(st);return st;}
+function normalize(st){if(!st)return st;if(!Array.isArray(st.lines))st.lines=[];st.lines.forEach(l=>{if(l.dup==null||isNaN(l.dup))l.dup=0;if(l.spx==null||isNaN(l.spx)||l.spx<=0)l.spx=1;});if(st.margin==null||isNaN(st.margin))st.margin=0;if(!st.baseTime)st.baseTime={};const _DB=defaults().baseTime,_PB={Ingots:9.63,Bits:9.63,Concrete:9.63,Glass:87.3,Bricks:114.3,Plates:29.23,Rods:44.46,Frames:311.38};const _migrate=!st.baseTimeRev||st.baseTimeRev<2;[...RAWS,...PRODUCTS].forEach(it=>{const v=st.baseTime[it];if(v==null||isNaN(v)||v<=0)st.baseTime[it]=_DB[it];else if(_migrate&&(Math.abs(v-(_PB[it]||-1))<1e-4||Math.abs(v-12.85)<1e-4))st.baseTime[it]=_DB[it];});st.baseTimeRev=2;const _DP=defaults().prodCost;if(!st.prodCost)st.prodCost={};PRODUCTS.forEach(P=>{if(!st.prodCost[P])st.prodCost[P]={};RECIPE[P].inputs.forEach(k=>{if(!st.prodCost[P][k]||Object.keys(st.prodCost[P][k]).length===0)st.prodCost[P][k]=_DP[P][k];});});if(!st.sellPrice)st.sellPrice={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.sellPrice[it]===undefined)st.sellPrice[it]=null;});if(!st.priceText)st.priceText={};if(!st.forgie)st.forgie={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.forgie[it]===undefined)st.forgie[it]=null;});if(!st.forgieText)st.forgieText={};if(!st.targets)st.targets={};PRODUCTS.forEach(p=>{if(!st.targets[p])st.targets[p]={on:false,w:1};});if(st.gelLines==null||isNaN(st.gelLines)||st.gelLines<0)st.gelLines=0;if(!LEVELS.includes(st.gelComp))st.gelComp=1024;if(st.mode!=="credits"&&st.mode!=="items"&&st.mode!=="project"&&st.mode!=="manual")st.mode="items";if(!Array.isArray(st.projects))st.projects=[];st.projects.forEach(p=>{if(!p.id)p.id="p"+Math.random().toString(36).slice(2,9);if(typeof p.name!=="string")p.name="Project";p.on=p.on!==false;p.first=!!p.first;if(!Array.isArray(p.levels)||p.levels.length===0)p.levels=[{costs:[]}];p.levels.forEach(L=>{if(!Array.isArray(L.costs))L.costs=[];L.costs.forEach(c=>{if(!RAWS.includes(c.item)&&!PRODUCTS.includes(c.item))c.item=PRODUCTS[0];if(c.qty!=null&&(typeof c.qty!=="number"||isNaN(c.qty)||c.qty<0))c.qty=null;});});p.from=Math.max(1,Math.floor(Number(p.from)||1));p.to=Math.max(p.from,Math.min(p.levels.length,Math.floor(Number(p.to)||p.levels.length)));});if(!st.inventory)st.inventory={};ALLITEMS.forEach(it=>{if(st.inventory[it]===undefined)st.inventory[it]=null;});if(!st.inventoryText)st.inventoryText={};if(typeof st.projectSeq!=="boolean")st.projectSeq=true;if(!Array.isArray(st.manualSaved))st.manualSaved=[];st.manualSaved=st.manualSaved.filter(p=>p&&typeof p==="object"&&Array.isArray(p.config)).map(p=>({id:typeof p.id==="string"?p.id:("m"+Math.random().toString(36).slice(2,9)),name:typeof p.name==="string"?p.name:"Setup",config:p.config.map(c=>({job:(c&&ALLITEMS.includes(c.job))?c.job:"Idle",lvl:(c&&LEVELS.includes(c.lvl))?c.lvl:1,sell:!!(c&&c.sell)}))}));if(typeof st.manualActiveId!=="string")st.manualActiveId=null;syncManual(st);return st;}
 let S=normalize(load())||defaults();syncManual(S);
 
 function load(){try{const r=localStorage.getItem(LSKEY);return r?JSON.parse(r):null;}catch(e){return null;}}
@@ -1574,10 +1574,38 @@ function manualResult(){
   creditRows.sort((a,b)=>b.credits-a.credits);
   return {plan,balance,out,resIndex,issues:[...issueSet],lineProd,soldItems:[...sold],creditRows,totalCredits,missingPrice};
 }
+/* ---- saved manual setups (named presets of the per-line job/level/sell) ---- */
+function saveManualPreset(name){
+  syncManual(S);
+  const config=S.manual.map(m=>({job:m.job,lvl:m.lvl,sell:!!m.sell}));
+  const id=newId();
+  if(!Array.isArray(S.manualSaved))S.manualSaved=[];
+  S.manualSaved.push({id,name,config});
+  S.manualActiveId=id;save();renderResults();
+}
+function loadManualPreset(id){
+  const p=(S.manualSaved||[]).find(x=>x.id===id);if(!p)return;
+  S.manual=p.config.map(c=>({job:c.job,lvl:c.lvl,sell:!!c.sell}));
+  S.manualActiveId=id;syncManual(S);save();renderResults();
+}
+function deleteManualPreset(id){
+  S.manualSaved=(S.manualSaved||[]).filter(p=>p.id!==id);
+  if(S.manualActiveId===id)S.manualActiveId=null;
+  save();renderResults();
+}
 function renderManual(el,stat){
   syncManual(S);
   const res=manualResult();
   let html=`<div class="notice info"><b>Manual mode.</b> Assign each line a resource and a compression level by hand. The <b>balance</b> table below shows whether every input is produced fast enough to sustain the setup — a negative surplus (<b>short</b>) means that input runs dry. Compression is capped at each line's max.</div>`;
+  // saved-setup bar: name the current layout, then swap between presets at will
+  const saved=S.manualSaved||[];
+  const presetOpts=`<option value="">${saved.length?"— load a saved setup —":"— no saved setups yet —"}</option>`+
+    saved.map(p=>`<option value="${p.id}"${p.id===S.manualActiveId?" selected":""}>${escapeAttr(p.name)}</option>`).join("");
+  html+=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+    <select id="manualPreset" aria-label="Load a saved setup" style="flex:1;min-width:150px">${presetOpts}</select>
+    <button class="btn ghost" id="manualSaveNew">Save current as…</button>
+    ${saved.length?'<button class="btn ghost" id="manualDelPreset" title="Delete the selected saved setup">Delete</button>':""}
+  </div>`;
   if(res.issues.length)html+=`<div class="notice warn"><b>Missing data:</b><br>${res.issues.join("<br>")}</div>`;
   // headline cards: credits from sold surplus first, then net surplus of items actually
   // crafted/produced on a line (Lil' Forgie's passive-only items are excluded)
@@ -2050,10 +2078,15 @@ document.getElementById("stepsDone").addEventListener("click",closeSteps);
 stepsModal.addEventListener("click",e=>{if(e.target===stepsModal)closeSteps();});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!stepsModal.hidden)closeSteps();});
 // the Step-by-step button lives inside #results, which is re-rendered each solve
-document.getElementById("results").addEventListener("click",e=>{if(e.target.closest&&e.target.closest("#btnSteps"))openSteps();});
+document.getElementById("results").addEventListener("click",e=>{
+  if(e.target.closest&&e.target.closest("#btnSteps"))openSteps();
+  if(e.target.closest&&e.target.closest("#manualSaveNew")){const name=(prompt("Name this setup:","")||"").trim();if(name)saveManualPreset(name);return;}
+  if(e.target.closest&&e.target.closest("#manualDelPreset")){const sel=document.getElementById("manualPreset");const id=(sel&&sel.value)||S.manualActiveId;if(id&&confirm("Delete this saved setup?"))deleteManualPreset(id);return;}
+});
 // Manual-mode dropdowns also live inside #results (re-rendered each change)
 document.getElementById("results").addEventListener("change",e=>{
   const t=e.target;if(!t||!t.getAttribute)return;
+  if(t.id==="manualPreset"){if(t.value)loadManualPreset(t.value);return;}
   const ri=t.getAttribute("data-mres");
   if(ri!=null){const i=+ri;if(S.manual[i]){S.manual[i].job=t.value;if(S.manual[i].lvl>S.lines[i].max)S.manual[i].lvl=S.lines[i].max;}save();renderResults();return;}
   const lv=t.getAttribute("data-mlvl");
