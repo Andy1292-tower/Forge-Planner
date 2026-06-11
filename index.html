@@ -1478,7 +1478,7 @@ function renderResults(){
       outv=disp(j.prod[0][1]*sp*dp*3600);ct=fmt(craftTime(j.res,j.lvl)/sp,2);}
     else{pill='<span class="pill craft">craft</span>';job=j.res;lvl=j.lvl+"×";
       outv=disp(j.prod[0][1]*sp*dp*3600);ct=fmt(craftTime(j.res,j.lvl)/sp,2);
-      cons=p.reserved?'<span style="color:var(--ink3)">mined ore (free)</span>':j.cons.map(c=>disp(c[1]*sp*3600)+" "+invName(res.resIndex,c[0])).join(", ");}
+      cons=p.reserved?gelOreConsumesHr(j.lvl,sp):j.cons.map(c=>disp(c[1]*sp*3600)+" "+invName(res.resIndex,c[0])).join(", ");}
     const resv=p.reserved?' <span class="pill" style="background:rgba(63,182,160,.14);color:var(--teal);border:1px solid var(--teal-d)">reserved</span>':"";
     const tags=`${p.spx?` <span style="color:var(--ink3);font-size:10.5px">×${fmt(p.spx,2)} spd</span>`:""}${p.dup>0?` <span style="color:var(--ink3);font-size:10.5px">+${fmt(p.dup,2)}% dup</span>`:""}`;
     html+=`<tr${p.reserved?' style="background:rgba(63,182,160,.05)"':''}><td class="mono">#${p.line}</td><td class="mono">${p.max}×${tags}</td>
@@ -1627,7 +1627,8 @@ function renderManual(el,stat){
     let outv="—",cons="";
     if(j.kind!=="idle"){const eff=effSpeed(p.sp,j.ct);
       outv=disp(j.prod[0][1]*eff*p.dp*3600);
-      cons=j.cons.length?j.cons.map(c=>disp(c[1]*eff*3600)+" "+invName(res.resIndex,c[0])).join(", ")
+      cons=j.res===GEL?gelOreConsumesHr(j.lvl,eff)
+          :j.cons.length?j.cons.map(c=>disp(c[1]*eff*3600)+" "+invName(res.resIndex,c[0])).join(", ")
                         :'<span style="color:var(--ink3)">none</span>';}
     const tags=`<span style="color:var(--ink3);font-size:10.5px"> ×${fmt(p.sp,2)} spd</span>${p.dup>0?` <span style="color:var(--ink3);font-size:10.5px">+${fmt(p.dup,2)}% dup</span>`:""}`;
     const sellCell=j.kind==="idle"?'<span style="color:var(--ink3)">—</span>'
@@ -1850,6 +1851,13 @@ document.getElementById("forgieRows").addEventListener("input",e=>{
 // like every other craft. Per-minute uses the fastest current line that reaches L.
 const GEL_ROCKS_BASE=parseGameNum("100sx"), GEL_VESP_BASE=parseGameNum("500t");
 function gelOreCost(L){const s=Math.pow(3,Math.log2(L));return {rocks:GEL_ROCKS_BASE*s,vesp:GEL_VESP_BASE*s};}
+// Display-only ore burn for a running Gel line (not part of any balance/calculation):
+// crafts/sec = eff/ct, ore is per craft (dup doesn't change input cost).
+function gelOreConsumesHr(L,eff){
+  const ct=craftTime(GEL,L);if(!(ct>0)||!(eff>0))return "";
+  const {rocks,vesp}=gelOreCost(L),cps=eff/ct;
+  return `${disp(rocks*cps*3600)} rocks, ${disp(vesp*cps*3600)} vespium <span style="color:var(--ink3)">(free ore)</span>`;
+}
 function fastestGelSpeed(L){let best=null;S.lines.forEach(ln=>{if((ln.max||0)>=L){const sp=Math.max(1e-6,num(ln.spx)||1);if(best==null||sp>best)best=sp;}});return best;}
 function renderGelCost(){
   let h=`<table><thead><tr><th>Comp</th><th class="num">Rocks /craft</th><th class="num">Vespium /craft</th>
