@@ -434,7 +434,8 @@ button.gel-head .sub{color:var(--amber)}
           <h2><span class="gchev">▸</span> Gel lines</h2><span class="sub" id="gelSummary"></span>
         </button>
         <div class="body" id="gelBody" hidden>
-          <p class="help" style="margin:0 0 12px">Gel is forged from mined ore, not crafter inputs — so you decide how much of your factory can run it. Set the <b>most</b> lines you could sustain on Gel and at what compression. The planner uses <b>up to</b> that many of your best-suited crafters for Gel — only as many as actually help make more of what you asked for — and feeds it into everything else.</p>
+          <p class="help" style="margin:0 0 10px">Gel is forged from mined ore, not crafter inputs — so you decide how much of your factory can run it. Set the <b>most</b> lines you could sustain on Gel and at what compression. The planner uses <b>up to</b> that many of your best-suited crafters for Gel — only as many as actually help make more of what you asked for — and feeds it into everything else.</p>
+          <button class="btn ghost" id="btnGelCost" style="margin:0 0 12px;width:100%;justify-content:center">Ore cost by compression</button>
           <div class="line-fields" style="grid-template-columns:1fr 1fr">
             <label class="fl"><span>max lines on gel</span><input type="number" min="0" step="1" id="gelLines" value="0"></label>
             <label class="fl"><span>gel compression</span><select id="gelComp"></select></label>
@@ -527,6 +528,18 @@ button.gel-head .sub{color:var(--amber)}
       <div id="forgieRows"></div>
     </div>
     <div class="modal-f"><button class="btn ghost" id="forgieClear">Clear all</button><button class="btn primary" id="forgieDone">Done</button></div>
+  </div>
+</div>
+
+<!-- GEL ORE COST MODAL -->
+<div class="modal-bg" id="gelCostModal" hidden>
+  <div class="modal" style="max-width:640px">
+    <div class="modal-h"><h3>Gel ore cost by compression</h3><button class="iconbtn" id="gelCostClose" title="Close">×</button></div>
+    <div class="modal-b">
+      <p class="help" style="margin-bottom:10px">Gel is forged from mined ore. One craft at <b>1×</b> costs <b>100sx</b> rocks and <b>500t</b> vespium; each compression level triples the cost — the same scaling as every other craft. <b>Per-minute</b> figures use your fastest Gel-capable line at each compression (a "—" means no current line reaches that level).</p>
+      <div id="gelCostRows"></div>
+    </div>
+    <div class="modal-f"><button class="btn primary" id="gelCostDone">Done</button></div>
   </div>
 </div>
 
@@ -1802,6 +1815,35 @@ document.getElementById("forgieRows").addEventListener("input",e=>{
   S.forgie[it]=parseGameNum(raw);
   scheduleSolve();
 });
+
+/* ---------- Gel ore-cost reference modal ---------- */
+// Gel's mined-ore inputs aren't part of the crafting model — this is a read-only
+// reference. Base @1×: 100sx rocks, 500t vespium; tripling per compression level
+// like every other craft. Per-minute uses the fastest current line that reaches L.
+const GEL_ROCKS_BASE=parseGameNum("100sx"), GEL_VESP_BASE=parseGameNum("500t");
+function gelOreCost(L){const s=Math.pow(3,Math.log2(L));return {rocks:GEL_ROCKS_BASE*s,vesp:GEL_VESP_BASE*s};}
+function fastestGelSpeed(L){let best=null;S.lines.forEach(ln=>{if((ln.max||0)>=L){const sp=Math.max(1e-6,num(ln.spx)||1);if(best==null||sp>best)best=sp;}});return best;}
+function renderGelCost(){
+  let h=`<table><thead><tr><th>Comp</th><th class="num">Rocks /craft</th><th class="num">Vespium /craft</th>
+    <th class="num">~s/craft</th><th class="num">Rocks /min</th><th class="num">Vespium /min</th></tr></thead><tbody>`;
+  LEVELS.forEach(L=>{
+    const {rocks,vesp}=gelOreCost(L), ct=craftTime(GEL,L), sp=fastestGelSpeed(L);
+    let sCraft="—",rMin="—",vMin="—";
+    if(sp!=null&&ct>0){const secs=ct/effSpeed(sp,ct),cpm=60/secs;sCraft=fmt(secs,2);rMin=disp(rocks*cpm);vMin=disp(vesp*cpm);}
+    h+=`<tr><td class="mono">${L}×</td><td class="num">${disp(rocks)}</td><td class="num">${disp(vesp)}</td>
+      <td class="num mono" style="color:var(--ink2)">${sCraft}</td><td class="num">${rMin}</td><td class="num">${vMin}</td></tr>`;
+  });
+  h+=`</tbody></table>`;
+  document.getElementById("gelCostRows").innerHTML=h;
+}
+const gelCostModal=document.getElementById("gelCostModal");
+function openGelCost(){renderGelCost();gelCostModal.hidden=false;}
+function closeGelCost(){gelCostModal.hidden=true;}
+document.getElementById("btnGelCost").addEventListener("click",openGelCost);
+document.getElementById("gelCostClose").addEventListener("click",closeGelCost);
+document.getElementById("gelCostDone").addEventListener("click",closeGelCost);
+gelCostModal.addEventListener("click",e=>{if(e.target===gelCostModal)closeGelCost();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!gelCostModal.hidden)closeGelCost();});
 
 /* ---------- collapsible crafting-data panel ---------- */
 function setRecipesOpen(open){
