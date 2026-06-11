@@ -148,6 +148,9 @@ select,input[type=number],input[type=text]{font-family:"JetBrains Mono",monospac
 /* hide number-input spinner arrows */
 input[type=number]{-moz-appearance:textfield}
 input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+/* …except the Gel-lines field, which keeps its native spinner (per request) */
+#gelLines{-moz-appearance:number-input;-webkit-appearance:auto;appearance:auto}
+#gelLines::-webkit-outer-spin-button,#gelLines::-webkit-inner-spin-button{-webkit-appearance:inner-spin-button;opacity:1;margin:0}
 select{appearance:none;-webkit-appearance:none;
   background-image:linear-gradient(45deg,transparent 50%,var(--ink3) 50%),linear-gradient(135deg,var(--ink3) 50%,transparent 50%);
   background-position:calc(100% - 14px) 50%, calc(100% - 9px) 50%;
