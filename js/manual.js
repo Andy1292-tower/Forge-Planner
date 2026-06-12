@@ -56,6 +56,13 @@ function loadManualPreset(id){
   S.manual=p.config.map(c=>({job:c.job,lvl:c.lvl,sell:!!c.sell}));
   S.manualActiveId=id;syncManual(S);save();renderResults();
 }
+// Overwrite an existing saved setup with the current line config (keeps its id + name).
+function updateManualPreset(id){
+  const p=(S.manualSaved||[]).find(x=>x.id===id);if(!p)return;
+  syncManual(S);
+  p.config=S.manual.map(m=>({job:m.job,lvl:m.lvl,sell:!!m.sell}));
+  S.manualActiveId=id;save();renderResults();
+}
 function deleteManualPreset(id){
   S.manualSaved=(S.manualSaved||[]).filter(p=>p.id!==id);
   if(S.manualActiveId===id)S.manualActiveId=null;
@@ -67,11 +74,13 @@ function renderManual(el,stat){
   let html=`<div class="notice info"><b>Manual mode.</b> Assign each line a resource and a compression level by hand. The <b>balance</b> table below shows whether every input is produced fast enough to sustain the setup — a negative surplus (<b>short</b>) means that input runs dry. Compression is capped at each line's max.</div>`;
   // saved-setup bar: name the current layout, then swap between presets at will
   const saved=S.manualSaved||[];
+  const active=saved.find(p=>p.id===S.manualActiveId);
   const presetOpts=`<option value="">${saved.length?"— load a saved setup —":"— no saved setups yet —"}</option>`+
     saved.map(p=>`<option value="${p.id}"${p.id===S.manualActiveId?" selected":""}>${escapeAttr(p.name)}</option>`).join("");
   html+=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
     <select id="manualPreset" aria-label="Load a saved setup" style="flex:1;min-width:150px">${presetOpts}</select>
-    <button class="btn ghost" id="manualSaveNew">Save current as…</button>
+    ${active?`<button class="btn ghost" id="manualUpdate" title="Overwrite “${escapeAttr(active.name)}” with the current setup">Update “${escapeAttr(active.name)}”</button>`:""}
+    <button class="btn ghost" id="manualSaveNew">Save as new…</button>
     ${saved.length?'<button class="btn ghost" id="manualDelPreset" title="Delete the selected saved setup">Delete</button>':""}
   </div>`;
   if(res.issues.length)html+=`<div class="notice warn"><b>Missing data:</b><br>${res.issues.join("<br>")}</div>`;
