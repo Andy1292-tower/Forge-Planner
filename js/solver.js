@@ -56,8 +56,8 @@ function buildJobs(maxVal,resIndex,relRaws,relProds,targets,w){
 
 // _LINES / _SUPPLY let the Gel-reservation wrapper solve over a SUBSET of lines with extra free supply.
 let _LINES=null, _SUPPLY=null;
-function lineRows(){return S.lines.map((ln,i)=>({__i:i,max:ln.max,spx:ln.spx,dup:ln.dup}));}
-const sortedLines=()=>(_LINES||lineRows()).map(ln=>({orig:ln.__i,max:ln.max,sp:Math.max(0.000001,num(ln.spx)||1),dp:1+(num(ln.dup)||0)/100})).sort((a,b)=>a.max-b.max||a.sp-b.sp||a.dp-b.dp);
+function lineRows(){return S.lines.map((ln,i)=>({__i:i,max:ln.max,spx:ln.spx,turbo:ln.turbo,dup:ln.dup}));}
+const sortedLines=()=>(_LINES||lineRows()).map(ln=>({orig:ln.__i,max:ln.max,sp:lineSpeed(ln),dp:1+(num(ln.dup)||0)/100})).sort((a,b)=>a.max-b.max||a.sp-b.sp||a.dp-b.dp);
 const forgieHr=r=>(num(S.forgie&&S.forgie[r])||0)+((_SUPPLY&&_SUPPLY[r])||0);
 
 // Core solver: weighted max-min throughput for a set of product targets over their input
@@ -294,7 +294,7 @@ function optimizeInner(timeBudget){
 function combos(n,k){const out=[];const pick=(start,acc)=>{if(acc.length===k){out.push(acc.slice());return;}for(let i=start;i<n;i++){acc.push(i);pick(i+1,acc);acc.pop();}};pick(0,[]);return out;}
 // a line can't compress above its own max cap, so clamp Gel's compression to it
 const gelCompFor=(row,C)=>Math.min(C,row.max||C);
-function gelRatePerHr(row,C){const eff=gelCompFor(row,C),sp=Math.max(1e-6,num(row.spx)||1),dp=1+(num(row.dup)||0)/100,ct=craftTime(GEL,eff);return ct>0?(eff/ct)*(sp>ct?ct:sp)*dp*3600:0;}
+function gelRatePerHr(row,C){const eff=gelCompFor(row,C),sp=lineSpeed(row),dp=1+(num(row.dup)||0)/100,ct=craftTime(GEL,eff);return ct>0?(eff/ct)*(sp>ct?ct:sp)*dp*3600:0;}
 function projectDemand(){
   const gross={};ALLITEMS.forEach(it=>gross[it]=0);
   const perProject=[];
@@ -438,7 +438,7 @@ function buildProjectPhases(seq,net,perProject){
 function betterProjCand(a,b){if(a.badN!==b.badN)return a.badN<b.badN;return a.eta<b.eta;}
 function addGelLinesToPlan(plan,gelRows,C){
   plan=plan.slice();
-  gelRows.forEach(r=>{const sp=Math.max(1e-6,num(r.spx)||1),dp=1+(num(r.dup)||0)/100,L=gelLevel(r,C),ct=craftTime(GEL,L);
+  gelRows.forEach(r=>{const sp=lineSpeed(r),dp=1+(num(r.dup)||0)/100,L=gelLevel(r,C),ct=craftTime(GEL,L);
     plan.push({line:r.__i+1,max:r.max,sp,dp,reserved:true,entries:[{item:GEL,lvl:L,frac:1,outHr:ct>0?(L/ct)*effSpeed(sp,ct)*dp*3600:0,cons:[]}]});});
   return plan.sort((a,b)=>a.line-b.line);
 }
@@ -525,7 +525,7 @@ function optimize(){
 function assembleGel(best,ms){
   const {res,gelRows,gelHr,C}=best;
   const plan=res.plan.slice();
-  gelRows.forEach(r=>{const sp=Math.max(1e-6,num(r.spx)||1),dp=1+(num(r.dup)||0)/100;
+  gelRows.forEach(r=>{const sp=lineSpeed(r),dp=1+(num(r.dup)||0)/100;
     const eff=gelCompFor(r,C),ct=craftTime(GEL,eff);
     plan[r.__i]={line:r.__i+1,max:r.max,spx:sp,dup:(num(r.dup)||0),sp,dp,reserved:true,
       job:{kind:"craft",res:GEL,lvl:eff,ct,prod:[[0,ct>0?eff/ct:0]],cons:[]}};});

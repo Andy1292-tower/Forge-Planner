@@ -3,8 +3,10 @@
 const TIPS={
   line:"Crafter unit slot. The solver auto-sorts lines by max compression — this number only identifies which row you're editing.",
   max:"Highest compression tier this crafter is upgraded to (1×–1024×). Each level doubles yield per craft but triples material cost per cycle — so the solver picks the most efficient level ≤ this cap.",
-  spx:"Total speed × shown above the crafter unit in-game (e.g. ×49.38). Includes turbo and every speed bonus already applied — enter it raw, don't multiply.",
+  spx:"The total speed × currently shown above the crafter unit in-game (e.g. ×49.38) — enter it exactly as displayed, with your current turbo stacks already baked in.",
+  turbo:"How many turbo stacks this crafter has active right now (each stack = +1% speed). With the global max-turbo-stacks figure, the planner backs out your base speed and projects the speed you'll have at full turbo.",
   dup:"Duplication chance — average % of crafts that drop a free duplicate. Adds output without spending extra material. Leave 0 if you don't have dupe bonuses.",
+  maxTurbo:"The most turbo stacks any crafter can reach — a global cap (each stack = +1% speed). The planner projects every line's current speed up to this many stacks, so the plan reflects your sustained speed at full turbo.",
   del:"Remove this crafter line"
 };
 function renderLines(){
@@ -12,17 +14,34 @@ function renderLines(){
   S.lines.forEach((ln,i)=>{
     const opts=LEVELS.map(L=>`<option value="${L}" ${L===ln.max?"selected":""}>${L}×</option>`).join("");
     const row=document.createElement("div");row.className="line-row";
+    const finalSp=lineSpeed(ln), projected=(num(ln.turbo)||0)!==(num(S.maxTurbo)||0);
+    const spNote=projected?`<div class="line-final mono">→ ×${fmt(finalSp,2)} at ${fmt(num(S.maxTurbo)||0,0)} turbo stacks</div>`:"";
     row.innerHTML=`<div class="tag mono">#${i+1}</div>
       <div><div class="lname">Line ${i+1}<i class="tip" tabindex="0" data-tip="${TIPS.line}">?</i></div>
         <div class="line-fields">
           <label class="fl"><span>max compression</span><select data-line="${i}" aria-label="Max compression">${opts}</select></label>
-          <label class="fl"><span>speed × <i class="tip tip-right tip-ic" tabindex="0" style="--tip-img:url('/assets/speed.jpg')" data-tip="${TIPS.spx}">?</i></span><input type="number" min="0" step="any" placeholder="1" value="${ln.spx??1}" data-spx="${i}" aria-label="Total speed multiplier"></label>
+          <label class="fl"><span>speed × <i class="tip tip-right tip-ic" tabindex="0" style="--tip-img:url('/assets/speed.jpg')" data-tip="${TIPS.spx}">?</i></span><input type="number" min="0" step="any" placeholder="1" value="${ln.spx??1}" data-spx="${i}" aria-label="Currently displayed speed multiplier"></label>
+          <label class="fl"><span>turbo stacks <i class="tip tip-right" tabindex="0" data-tip="${TIPS.turbo}">?</i></span><input type="number" min="0" step="any" placeholder="0" value="${ln.turbo??0}" data-turbo="${i}" aria-label="Current turbo stacks"></label>
           <label class="fl"><span>dupe % <i class="tip tip-right tip-ic" tabindex="0" style="--tip-img:url('/assets/dupe.jpg')" data-tip="${TIPS.dup}">?</i></span><input type="number" min="0" max="100" step="any" placeholder="0" value="${ln.dup??0}" data-dup="${i}" aria-label="Duplication chance percent"></label>
-        </div></div>
+        </div>${spNote}</div>
       <button class="iconbtn" data-del="${i}" title="${TIPS.del}" aria-label="${TIPS.del}">×</button>`;
     box.appendChild(row);
   });
   document.getElementById("lineCount").textContent=S.lines.length+" line"+(S.lines.length>1?"s":"");
+}
+// Live-update the "→ ×NN at full turbo" readouts when speed/turbo/max-turbo change,
+// without rebuilding the line inputs (which would steal focus while typing).
+function refreshLineNotes(){
+  const mx=num(S.maxTurbo)||0;
+  document.querySelectorAll("#lines .line-row").forEach((row,i)=>{
+    const ln=S.lines[i];if(!ln)return;
+    let note=row.querySelector(".line-final");
+    if((num(ln.turbo)||0)!==mx){
+      const txt=`→ ×${fmt(lineSpeed(ln),2)} at ${fmt(mx,0)} turbo stacks`;
+      if(note)note.textContent=txt;
+      else{note=document.createElement("div");note.className="line-final mono";note.textContent=txt;row.querySelector(".line-fields").parentNode.appendChild(note);}
+    }else if(note)note.remove();
+  });
 }
 
 /* ---------- RENDER: targets ---------- */
