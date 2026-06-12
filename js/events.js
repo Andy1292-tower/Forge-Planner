@@ -15,8 +15,7 @@ document.getElementById("lines").addEventListener("change",e=>{
   if(li!==undefined){S.lines[+li].max=+e.target.value;scheduleSolve();}
 });
 document.getElementById("lines").addEventListener("input",e=>{
-  const di=e.target.dataset.dup, si=e.target.dataset.spx, ti=e.target.dataset.turbo;
-  if(di!==undefined){S.lines[+di].dup=num(e.target.value)||0;scheduleSolve();}
+  const si=e.target.dataset.spx, ti=e.target.dataset.turbo;
   if(si!==undefined){S.lines[+si].spx=num(e.target.value)||1;refreshLineNotes();scheduleSolve();}
   if(ti!==undefined){S.lines[+ti].turbo=Math.max(0,num(e.target.value)||0);refreshLineNotes();scheduleSolve();}
 });
@@ -25,7 +24,7 @@ document.getElementById("lines").addEventListener("click",e=>{
   if(d!==undefined){if(S.lines.length>1){S.lines.splice(+d,1);S.manual.splice(+d,1);syncManual(S);renderLines();save();renderResults();}}
 });
 document.getElementById("btnAddLine").addEventListener("click",()=>{
-  S.lines.push({max:512,spx:1,dup:0,turbo:0});syncManual(S);renderLines();save();renderResults();
+  S.lines.push({max:512,spx:1,turbo:0});syncManual(S);renderLines();save();renderResults();
 });
 
 document.getElementById("margin").addEventListener("input",e=>{
@@ -36,6 +35,14 @@ document.getElementById("margin").addEventListener("input",e=>{
 
 document.getElementById("maxTurbo").addEventListener("input",e=>{
   S.maxTurbo=Math.max(0,num(e.target.value)||0);
+  refreshLineNotes();scheduleSolve();
+});
+document.getElementById("attrDupe").addEventListener("input",e=>{
+  S.attrDupe=Math.max(0,num(e.target.value)||0);
+  refreshLineNotes();scheduleSolve();
+});
+document.getElementById("trio4").addEventListener("input",e=>{
+  S.trio4=Math.max(0,num(e.target.value)||0);
   refreshLineNotes();scheduleSolve();
 });
 
@@ -255,6 +262,8 @@ function renderAll(){
   document.getElementById("margin").value=S.margin||0;
   document.getElementById("marginv").textContent=fmt(S.margin||0,1)+"%";
   document.getElementById("maxTurbo").value=S.maxTurbo||0;
+  document.getElementById("attrDupe").value=S.attrDupe||0;
+  document.getElementById("trio4").value=S.trio4||0;
 }
 renderAll();
 initCalib();

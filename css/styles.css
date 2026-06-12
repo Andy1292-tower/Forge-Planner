@@ -132,15 +132,18 @@ button.btn.poke-on{animation:pokePulse 1.15s ease-out infinite}
 }
 .line-row .lname{font-size:13px;font-weight:600;letter-spacing:.3px;display:flex;align-items:center;gap:7px}
 .line-row .lname small{display:block;color:var(--ink3);font-weight:400;font-size:10.5px}
-.line-fields{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:6px;align-items:end}
-.line-fields .fl,.turbo-global{display:flex;flex-direction:column;gap:3px;justify-content:flex-end;min-width:0}
-.line-fields .fl span,.turbo-global span{font-size:9.5px;letter-spacing:.45px;text-transform:uppercase;color:var(--ink3);
-  display:inline-flex;align-items:center;flex-wrap:nowrap;gap:4px;line-height:1.2;white-space:nowrap}
-.line-fields .fl > select,.line-fields .fl > input,.turbo-global > input{height:32px}
-.turbo-global{margin-bottom:12px;max-width:200px}
+.line-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:6px;align-items:end}
+.globals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--line);align-items:end}
+.line-fields .fl,.globals .fl{display:flex;flex-direction:column;gap:3px;justify-content:flex-end;min-width:0}
+.line-fields .fl span,.globals .fl span{font-size:9.5px;letter-spacing:.45px;text-transform:uppercase;color:var(--ink3);
+  display:inline-flex;align-items:center;gap:4px;line-height:1.2}
+.line-fields .fl span{flex-wrap:nowrap;white-space:nowrap}
+.globals .fl span{flex-wrap:wrap}
+.line-fields .fl > select,.line-fields .fl > input,.globals .fl > input{height:32px}
 .line-final{margin-top:6px;font-size:10.5px;color:var(--amber);letter-spacing:.3px}
 @media(max-width:520px){
   .line-fields{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 7px}
+  .globals{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 select,input[type=number],input[type=text]{font-family:"JetBrains Mono",monospace;font-size:12.5px;
   background:var(--surface2);color:var(--ink);border:1px solid var(--line2);border-radius:5px;
