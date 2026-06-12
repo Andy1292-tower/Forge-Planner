@@ -11,11 +11,15 @@ const RECIPE={
   Rods:{inputs:["Ingots"]},
   Frames:{inputs:["Plates","Rods"]},
   Gel:{inputs:[]},
-  Wire:{inputs:["Gel","Rods","Bits"]}
+  Wire:{inputs:["Gel","Rods"]}   // Bits are pre-produced (see PREPROD_BITS), never given a crafting line
 };
 const KIND={Ingots:"raw",Bits:"raw",Concrete:"raw",Glass:"pr",Bricks:"pr",Plates:"pr",Rods:"pr",Frames:"fin",Gel:"pr",Wire:"fin"};
-// Bits per uncompressed Frame — kept OUT of the line optimization (assumed pre-produced), used only for the planning readout.
-const FRAME_BITS=8;
+// Bits consumed per uncompressed unit by products that assume their Bits are PRE-PRODUCED —
+// kept OUT of the line optimization (Bits never earn a dedicated crafting line for these), used
+// only for the planning readout / pre-produce demand. Frames: 8 Bits each; Wire: 2 Bits each
+// (its recipe's old Bits coefficient). Glass keeps Bits as a real, line-crafted input.
+const PREPROD_BITS={Frames:8,Wire:2};
+const FRAME_BITS=PREPROD_BITS.Frames;   // back-compat alias
 /* ---- project-mode + shopping-list helpers (additive; match live's existing inline behavior) ---- */
 const ALLITEMS=[...RAWS,...PRODUCTS];
 const MIN_CRAFT_S=1;
@@ -57,7 +61,7 @@ function defaults(){
     Rods:{Ingots:c(2)},
     Frames:{Plates:c(2),Rods:c(4)},
     Gel:{},                                  // free mined ore inputs — not modelled
-    Wire:{Gel:c(2),Rods:c(16),Bits:c(2)}
+    Wire:{Gel:c(2),Rods:c(16)}               // Bits pre-produced (PREPROD_BITS.Wire), not a line input
   };
   const baseTime={Ingots:10,Bits:6.178,Concrete:9.273,Glass:92.68,Bricks:108.2,Plates:30.89,Rods:46.34,Frames:308.9,Gel:3201,Wire:5400.8};
   const nulls=()=>{const o={};[...RAWS,...PRODUCTS].forEach(it=>o[it]=null);return o;};

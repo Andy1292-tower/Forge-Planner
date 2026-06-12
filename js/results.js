@@ -170,14 +170,14 @@ function renderResults(){
       <td class="num">${outv}</td><td style="color:var(--ink2);font-size:11.5px">${cons}</td></tr>`;
   });
   html+=`</tbody></table>`;
-  // balance table — Frames' pre-produced Bits ride along as a display-only row (never in the solver)
-  const framesBits=framesBitsHr(res.plan);
+  // balance table — Frames' & Wire's pre-produced Bits ride along as a display-only row (never in the solver)
+  const ppBits=preprodBitsHr(res.plan);
   if(res.balance&&res.balance.length){
     const rows=res.balance.map(b=>({...b}));
-    if(framesBits>1e-6){   // fold Frames' pre-produced Bits in, or add a row if Bits isn't already in play
+    if(ppBits>1e-6){   // fold the pre-produced Bits in, or add a row if Bits isn't already in play
       const ex=rows.find(b=>b.res==="Bits");
-      if(ex){ex.cons=(ex.cons||0)+framesBits;ex.preProd=true;}
-      else rows.push({res:"Bits",prod:0,forgie:num(S.forgie&&S.forgie.Bits)||0,cons:framesBits,preProd:true});
+      if(ex){ex.cons=(ex.cons||0)+ppBits;ex.preProd=true;}
+      else rows.push({res:"Bits",prod:0,forgie:num(S.forgie&&S.forgie.Bits)||0,cons:ppBits,preProd:true});
     }
     const showForgie=rows.some(b=>(b.forgie||0)>1e-6);
     html+=`<div class="subhead">Resource balance (per hour)</div>
@@ -200,11 +200,13 @@ function renderResults(){
     });
     html+=`</tbody></table>`;
   }
-  // Bits-to-preproduce planner for Frames (Bits are assumed pre-produced, kept out of the line math)
-  if(framesBits>1e-6){
-    const fBits=num(S.forgie&&S.forgie.Bits)||0, net=framesBits-fBits;
-    html+=`<div class="subhead">Bits to pre-produce (Frames)</div>
-      <div class="notice info" style="font-size:12px">Frames consume <b>${disp(framesBits)}</b> Bits/hr (8 per uncompressed frame, not part of the line plan above).`+
+  // Bits-to-preproduce planner for Frames & Wire (Bits are assumed pre-produced, kept out of the line math)
+  if(ppBits>1e-6){
+    const fBits=num(S.forgie&&S.forgie.Bits)||0, net=ppBits-fBits;
+    const bd=preprodBitsBreakdown(res.plan), who=Object.keys(bd).filter(k=>bd[k]>1e-6);
+    const verb=(who.length===1&&!/s$/.test(who[0]))?"consumes":"consume";
+    html+=`<div class="subhead">Bits to pre-produce (${who.join(" & ")})</div>
+      <div class="notice info" style="font-size:12px">${who.join(" &amp; ")} ${verb} <b>${disp(ppBits)}</b> Bits/hr (${preprodBitsNote(who)}, not part of the line plan above).`+
       (fBits>0?` Lil' Forgie supplies <b>${disp(fBits)}</b>/hr, so `:` So `)+
       (net>1e-6?`pre-produce about <b style="color:var(--amber)">${disp(net)}</b> Bits/hr to keep up.`
               :`Forgie already covers it — a <b style="color:var(--teal)">${disp(-net)}</b>/hr surplus.`)+`</div>`;
