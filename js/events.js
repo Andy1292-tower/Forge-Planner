@@ -491,7 +491,6 @@ function setProjDone(pid,newDone){
 const progModal=document.getElementById("progModal");
 function openProgress(){renderProgress();progModal.hidden=false;}
 function closeProgress(){progModal.hidden=true;}
-document.getElementById("btnProgress").addEventListener("click",openProgress);
 document.getElementById("progClose").addEventListener("click",closeProgress);
 document.getElementById("progDone").addEventListener("click",closeProgress);
 progModal.addEventListener("click",e=>{if(e.target===progModal)closeProgress();});
@@ -555,6 +554,7 @@ stepsModal.addEventListener("click",e=>{if(e.target===stepsModal)closeSteps();})
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!stepsModal.hidden)closeSteps();});
 // the Step-by-step button lives inside #results, which is re-rendered each solve
 document.getElementById("results").addEventListener("click",e=>{
+  if(e.target.closest&&e.target.closest("#btnProgress")){openProgress();return;}
   if(e.target.closest&&e.target.closest("#btnSteps"))openSteps();
   if(e.target.closest&&e.target.closest("#manualUpdate")){if(S.manualActiveId)updateManualPreset(S.manualActiveId);return;}
   if(e.target.closest&&e.target.closest("#manualSaveNew")){const name=(prompt("Name this setup:","")||"").trim();if(name)saveManualPreset(name);return;}
