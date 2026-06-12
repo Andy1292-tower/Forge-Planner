@@ -29,6 +29,7 @@
       <button class="btn primary" id="btnPrices">Sell prices</button>
       <button class="btn primary" id="btnForgie">Lil' Forgie</button>
       <button class="btn primary" id="btnProjects">Shopping list</button>
+      <button class="btn primary" id="btnProgress">Track progress</button>
       <button class="btn ghost" id="btnRecipes">Crafting data</button>
     </div>
   </header>
@@ -182,6 +183,19 @@
       <div id="invRows"></div>
     </div>
     <div class="modal-f"><button class="btn ghost" id="projInvClear">Clear inventory</button><button class="btn primary" id="projDone">Done</button></div>
+  </div>
+</div>
+
+<!-- PROGRESS TRACKER MODAL -->
+<div class="modal-bg" id="progModal" hidden>
+  <div class="modal" style="max-width:680px">
+    <div class="modal-h"><h3>Track progress</h3><button class="iconbtn" id="progClose" title="Close">×</button></div>
+    <div class="modal-b">
+      <p class="help" style="margin-bottom:10px">Check off each <b>level</b> as you finish it in-game. Completed levels drop out of the remaining demand and the <b>line assignments re-solve live</b> — close this to see the updated plan. Progress is saved and doesn't change your <b>from → to</b> targets.</p>
+      <div id="progSummary" class="prog-summary"></div>
+      <div id="progList"></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" id="progResetAll">Reset all progress</button><button class="btn primary" id="progDone">Done</button></div>
   </div>
 </div>
 

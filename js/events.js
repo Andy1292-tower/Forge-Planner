@@ -436,6 +436,84 @@ document.getElementById("invRows").addEventListener("input",e=>{
   S.inventoryText[it]=e.target.value;S.inventory[it]=parseGameNum(e.target.value);save();scheduleSolve();
 });
 
+/* ---------- Progress tracker modal ---------- */
+// Levels completed for a project, clamped to its from→to span (non-destructive).
+function projSpan(p){const from=Math.max(1,Math.floor(num(p.from)||1));const to=Math.max(from,Math.min((p.levels||[]).length,Math.floor(num(p.to)||(p.levels||[]).length)));return {from,to,span:to-from+1};}
+function projDone(p){const {span}=projSpan(p);return Math.max(0,Math.min(span,Math.floor(num(p.done)||0)));}
+function renderProgress(){
+  const list=document.getElementById("progList");
+  const sum=document.getElementById("progSummary");
+  if(!list||!sum)return;
+  const active=(S.projects||[]).filter(p=>p.on&&(p.levels||[]).length);
+  if(!active.length){
+    sum.innerHTML="";
+    list.innerHTML=`<div class="notice info">No active projects. Open <b>Shopping list</b>, add or tick on a project, then track its level progress here.</div>`;
+    return;
+  }
+  let totalLv=0,doneLv=0;
+  active.forEach(p=>{const {span}=projSpan(p);totalLv+=span;doneLv+=projDone(p);});
+  const res=optimizeProjectTop();
+  const remLv=totalLv-doneLv;
+  const pct=totalLv?Math.round(doneLv/totalLv*100):0;
+  const etaTxt=(res&&!res.empty&&remLv>0)?fmtDuration(res.eta):(remLv>0?"—":"all done 🎉");
+  sum.innerHTML=`
+    <div class="prog-bar-wrap"><div class="prog-bar" style="width:${pct}%"></div></div>
+    <div class="prog-metrics">
+      <div class="prog-metric"><div class="pm-v">${doneLv}/${totalLv}</div><div class="pm-l">levels done</div></div>
+      <div class="prog-metric"><div class="pm-v">${remLv}</div><div class="pm-l">levels left</div></div>
+      <div class="prog-metric"><div class="pm-v">${etaTxt}</div><div class="pm-l">time remaining</div></div>
+    </div>${res&&!res.empty&&!res.feasible&&remLv>0?`<div class="notice warn" style="margin:10px 0 0;font-size:11.5px">Plan isn't fully sustainable with current lines — see the main panel for blocked items.</div>`:""}`;
+  list.innerHTML=active.map(p=>{
+    const {from,to,span}=projSpan(p);
+    const done=projDone(p);
+    const complete=done>=span;
+    const chips=[];
+    for(let L=from;L<=to;L++){
+      const idx=L-from, isDone=idx<done, isNext=idx===done;
+      chips.push(`<button class="prog-lvl${isDone?" done":""}${isNext?" next":""}" data-pid="${escapeAttr(p.id)}" data-lvl="${L}" title="${isDone?"Completed — click to undo":"Mark completed through level "+L}"><span class="pl-box"></span>Lv ${L}</button>`);
+    }
+    const desc=p.description?`<span class="prog-desc">${escapeAttr(p.description)}</span>`:"";
+    return `<div class="prog-proj${complete?" complete":""}">
+      <div class="prog-proj-h">
+        <div class="prog-proj-name">${escapeAttr(p.name||"Project")}${complete?' <span class="pill craft" style="font-size:9px">done</span>':""}${desc}</div>
+        <div class="prog-proj-meta"><span class="mono">${done}/${span}</span>${done>0?`<button class="prog-reset" data-preset="${escapeAttr(p.id)}" title="Reset this project's progress">reset</button>`:""}</div>
+      </div>
+      <div class="prog-lvls">${chips.join("")}</div>
+    </div>`;
+  }).join("");
+}
+function setProjDone(pid,newDone){
+  const p=(S.projects||[]).find(x=>x.id===pid);if(!p)return;
+  const {span}=projSpan(p);
+  p.done=Math.max(0,Math.min(span,Math.floor(newDone)));
+  save();renderProgress();scheduleSolve();
+}
+const progModal=document.getElementById("progModal");
+function openProgress(){renderProgress();progModal.hidden=false;}
+function closeProgress(){progModal.hidden=true;}
+document.getElementById("btnProgress").addEventListener("click",openProgress);
+document.getElementById("progClose").addEventListener("click",closeProgress);
+document.getElementById("progDone").addEventListener("click",closeProgress);
+progModal.addEventListener("click",e=>{if(e.target===progModal)closeProgress();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!progModal.hidden)closeProgress();});
+document.getElementById("progList").addEventListener("click",e=>{
+  const reset=e.target.closest("[data-preset]");
+  if(reset){setProjDone(reset.getAttribute("data-preset"),0);return;}
+  const chip=e.target.closest(".prog-lvl");
+  if(chip){
+    const pid=chip.getAttribute("data-pid"),L=+chip.getAttribute("data-lvl");
+    const p=(S.projects||[]).find(x=>x.id===pid);if(!p)return;
+    const {from}=projSpan(p),idx=L-from,done=projDone(p);
+    setProjDone(pid,done===idx+1?idx:idx+1);   // click the last-done level to undo it, any other to complete through it
+  }
+});
+document.getElementById("progResetAll").addEventListener("click",()=>{
+  if(!(S.projects||[]).some(p=>projDone(p)>0))return;
+  if(!confirm("Reset completed-level progress on all projects?"))return;
+  (S.projects||[]).forEach(p=>{p.done=0;});
+  save();renderProgress();scheduleSolve();
+});
+
 /* ---------- Step-by-step plan modal ---------- */
 function itemTier(it){if(it===GEL||RAWS.includes(it))return 0;if(it==="Frames")return 2;if(it==="Wire")return 3;return 1;}
 function renderSteps(){
