@@ -9,6 +9,7 @@ function manualResult(){
   const produced=resources.map(()=>0), consumed=resources.map(()=>0);
   const forgie={};resources.forEach(r=>{forgie[r]=forgieHr(r);produced[resIndex[r]]+=forgie[r];});
   const plan=[]; const issueSet=new Set();
+  let vespCons=0;   // vespium/hr burned by hand-assigned Gel lines (budgeted against the income)
   S.lines.forEach((ln,i)=>{
     const m=S.manual[i]||{job:"Idle",lvl:ln.max};
     const sp=lineSpeed(ln), dp=dupeMult();
@@ -18,7 +19,8 @@ function manualResult(){
     }else{
       const item=m.job, L=Math.min(LEVELS.includes(m.lvl)?m.lvl:ln.max,ln.max), ct=craftTime(item,L);
       const eff=effSpeed(sp,ct), rate=ct>0?L/ct:0, cons=[];
-      if(!RAWS.includes(item)&&item!==GEL){
+      if(item===GEL){vespCons+=gelVespHr(ln,L);}
+      else if(!RAWS.includes(item)){
         RECIPE[item].inputs.forEach(k=>{const c=S.prodCost[item][k][L];
           if(c==null||isNaN(c)){issueSet.add("No material cost entered for "+item+" @"+L+"×.");}
           else{cons.push([resIndex[k],c/ct]);consumed[resIndex[k]]+=(c/ct)*eff*3600;}});
@@ -40,7 +42,8 @@ function manualResult(){
   [...sold].forEach(it=>{const surplus=Math.max(0,out[it]),price=num(S.sellPrice&&S.sellPrice[it])||0,credits=surplus*price;
     if(price<=0&&surplus>1e-6)missingPrice=true;totalCredits+=credits;creditRows.push({item:it,surplus,price,credits});});
   creditRows.sort((a,b)=>b.credits-a.credits);
-  return {plan,balance,out,resIndex,issues:[...issueSet],lineProd,soldItems:[...sold],creditRows,totalCredits,missingPrice};
+  const vespIncomeHr=Math.max(0,num(S.gelVesp)||0)*60;
+  return {plan,balance,out,resIndex,issues:[...issueSet],lineProd,soldItems:[...sold],creditRows,totalCredits,missingPrice,vespCons,vespIncomeHr};
 }
 /* ---- saved manual setups (named presets of the per-line job/level/sell) ---- */
 function saveManualPreset(name){
@@ -139,12 +142,14 @@ function renderManual(el,stat){
     if(ex){ex.cons=(ex.cons||0)+ppBits;ex.preProd=true;}
     else bal.push({res:"Bits",prod:0,forgie:num(S.forgie&&S.forgie.Bits)||0,cons:ppBits,preProd:true});
   }
+  // Gel runs on vespium: show its burn against the income, flagging a deficit ("short") when over budget.
+  if(res.vespCons>1e-6)bal.push({res:"Vespium",prod:0,forgie:res.vespIncomeHr,cons:res.vespCons,vesp:true});
   if(!bal.length){
     html+=`<div class="notice info" style="font-size:11.5px">All lines are idle — pick a resource for at least one line above to see a balance.</div>`;
   }else{
     const showForgie=bal.some(b=>(b.forgie||0)>1e-6);
     html+=`<div class="subhead">Resource balance (per hour)</div>
-      <table><thead><tr><th>Resource</th><th class="num">Lines</th>${showForgie?'<th class="num">Lil\' Forgie</th>':''}<th class="num">Consumed</th>
+      <table><thead><tr><th>Resource</th><th class="num">Lines</th>${showForgie?'<th class="num">Passive</th>':''}<th class="num">Consumed</th>
         <th class="num">Surplus</th><th>Status</th></tr></thead><tbody>`;
     bal.forEach(b=>{
       const f=b.forgie||0, surplus=b.prod+f-b.cons, ratio=b.cons>0?surplus/b.cons:1;
@@ -153,8 +158,8 @@ function renderManual(el,stat){
       else if(surplus<-1e-6){cls="bal-tight";lbl="short";}
       else if(b.cons>0&&ratio<0.05){cls="bal-tight";lbl="tight";}
       const fCell=showForgie?`<td class="num" style="color:${f>1e-6?'var(--teal)':'var(--ink3)'}">${f>1e-6?disp(f):"—"}</td>`:"";
-      const linesCell=(b.preProd&&b.prod<=1e-6)?'<span style="color:var(--ink3)">pre-prod</span>':disp(b.prod);
-      html+=`<tr${b.preProd?' style="background:rgba(210,129,58,.05)"':''}><td>${b.res}</td><td class="num">${linesCell}</td>${fCell}
+      const linesCell=b.vesp?'<span style="color:var(--ink3)">income →</span>':(b.preProd&&b.prod<=1e-6)?'<span style="color:var(--ink3)">pre-prod</span>':disp(b.prod);
+      html+=`<tr${b.preProd?' style="background:rgba(210,129,58,.05)"':b.vesp?' style="background:rgba(63,182,160,.05)"':''}><td>${b.res}</td><td class="num">${linesCell}</td>${fCell}
         <td class="num">${disp(b.cons)}</td>
         <td class="num ${surplus<-1e-6?'bal-tight':''}">${disp(surplus)}</td>
         <td class="${cls}" style="font-weight:600;font-size:11.5px">${lbl}</td></tr>`;

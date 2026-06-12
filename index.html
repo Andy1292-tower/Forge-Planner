@@ -53,12 +53,10 @@
           <h2><span class="gchev">▸</span> Gel lines</h2><span class="sub" id="gelSummary"></span>
         </button>
         <div class="body" id="gelBody" hidden>
-          <p class="help" style="margin:0 0 10px">Gel is forged from mined ore, not crafter inputs — so you decide how much of your factory can run it. Set the <b>most</b> lines you could sustain on Gel and at what compression. The planner uses <b>up to</b> that many of your best-suited crafters for Gel — only as many as actually help make more of what you asked for — and feeds it into everything else.</p>
+          <p class="help" style="margin:0 0 10px">Gel is forged from mined ore — so the limit isn't crafter inputs, it's your <b>vespium</b>. Enter your vespium/minute income and the planner works out the most Gel/hr it can sustain, auto-picks the best compression per line (lower compression squeezes more Gel from each vespium, higher compression packs more onto a single line), and feeds that Gel into whichever mode you're using.</p>
           <button class="btn ghost" id="btnGelCost" style="margin:0 0 12px;width:100%;justify-content:center">Ore cost by compression</button>
-          <div class="line-fields" style="grid-template-columns:1fr 1fr">
-            <label class="fl"><span>max lines on gel</span><span class="stepper"><input type="number" min="0" step="1" id="gelLines" value="0"><span class="stepper-btns"><button type="button" class="stepper-up" aria-label="Increase">▲</button><button type="button" class="stepper-down" aria-label="Decrease">▼</button></span></span></label>
-            <label class="fl"><span>gel compression</span><select id="gelComp"></select></label>
-          </div>
+          <label class="fl"><span>vespium / minute income <i class="tip" tabindex="0" data-tip="You'll have to experiment with this number a little bit to get it accurate. Vesp rigs mined/min number is a good place to start, but Duo Affinity 9 materially affects how much Vesp you actually produce — sometimes giving 20% or more vesp than expected. If you're profiting vesp crafting these lines, start increasing income until you start draining.">?</i></span><input type="text" inputmode="decimal" id="gelVesp" placeholder="e.g. 500t" autocomplete="off" aria-label="Vespium per minute income"></label>
+          <div id="gelLoadout"></div>
         </div>
       </div>
 
