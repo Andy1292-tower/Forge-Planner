@@ -172,11 +172,10 @@ function renderResults(){
       outv=disp(j.prod[0][1]*sp*dp*3600);ct=fmt(craftTime(j.res,j.lvl)/sp,2);}
     else{pill='<span class="pill craft">craft</span>';job=j.res;lvl=j.lvl+"×";
       outv=disp(j.prod[0][1]*sp*dp*3600);ct=fmt(craftTime(j.res,j.lvl)/sp,2);
-      if(p.reserved){   // vespium-limited Gel line: show its throttled output + actual ore burn
+      if(p.reserved){   // full-time Gel line: show its output + actual ore burn
         outv=disp(p.gelHr||0);
         const craftsHr=j.lvl>0?(p.gelHr||0)/(j.lvl*dp):0,oc=gelOreCost(j.lvl);
         cons=`${disp(oc.rocks*craftsHr)} rocks, ${disp(p.vespHr||0)} vespium <span style="color:var(--ink3)">(free ore)</span>`;
-        if(p.frac!=null&&p.frac<0.999)lvl+=` <span style="color:var(--ink3);font-size:10.5px">${fmt(p.frac*100,0)}% up</span>`;
       }else cons=j.cons.map(c=>disp(c[1]*sp*3600)+" "+invName(res.resIndex,c[0])).join(", ");}
     const resv=p.reserved?' <span class="pill" style="background:rgba(63,182,160,.14);color:var(--teal);border:1px solid var(--teal-d)">reserved</span>':"";
     const tags=`${p.spx?` <span style="color:var(--ink3);font-size:10.5px">×${fmt(p.spx,2)} spd</span>`:""}${p.dup>0?` <span style="color:var(--ink3);font-size:10.5px">+${fmt(p.dup,2)}% dup</span>`:""}`;

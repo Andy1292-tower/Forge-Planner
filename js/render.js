@@ -73,11 +73,13 @@ function renderGelLoadout(lo,vespHr){
   const box=document.getElementById("gelLoadout");if(!box)return;
   if(vespHr<=0){box.innerHTML=`<p class="help" style="margin:10px 0 0">No vespium income set — Gel is off, so Gel-consuming items (Wire) can't be planned until you enter your income.</p>`;return;}
   if(!lo.perLine.length){box.innerHTML=`<div class="notice warn" style="font-size:11.5px;margin-top:10px">Your vespium income is too low to run Gel on any current line. Raise your income (or add a lower-cap line) to make Gel.</div>`;return;}
-  let h=`<div class="notice info" style="font-size:11.5px;margin-top:10px">With <b>${disp(num(S.gelVesp)||0)}</b> vespium/min you can sustain up to <b>${disp(lo.gelHr)}</b> Gel/hr — burning <b>${disp(lo.vespHr)}</b> of your <b>${disp(vespHr)}</b> vespium/hr. Best loadout if you put everything you can on Gel:</div>
-    <table style="margin-top:6px"><thead><tr><th>Line</th><th>Comp</th><th class="num">Uptime</th><th class="num">Gel /hr</th><th class="num">Vespium /hr</th></tr></thead><tbody>`;
+  const head=lo.vespHr<vespHr-1e-6
+    ? `Each line runs one compression full-time; this loadout burns <b>${disp(lo.vespHr)}</b> of your <b>${disp(vespHr)}</b> vespium/hr (the rest is profit — raise a line's cap to spend it).`
+    : `Each line runs one compression full-time, burning <b>${disp(lo.vespHr)}</b> of your <b>${disp(vespHr)}</b> vespium/hr.`;
+  let h=`<div class="notice info" style="font-size:11.5px;margin-top:10px">With <b>${disp(num(S.gelVesp)||0)}</b> vespium/min you can sustain up to <b>${disp(lo.gelHr)}</b> Gel/hr. ${head} Best loadout if you put everything you can on Gel:</div>
+    <table style="margin-top:6px"><thead><tr><th>Line</th><th>Comp</th><th class="num">Gel /hr</th><th class="num">Vespium /hr</th></tr></thead><tbody>`;
   lo.perLine.slice().sort((a,b)=>a.__i-b.__i).forEach(p=>{
     h+=`<tr><td class="mono">#${p.__i+1}</td><td class="mono">${p.L}×</td>
-      <td class="num mono" style="color:var(--ink2)">${fmt(p.frac*100,0)}%</td>
       <td class="num">${disp(p.gelHr)}</td><td class="num" style="color:var(--ink2)">${disp(p.vespHr)}</td></tr>`;
   });
   h+=`</tbody></table>`;
