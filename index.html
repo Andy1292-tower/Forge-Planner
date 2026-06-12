@@ -29,6 +29,7 @@
       <button class="btn primary" id="btnPrices">Sell prices</button>
       <button class="btn primary" id="btnForgie">Lil' Forgie</button>
       <button class="btn primary" id="btnProjects">Shopping list</button>
+      <button class="btn primary" id="btnProgress">Track progress</button>
       <button class="btn ghost" id="btnRecipes">Crafting data</button>
     </div>
   </header>
@@ -168,13 +169,33 @@
     <div class="modal-b">
       <p class="help" style="margin-bottom:10px">Build named <b>projects</b> — each a list of <b>levels</b>, each level a set of item costs. Tick the ones to run and set each project's <b>from → to</b> level; <b>Project plan</b> mode sums those level costs (minus your inventory) and lays out the fastest pipelined craft schedule. Accepts game notation (<b>1.2m</b>, <b>3.4qa</b>). A one-level project is just a flat needs-list.</p>
       <label class="seq-toggle"><input type="checkbox" id="projSeqToggle"><span>Complete projects <b>one at a time</b> — cheapest first, with “<b>1st</b>” projects pinned ahead (unlock bonuses sooner). Uncheck to craft everything together as fast as possible.</span></label>
+
+      <details class="cat-panel" id="catPanel">
+        <summary><span class="cat-sum-lbl">Browse project catalog</span><span class="cat-sum-meta" id="catCount"></span></summary>
+        <input type="text" id="catSearch" class="cat-search" placeholder="Search projects…" aria-label="Search project catalog">
+        <div id="catList" class="cat-list"></div>
+      </details>
+
       <div id="projList"></div>
-      <button class="btn ghost" id="projAdd" style="width:100%;justify-content:center;margin-top:8px">+ New project</button>
+      <button class="btn ghost" id="projAdd" style="width:100%;justify-content:center;margin-top:8px">+ New custom project</button>
 
       <div class="price-grp" style="margin-top:20px">Current inventory — subtracted from total demand</div>
       <div id="invRows"></div>
     </div>
     <div class="modal-f"><button class="btn ghost" id="projInvClear">Clear inventory</button><button class="btn primary" id="projDone">Done</button></div>
+  </div>
+</div>
+
+<!-- PROGRESS TRACKER MODAL -->
+<div class="modal-bg" id="progModal" hidden>
+  <div class="modal" style="max-width:680px">
+    <div class="modal-h"><h3>Track progress</h3><button class="iconbtn" id="progClose" title="Close">×</button></div>
+    <div class="modal-b">
+      <p class="help" style="margin-bottom:10px">Check off each <b>level</b> as you finish it in-game. Completed levels drop out of the remaining demand and the <b>line assignments re-solve live</b> — close this to see the updated plan. Progress is saved and doesn't change your <b>from → to</b> targets.</p>
+      <div id="progSummary" class="prog-summary"></div>
+      <div id="progList"></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" id="progResetAll">Reset all progress</button><button class="btn primary" id="progDone">Done</button></div>
   </div>
 </div>
 
@@ -187,6 +208,7 @@
   </div>
 </div>
 
+<script src="js/catalog.js"></script>
 <script src="js/core.js"></script>
 <script src="js/render.js"></script>
 <script src="js/solver.js"></script>

@@ -272,7 +272,38 @@ function costRow(pi,li,ci,c){
     <button class="iconbtn" data-cdel="${pi}_${li}_${ci}" title="Remove item">×</button>
   </div>`;
 }
+// Read-only cost lines for one level of a catalog project (non-zero costs only).
+function catLevelView(L){
+  const parts=(L.costs||[]).filter(c=>c.qty).map(c=>`${escapeAttr(c.item)} <b class="mono">${formatGameNum(c.qty,2)}</b>`);
+  return parts.length?parts.join(' <span style="color:var(--ink3)">·</span> '):'<span style="color:var(--ink3)">free</span>';
+}
+// Compact card for a catalog-sourced project: name is a fixed label, costs are
+// read-only, user only controls on/off, level range, "1st", and remove. Reuses
+// the same data-* hooks as the editable card so existing handlers apply.
+function compactProjCard(p,pi){
+  const lv=p.levels||[];
+  const view=lv.map((L,li)=>`<div class="cat-lvl"><span class="cat-lvl-n">Lv ${li+1}</span><span>${catLevelView(L)}</span></div>`).join("");
+  const desc=p.description?`<span class="cat-card-desc">${escapeAttr(p.description)}</span>`:"";
+  const single=lv.length<=1;
+  const range=single
+    ? `<span class="proj-lvls one">1 level</span>`
+    : `<span class="proj-lvls">lv <input type="number" min="1" max="${lv.length}" step="1" data-pfrom="${pi}" value="${p.from||1}"> → <input type="number" min="1" max="${lv.length}" step="1" data-pto="${pi}" value="${p.to||lv.length}"></span>`;
+  return `<div class="proj cat-card ${p._open?"open":""}" data-pi="${pi}">
+    <div class="proj-h">
+      <span class="pchev" data-ptoggle="${pi}" title="Show level costs">▸</span>
+      <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule">
+      <span class="pname-static">${escapeAttr(p.name)}${desc}</span>
+      <div class="proj-tools">
+        <label class="proj-first" title="Schedule this project before the others"><input type="checkbox" class="pfirst" data-pfirst="${pi}" ${p.first?"checked":""}>1st</label>
+        ${range}
+        <button class="iconbtn" data-pdel="${pi}" title="Remove from list">×</button>
+      </div>
+    </div>
+    <div class="proj-b"><div class="cat-lvls">${view}</div></div>
+  </div>`;
+}
 function projCard(p,pi){
+  if(p.catId)return compactProjCard(p,pi);
   const lv=p.levels||[];
   const lvlHtml=lv.map((L,li)=>{
     const rows=(L.costs||[]).map((c,ci)=>costRow(pi,li,ci,c)).join("");
@@ -317,10 +348,50 @@ function renderProjects(){
     :`<div class="proj-mini" style="padding:6px 2px">No projects yet — add one to start building a schedule.</div>`;
   const st=document.getElementById("projSeqToggle");if(st)st.checked=S.projectSeq!==false;
   renderInv();
+  if(typeof renderCatalog==="function")renderCatalog();
 }
 document.getElementById("projSeqToggle").addEventListener("change",e=>{S.projectSeq=e.target.checked;save();scheduleSolve();});
+
+/* ---------- project catalog (static, read-only source list) ---------- */
+const CATALOG=(typeof PROJECT_CATALOG!=="undefined"&&Array.isArray(PROJECT_CATALOG))?PROJECT_CATALOG:[];
+let catQuery="";
+const projectHasCat=catId=>(S.projects||[]).some(p=>p.catId===catId);
+function addCatalogProject(catId){
+  const src=CATALOG.find(c=>c.catId===catId);
+  if(!src||projectHasCat(catId))return;
+  S.projects.push({
+    id:newId(),catId:src.catId,name:src.name,description:src.description||"",
+    on:true,first:false,from:1,to:src.levels.length||1,
+    levels:JSON.parse(JSON.stringify(src.levels)),_open:false
+  });
+  renderProjects();renderCatalog();save();scheduleSolve();
+}
+function renderCatalog(){
+  const list=document.getElementById("catList");if(!list)return;
+  const q=catQuery.trim().toLowerCase();
+  const items=CATALOG.filter(c=>!q||c.name.toLowerCase().includes(q)||(c.description||"").toLowerCase().includes(q));
+  const added=CATALOG.filter(c=>projectHasCat(c.catId)).length;
+  const cc=document.getElementById("catCount");if(cc)cc.textContent=`${added}/${CATALOG.length} added`;
+  list.innerHTML=items.length?items.map(c=>{
+    const has=projectHasCat(c.catId);
+    const lvls=c.levels.length;
+    const meta=`${lvls} level${lvls===1?"":"s"}${c.description?" · "+escapeAttr(c.description):""}`;
+    return `<div class="cat-row${has?" added":""}">
+      <div class="cat-row-info"><span class="cat-row-name">${escapeAttr(c.name)}</span><span class="cat-row-meta">${meta}</span></div>
+      <button class="btn ${has?"ghost":"primary"} cat-add" data-cat-add="${escapeAttr(c.catId)}" ${has?"disabled":""}>${has?"Added":"Add"}</button>
+    </div>`;
+  }).join(""):`<div class="proj-mini" style="padding:6px 2px">No matching projects.</div>`;
+}
+const catListEl=document.getElementById("catList");
+if(catListEl)catListEl.addEventListener("click",e=>{
+  const btn=e.target.closest("[data-cat-add]");if(!btn||btn.disabled)return;
+  addCatalogProject(btn.getAttribute("data-cat-add"));
+});
+const catSearchEl=document.getElementById("catSearch");
+if(catSearchEl)catSearchEl.addEventListener("input",e=>{catQuery=e.target.value;renderCatalog();});
+
 const projModal=document.getElementById("projModal");
-function openProjects(){renderProjects();projModal.hidden=false;}
+function openProjects(){renderProjects();renderCatalog();projModal.hidden=false;}
 function closeProjects(){projModal.hidden=true;}
 document.getElementById("btnProjects").addEventListener("click",openProjects);
 document.getElementById("projClose").addEventListener("click",closeProjects);
@@ -363,6 +434,84 @@ document.getElementById("projList").addEventListener("change",e=>{
 document.getElementById("invRows").addEventListener("input",e=>{
   const it=e.target.getAttribute("data-inv");if(!it)return;
   S.inventoryText[it]=e.target.value;S.inventory[it]=parseGameNum(e.target.value);save();scheduleSolve();
+});
+
+/* ---------- Progress tracker modal ---------- */
+// Levels completed for a project, clamped to its from→to span (non-destructive).
+function projSpan(p){const from=Math.max(1,Math.floor(num(p.from)||1));const to=Math.max(from,Math.min((p.levels||[]).length,Math.floor(num(p.to)||(p.levels||[]).length)));return {from,to,span:to-from+1};}
+function projDone(p){const {span}=projSpan(p);return Math.max(0,Math.min(span,Math.floor(num(p.done)||0)));}
+function renderProgress(){
+  const list=document.getElementById("progList");
+  const sum=document.getElementById("progSummary");
+  if(!list||!sum)return;
+  const active=(S.projects||[]).filter(p=>p.on&&(p.levels||[]).length);
+  if(!active.length){
+    sum.innerHTML="";
+    list.innerHTML=`<div class="notice info">No active projects. Open <b>Shopping list</b>, add or tick on a project, then track its level progress here.</div>`;
+    return;
+  }
+  let totalLv=0,doneLv=0;
+  active.forEach(p=>{const {span}=projSpan(p);totalLv+=span;doneLv+=projDone(p);});
+  const res=optimizeProjectTop();
+  const remLv=totalLv-doneLv;
+  const pct=totalLv?Math.round(doneLv/totalLv*100):0;
+  const etaTxt=(res&&!res.empty&&remLv>0)?fmtDuration(res.eta):(remLv>0?"—":"all done 🎉");
+  sum.innerHTML=`
+    <div class="prog-bar-wrap"><div class="prog-bar" style="width:${pct}%"></div></div>
+    <div class="prog-metrics">
+      <div class="prog-metric"><div class="pm-v">${doneLv}/${totalLv}</div><div class="pm-l">levels done</div></div>
+      <div class="prog-metric"><div class="pm-v">${remLv}</div><div class="pm-l">levels left</div></div>
+      <div class="prog-metric"><div class="pm-v">${etaTxt}</div><div class="pm-l">time remaining</div></div>
+    </div>${res&&!res.empty&&!res.feasible&&remLv>0?`<div class="notice warn" style="margin:10px 0 0;font-size:11.5px">Plan isn't fully sustainable with current lines — see the main panel for blocked items.</div>`:""}`;
+  list.innerHTML=active.map(p=>{
+    const {from,to,span}=projSpan(p);
+    const done=projDone(p);
+    const complete=done>=span;
+    const chips=[];
+    for(let L=from;L<=to;L++){
+      const idx=L-from, isDone=idx<done, isNext=idx===done;
+      chips.push(`<button class="prog-lvl${isDone?" done":""}${isNext?" next":""}" data-pid="${escapeAttr(p.id)}" data-lvl="${L}" title="${isDone?"Completed — click to undo":"Mark completed through level "+L}"><span class="pl-box"></span>Lv ${L}</button>`);
+    }
+    const desc=p.description?`<span class="prog-desc">${escapeAttr(p.description)}</span>`:"";
+    return `<div class="prog-proj${complete?" complete":""}">
+      <div class="prog-proj-h">
+        <div class="prog-proj-name">${escapeAttr(p.name||"Project")}${complete?' <span class="pill craft" style="font-size:9px">done</span>':""}${desc}</div>
+        <div class="prog-proj-meta"><span class="mono">${done}/${span}</span>${done>0?`<button class="prog-reset" data-preset="${escapeAttr(p.id)}" title="Reset this project's progress">reset</button>`:""}</div>
+      </div>
+      <div class="prog-lvls">${chips.join("")}</div>
+    </div>`;
+  }).join("");
+}
+function setProjDone(pid,newDone){
+  const p=(S.projects||[]).find(x=>x.id===pid);if(!p)return;
+  const {span}=projSpan(p);
+  p.done=Math.max(0,Math.min(span,Math.floor(newDone)));
+  save();renderProgress();scheduleSolve();
+}
+const progModal=document.getElementById("progModal");
+function openProgress(){renderProgress();progModal.hidden=false;}
+function closeProgress(){progModal.hidden=true;}
+document.getElementById("btnProgress").addEventListener("click",openProgress);
+document.getElementById("progClose").addEventListener("click",closeProgress);
+document.getElementById("progDone").addEventListener("click",closeProgress);
+progModal.addEventListener("click",e=>{if(e.target===progModal)closeProgress();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!progModal.hidden)closeProgress();});
+document.getElementById("progList").addEventListener("click",e=>{
+  const reset=e.target.closest("[data-preset]");
+  if(reset){setProjDone(reset.getAttribute("data-preset"),0);return;}
+  const chip=e.target.closest(".prog-lvl");
+  if(chip){
+    const pid=chip.getAttribute("data-pid"),L=+chip.getAttribute("data-lvl");
+    const p=(S.projects||[]).find(x=>x.id===pid);if(!p)return;
+    const {from}=projSpan(p),idx=L-from,done=projDone(p);
+    setProjDone(pid,done===idx+1?idx:idx+1);   // click the last-done level to undo it, any other to complete through it
+  }
+});
+document.getElementById("progResetAll").addEventListener("click",()=>{
+  if(!(S.projects||[]).some(p=>projDone(p)>0))return;
+  if(!confirm("Reset completed-level progress on all projects?"))return;
+  (S.projects||[]).forEach(p=>{p.done=0;});
+  save();renderProgress();scheduleSolve();
 });
 
 /* ---------- Step-by-step plan modal ---------- */

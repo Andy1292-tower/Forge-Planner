@@ -308,11 +308,16 @@ function projectDemand(){
     const lv=p.levels||[];
     const from=Math.max(1,Math.floor(num(p.from)||1));
     const to=Math.min(lv.length,Math.max(from,Math.floor(num(p.to)||lv.length)));
+    // levels completed in the tracker are skipped — non-destructive progress that
+    // raises the effective start level without touching the user's from→to target.
+    const done=Math.max(0,Math.min(to-from+1,Math.floor(num(p.done)||0)));
+    const start=from-1+done;
+    if(start>=to)return;   // project fully checked off — nothing left to craft
     const sub={};ALLITEMS.forEach(it=>sub[it]=0);
-    for(let i=from-1;i<to&&i<lv.length;i++){
+    for(let i=start;i<to&&i<lv.length;i++){
       (lv[i].costs||[]).forEach(c=>{const it=c.item,q=num(c.qty)||0;if(ALLITEMS.includes(it)&&q>0){sub[it]+=q;gross[it]+=q;}});
     }
-    perProject.push({name:p.name||"Project",first:!!p.first,from,to,levels:lv.length,sub});
+    perProject.push({name:p.name||"Project",first:!!p.first,from:start+1,to,levels:lv.length,sub});
   });
   const inv=it=>num(S.inventory&&S.inventory[it])||0;
   const net={};ALLITEMS.forEach(it=>{net[it]=Math.max(0,gross[it]-inv(it));});
