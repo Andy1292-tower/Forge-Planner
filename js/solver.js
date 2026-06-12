@@ -14,6 +14,15 @@ function relevantChain(targets){
 }
 
 function craftTime(item,L){return (num(S.baseTime&&S.baseTime[item])||1)*Math.pow(1.5,Math.log2(L));}
+// Bits/hr the crafted Frames consume (8 Bits per uncompressed frame). Frames assume Bits are
+// pre-produced, so this is a display-only read of the plan — it never feeds the line solver.
+function framesBitsHr(plan){
+  let bits=0;
+  (plan||[]).forEach(p=>{const j=p.job;
+    if(j&&j.kind==="craft"&&j.res==="Frames"){const L=j.lvl,ct=craftTime("Frames",L),sp=effSpeed(p.sp,ct);
+      if(ct>0)bits+=(FRAME_BITS*Math.pow(3,Math.log2(L))/ct)*sp*3600;}});
+  return bits;
+}
 function buildJobs(maxVal,resIndex,relRaws,relProds,targets,w){
   const allowed=LEVELS.filter(L=>L<=maxVal);
   const jobs=[{label:"Idle",kind:"idle",res:null,lvl:null,prod:[],cons:[],h:0}];
