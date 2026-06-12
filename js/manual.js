@@ -11,7 +11,7 @@ function manualResult(){
   const plan=[]; const issueSet=new Set();
   S.lines.forEach((ln,i)=>{
     const m=S.manual[i]||{job:"Idle",lvl:ln.max};
-    const sp=lineSpeed(ln), dp=1+(num(ln.dup)||0)/100;
+    const sp=lineSpeed(ln), dp=dupeMult();
     let job;
     if(m.job==="Idle"||!ALLITEMS.includes(m.job)){
       job={kind:"idle",res:null,lvl:null,ct:0,prod:[],cons:[]};
@@ -26,7 +26,7 @@ function manualResult(){
       produced[resIndex[item]]+=rate*eff*dp*3600;
       job={kind:(RAWS.includes(item)||item===GEL)?"produce":"craft",res:item,lvl:L,ct,prod:[[resIndex[item],rate]],cons};
     }
-    plan.push({line:i+1,max:ln.max,spx:sp,dup:(num(ln.dup)||0),sp,dp,job});
+    plan.push({line:i+1,max:ln.max,spx:sp,dup:dupeChance(),sp,dp,job});
   });
   const balance=resources.map(r=>{const i=resIndex[r];return {res:r,prod:Math.max(0,produced[i]-forgie[r]),forgie:forgie[r],cons:consumed[i]};});
   const out={};resources.forEach(r=>{const i=resIndex[r];out[r]=produced[i]-consumed[i];});
