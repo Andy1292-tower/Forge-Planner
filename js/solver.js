@@ -304,41 +304,36 @@ function gelOutHr(row,L){const sp=lineSpeed(row),dp=dupeMult(),ct=craftTime(GEL,
 function gelVespHr(row,L){const sp=lineSpeed(row),ct=craftTime(GEL,L);return ct>0?gelOreCost(L).vesp*(effSpeed(sp,ct)/ct)*3600:0;}
 // Per-line gel rate at the line's max compression — used only to rank reservation candidates.
 function gelRatePerHr(row,C){return gelOutHr(row,gelCompFor(row,C));}
-// Maximum Gel/hr obtainable from `rows` within a vespium/hr budget, auto-picking each line's
-// compression. Raising compression doubles Gel but triples vespium, so marginal Gel-per-vespium
-// falls monotonically with level — the per-level steps already form a concave frontier. Buy steps
-// in falling Gel/vespium order until the budget is spent (the last one fractionally, i.e. the line
-// runs Gel only part of the time, vespium-starved). Returns the exact LP-optimal total plus a
-// per-line breakdown {__i,max,L,gelHr,vespHr,frac} for display (frac = vespium-limited uptime).
+// Maximum Gel/hr obtainable from `rows` within a vespium/hr budget. In-game a crafter runs ONE
+// compression FULL-TIME (you can't throttle uptime or blend levels), so each used line is assigned
+// a single whole level and the plan must stay under the budget — leftover vespium is simply profit,
+// not wasted capacity. Raising compression doubles Gel but triples vespium, so marginal Gel-per-
+// vespium falls with level: greedily apply the cheapest-per-Gel single-level step-up that still fits
+// the remaining budget until none fit. Returns the total + per-line {__i,max,L,gelHr,vespHr,frac};
+// frac is always 1 (full-time) — kept so the plan/balance display code can read it uniformly.
 function gelLoadout(rows,vespBudgetHr){
   if(!(vespBudgetHr>0)||!rows.length)return {gelHr:0,vespHr:0,perLine:[]};
-  const segs=[];
-  rows.forEach((row,ri)=>{
-    let pv=0,pg=0;
-    LEVELS.filter(L=>L<=(row.max||0)).forEach(L=>{
-      const v=gelVespHr(row,L),g=gelOutHr(row,L),dv=v-pv,dg=g-pg;
-      if(dv>1e-9&&dg>0)segs.push({ri,toL:L,dv,dg,slope:dg/dv});
-      pv=v;pg=g;
-    });
-  });
-  segs.sort((a,b)=>b.slope-a.slope);
-  const reach=rows.map(()=>({L:0,partial:null}));   // top fully-bought level (+ optional fractional step) per line
+  const levelsFor=rows.map(row=>[0,...LEVELS.filter(L=>L<=(row.max||0))]);   // [off, 1×, 2×, …]
+  const cur=rows.map(()=>0);   // chosen level index per line (0 = off)
   let spent=0,gel=0;
-  for(const s of segs){
-    const room=vespBudgetHr-spent;if(room<=1e-9)break;
-    if(s.dv<=room){spent+=s.dv;gel+=s.dg;reach[s.ri].L=s.toL;}
-    else{const f=room/s.dv;spent+=room;gel+=s.dg*f;reach[s.ri].partial={toL:s.toL,f};break;}
+  for(;;){
+    let bI=-1,bIdx=-1,bEff=-1,bDv=0,bDg=0;
+    rows.forEach((row,ri)=>{
+      const lv=levelsFor[ri],ci=cur[ri];
+      if(ci+1>=lv.length)return;   // already at this line's cap
+      const Lnow=lv[ci],Lnext=lv[ci+1];
+      const dv=gelVespHr(row,Lnext)-(Lnow?gelVespHr(row,Lnow):0);
+      const dg=gelOutHr(row,Lnext)-(Lnow?gelOutHr(row,Lnow):0);
+      if(dv<=1e-9||dg<=0||spent+dv>vespBudgetHr+1e-6)return;   // no gain, or doesn't fit the budget
+      const eff=dg/dv;
+      if(eff>bEff){bEff=eff;bI=ri;bIdx=ci+1;bDv=dv;bDg=dg;}
+    });
+    if(bI<0)break;
+    cur[bI]=bIdx;spent+=bDv;gel+=bDg;
   }
   const perLine=[];
-  rows.forEach((row,ri)=>{
-    const r=reach[ri];if(!r.L&&!r.partial)return;
-    let vespLine=gelVespHr(row,r.L),gelLine=gelOutHr(row,r.L),top=r.L;
-    if(r.partial){const Lp=r.partial.toL,f=r.partial.f;
-      vespLine+=f*(gelVespHr(row,Lp)-gelVespHr(row,r.L));
-      gelLine+=f*(gelOutHr(row,Lp)-gelOutHr(row,r.L));top=Lp;}
-    const full=gelOutHr(row,top);
-    perLine.push({__i:row.__i,max:row.max,L:top,gelHr:gelLine,vespHr:vespLine,frac:full>0?Math.min(1,gelLine/full):0});
-  });
+  rows.forEach((row,ri)=>{const L=levelsFor[ri][cur[ri]];if(!L)return;
+    perLine.push({__i:row.__i,max:row.max,L,gelHr:gelOutHr(row,L),vespHr:gelVespHr(row,L),frac:1});});
   return {gelHr:gel,vespHr:spent,perLine};
 }
 // Vespium/hr income from the user's vespium/minute figure (0 if unset → Gel off).
