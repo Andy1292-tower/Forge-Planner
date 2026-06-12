@@ -2559,5 +2559,463 @@ const PROJECT_CATALOG=[
         ]
       }
     ]
+  },
+  {
+    "catId": "mining-rig-factory-mk3",
+    "name": "Mining Rig Factory Mk. 3",
+    "description": "Vespium Rig",
+    "levels": [
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 10000
+          },
+          {
+            "item": "Plates",
+            "qty": 4000
+          },
+          {
+            "item": "Rods",
+            "qty": 4000
+          },
+          {
+            "item": "Frames",
+            "qty": 300
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "catId": "vescas-workshop-mk2",
+    "name": "Vesca's Workshop Mk. 2",
+    "description": "",
+    "levels": [
+      {
+        "costs": [
+          {
+            "item": "Bricks",
+            "qty": 1000
+          },
+          {
+            "item": "Plates",
+            "qty": 2500
+          },
+          {
+            "item": "Rods",
+            "qty": 1000
+          },
+          {
+            "item": "Frames",
+            "qty": 200
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "catId": "gel-refinery",
+    "name": "Gel Refinery",
+    "description": "",
+    "levels": [
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 50000
+          },
+          {
+            "item": "Glass",
+            "qty": 300
+          },
+          {
+            "item": "Plates",
+            "qty": 600
+          },
+          {
+            "item": "Frames",
+            "qty": 60
+          },
+          {
+            "item": "Bricks",
+            "qty": 100
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "catId": "wire-tower",
+    "name": "Wire Tower",
+    "description": "",
+    "levels": [
+      {
+        "costs": [
+          {
+            "item": "Glass",
+            "qty": 500
+          },
+          {
+            "item": "Bricks",
+            "qty": 400
+          },
+          {
+            "item": "Plates",
+            "qty": 1000
+          },
+          {
+            "item": "Frames",
+            "qty": 50
+          },
+          {
+            "item": "Gel",
+            "qty": 30
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "catId": "excavation-center",
+    "name": "Excavation Center",
+    "description": "",
+    "levels": [
+      {
+        "costs": [
+          {
+            "item": "Bricks",
+            "qty": 500
+          },
+          {
+            "item": "Frames",
+            "qty": 300
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bricks",
+            "qty": 1000
+          },
+          {
+            "item": "Frames",
+            "qty": 600
+          },
+          {
+            "item": "Glass",
+            "qty": 800
+          },
+          {
+            "item": "Wire",
+            "qty": 4
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bricks",
+            "qty": 1500
+          },
+          {
+            "item": "Frames",
+            "qty": 900
+          },
+          {
+            "item": "Glass",
+            "qty": 800
+          },
+          {
+            "item": "Wire",
+            "qty": 4
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "catId": "silicate-trading-hub",
+    "name": "Silicate Trading Hub",
+    "description": "",
+    "levels": [
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 42000
+          },
+          {
+            "item": "Concrete",
+            "qty": 2400
+          },
+          {
+            "item": "Glass",
+            "qty": 960
+          },
+          {
+            "item": "Bricks",
+            "qty": 440
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 8
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 42000
+          },
+          {
+            "item": "Concrete",
+            "qty": 2400
+          },
+          {
+            "item": "Glass",
+            "qty": 960
+          },
+          {
+            "item": "Bricks",
+            "qty": 440
+          },
+          {
+            "item": "Gel",
+            "qty": 8
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "catId": "improved-tokenium-scanner",
+    "name": "Improved Tokenium Scanner",
+    "description": "",
+    "levels": [
+      {
+        "costs": [
+          {
+            "item": "Rods",
+            "qty": 10000
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Rods",
+            "qty": 30000
+          },
+          {
+            "item": "Frames",
+            "qty": 90
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Rods",
+            "qty": 40000
+          },
+          {
+            "item": "Frames",
+            "qty": 90
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "catId": "improved-silicate-scanner-mk2",
+    "name": "Improved Silicate Scanner Mk. 2",
+    "description": "",
+    "levels": [
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 3
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 15
+          },
+          {
+            "item": "Wire",
+            "qty": 10
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 18
+          },
+          {
+            "item": "Wire",
+            "qty": 10
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "catId": "communication-center-mk2",
+    "name": "Communication Center Mk. 2",
+    "description": "",
+    "levels": [
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 13500
+          },
+          {
+            "item": "Bricks",
+            "qty": 100
+          },
+          {
+            "item": "Plates",
+            "qty": 4800
+          },
+          {
+            "item": "Rods",
+            "qty": 2240
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 27000
+          },
+          {
+            "item": "Bricks",
+            "qty": 200
+          },
+          {
+            "item": "Plates",
+            "qty": 9600
+          },
+          {
+            "item": "Rods",
+            "qty": 4480
+          },
+          {
+            "item": "Frames",
+            "qty": 400
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 54000
+          },
+          {
+            "item": "Bricks",
+            "qty": 400
+          },
+          {
+            "item": "Plates",
+            "qty": 19200
+          },
+          {
+            "item": "Rods",
+            "qty": 8960
+          },
+          {
+            "item": "Frames",
+            "qty": 800
+          },
+          {
+            "item": "Wire",
+            "qty": 80
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "catId": "tokenium-enrichment-center",
+    "name": "Tokenium Enrichment Center",
+    "description": "",
+    "levels": [
+      {
+        "costs": [
+          {
+            "item": "Frames",
+            "qty": 600
+          },
+          {
+            "item": "Glass",
+            "qty": 600
+          },
+          {
+            "item": "Bricks",
+            "qty": 600
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Frames",
+            "qty": 1200
+          },
+          {
+            "item": "Glass",
+            "qty": 1200
+          },
+          {
+            "item": "Bricks",
+            "qty": 1200
+          },
+          {
+            "item": "Gel",
+            "qty": 200
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Frames",
+            "qty": 2400
+          },
+          {
+            "item": "Glass",
+            "qty": 2400
+          },
+          {
+            "item": "Bricks",
+            "qty": 2400
+          },
+          {
+            "item": "Gel",
+            "qty": 400
+          },
+          {
+            "item": "Wire",
+            "qty": 200
+          }
+        ]
+      }
+    ]
   }
 ];
