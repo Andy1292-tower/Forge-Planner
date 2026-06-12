@@ -272,7 +272,38 @@ function costRow(pi,li,ci,c){
     <button class="iconbtn" data-cdel="${pi}_${li}_${ci}" title="Remove item">×</button>
   </div>`;
 }
+// Read-only cost lines for one level of a catalog project (non-zero costs only).
+function catLevelView(L){
+  const parts=(L.costs||[]).filter(c=>c.qty).map(c=>`${escapeAttr(c.item)} <b class="mono">${formatGameNum(c.qty,2)}</b>`);
+  return parts.length?parts.join(' <span style="color:var(--ink3)">·</span> '):'<span style="color:var(--ink3)">free</span>';
+}
+// Compact card for a catalog-sourced project: name is a fixed label, costs are
+// read-only, user only controls on/off, level range, "1st", and remove. Reuses
+// the same data-* hooks as the editable card so existing handlers apply.
+function compactProjCard(p,pi){
+  const lv=p.levels||[];
+  const view=lv.map((L,li)=>`<div class="cat-lvl"><span class="cat-lvl-n">Lv ${li+1}</span><span>${catLevelView(L)}</span></div>`).join("");
+  const desc=p.description?`<span class="cat-card-desc">${escapeAttr(p.description)}</span>`:"";
+  const single=lv.length<=1;
+  const range=single
+    ? `<span class="proj-lvls one">1 level</span>`
+    : `<span class="proj-lvls">lv <input type="number" min="1" max="${lv.length}" step="1" data-pfrom="${pi}" value="${p.from||1}"> → <input type="number" min="1" max="${lv.length}" step="1" data-pto="${pi}" value="${p.to||lv.length}"></span>`;
+  return `<div class="proj cat-card ${p._open?"open":""}" data-pi="${pi}">
+    <div class="proj-h">
+      <span class="pchev" data-ptoggle="${pi}" title="Show level costs">▸</span>
+      <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule">
+      <span class="pname-static">${escapeAttr(p.name)}${desc}</span>
+      <div class="proj-tools">
+        <label class="proj-first" title="Schedule this project before the others"><input type="checkbox" class="pfirst" data-pfirst="${pi}" ${p.first?"checked":""}>1st</label>
+        ${range}
+        <button class="iconbtn" data-pdel="${pi}" title="Remove from list">×</button>
+      </div>
+    </div>
+    <div class="proj-b"><div class="cat-lvls">${view}</div></div>
+  </div>`;
+}
 function projCard(p,pi){
+  if(p.catId)return compactProjCard(p,pi);
   const lv=p.levels||[];
   const lvlHtml=lv.map((L,li)=>{
     const rows=(L.costs||[]).map((c,ci)=>costRow(pi,li,ci,c)).join("");
@@ -317,10 +348,50 @@ function renderProjects(){
     :`<div class="proj-mini" style="padding:6px 2px">No projects yet — add one to start building a schedule.</div>`;
   const st=document.getElementById("projSeqToggle");if(st)st.checked=S.projectSeq!==false;
   renderInv();
+  if(typeof renderCatalog==="function")renderCatalog();
 }
 document.getElementById("projSeqToggle").addEventListener("change",e=>{S.projectSeq=e.target.checked;save();scheduleSolve();});
+
+/* ---------- project catalog (static, read-only source list) ---------- */
+const CATALOG=(typeof PROJECT_CATALOG!=="undefined"&&Array.isArray(PROJECT_CATALOG))?PROJECT_CATALOG:[];
+let catQuery="";
+const projectHasCat=catId=>(S.projects||[]).some(p=>p.catId===catId);
+function addCatalogProject(catId){
+  const src=CATALOG.find(c=>c.catId===catId);
+  if(!src||projectHasCat(catId))return;
+  S.projects.push({
+    id:newId(),catId:src.catId,name:src.name,description:src.description||"",
+    on:true,first:false,from:1,to:src.levels.length||1,
+    levels:JSON.parse(JSON.stringify(src.levels)),_open:false
+  });
+  renderProjects();renderCatalog();save();scheduleSolve();
+}
+function renderCatalog(){
+  const list=document.getElementById("catList");if(!list)return;
+  const q=catQuery.trim().toLowerCase();
+  const items=CATALOG.filter(c=>!q||c.name.toLowerCase().includes(q)||(c.description||"").toLowerCase().includes(q));
+  const added=CATALOG.filter(c=>projectHasCat(c.catId)).length;
+  const cc=document.getElementById("catCount");if(cc)cc.textContent=`${added}/${CATALOG.length} added`;
+  list.innerHTML=items.length?items.map(c=>{
+    const has=projectHasCat(c.catId);
+    const lvls=c.levels.length;
+    const meta=`${lvls} level${lvls===1?"":"s"}${c.description?" · "+escapeAttr(c.description):""}`;
+    return `<div class="cat-row${has?" added":""}">
+      <div class="cat-row-info"><span class="cat-row-name">${escapeAttr(c.name)}</span><span class="cat-row-meta">${meta}</span></div>
+      <button class="btn ${has?"ghost":"primary"} cat-add" data-cat-add="${escapeAttr(c.catId)}" ${has?"disabled":""}>${has?"Added":"Add"}</button>
+    </div>`;
+  }).join(""):`<div class="proj-mini" style="padding:6px 2px">No matching projects.</div>`;
+}
+const catListEl=document.getElementById("catList");
+if(catListEl)catListEl.addEventListener("click",e=>{
+  const btn=e.target.closest("[data-cat-add]");if(!btn||btn.disabled)return;
+  addCatalogProject(btn.getAttribute("data-cat-add"));
+});
+const catSearchEl=document.getElementById("catSearch");
+if(catSearchEl)catSearchEl.addEventListener("input",e=>{catQuery=e.target.value;renderCatalog();});
+
 const projModal=document.getElementById("projModal");
-function openProjects(){renderProjects();projModal.hidden=false;}
+function openProjects(){renderProjects();renderCatalog();projModal.hidden=false;}
 function closeProjects(){projModal.hidden=true;}
 document.getElementById("btnProjects").addEventListener("click",openProjects);
 document.getElementById("projClose").addEventListener("click",closeProjects);
