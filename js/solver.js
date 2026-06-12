@@ -361,7 +361,10 @@ function projectSchedule(net,targets){
   const prodT=targets.filter(it=>PRODUCTS.includes(it));
   const rawT=targets.filter(it=>RAWS.includes(it));
   const rc=relevantChain(prodT);
-  const items=[...new Set([...rc.raws,...rawT,...rc.prods,...prodT])].filter(it=>it!==GEL);
+  // Gel IS included as a constrained resource: it gets no production variable (only reserved
+  // lines make it, supplied via forgieHr), but its consumption (by Wire) and any direct Gel
+  // demand are capped at that supply — so the plan can't over-consume gel it can't produce.
+  const items=[...new Set([...rc.raws,...rawT,...rc.prods,...prodT])];
   const itemIdx={};items.forEach((it,i)=>itemIdx[it]=i);
   // jobs: one variable per (line,item,level<=cap). Letting the LP pick the level finds the true
   // makespan-optimal compression (leans high for raw speed, eases off when materials bottleneck).
