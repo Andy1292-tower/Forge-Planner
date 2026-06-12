@@ -37,13 +37,9 @@ document.getElementById("maxTurbo").addEventListener("input",e=>{
   S.maxTurbo=Math.max(0,num(e.target.value)||0);
   refreshLineNotes();scheduleSolve();
 });
-document.getElementById("attrDupe").addEventListener("input",e=>{
-  S.attrDupe=Math.max(0,num(e.target.value)||0);
-  refreshLineNotes();scheduleSolve();
-});
-document.getElementById("trio4").addEventListener("input",e=>{
-  S.trio4=Math.max(0,num(e.target.value)||0);
-  refreshLineNotes();scheduleSolve();
+document.getElementById("dupe").addEventListener("input",e=>{
+  S.dupe=Math.max(0,num(e.target.value)||0);
+  scheduleSolve();
 });
 
 document.getElementById("targets").addEventListener("change",e=>{
@@ -262,8 +258,7 @@ function renderAll(){
   document.getElementById("margin").value=S.margin||0;
   document.getElementById("marginv").textContent=fmt(S.margin||0,1)+"%";
   document.getElementById("maxTurbo").value=S.maxTurbo||0;
-  document.getElementById("attrDupe").value=S.attrDupe||0;
-  document.getElementById("trio4").value=S.trio4||0;
+  document.getElementById("dupe").value=S.dupe||0;
 }
 renderAll();
 initCalib();

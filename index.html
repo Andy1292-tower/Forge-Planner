@@ -41,8 +41,7 @@
         <div class="body">
           <div class="globals">
             <label class="fl"><span>max turbo stacks <i class="tip" tabindex="0" data-tip="The most turbo stacks any crafter can reach — a global cap (each stack = +1% speed). The planner projects every line's current speed up to this many stacks, so the plan reflects your sustained speed at full turbo.">?</i></span><input type="number" min="0" step="any" id="maxTurbo" placeholder="0"></label>
-            <label class="fl"><span>attribute dupe % <i class="tip" tabindex="0" data-tip="Base duplication chance (%) from your crafting attribute — the average % of crafts that drop a free duplicate before any turbo bonus.">?</i></span><input type="number" min="0" step="any" id="attrDupe" placeholder="0"></label>
-            <label class="fl"><span>trio 4 bonus / stack <i class="tip" tabindex="0" data-tip="Trio Affinity 4 bonus: extra duplication chance (%) per turbo stack. The planner adds (max turbo stacks × this) to your attribute chance. Leave 0 if you don't have Trio Affinity 4.">?</i></span><input type="number" min="0" step="any" id="trio4" placeholder="0"></label>
+            <label class="fl"><span>dupe % <i class="tip tip-ic" tabindex="0" style="--tip-img:url('/assets/dupe.jpg')" data-tip="Duplication chance — average % of crafts that drop a free duplicate. Adds output without spending extra material. Global to every crafter; leave 0 if you don't have dupe bonuses.">?</i></span><input type="number" min="0" max="100" step="any" id="dupe" placeholder="0"></label>
           </div>
           <div id="lines"></div>
           <button class="btn ghost" id="btnAddLine" style="width:100%;justify-content:center;margin-top:4px">+ Add line</button>
@@ -103,7 +102,7 @@
       <span class="rsec-hint">base times · recipe costs · calibration tool — defaults are good, open only to tweak</span>
     </button>
     <div class="rsec-body" id="recipeBody" hidden>
-    <p class="help" style="margin-top:14px">Craft time is computed, not entered: effective time = (this item's base time) × 1.5^(compression level) ÷ the line's total speed ×. Set each line's max compression, its currently-displayed total speed × (the ×NN.NN reading at the top of that crafting unit), and its current turbo stacks above — the planner backs out your base speed and projects it to the global max turbo stacks. Duplication chance is computed globally from your attribute dupe % plus (max turbo stacks × Trio Affinity 4 bonus). Each item has its own base time @1× on its card below — they don't have to match. Cost columns are the material each craft consumes per level. Compression level = units produced per cycle; costs scale 3× per level.</p>
+    <p class="help" style="margin-top:14px">Craft time is computed, not entered: effective time = (this item's base time) × 1.5^(compression level) ÷ the line's total speed ×. Set each line's max compression, its currently-displayed total speed × (the ×NN.NN reading at the top of that crafting unit), and its current turbo stacks above — the planner backs out your base speed and projects it to the global max turbo stacks. Duplication chance is entered once at the top and applies to every crafter. Each item has its own base time @1× on its card below — they don't have to match. Cost columns are the material each craft consumes per level. Compression level = units produced per cycle; costs scale 3× per level.</p>
 
     <div class="calib">
       <div class="calib-h">Calibrate / verify a base time</div>
