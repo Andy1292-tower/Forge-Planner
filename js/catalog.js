@@ -94,30 +94,6 @@ const PROJECT_CATALOG=[
             "qty": 90
           }
         ]
-      },
-      {
-        "costs": [
-          {
-            "item": "Concrete",
-            "qty": 5700
-          },
-          {
-            "item": "Glass",
-            "qty": 665
-          },
-          {
-            "item": "Plates",
-            "qty": 2850
-          },
-          {
-            "item": "Frames",
-            "qty": 38
-          },
-          {
-            "item": "Bricks",
-            "qty": 90
-          }
-        ]
       }
     ]
   },
@@ -183,26 +159,6 @@ const PROJECT_CATALOG=[
           {
             "item": "Frames",
             "qty": 169
-          }
-        ]
-      },
-      {
-        "costs": [
-          {
-            "item": "Bits",
-            "qty": 6413
-          },
-          {
-            "item": "Concrete",
-            "qty": 8550
-          },
-          {
-            "item": "Glass",
-            "qty": 357
-          },
-          {
-            "item": "Frames",
-            "qty": 357
           }
         ]
       }
@@ -278,30 +234,6 @@ const PROJECT_CATALOG=[
           {
             "item": "Frames",
             "qty": 563
-          },
-          {
-            "item": "Concrete",
-            "qty": 1125
-          }
-        ]
-      },
-      {
-        "costs": [
-          {
-            "item": "Bits",
-            "qty": 1425
-          },
-          {
-            "item": "Plates",
-            "qty": 475
-          },
-          {
-            "item": "Rods",
-            "qty": 1188
-          },
-          {
-            "item": "Frames",
-            "qty": 1188
           },
           {
             "item": "Concrete",
@@ -434,34 +366,6 @@ const PROJECT_CATALOG=[
             "qty": 2600
           }
         ]
-      },
-      {
-        "costs": [
-          {
-            "item": "Bits",
-            "qty": 33600
-          },
-          {
-            "item": "Concrete",
-            "qty": 33600
-          },
-          {
-            "item": "Glass",
-            "qty": 2520
-          },
-          {
-            "item": "Bricks",
-            "qty": 2940
-          },
-          {
-            "item": "Plates",
-            "qty": 1680
-          },
-          {
-            "item": "Rods",
-            "qty": 4550
-          }
-        ]
       }
     ]
   },
@@ -573,22 +477,6 @@ const PROJECT_CATALOG=[
           {
             "item": "Plates",
             "qty": 180
-          },
-          {
-            "item": "Frames",
-            "qty": 23
-          }
-        ]
-      },
-      {
-        "costs": [
-          {
-            "item": "Rods",
-            "qty": 380
-          },
-          {
-            "item": "Plates",
-            "qty": 300
           },
           {
             "item": "Frames",
