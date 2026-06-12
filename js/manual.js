@@ -122,8 +122,14 @@ function renderManual(el,stat){
       <td class="num" style="color:var(--amber);font-weight:700">${disp(res.totalCredits)}</td></tr>`;
     html+=`</tbody></table>`;
   }
-  // resource balance — only resources actually in play
-  const bal=res.balance.filter(b=>b.prod>1e-6||b.cons>1e-6||(b.forgie||0)>1e-6);
+  // resource balance — only resources actually in play, plus Frames' pre-produced Bits (display only)
+  const framesBits=framesBitsHr(res.plan);
+  const bal=res.balance.filter(b=>b.prod>1e-6||b.cons>1e-6||(b.forgie||0)>1e-6).map(b=>({...b}));
+  if(framesBits>1e-6){   // fold Frames' pre-produced Bits in, or add a row if Bits isn't already in play
+    const ex=bal.find(b=>b.res==="Bits");
+    if(ex){ex.cons=(ex.cons||0)+framesBits;ex.preProd=true;}
+    else bal.push({res:"Bits",prod:0,forgie:num(S.forgie&&S.forgie.Bits)||0,cons:framesBits,preProd:true});
+  }
   if(!bal.length){
     html+=`<div class="notice info" style="font-size:11.5px">All lines are idle — pick a resource for at least one line above to see a balance.</div>`;
   }else{
@@ -134,10 +140,12 @@ function renderManual(el,stat){
     bal.forEach(b=>{
       const f=b.forgie||0, surplus=b.prod+f-b.cons, ratio=b.cons>0?surplus/b.cons:1;
       let cls="bal-ok",lbl="healthy";
-      if(surplus<-1e-6){cls="bal-tight";lbl="short";}
+      if(b.preProd){cls=surplus<-1e-6?"bal-tight":"bal-ok";lbl=surplus<-1e-6?"pre-produce":"covered";}
+      else if(surplus<-1e-6){cls="bal-tight";lbl="short";}
       else if(b.cons>0&&ratio<0.05){cls="bal-tight";lbl="tight";}
       const fCell=showForgie?`<td class="num" style="color:${f>1e-6?'var(--teal)':'var(--ink3)'}">${f>1e-6?disp(f):"—"}</td>`:"";
-      html+=`<tr><td>${b.res}</td><td class="num">${disp(b.prod)}</td>${fCell}
+      const linesCell=(b.preProd&&b.prod<=1e-6)?'<span style="color:var(--ink3)">pre-prod</span>':disp(b.prod);
+      html+=`<tr${b.preProd?' style="background:rgba(210,129,58,.05)"':''}><td>${b.res}</td><td class="num">${linesCell}</td>${fCell}
         <td class="num">${disp(b.cons)}</td>
         <td class="num ${surplus<-1e-6?'bal-tight':''}">${disp(surplus)}</td>
         <td class="${cls}" style="font-weight:600;font-size:11.5px">${lbl}</td></tr>`;
@@ -145,8 +153,6 @@ function renderManual(el,stat){
     html+=`</tbody></table>`;
   }
   // Frames pre-produce Bits (same convention as the solver readout: kept out of the line math)
-  let framesBits=0;
-  res.plan.forEach(p=>{const j=p.job;if(j&&j.kind==="craft"&&j.res==="Frames"){const L=j.lvl,ct=craftTime("Frames",L),sp=effSpeed(p.sp,ct);if(ct>0)framesBits+=(FRAME_BITS*Math.pow(3,Math.log2(L))/ct)*sp*3600;}});
   if(framesBits>1e-6){
     const fBits=num(S.forgie&&S.forgie.Bits)||0, net=framesBits-fBits;
     html+=`<div class="subhead">Bits to pre-produce (Frames)</div>

@@ -170,21 +170,30 @@ function renderResults(){
       <td class="num">${outv}</td><td style="color:var(--ink2);font-size:11.5px">${cons}</td></tr>`;
   });
   html+=`</tbody></table>`;
-  // balance table
+  // balance table — Frames' pre-produced Bits ride along as a display-only row (never in the solver)
+  const framesBits=framesBitsHr(res.plan);
   if(res.balance&&res.balance.length){
-    const showForgie=res.balance.some(b=>(b.forgie||0)>1e-6);
+    const rows=res.balance.map(b=>({...b}));
+    if(framesBits>1e-6){   // fold Frames' pre-produced Bits in, or add a row if Bits isn't already in play
+      const ex=rows.find(b=>b.res==="Bits");
+      if(ex){ex.cons=(ex.cons||0)+framesBits;ex.preProd=true;}
+      else rows.push({res:"Bits",prod:0,forgie:num(S.forgie&&S.forgie.Bits)||0,cons:framesBits,preProd:true});
+    }
+    const showForgie=rows.some(b=>(b.forgie||0)>1e-6);
     html+=`<div class="subhead">Resource balance (per hour)</div>
       <table><thead><tr><th>Resource</th><th class="num">Lines</th>${showForgie?'<th class="num">Lil\' Forgie</th>':''}<th class="num">Consumed</th>
         <th class="num">Surplus</th><th>Status</th></tr></thead><tbody>`;
-    res.balance.forEach(b=>{
+    rows.forEach(b=>{
       const f=b.forgie||0, surplus=b.prod+f-b.cons;
       const ratio=b.cons>0?surplus/b.cons:1;
       let cls="bal-ok",lbl="healthy";
-      if(surplus<-1e-6){cls="bal-tight";lbl="margin";}
+      if(b.preProd){cls=surplus<-1e-6?"bal-tight":"bal-ok";lbl=surplus<-1e-6?"pre-produce":"covered";}
+      else if(surplus<-1e-6){cls="bal-tight";lbl="margin";}
       else if(b.cons>0&&ratio<0.05){cls="bal-tight";lbl="tight";}
       else if(b.cons===0&&b.prod===0&&f===0){cls="";lbl="—";}
       const fCell=showForgie?`<td class="num" style="color:${f>1e-6?'var(--teal)':'var(--ink3)'}">${f>1e-6?disp(f):"—"}</td>`:"";
-      html+=`<tr><td>${b.res}</td><td class="num">${disp(b.prod)}</td>${fCell}
+      const linesCell=(b.preProd&&b.prod<=1e-6)?'<span style="color:var(--ink3)">pre-prod</span>':disp(b.prod);
+      html+=`<tr${b.preProd?' style="background:rgba(210,129,58,.05)"':''}><td>${b.res}</td><td class="num">${linesCell}</td>${fCell}
         <td class="num">${disp(b.cons)}</td>
         <td class="num ${surplus<-1e-6?'bal-tight':''}">${disp(surplus)}</td>
         <td class="${cls}" style="font-weight:600;font-size:11.5px">${lbl}</td></tr>`;
@@ -192,8 +201,6 @@ function renderResults(){
     html+=`</tbody></table>`;
   }
   // Bits-to-preproduce planner for Frames (Bits are assumed pre-produced, kept out of the line math)
-  let framesBits=0;
-  res.plan.forEach(p=>{const j=p.job;if(j&&j.kind==="craft"&&j.res==="Frames"){const L=j.lvl,ct=craftTime("Frames",L),sp=(p.sp>ct?ct:p.sp)||1;if(ct>0)framesBits+=(FRAME_BITS*Math.pow(3,Math.log2(L))/ct)*sp*3600;}});
   if(framesBits>1e-6){
     const fBits=num(S.forgie&&S.forgie.Bits)||0, net=framesBits-fBits;
     html+=`<div class="subhead">Bits to pre-produce (Frames)</div>
