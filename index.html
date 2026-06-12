@@ -39,6 +39,7 @@
       <div class="card">
         <div class="head"><h2>Crafter lines</h2><span class="sub" id="lineCount"></span></div>
         <div class="body">
+          <label class="fl turbo-global"><span>max turbo stacks <i class="tip" tabindex="0" data-tip="The most turbo stacks any crafter can reach — a global cap (each stack = +1% speed). The planner projects every line's current speed up to this many stacks, so the plan reflects your sustained speed at full turbo.">?</i></span><input type="number" min="0" step="any" id="maxTurbo" placeholder="0"></label>
           <div id="lines"></div>
           <button class="btn ghost" id="btnAddLine" style="width:100%;justify-content:center;margin-top:4px">+ Add line</button>
         </div>
@@ -98,7 +99,7 @@
       <span class="rsec-hint">base times · recipe costs · calibration tool — defaults are good, open only to tweak</span>
     </button>
     <div class="rsec-body" id="recipeBody" hidden>
-    <p class="help" style="margin-top:14px">Craft time is computed, not entered: effective time = (this item's base time) × 1.5^(compression level) ÷ the line's total speed ×. Set each line's max compression, its total speed multiplier (the ×NN.NN reading at the top of that crafting unit — turbo is already inside it), and dupe % above. Each item has its own base time @1× on its card below — they don't have to match. Cost columns are the material each craft consumes per level. Compression level = units produced per cycle; costs scale 3× per level.</p>
+    <p class="help" style="margin-top:14px">Craft time is computed, not entered: effective time = (this item's base time) × 1.5^(compression level) ÷ the line's total speed ×. Set each line's max compression, its currently-displayed total speed × (the ×NN.NN reading at the top of that crafting unit), its current turbo stacks, and dupe % above — the planner backs out your base speed and projects it to the global max turbo stacks. Each item has its own base time @1× on its card below — they don't have to match. Cost columns are the material each craft consumes per level. Compression level = units produced per cycle; costs scale 3× per level.</p>
 
     <div class="calib">
       <div class="calib-h">Calibrate / verify a base time</div>

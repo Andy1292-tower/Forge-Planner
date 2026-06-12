@@ -11,7 +11,7 @@ function manualResult(){
   const plan=[]; const issueSet=new Set();
   S.lines.forEach((ln,i)=>{
     const m=S.manual[i]||{job:"Idle",lvl:ln.max};
-    const sp=Math.max(1e-6,num(ln.spx)||1), dp=1+(num(ln.dup)||0)/100;
+    const sp=lineSpeed(ln), dp=1+(num(ln.dup)||0)/100;
     let job;
     if(m.job==="Idle"||!ALLITEMS.includes(m.job)){
       job={kind:"idle",res:null,lvl:null,ct:0,prod:[],cons:[]};
