@@ -60,30 +60,38 @@ function renderTargets(){
 
 /* ---------- RENDER: Gel panel ---------- */
 function renderGel(){
-  const sel=document.getElementById("gelComp");
-  if(sel.options.length===0)LEVELS.forEach(L=>sel.add(new Option(L+"×",L)));
-  sel.value=S.gelComp;
-  document.getElementById("gelLines").value=S.gelLines||0;
-  const n=Math.min(Math.max(0,Math.floor(num(S.gelLines)||0)),S.lines.length);
-  document.getElementById("gelSummary").textContent=n>0?("up to "+n+" @ "+S.gelComp+"×"):"off";
+  const inp=document.getElementById("gelVesp");
+  if(document.activeElement!==inp)inp.value=S.gelVespText||"";
+  const vespHr=Math.max(0,num(S.gelVesp)||0)*60;
+  // Standalone calculator: the most Gel/hr the income supports across ALL lines, plus the loadout.
+  // (The active plan may reserve fewer lines — only as many as help your targets — see Results.)
+  const lo=gelLoadout(lineRows(),vespHr);
+  document.getElementById("gelSummary").textContent=vespHr>0?(disp(lo.gelHr)+" Gel/hr max"):"off";
+  renderGelLoadout(lo,vespHr);
+}
+function renderGelLoadout(lo,vespHr){
+  const box=document.getElementById("gelLoadout");if(!box)return;
+  if(vespHr<=0){box.innerHTML=`<p class="help" style="margin:10px 0 0">No vespium income set — Gel is off, so Gel-consuming items (Wire) can't be planned until you enter your income.</p>`;return;}
+  if(!lo.perLine.length){box.innerHTML=`<div class="notice warn" style="font-size:11.5px;margin-top:10px">Your vespium income is too low to run Gel on any current line. Raise your income (or add a lower-cap line) to make Gel.</div>`;return;}
+  let h=`<div class="notice info" style="font-size:11.5px;margin-top:10px">With <b>${disp(num(S.gelVesp)||0)}</b> vespium/min you can sustain up to <b>${disp(lo.gelHr)}</b> Gel/hr — burning <b>${disp(lo.vespHr)}</b> of your <b>${disp(vespHr)}</b> vespium/hr. Best loadout if you put everything you can on Gel:</div>
+    <table style="margin-top:6px"><thead><tr><th>Line</th><th>Comp</th><th class="num">Uptime</th><th class="num">Gel /hr</th><th class="num">Vespium /hr</th></tr></thead><tbody>`;
+  lo.perLine.slice().sort((a,b)=>a.__i-b.__i).forEach(p=>{
+    h+=`<tr><td class="mono">#${p.__i+1}</td><td class="mono">${p.L}×</td>
+      <td class="num mono" style="color:var(--ink2)">${fmt(p.frac*100,0)}%</td>
+      <td class="num">${disp(p.gelHr)}</td><td class="num" style="color:var(--ink2)">${disp(p.vespHr)}</td></tr>`;
+  });
+  h+=`</tbody></table>`;
+  box.innerHTML=h;
 }
 document.getElementById("gelToggle").addEventListener("click",()=>{
   const b=document.getElementById("gelBody"),t=document.getElementById("gelToggle");
   b.hidden=!b.hidden;t.setAttribute("aria-expanded",b.hidden?"false":"true");
 });
 document.getElementById("gelBody").addEventListener("input",e=>{
-  if(e.target.id==="gelLines"){S.gelLines=Math.max(0,Math.floor(num(e.target.value)||0));}
-  else if(e.target.id==="gelComp"){S.gelComp=+e.target.value;}
+  if(e.target.id!=="gelVesp")return;
+  S.gelVespText=e.target.value;
+  S.gelVesp=parseGameNum(e.target.value);
   renderGel();scheduleSolve();
-});
-// custom stepper buttons for the Gel-lines field (native spin arrows don't render)
-document.getElementById("gelBody").addEventListener("click",e=>{
-  const btn=e.target.closest(".stepper-up,.stepper-down");if(!btn)return;
-  const inp=document.getElementById("gelLines");
-  const cur=Math.max(0,Math.floor(num(inp.value)||0));
-  const next=Math.max(0,Math.min(S.lines.length,cur+(btn.classList.contains("stepper-up")?1:-1)));
-  if(next===cur)return;
-  inp.value=next;inp.dispatchEvent(new Event("input",{bubbles:true}));
 });
 
 /* ---------- RENDER: recipe data ---------- */

@@ -1,6 +1,14 @@
 "use strict";
 /* ---------- RENDER: results ---------- */
 let _lastProjectRes=null;
+// One-line summary of the Gel the planner reserved (compression auto-picked per line), and how
+// much of the vespium income it spends — shown under the plan in every mode.
+function gelReservedNote(gr){
+  if(!gr||!gr.lines)return "";
+  const inc=Math.max(0,num(S.gelVesp)||0)*60;
+  const vesp=gr.vespHr!=null?` — burning <b>${disp(gr.vespHr)}</b>${inc>0?" of your <b>"+disp(inc)+"</b>":""} vespium/hr`:"";
+  return `<div class="notice info" style="font-size:11.5px"><b>${gr.lines}</b> line${gr.lines>1?"s":""} on Gel (compression auto-picked) → <b>${disp(gr.outHr)}</b> Gel/hr${vesp}, fed into the plan.</div>`;
+}
 function lineAssignTableHtml(plan){
   let h=`<table><thead><tr><th>Line</th><th>Cap</th><th>Job</th><th>Lvl</th>
       <th class="num">Time share</th><th class="num">Output /hr</th><th>Consumes /hr</th></tr></thead><tbody>`;
@@ -91,7 +99,7 @@ function renderProjectResults(res,el,stat){
       html+=`</tbody></table>`;
     }
   }
-  if(res.gelReserved&&res.gelReserved.lines>0)html+=`<div class="notice info" style="font-size:11.5px"><b>${res.gelReserved.lines}</b> line${res.gelReserved.lines>1?"s":""} reserved for Gel @ up to ${res.gelReserved.comp}× (capped to each line's own max) → <b>${disp(res.gelReserved.outHr)}</b> Gel/hr, fed into the plan.</div>`;
+  html+=gelReservedNote(res.gelReserved);
   el.innerHTML=html;
   stat.textContent="solved in "+(res.ms||0).toFixed(1)+" ms";
 }
@@ -164,7 +172,12 @@ function renderResults(){
       outv=disp(j.prod[0][1]*sp*dp*3600);ct=fmt(craftTime(j.res,j.lvl)/sp,2);}
     else{pill='<span class="pill craft">craft</span>';job=j.res;lvl=j.lvl+"×";
       outv=disp(j.prod[0][1]*sp*dp*3600);ct=fmt(craftTime(j.res,j.lvl)/sp,2);
-      cons=p.reserved?gelOreConsumesHr(j.lvl,sp):j.cons.map(c=>disp(c[1]*sp*3600)+" "+invName(res.resIndex,c[0])).join(", ");}
+      if(p.reserved){   // vespium-limited Gel line: show its throttled output + actual ore burn
+        outv=disp(p.gelHr||0);
+        const craftsHr=j.lvl>0?(p.gelHr||0)/(j.lvl*dp):0,oc=gelOreCost(j.lvl);
+        cons=`${disp(oc.rocks*craftsHr)} rocks, ${disp(p.vespHr||0)} vespium <span style="color:var(--ink3)">(free ore)</span>`;
+        if(p.frac!=null&&p.frac<0.999)lvl+=` <span style="color:var(--ink3);font-size:10.5px">${fmt(p.frac*100,0)}% up</span>`;
+      }else cons=j.cons.map(c=>disp(c[1]*sp*3600)+" "+invName(res.resIndex,c[0])).join(", ");}
     const resv=p.reserved?' <span class="pill" style="background:rgba(63,182,160,.14);color:var(--teal);border:1px solid var(--teal-d)">reserved</span>':"";
     const tags=`${p.spx?` <span style="color:var(--ink3);font-size:10.5px">×${fmt(p.spx,2)} spd</span>`:""}${p.dup>0?` <span style="color:var(--ink3);font-size:10.5px">+${fmt(p.dup,2)}% dup</span>`:""}`;
     html+=`<tr${p.reserved?' style="background:rgba(63,182,160,.05)"':''}><td class="mono">#${p.line}</td><td class="mono">${p.max}×${tags}</td>
@@ -184,7 +197,7 @@ function renderResults(){
     }
     const showForgie=rows.some(b=>(b.forgie||0)>1e-6);
     html+=`<div class="subhead">Resource balance (per hour)</div>
-      <table><thead><tr><th>Resource</th><th class="num">Lines</th>${showForgie?'<th class="num">Lil\' Forgie</th>':''}<th class="num">Consumed</th>
+      <table><thead><tr><th>Resource</th><th class="num">Lines</th>${showForgie?'<th class="num">Passive</th>':''}<th class="num">Consumed</th>
         <th class="num">Surplus</th><th>Status</th></tr></thead><tbody>`;
     rows.forEach(b=>{
       const f=b.forgie||0, surplus=b.prod+f-b.cons;
@@ -214,13 +227,9 @@ function renderResults(){
       (net>1e-6?`pre-produce about <b style="color:var(--amber)">${disp(net)}</b> Bits/hr to keep up.`
               :`Forgie already covers it — a <b style="color:var(--teal)">${disp(-net)}</b>/hr surplus.`)+`</div>`;
   }
-  if(res.gelReserved){
-    const maxN=Math.min(Math.max(0,Math.floor(num(S.gelLines)||0)),S.lines.length), K=res.gelReserved.lines;
-    if(maxN>0&&K>0)
-      html+=`<div class="notice info" style="font-size:11.5px"><b>${K}</b> of up to ${maxN} line${maxN>1?"s":""} put on Gel @${res.gelReserved.comp}× → <b>${disp(res.gelReserved.outHr)}</b> Gel/hr (from free mined ore), fed into the plan above.</div>`;
-    else if(maxN>0)
-      html+=`<div class="notice info" style="font-size:11.5px">Gel available (up to ${maxN} line${maxN>1?"s":""}), but the planner makes more of your target by using <b>0</b> on Gel here.</div>`;
-  }
+  if(res.gelReserved&&res.gelReserved.lines>0)html+=gelReservedNote(res.gelReserved);
+  else if((Math.max(0,num(S.gelVesp)||0)*60)>0)
+    html+=`<div class="notice info" style="font-size:11.5px">Vespium income set, but the planner makes more of your target by putting <b>0</b> lines on Gel here.</div>`;
   el.innerHTML=html;
   stat.textContent="solved in "+res.ms.toFixed(1)+" ms";
 }

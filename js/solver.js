@@ -299,7 +299,50 @@ function optimizeInner(timeBudget){
 function combos(n,k){const out=[];const pick=(start,acc)=>{if(acc.length===k){out.push(acc.slice());return;}for(let i=start;i<n;i++){acc.push(i);pick(i+1,acc);acc.pop();}};pick(0,[]);return out;}
 // a line can't compress above its own max cap, so clamp Gel's compression to it
 const gelCompFor=(row,C)=>Math.min(C,row.max||C);
-function gelRatePerHr(row,C){const eff=gelCompFor(row,C),sp=lineSpeed(row),dp=dupeMult(),ct=craftTime(GEL,eff);return ct>0?(eff/ct)*(sp>ct?ct:sp)*dp*3600:0;}
+// Gel output / vespium burn for a whole line running Gel @L (≤ the line's own cap), full time.
+function gelOutHr(row,L){const sp=lineSpeed(row),dp=dupeMult(),ct=craftTime(GEL,L);return ct>0?(L/ct)*effSpeed(sp,ct)*dp*3600:0;}
+function gelVespHr(row,L){const sp=lineSpeed(row),ct=craftTime(GEL,L);return ct>0?gelOreCost(L).vesp*(effSpeed(sp,ct)/ct)*3600:0;}
+// Per-line gel rate at the line's max compression — used only to rank reservation candidates.
+function gelRatePerHr(row,C){return gelOutHr(row,gelCompFor(row,C));}
+// Maximum Gel/hr obtainable from `rows` within a vespium/hr budget, auto-picking each line's
+// compression. Raising compression doubles Gel but triples vespium, so marginal Gel-per-vespium
+// falls monotonically with level — the per-level steps already form a concave frontier. Buy steps
+// in falling Gel/vespium order until the budget is spent (the last one fractionally, i.e. the line
+// runs Gel only part of the time, vespium-starved). Returns the exact LP-optimal total plus a
+// per-line breakdown {__i,max,L,gelHr,vespHr,frac} for display (frac = vespium-limited uptime).
+function gelLoadout(rows,vespBudgetHr){
+  if(!(vespBudgetHr>0)||!rows.length)return {gelHr:0,vespHr:0,perLine:[]};
+  const segs=[];
+  rows.forEach((row,ri)=>{
+    let pv=0,pg=0;
+    LEVELS.filter(L=>L<=(row.max||0)).forEach(L=>{
+      const v=gelVespHr(row,L),g=gelOutHr(row,L),dv=v-pv,dg=g-pg;
+      if(dv>1e-9&&dg>0)segs.push({ri,toL:L,dv,dg,slope:dg/dv});
+      pv=v;pg=g;
+    });
+  });
+  segs.sort((a,b)=>b.slope-a.slope);
+  const reach=rows.map(()=>({L:0,partial:null}));   // top fully-bought level (+ optional fractional step) per line
+  let spent=0,gel=0;
+  for(const s of segs){
+    const room=vespBudgetHr-spent;if(room<=1e-9)break;
+    if(s.dv<=room){spent+=s.dv;gel+=s.dg;reach[s.ri].L=s.toL;}
+    else{const f=room/s.dv;spent+=room;gel+=s.dg*f;reach[s.ri].partial={toL:s.toL,f};break;}
+  }
+  const perLine=[];
+  rows.forEach((row,ri)=>{
+    const r=reach[ri];if(!r.L&&!r.partial)return;
+    let vespLine=gelVespHr(row,r.L),gelLine=gelOutHr(row,r.L),top=r.L;
+    if(r.partial){const Lp=r.partial.toL,f=r.partial.f;
+      vespLine+=f*(gelVespHr(row,Lp)-gelVespHr(row,r.L));
+      gelLine+=f*(gelOutHr(row,Lp)-gelOutHr(row,r.L));top=Lp;}
+    const full=gelOutHr(row,top);
+    perLine.push({__i:row.__i,max:row.max,L:top,gelHr:gelLine,vespHr:vespLine,frac:full>0?Math.min(1,gelLine/full):0});
+  });
+  return {gelHr:gel,vespHr:spent,perLine};
+}
+// Vespium/hr income from the user's vespium/minute figure (0 if unset → Gel off).
+function gelVespBudgetHr(){return Math.max(0,num(S.gelVesp)||0)*60;}
 function projectDemand(){
   const gross={};ALLITEMS.forEach(it=>gross[it]=0);
   const perProject=[];
@@ -451,10 +494,11 @@ function buildProjectPhases(seq,net,perProject){
 }
 // Prefer the reservation that leaves the fewest demanded items unmade, then finishes fastest.
 function betterProjCand(a,b){if(a.badN!==b.badN)return a.badN<b.badN;return a.eta<b.eta;}
-function addGelLinesToPlan(plan,gelRows,C){
+function addGelLinesToPlan(plan,perLine){
   plan=plan.slice();
-  gelRows.forEach(r=>{const sp=lineSpeed(r),dp=dupeMult(),L=gelLevel(r,C),ct=craftTime(GEL,L);
-    plan.push({line:r.__i+1,max:r.max,sp,dp,reserved:true,entries:[{item:GEL,lvl:L,frac:1,outHr:ct>0?(L/ct)*effSpeed(sp,ct)*dp*3600:0,cons:[]}]});});
+  perLine.forEach(pl=>{const row=S.lines[pl.__i],sp=lineSpeed(row),dp=dupeMult();
+    plan.push({line:pl.__i+1,max:pl.max,sp,dp,reserved:true,vespHr:pl.vespHr,
+      entries:[{item:GEL,lvl:pl.L,frac:pl.frac,outHr:pl.gelHr,cons:[]}]});});
   return plan.sort((a,b)=>a.line-b.line);
 }
 // Top of project mode: builds one combined phase, or a sequence of per-project phases
@@ -465,25 +509,25 @@ function optimizeProjectTop(){
   if(perProject.length===0)return {empty:true,mode:"project",plan:[],phases:[],gross,net,perProject};
   const seq=S.projectSeq!==false&&perProject.length>1;
   const M=S.lines.length;
-  const Nmax=Math.min(Math.max(0,Math.floor(num(S.gelLines)||0)),M);
-  const C=LEVELS.includes(S.gelComp)?S.gelComp:1024;
-  const ranked=lineRows().map(r=>({r,g:gelRatePerHr(r,C)})).sort((a,b)=>b.g-a.g);
-  // "lines on gel" is a MAXIMUM: try reserving k=0..Nmax of the best Gel lines, and keep whichever
-  // count makes the most of what was asked for (e.g. Wire) and finishes soonest.
+  const vespHr=gelVespBudgetHr();   // vespium income (per hour) — the Gel budget; 0 → no Gel
+  const ranked=lineRows().map(r=>({r,g:gelRatePerHr(r,r.max)})).sort((a,b)=>b.g-a.g);
+  // Offer the top-k best-Gel lines to Gel (k=0..M); gelLoadout picks which to actually run within
+  // the vespium budget. Keep whichever k makes the most of what was asked for and finishes soonest.
+  const Nmax=vespHr>0?M:0;
   let best=null;
   for(let k=0;k<=Nmax;k++){
-    const gelRows=ranked.slice(0,k).map(o=>o.r);
-    let gelHr=0;gelRows.forEach(r=>gelHr+=gelRatePerHr(r,C));
-    if(k>0){const set=new Set(gelRows.map(r=>r.__i));_LINES=lineRows().filter(r=>!set.has(r.__i));_SUPPLY={[GEL]:gelHr};}
+    const pool=ranked.slice(0,k).map(o=>o.r);
+    const lo=k>0?gelLoadout(pool,vespHr):{gelHr:0,vespHr:0,perLine:[]};
+    if(lo.perLine.length){const set=new Set(lo.perLine.map(p=>p.__i));_LINES=lineRows().filter(r=>!set.has(r.__i));_SUPPLY={[GEL]:lo.gelHr};}
     let phases=buildProjectPhases(seq,net,perProject);
     _LINES=null;_SUPPLY=null;
-    if(gelRows.length)phases=phases.map(ph=>Object.assign({},ph,{plan:addGelLinesToPlan(ph.plan,gelRows,C)}));
+    if(lo.perLine.length)phases=phases.map(ph=>Object.assign({},ph,{plan:addGelLinesToPlan(ph.plan,lo.perLine)}));
     const eta=phases.reduce((s,ph)=>s+ph.eta,0);
     const badN=new Set([].concat(...phases.map(ph=>(ph.unsat||[]).concat(ph.infeasItems||[])))).size;
-    const cand={phases,gelRows,gelHr,eta,badN};
+    const cand={phases,loadout:lo,eta,badN};
     if(!best||betterProjCand(cand,best))best=cand;
   }
-  const {phases,gelRows,gelHr}=best;
+  const {phases,loadout}=best;
   const eta=phases.reduce((s,ph)=>s+ph.eta,0);
   const feasible=phases.length>0&&phases.every(ph=>ph.feasible);
   const unsat=[...new Set([].concat(...phases.map(ph=>ph.unsat||[])))];
@@ -493,7 +537,7 @@ function optimizeProjectTop(){
     plan:main.plan,balance:main.balance,
     demandItems:seq?ALLITEMS.filter(it=>net[it]>1e-9):main.demandItems,
     rate:main.rate,bottleneck:main.bottleneck,eta,unsat,infeasItems,feasible,
-    gelReserved:gelRows.length?{lines:gelRows.length,comp:C,outHr:gelHr}:null,
+    gelReserved:loadout.perLine.length?{lines:loadout.perLine.length,outHr:loadout.gelHr,vespHr:loadout.vespHr,perLine:loadout.perLine}:null,
     objective:feasible&&eta>0?1/eta:0,ms:performance.now()-t0};
 }
 
@@ -501,27 +545,41 @@ function optimizeProjectTop(){
 function optimize(){
   if(S.mode==="project")return optimizeProjectTop();
   const M=S.lines.length;
-  const N=Math.min(Math.max(0,Math.floor(num(S.gelLines)||0)),M);
-  if(N<=0)return optimizeInner();
-  const C=LEVELS.includes(S.gelComp)?S.gelComp:1024;
+  const vespHr=gelVespBudgetHr();   // vespium income (per hour) — the Gel budget; 0 → no Gel
+  if(vespHr<=0||M===0)return optimizeInner();
+  // items mode with no Gel-consuming target gains nothing from reserving Gel — skip the whole sweep.
+  // (credits can still want Gel for a priced Gel-chain item even with no explicit target.)
+  if(S.mode==="items"&&!PRODUCTS.filter(p=>S.targets[p].on).some(p=>chainNeedsGel(p)))return optimizeInner();
   const rows=lineRows();
-  // "up to N": consider using 0..N lines for Gel (k=0 is no reservation) and keep whichever is best
-  const subs=[];for(let k=0;k<=N;k++)subs.push(...combos(M,k));
-  // items max-min is verified-stable, so trim it; leave the credits sweep at full budget (exact)
-  const innerBudget=Math.max(20,Math.floor((S.mode==="items"?350:800)/Math.max(1,subs.length)));
+  // Offer different pools of lines to Gel; gelLoadout decides which to actually run (and at what
+  // compression) within the vespium budget, so only the lines it uses get reserved — the rest stay
+  // available for targets. Full subset sweep stays exact for typical factories; for very large line
+  // counts, offer the "top-k best-Gel lines" instead to keep the sweep bounded.
+  let subs;
+  if(M<=8){subs=[];for(let k=0;k<=M;k++)subs.push(...combos(M,k));}
+  else{const ranked=rows.map((_,i)=>i).sort((a,b)=>gelRatePerHr(rows[b],rows[b].max)-gelRatePerHr(rows[a],rows[a].max));
+    subs=[];for(let k=0;k<=M;k++)subs.push(ranked.slice(0,k));}
+  // Many offered pools collapse to the same reserved-line set — dedup first, then split the time
+  // budget across the distinct sets actually solved (not the raw pool count).
+  const seen=new Set();const cands=[];let haveEmpty=false;
+  subs.forEach(idx=>{
+    const lo=gelLoadout(idx.map(i=>rows[i]),vespHr);
+    const used=lo.perLine.filter(p=>p.gelHr>1e-9).map(p=>p.__i).sort((a,b)=>a-b);
+    if(used.length){const key=used.join(",");if(seen.has(key))return;seen.add(key);}
+    else{if(haveEmpty)return;haveEmpty=true;}
+    cands.push({used,lo});
+  });
+  const innerBudget=Math.max(20,Math.floor((S.mode==="items"?350:800)/Math.max(1,cands.length)));
   const t0=performance.now();
   let best=null,emptyInner=false,baseRes=null;
-  subs.forEach(idx=>{
-    const set=new Set(idx);
-    const gelRows=idx.map(i=>rows[i]);
-    const remRows=rows.filter((_,i)=>!set.has(i));
-    let gelHr=0;gelRows.forEach(r=>gelHr+=gelRatePerHr(r,C));
-    _LINES=remRows;_SUPPLY={[GEL]:gelHr};
+  cands.forEach(({used,lo})=>{
+    const set=new Set(used);
+    _LINES=rows.filter(r=>!set.has(r.__i));_SUPPLY={[GEL]:lo.gelHr};
     const res=optimizeInner(innerBudget);
     _LINES=null;_SUPPLY=null;
     if(res.empty){emptyInner=true;return;}
-    if(idx.length===0)baseRes=res;   // no-reservation pass: the full-pool ranking for every item
-    if(!best||(res.objective||0)>best.res.objective+1e-12)best={res,gelRows,gelHr,C};
+    if(used.length===0)baseRes=res;   // no-reservation pass: the full-pool ranking for every item
+    if(!best||(res.objective||0)>best.res.objective+1e-12)best={res,loadout:lo,vespHr};
   });
   if(!best)return emptyInner?{empty:true,mode:S.mode}:optimizeInner();
   // Credits skips non-Gel items inside reserved subsets, so a reserved winner carries only the
@@ -538,18 +596,17 @@ function optimize(){
 }
 // Merge the reserved Gel lines into the inner plan + balance for display.
 function assembleGel(best,ms){
-  const {res,gelRows,gelHr,C}=best;
+  const {res,loadout}=best;
   const plan=res.plan.slice();
-  gelRows.forEach(r=>{const sp=lineSpeed(r),dp=dupeMult();
-    const eff=gelCompFor(r,C),ct=craftTime(GEL,eff);
-    plan[r.__i]={line:r.__i+1,max:r.max,spx:sp,dup:dupeChance(),sp,dp,reserved:true,
-      job:{kind:"craft",res:GEL,lvl:eff,ct,prod:[[0,ct>0?eff/ct:0]],cons:[]}};});
+  loadout.perLine.forEach(pl=>{const row=S.lines[pl.__i],sp=lineSpeed(row),dp=dupeMult(),L=pl.L,ct=craftTime(GEL,L);
+    plan[pl.__i]={line:pl.__i+1,max:pl.max,spx:sp,dup:dupeChance(),sp,dp,reserved:true,gelHr:pl.gelHr,vespHr:pl.vespHr,frac:pl.frac,
+      job:{kind:"craft",res:GEL,lvl:L,ct,prod:[[0,ct>0?L/ct:0]],cons:[]}};});
   plan.sort((a,b)=>a.line-b.line);
   // re-attribute Gel supply in the balance: it's produced by the reserved lines, not Lil' Forgie
   const fGel=num(S.forgie&&S.forgie[GEL])||0;
-  const balance=(res.balance||[]).map(b=>b.res===GEL?{...b,prod:gelHr,forgie:fGel}:b);
-  if(res.balance&&!res.balance.some(b=>b.res===GEL)&&gelHr>0)
-    balance.push({res:GEL,prod:gelHr,forgie:fGel,cons:0});
-  return {...res,plan,balance,gelReserved:{lines:gelRows.length,comp:C,outHr:gelHr},ms};
+  const balance=(res.balance||[]).map(b=>b.res===GEL?{...b,prod:loadout.gelHr,forgie:fGel}:b);
+  if(res.balance&&!res.balance.some(b=>b.res===GEL)&&loadout.gelHr>0)
+    balance.push({res:GEL,prod:loadout.gelHr,forgie:fGel,cons:0});
+  return {...res,plan,balance,gelReserved:{lines:loadout.perLine.length,outHr:loadout.gelHr,vespHr:loadout.vespHr,perLine:loadout.perLine},ms};
 }
 

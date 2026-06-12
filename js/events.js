@@ -163,11 +163,8 @@ document.getElementById("forgieRows").addEventListener("input",e=>{
 });
 
 /* ---------- Gel ore-cost reference modal ---------- */
-// Gel's mined-ore inputs aren't part of the crafting model — this is a read-only
-// reference. Base @1×: 100sx rocks, 500t vespium; tripling per compression level
-// like every other craft. Per-minute uses the fastest current line that reaches L.
-const GEL_ROCKS_BASE=parseGameNum("100sx"), GEL_VESP_BASE=parseGameNum("500t");
-function gelOreCost(L){const s=Math.pow(3,Math.log2(L));return {rocks:GEL_ROCKS_BASE*s,vesp:GEL_VESP_BASE*s};}
+// Gel's mined-ore inputs are a read-only reference here (GEL_*_BASE / gelOreCost live in core.js).
+// Per-minute uses the fastest current line that reaches each compression level L.
 // Display-only ore burn for a running Gel line (not part of any balance/calculation):
 // crafts/sec = eff/ct, ore is per craft (dup doesn't change input cost).
 function gelOreConsumesHr(L,eff){

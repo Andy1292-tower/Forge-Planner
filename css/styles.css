@@ -137,7 +137,9 @@ button.btn.poke-on{animation:pokePulse 1.15s ease-out infinite}
 .line-fields .fl,.globals .fl{display:flex;flex-direction:column;gap:3px;justify-content:flex-end;min-width:0}
 .line-fields .fl span,.globals .fl span{font-size:9.5px;letter-spacing:.45px;text-transform:uppercase;color:var(--ink3);
   display:inline-flex;align-items:center;gap:4px;line-height:1.2}
-.line-fields .fl span{flex-wrap:nowrap;white-space:nowrap}
+/* labels wrap (block, not inline-flex) so a long one like "MAX COMPRESSION" never overflows into the next column */
+.line-fields .fl span{display:block;white-space:normal;min-width:0;line-height:1.25}
+.line-fields .fl span .tip{vertical-align:middle}
 .globals .fl span{flex-wrap:wrap}
 .line-fields .fl > select,.line-fields .fl > input,.globals .fl > input{height:32px}
 .line-final{margin-top:6px;font-size:10.5px;color:var(--amber);letter-spacing:.3px}
@@ -152,17 +154,6 @@ select,input[type=number],input[type=text]{font-family:"JetBrains Mono",monospac
 /* hide number-input spinner arrows */
 input[type=number]{-moz-appearance:textfield}
 input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
-/* custom number stepper (native webkit/gecko spin buttons don't render here) */
-.stepper{position:relative;display:block;width:100%}
-.stepper>input[type=number]{padding-right:30px}
-.stepper-btns{position:absolute;top:1px;right:1px;bottom:1px;width:24px;display:flex;flex-direction:column;
-  border-left:1px solid var(--line2);border-radius:0 5px 5px 0;overflow:hidden}
-.stepper-btns button{flex:1 1 0;min-height:0;appearance:none;-webkit-appearance:none;border:none;padding:0;
-  background:var(--surface);color:var(--ink2);font-size:8px;line-height:1;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;transition:background .12s,color .12s}
-.stepper-btns button:first-child{border-bottom:1px solid var(--line2)}
-.stepper-btns button:hover{background:var(--surface2);color:var(--copper)}
-.stepper-btns button:active{background:var(--copper);color:#15110a}
 select{appearance:none;-webkit-appearance:none;
   background-image:linear-gradient(45deg,transparent 50%,var(--ink3) 50%),linear-gradient(135deg,var(--ink3) 50%,transparent 50%);
   background-position:calc(100% - 14px) 50%, calc(100% - 9px) 50%;
