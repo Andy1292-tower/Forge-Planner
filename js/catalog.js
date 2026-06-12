@@ -2712,6 +2712,26 @@ const PROJECT_CATALOG=[
             "qty": 4
           }
         ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bricks",
+            "qty": 1500
+          },
+          {
+            "item": "Frames",
+            "qty": 900
+          },
+          {
+            "item": "Glass",
+            "qty": 800
+          },
+          {
+            "item": "Wire",
+            "qty": 4
+          }
+        ]
       }
     ]
   },
@@ -2742,6 +2762,30 @@ const PROJECT_CATALOG=[
       },
       {
         "costs": [
+          {
+            "item": "Gel",
+            "qty": 8
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 42000
+          },
+          {
+            "item": "Concrete",
+            "qty": 2400
+          },
+          {
+            "item": "Glass",
+            "qty": 960
+          },
+          {
+            "item": "Bricks",
+            "qty": 440
+          },
           {
             "item": "Gel",
             "qty": 8
@@ -2904,34 +2948,6 @@ const PROJECT_CATALOG=[
             "qty": 80
           }
         ]
-      },
-      {
-        "costs": [
-          {
-            "item": "Bits",
-            "qty": 94500
-          },
-          {
-            "item": "Bricks",
-            "qty": 700
-          },
-          {
-            "item": "Plates",
-            "qty": 33600
-          },
-          {
-            "item": "Rods",
-            "qty": 15680
-          },
-          {
-            "item": "Frames",
-            "qty": 1200
-          },
-          {
-            "item": "Wire",
-            "qty": 80
-          }
-        ]
       }
     ]
   },
@@ -2993,30 +3009,6 @@ const PROJECT_CATALOG=[
           {
             "item": "Gel",
             "qty": 400
-          },
-          {
-            "item": "Wire",
-            "qty": 200
-          }
-        ]
-      },
-      {
-        "costs": [
-          {
-            "item": "Frames",
-            "qty": 4200
-          },
-          {
-            "item": "Glass",
-            "qty": 4200
-          },
-          {
-            "item": "Bricks",
-            "qty": 4200
-          },
-          {
-            "item": "Gel",
-            "qty": 600
           },
           {
             "item": "Wire",
