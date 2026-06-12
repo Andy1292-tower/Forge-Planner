@@ -14,15 +14,20 @@ function relevantChain(targets){
 }
 
 function craftTime(item,L){return (num(S.baseTime&&S.baseTime[item])||1)*Math.pow(1.5,Math.log2(L));}
-// Bits/hr the crafted Frames consume (8 Bits per uncompressed frame). Frames assume Bits are
-// pre-produced, so this is a display-only read of the plan — it never feeds the line solver.
-function framesBitsHr(plan){
-  let bits=0;
+// Bits/hr consumed by crafts whose Bits are assumed PRE-PRODUCED (Frames, Wire). These products
+// keep Bits out of the recipe graph, so this is a display-only read of the plan — it never feeds
+// the line solver and never earns a dedicated Bits crafting line. Returns Bits/hr per such product.
+function preprodBitsBreakdown(plan){
+  const by={};
   (plan||[]).forEach(p=>{const j=p.job;
-    if(j&&j.kind==="craft"&&j.res==="Frames"){const L=j.lvl,ct=craftTime("Frames",L),sp=effSpeed(p.sp,ct);
-      if(ct>0)bits+=(FRAME_BITS*Math.pow(3,Math.log2(L))/ct)*sp*3600;}});
-  return bits;
+    if(j&&j.kind==="craft"&&PREPROD_BITS[j.res]){const L=j.lvl,ct=craftTime(j.res,L),sp=effSpeed(p.sp,ct);
+      if(ct>0)by[j.res]=(by[j.res]||0)+(PREPROD_BITS[j.res]*Math.pow(3,Math.log2(L))/ct)*sp*3600;}});
+  return by;
 }
+function preprodBitsHr(plan){return Object.values(preprodBitsBreakdown(plan)).reduce((a,b)=>a+b,0);}
+// "8 per frame, 2 per wire" — per-unit note for the pre-produce readout, for the products present.
+const PREPROD_BITS_UNIT={Frames:"frame",Wire:"wire"};
+function preprodBitsNote(who){return who.map(n=>`${PREPROD_BITS[n]} per ${PREPROD_BITS_UNIT[n]||n.toLowerCase()}`).join(", ");}
 function buildJobs(maxVal,resIndex,relRaws,relProds,targets,w){
   const allowed=LEVELS.filter(L=>L<=maxVal);
   const jobs=[{label:"Idle",kind:"idle",res:null,lvl:null,prod:[],cons:[],h:0}];
@@ -311,8 +316,9 @@ function projectDemand(){
   });
   const inv=it=>num(S.inventory&&S.inventory[it])||0;
   const net={};ALLITEMS.forEach(it=>{net[it]=Math.max(0,gross[it]-inv(it));});
-  // Frames each consume FRAME_BITS Bits that aren't in the recipe graph — fold them into Bits demand
-  if((net.Frames||0)>0)net.Bits=Math.max(0,(gross.Bits||0)+FRAME_BITS*net.Frames-inv("Bits"));
+  // Frames & Wire each consume Bits that aren't in the recipe graph — fold them into Bits demand
+  const ppBits=PREPROD_BITS.Frames*(net.Frames||0)+PREPROD_BITS.Wire*(net.Wire||0);
+  if(ppBits>0)net.Bits=Math.max(0,(gross.Bits||0)+ppBits-inv("Bits"));
   return {gross,net,perProject};
 }
 // Does crafting this item require Gel anywhere in its chain? (Gel is only made on reserved lines.)
@@ -408,7 +414,8 @@ function solvePhaseFor(net,name){
 // net demand for a project's level-sum `sub`, against an inventory map (folds in Frame bits).
 function projNetVec(sub,invMap){
   const net={};ALLITEMS.forEach(it=>net[it]=Math.max(0,(sub[it]||0)-(invMap[it]||0)));
-  if((net.Frames||0)>0)net.Bits=Math.max(0,(sub.Bits||0)+FRAME_BITS*net.Frames-(invMap.Bits||0));
+  const ppBits=PREPROD_BITS.Frames*(net.Frames||0)+PREPROD_BITS.Wire*(net.Wire||0);
+  if(ppBits>0)net.Bits=Math.max(0,(sub.Bits||0)+ppBits-(invMap.Bits||0));
   return net;
 }
 // Run `fn` with the best N lines reserved for Gel (supplied as free input to the rest).
