@@ -70,6 +70,9 @@ const forgieHr=r=>(num(S.forgie&&S.forgie[r])||0)+((_SUPPLY&&_SUPPLY[r])||0);
 // (output ×(1+dup), input cost unchanged) and a margin tolerance allows a small paper
 // shortfall ("may-work" plans). Anytime: multi-start + iterated local search seed a near-
 // optimal feasible plan, then a wall-clock-bounded branch-and-bound proves/refines it.
+// Finally, a tie-break pass minimises total input shortfall among plans tied on the
+// objective, so a deficit the targets can't use (free to close from surplus feeders) gets
+// closed instead of left on the margin as a phantom "may-work" plan.
 function solveCore(targets,w,relProds,relRaws,timeBudget){
   const resources=[...relRaws,...relProds];
   const resIndex={};resources.forEach((r,i)=>resIndex[r]=i);
@@ -155,6 +158,25 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   }
   // full local optimisation from a starting choice; returns its score or null if infeasible
   function localOpt(ch){if(!repair(ch))return null;const sc=climb(ch);evalChoice(ch);return feasibleNow()?sc:null;}
+  // Tie-break: among plans that match the optimal objective, prefer the one with the least
+  // total input shortfall. The objective only counts net TARGET output, so a deficit the
+  // targets can't consume (e.g. a feeder running on the 1.5% margin while its raw sits in
+  // surplus) costs the score nothing and the search has no reason to close it. Holding the
+  // score fixed, hill-climb single-line switches that cut total deficit — typically bumping a
+  // short feeder's compression, paid for from the surplus raw — so a free gap is balanced out
+  // rather than reported as a phantom "may-work" plan.
+  function minDeficitAtScore(ch,targetScore){
+    evalChoice(ch);let curD=totalDeficit();
+    for(let pass=0;pass<N+3&&curD>1e-7;pass++){
+      let improved=false;
+      for(let i=0;i<N;i++){const old=ch[i],js=lineJobs[i];let bk=old,bD=curD;
+        for(let k=0;k<js.length;k++){if(k===old)continue;ch[i]=k;evalChoice(ch);
+          if(feasibleNow()&&scoreNow()>=targetScore-EPS){const d=totalDeficit();if(d<bD-1e-9){bD=d;bk=k;}}}
+        ch[i]=bk;evalChoice(ch);if(bk!==old){curD=bD;improved=true;}}
+      if(!improved)break;
+    }
+    return ch;
+  }
   let _rng=0x2545f491>>>0;const rnd=()=>{_rng^=_rng<<13;_rng^=_rng>>>17;_rng^=_rng<<5;_rng>>>=0;return _rng/4294967296;};
 
   function dfs(i,prevIdx){
@@ -201,6 +223,11 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   }
   produced.set(baseArr);consumed.fill(0);
   dfs(0,0);
+  // balance any free deficit out of the now-optimal plan (keeps the objective, trims the margin use)
+  if(best.score>EPS&&N>0){
+    const ch=minDeficitAtScore(best.choice.slice(),best.score);
+    evalChoice(ch);best={score:scoreNow(),choice:ch.slice(),produced:produced.slice(),consumed:consumed.slice()};
+  }
   let usesMargin=false;for(let r=0;r<R;r++)if(best.produced[r]<best.consumed[r]-1e-6)usesMargin=true;
   const forgie={};resources.forEach((r,i)=>forgie[r]=baseArr[i]*3600);
   return {best,sorted,lineJobs,resources,resIndex,R,N,tIdx,tol,capped,usesMargin,issues,forgie,feasible:best.score>1e-9,ms:performance.now()-tStart};
@@ -240,7 +267,14 @@ function solveRaw(Rw){
 }
 
 function optimizeInner(timeBudget){
-  const itemsBudget=timeBudget||250, credBudget=timeBudget||650;
+  // Budgets are an anytime CAP, not a fixed wait: solveCore returns the moment its branch-and-
+  // bound completes, so an easy plan finishes in tens of ms and never hits this. The cap only
+  // bounds the worst case for a genuinely hard factory — and it must leave a slow phone enough
+  // room, since it does far less search per ms than a desktop. The old 250ms let mobile cap out
+  // on a suboptimal, device-dependent plan (issue #34: a profile that proves out in ~250ms on
+  // desktop capped at a worse plan on a phone). 600ms ~doubles a slow device's search while
+  // keeping the worst-case freeze well under half a second (and it's one-shot, post-debounce).
+  const itemsBudget=timeBudget||600, credBudget=timeBudget||650;
   const mode=S.mode==="credits"?"credits":"items";
   if(mode==="items"){
     const targets=PRODUCTS.filter(p=>S.targets[p].on);
