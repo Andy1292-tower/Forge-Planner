@@ -176,8 +176,12 @@ const PROJECT_CATALOG=[
             "qty": 300
           },
           {
-            "item": "Plates",
+            "item": "Bricks",
             "qty": 100
+          },
+          {
+            "item": "Plates",
+            "qty": 250
           },
           {
             "item": "Rods",
@@ -185,11 +189,7 @@ const PROJECT_CATALOG=[
           },
           {
             "item": "Frames",
-            "qty": 250
-          },
-          {
-            "item": "Concrete",
-            "qty": 0
+            "qty": 10
           }
         ]
       },
@@ -200,8 +200,12 @@ const PROJECT_CATALOG=[
             "qty": 450
           },
           {
-            "item": "Plates",
+            "item": "Bricks",
             "qty": 150
+          },
+          {
+            "item": "Plates",
+            "qty": 375
           },
           {
             "item": "Rods",
@@ -209,10 +213,6 @@ const PROJECT_CATALOG=[
           },
           {
             "item": "Frames",
-            "qty": 375
-          },
-          {
-            "item": "Concrete",
             "qty": 15
           }
         ]
@@ -224,8 +224,12 @@ const PROJECT_CATALOG=[
             "qty": 675
           },
           {
-            "item": "Plates",
+            "item": "Bricks",
             "qty": 225
+          },
+          {
+            "item": "Plates",
+            "qty": 563
           },
           {
             "item": "Rods",
@@ -233,7 +237,7 @@ const PROJECT_CATALOG=[
           },
           {
             "item": "Frames",
-            "qty": 563
+            "qty": 23
           },
           {
             "item": "Concrete",
