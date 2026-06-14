@@ -291,7 +291,7 @@ function compactProjCard(p,pi){
       <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule">
       <span class="pname-static">${escapeAttr(p.name)}${desc}</span>
       <div class="proj-tools">
-        <label class="proj-first" title="Schedule this project before the others"><input type="checkbox" class="pfirst" data-pfirst="${pi}" ${p.first?"checked":""}>1st</label>
+        <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–">order</label>
         ${range}
         <button class="iconbtn" data-pdel="${pi}" title="Remove from list">×</button>
       </div>
@@ -316,7 +316,7 @@ function projCard(p,pi){
       <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule">
       <input class="pname" data-pname="${pi}" value="${escapeAttr(p.name)}" placeholder="Project name">
       <div class="proj-tools">
-        <label class="proj-first" title="Schedule this project before the others"><input type="checkbox" class="pfirst" data-pfirst="${pi}" ${p.first?"checked":""}>1st</label>
+        <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–">order</label>
         <span class="proj-lvls">lv <input type="number" min="1" step="1" data-pfrom="${pi}" value="${p.from||1}"> → <input type="number" min="1" step="1" data-pto="${pi}" value="${p.to||lv.length||1}"></span>
         <button class="iconbtn" data-pdup="${pi}" title="Duplicate" style="font-size:13px">⧉</button>
         <button class="iconbtn" data-pdel="${pi}" title="Delete project">×</button>
@@ -358,7 +358,7 @@ function addCatalogProject(catId){
   if(!src||projectHasCat(catId))return;
   S.projects.push({
     id:newId(),catId:src.catId,name:src.name,description:src.description||"",
-    on:true,first:false,from:1,to:src.levels.length||1,
+    on:true,prio:null,from:1,to:src.levels.length||1,
     levels:JSON.parse(JSON.stringify(src.levels)),_open:false
   });
   renderProjects();renderCatalog();save();scheduleSolve();
@@ -420,12 +420,12 @@ document.getElementById("projList").addEventListener("input",e=>{
   if((v=g("data-pname"))!=null){S.projects[+v].name=t.value;save();scheduleSolve();return;}
   if((v=g("data-pfrom"))!=null){S.projects[+v].from=Math.max(1,Math.floor(num(t.value)||1));save();scheduleSolve();return;}
   if((v=g("data-pto"))!=null){S.projects[+v].to=Math.max(1,Math.floor(num(t.value)||1));save();scheduleSolve();return;}
+  if((v=g("data-pprio"))!=null){const n=Math.floor(num(t.value));S.projects[+v].prio=(n>=1)?n:null;save();scheduleSolve();return;}
   if((v=g("data-cqty"))!=null){const[pi,li,ci]=v.split("_").map(Number);S.projects[pi].levels[li].costs[ci].qty=parseGameNum(t.value);save();scheduleSolve();return;}
 });
 document.getElementById("projList").addEventListener("change",e=>{
   const t=e.target,g=a=>t.getAttribute(a);let v;
   if((v=g("data-pon"))!=null){S.projects[+v].on=t.checked;save();scheduleSolve();return;}
-  if((v=g("data-pfirst"))!=null){S.projects[+v].first=t.checked;save();scheduleSolve();return;}
   if((v=g("data-citem"))!=null){const[pi,li,ci]=v.split("_").map(Number);S.projects[pi].levels[li].costs[ci].item=t.value;save();scheduleSolve();return;}
 });
 document.getElementById("invRows").addEventListener("input",e=>{
@@ -517,6 +517,8 @@ function renderSteps(){
   if(!res||res.empty||!res.phases||!res.phases.length){body.innerHTML=`<div class="notice info">Build a project plan first — add a project in Shopping list and switch to Project plan mode.</div>`;return;}
   let h=`<p class="help" style="margin-bottom:12px">${res.sequenced
       ?"Do these phases <b>in order</b>. Within a phase, a line listing two jobs splits its time — do the input job first so you don't stall. Reset the lines when you start the next phase."
+      :res.waved
+      ?"Do these waves <b>in order</b> — finish a wave before starting the next so the unlocks land first. Within a wave, a line listing two jobs splits its time; do the input job first."
       :"Set every line as shown and let it run. A line listing two jobs splits its time across the run; do the input job first."} Total ≈ <b>${fmtDuration(res.eta)}</b>.</p>`;
   res.phases.forEach((ph,i)=>{
     const lines=(ph.plan||[]).filter(p=>p.entries&&p.entries.length).map(p=>({
@@ -525,7 +527,9 @@ function renderSteps(){
     }));
     h+=`<div class="step-phase">`;
     h+=res.sequenced
-      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>${escapeAttr(ph.name)}</b> ${ph.first?'<span class="pill craft" style="font-size:9px">do first</span>':""} <span class="proj-mini">· ~${fmtDuration(ph.eta)} · done by ${fmtDuration(ph.doneAt)}</span></div>`
+      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>${escapeAttr(ph.name)}</b> ${ph.prio!=null?'<span class="pill craft" style="font-size:9px">#'+ph.prio+'</span>':""} <span class="proj-mini">· ~${fmtDuration(ph.eta)} · done by ${fmtDuration(ph.doneAt)}</span></div>`
+      : res.waved
+      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>Wave ${i+1} — build together</b> ${ph.members&&ph.members.length?'<span class="proj-mini">'+escapeAttr(ph.members.join(" + "))+'</span>':""} <span class="proj-mini">· ~${fmtDuration(ph.eta)} · done by ${fmtDuration(ph.doneAt)}</span></div>`
       : `<div class="step-h"><b>Set all lines like this and run</b> <span class="proj-mini">· ~${fmtDuration(ph.eta)}</span></div>`;
     if(!ph.feasible)h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">Can't fully produce this one with the current lines${ph.unsat&&ph.unsat.length?" — "+ph.unsat.join(", ")+" need Gel":""}.</div>`;
     if(!lines.length){h+=`<div class="proj-mini" style="padding:2px 0">No line activity.</div></div>`;return;}
