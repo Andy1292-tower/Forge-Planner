@@ -528,13 +528,31 @@ function unlockLayers(perProject){
   for(let i=0;i<n;i++)calc(i,{});
   return layer;
 }
-function buildProjectPhases(seq,net,perProject){
+// Does this phase's net demand consume Gel — directly, or via Wire (whose chain needs Gel)?
+function phaseNeedsGel(net){return (net[GEL]||0)>1e-9||ALLITEMS.some(it=>(net[it]||0)>1e-9&&chainNeedsGel(it));}
+// Solve one phase, reserving Gel lines ONLY when this phase actually consumes Gel. Phases with
+// no Gel demand keep the full line pool and make no Gel — which is also what unlock-correctness
+// requires: by the layering, Gel is only demanded after Gel Refinery is built, so earlier waves
+// never reserve a line for a material that isn't unlocked yet.
+function solvePhaseGel(net,name,lo){
+  if(lo&&lo.perLine.length&&phaseNeedsGel(net)){
+    const set=new Set(lo.perLine.map(p=>p.__i));
+    _LINES=lineRows().filter(r=>!set.has(r.__i));_SUPPLY={[GEL]:lo.gelHr};
+    const ph=solvePhaseFor(net,name);
+    _LINES=null;_SUPPLY=null;
+    ph.plan=addGelLinesToPlan(ph.plan,lo.perLine);
+    ph.gelReserved={lines:lo.perLine.length,outHr:lo.gelHr,vespHr:lo.vespHr,perLine:lo.perLine};
+    return ph;
+  }
+  return solvePhaseFor(net,name);
+}
+function buildProjectPhases(seq,net,perProject,lo){
   const layer=unlockLayers(perProject);
   const maxL=perProject.length?Math.max.apply(null,layer):0;
   const invStart=()=>{const o={};ALLITEMS.forEach(it=>o[it]=num(S.inventory&&S.inventory[it])||0);return o;};
   if(!seq){
     if(maxL===0){   // nothing gated — original single combined phase (no regression)
-      const ph=solvePhaseFor(net,perProject.length>1?"All projects":perProject[0].name);
+      const ph=solvePhaseGel(net,perProject.length>1?"All projects":perProject[0].name,lo);
       ph.demandSub={};ALLITEMS.forEach(it=>ph.demandSub[it]=perProject.reduce((s,p)=>s+(p.sub[it]||0),0));
       ph.doneAt=ph.eta;return [ph];
     }
@@ -545,7 +563,7 @@ function buildProjectPhases(seq,net,perProject){
       const members=perProject.filter((_,i)=>layer[i]===L);
       if(!members.length)continue;
       const sumSub={};ALLITEMS.forEach(it=>sumSub[it]=members.reduce((s,p)=>s+(p.sub[it]||0),0));
-      const ph=solvePhaseFor(projNetVec(sumSub,invRun),members.map(m=>m.name).join(" + "));
+      const ph=solvePhaseGel(projNetVec(sumSub,invRun),members.map(m=>m.name).join(" + "),lo);
       ph.members=members.map(m=>m.name);ph.demandSub=sumSub;ph.wave=phases.length+1;
       ALLITEMS.forEach(it=>{invRun[it]=Math.max(0,(invRun[it]||0)-sumSub[it]);});
       cum+=ph.eta;ph.doneAt=cum;phases.push(ph);
@@ -554,7 +572,7 @@ function buildProjectPhases(seq,net,perProject){
   }
   // sequenced: one project per phase, ordered by (unlock layer, manual priority, cheapest makespan)
   const invInit=invStart();
-  const cost=perProject.map(p=>{const ph=solvePhaseFor(projNetVec(p.sub,invInit),p.name);return ph.feasible?ph.eta:Infinity;});
+  const cost=perProject.map(p=>{const ph=solvePhaseGel(projNetVec(p.sub,invInit),p.name,lo);return ph.feasible?ph.eta:Infinity;});
   const order=perProject.map((p,i)=>({p,i})).sort((a,b)=>{
     if(layer[a.i]!==layer[b.i])return layer[a.i]-layer[b.i];   // unlock precedence (hard)
     const pa=a.p.prio,pb=b.p.prio;
@@ -565,7 +583,7 @@ function buildProjectPhases(seq,net,perProject){
   });
   const invRun=invStart();let cum=0;const phases=[];
   order.forEach(({p})=>{
-    const ph=solvePhaseFor(projNetVec(p.sub,invRun),p.name);
+    const ph=solvePhaseGel(projNetVec(p.sub,invRun),p.name,lo);
     ph.prio=(p.prio!=null?p.prio:null);ph.demandSub=p.sub;
     ALLITEMS.forEach(it=>{invRun[it]=Math.max(0,(invRun[it]||0)-(p.sub[it]||0));});
     cum+=ph.eta;ph.doneAt=cum;phases.push(ph);
@@ -598,16 +616,16 @@ function optimizeProjectTop(){
   for(let k=0;k<=Nmax;k++){
     const pool=ranked.slice(0,k).map(o=>o.r);
     const lo=k>0?gelLoadout(pool,vespHr):{gelHr:0,vespHr:0,perLine:[]};
-    if(lo.perLine.length){const set=new Set(lo.perLine.map(p=>p.__i));_LINES=lineRows().filter(r=>!set.has(r.__i));_SUPPLY={[GEL]:lo.gelHr};}
-    let phases=buildProjectPhases(seq,net,perProject);
-    _LINES=null;_SUPPLY=null;
-    if(lo.perLine.length)phases=phases.map(ph=>Object.assign({},ph,{plan:addGelLinesToPlan(ph.plan,lo.perLine)}));
+    // gel reservation is applied per-phase inside buildProjectPhases — only phases that
+    // actually consume Gel reserve lines for it (so early, pre-unlock waves don't).
+    const phases=buildProjectPhases(seq,net,perProject,lo);
     const eta=phases.reduce((s,ph)=>s+ph.eta,0);
     const badN=new Set([].concat(...phases.map(ph=>(ph.unsat||[]).concat(ph.infeasItems||[])))).size;
     const cand={phases,loadout:lo,eta,badN};
     if(!best||betterProjCand(cand,best))best=cand;
   }
   const {phases,loadout}=best;
+  const gelUsed=phases.some(ph=>ph.gelReserved);   // did any phase actually reserve Gel?
   const waved=!seq&&phases.length>1;   // all-at-once split into unlock-ordered waves
   const eta=phases.reduce((s,ph)=>s+ph.eta,0);
   const feasible=phases.length>0&&phases.every(ph=>ph.feasible);
@@ -618,7 +636,7 @@ function optimizeProjectTop(){
     plan:main.plan,balance:main.balance,
     demandItems:(seq||waved)?ALLITEMS.filter(it=>net[it]>1e-9):main.demandItems,
     rate:main.rate,bottleneck:main.bottleneck,eta,unsat,infeasItems,feasible,
-    gelReserved:loadout.perLine.length?{lines:loadout.perLine.length,outHr:loadout.gelHr,vespHr:loadout.vespHr,perLine:loadout.perLine}:null,
+    gelReserved:gelUsed?{lines:loadout.perLine.length,outHr:loadout.gelHr,vespHr:loadout.vespHr,perLine:loadout.perLine}:null,
     objective:feasible&&eta>0?1/eta:0,ms:performance.now()-t0};
 }
 
