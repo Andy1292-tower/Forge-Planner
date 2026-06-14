@@ -36,34 +36,39 @@ function renderProjectResults(res,el,stat){
   }
   let html="";
   html+=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px">
-    <div class="proj-mini" style="font-size:11.5px">${res.sequenced?'Order: <b style="color:var(--ink2)">one project at a time</b> — cheapest first, “do first” pinned ahead. Change in Shopping list.':'Order: <b style="color:var(--ink2)">all projects together</b> (fastest total). Change in Shopping list.'}</div>
+    <div class="proj-mini" style="font-size:11.5px">${res.sequenced?'Order: <b style="color:var(--ink2)">one project at a time</b> — unlocks first, then your order, then cheapest. Change in Shopping list.':res.waved?'Order: <b style="color:var(--ink2)">all together, in unlock waves</b> — material unlocks first, then the rest. Change in Shopping list.':'Order: <b style="color:var(--ink2)">all projects together</b> (fastest total). Change in Shopping list.'}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn primary" id="btnProgress">Track progress</button>
       <button class="btn primary" id="btnSteps">Step-by-step ▸</button>
     </div></div>`;
   html+=`<div class="notice info"><b>Project plan.</b> ${res.sequenced?"Completes projects one at a time so you unlock bonuses sooner; within each project, lines split their time in a pipelined plan.":"Sums all ticked projects and crafts everything together with a pipelined line setup, inputs &amp; outputs flowing together."} Overshoot from compression is ignored.</div>`;
-  if(res.unsat&&res.unsat.length)html+=`<div class="notice warn"><b>Needs Gel:</b> ${res.unsat.join(", ")} require Gel, which is only made on reserved lines. Set <b>lines on gel</b> in the Gel panel to include them — they're excluded from the time below for now.</div>`;
+  if(res.waved)html+=`<div class="notice info" style="font-size:11.5px"><b>Unlock-aware order.</b> Some projects unlock materials others need (Frames, Gel, Wire), so this is split into <b>${res.phases.length} waves</b> — finish each wave before starting the next. Everything within a wave is crafted together.</div>`;
+  if(res.unsat&&res.unsat.length){
+    const gelInc=Math.max(0,num(S.gelVesp)||0)>0;
+    html+=`<div class="notice warn"><b>Needs Gel:</b> ${res.unsat.join(", ")} require Gel, which the planner forges from your <b>vespium income</b>. ${gelInc?"Your current income is too low to forge any — raise <b>vespium / minute income</b> in the Gel panel":"Enter your <b>vespium / minute income</b> in the Gel panel"} to include them — they're excluded from the time below for now.</div>`;
+  }
   if(res.infeasItems&&res.infeasItems.length)html+=`<div class="notice warn"><b>Can't sustainably produce:</b> ${res.infeasItems.join(", ")}. Raise a line's max compression, add a line, or check recipe costs — the time below excludes these.</div>`;
   html+=`<div class="metrics">
     <div class="metric"><div class="l">Total time</div><div class="v">${fmtDuration(res.eta)}</div><div class="u">${res.sequenced?"to finish every project":"to finish all ticked projects"}</div></div>
-    <div class="metric"><div class="l">Projects</div><div class="v">${res.perProject.length}</div><div class="u">${res.sequenced?"one at a time":"scheduled together"}</div></div>
-    ${!res.sequenced&&res.bottleneck?`<div class="metric"><div class="l">Bottleneck</div><div class="v" style="font-size:17px">${res.bottleneck}</div><div class="u">sets the finish time</div></div>`:""}
+    <div class="metric"><div class="l">Projects</div><div class="v">${res.perProject.length}</div><div class="u">${res.sequenced?"one at a time":res.waved?res.phases.length+" unlock waves":"scheduled together"}</div></div>
+    ${!res.sequenced&&!res.waved&&res.bottleneck?`<div class="metric"><div class="l">Bottleneck</div><div class="v" style="font-size:17px">${res.bottleneck}</div><div class="u">sets the finish time</div></div>`:""}
   </div>`;
-  if(res.sequenced){
-    html+=`<div class="subhead">Completion order — done one project at a time</div>
-      <table><thead><tr><th>#</th><th>Project</th><th>Needs</th><th class="num">Phase</th><th class="num">Done by</th></tr></thead><tbody>`;
+  if(res.sequenced||res.waved){
+    html+=`<div class="subhead">${res.waved?"Build order — waves, each crafted together":"Completion order — done one project at a time"}</div>
+      <table><thead><tr><th>#</th><th>${res.waved?"Wave":"Project"}</th><th>Needs</th><th class="num">Phase</th><th class="num">Done by</th></tr></thead><tbody>`;
     res.phases.forEach((ph,i)=>{
-      const pj=res.perProject.find(p=>p.name===ph.name)||{sub:{}};
-      const items=ALLITEMS.filter(it=>(pj.sub[it]||0)>0);
-      const needs=items.slice(0,5).map(it=>disp(pj.sub[it])+" "+it).join(", ")+(items.length>5?" …":"");
-      const badge=ph.first?' <span class="pill craft" style="font-size:9px">do first</span>':"";
+      const sub=ph.demandSub||{};
+      const items=ALLITEMS.filter(it=>(sub[it]||0)>0);
+      const needs=items.slice(0,5).map(it=>disp(sub[it])+" "+it).join(", ")+(items.length>5?" …":"");
+      const badge=(ph.prio!=null)?` <span class="pill craft" style="font-size:9px">#${ph.prio}</span>`:"";
       const warn=!ph.feasible?' <span style="color:var(--danger);font-size:10.5px">(blocked — see notes)</span>':"";
-      html+=`<tr><td class="mono">${i+1}</td><td>${ph.name}${badge}${warn}</td>
+      const nm=escapeAttr(ph.members&&ph.members.length>1?ph.members.join(" + "):ph.name);
+      html+=`<tr><td class="mono">${i+1}</td><td>${nm}${badge}${warn}</td>
         <td style="color:var(--ink2);font-size:11.5px">${needs||"—"}</td>
         <td class="num mono">${fmtDuration(ph.eta)}</td><td class="num mono" style="color:var(--amber)">${fmtDuration(ph.doneAt)}</td></tr>`;
     });
     html+=`</tbody></table>`;
-    html+=`<div class="notice info" style="font-size:11.5px">Tap <b>Step-by-step</b> for the exact line setup in each phase and when to switch lines over.</div>`;
+    html+=`<div class="notice info" style="font-size:11.5px">Tap <b>Step-by-step</b> for the exact line setup in each ${res.waved?"wave":"phase"} and when to switch lines over.</div>`;
   } else {
     html+=`<div class="subhead">Combined demand</div>
       <table><thead><tr><th>Item</th><th class="num">Have</th><th class="num">Net needed</th><th class="num">Made /hr</th><th class="num">Done in</th></tr></thead><tbody>`;

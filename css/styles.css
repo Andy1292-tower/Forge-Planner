@@ -384,6 +384,8 @@ button.gel-head .sub{color:var(--amber)}
 .seq-toggle input:checked::after,.proj-first .pfirst:checked::after{content:"";position:absolute;left:5px;top:1px;width:4px;height:9px;border:solid #15110a;border-width:0 2px 2px 0;transform:rotate(45deg)}
 .proj-first{display:flex;align-items:center;gap:4px;cursor:pointer;font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:var(--ink3)}
 .proj-first .pfirst{width:15px;height:15px;margin-top:0}
+.proj-prio{display:flex;align-items:center;gap:4px;font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:var(--ink3)}
+.proj-prio input{width:36px;text-align:center;padding:4px 5px}
 /* project catalog picker */
 .cat-panel{border:1px solid var(--line);border-radius:7px;background:var(--bg2);margin-bottom:14px;overflow:hidden}
 .cat-panel>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;font-size:12.5px;font-weight:600;color:var(--ink);user-select:none}

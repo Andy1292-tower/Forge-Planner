@@ -389,7 +389,7 @@ function projectDemand(){
     for(let i=start;i<to&&i<lv.length;i++){
       (lv[i].costs||[]).forEach(c=>{const it=c.item,q=num(c.qty)||0;if(ALLITEMS.includes(it)&&q>0){sub[it]+=q;gross[it]+=q;}});
     }
-    perProject.push({name:p.name||"Project",first:!!p.first,from:start+1,to,levels:lv.length,sub});
+    perProject.push({name:p.name||"Project",catId:p.catId||"",prio:(p.prio!=null?p.prio:null),from:start+1,to,levels:lv.length,sub});
   });
   const inv=it=>num(S.inventory&&S.inventory[it])||0;
   const net={};ALLITEMS.forEach(it=>{net[it]=Math.max(0,gross[it]-inv(it));});
@@ -500,22 +500,73 @@ function projNetVec(sub,invMap){
 }
 // Run `fn` with the best N lines reserved for Gel (supplied as free input to the rest).
 // Build the project phases (combined or sequenced) using the current _LINES/_SUPPLY pool.
+// Assign each project an "unlock layer": 0 if it depends on no in-list unlock, else
+// 1 + the deepest unlock it depends on. Edges (prerequisite → dependent) come from material
+// unlocks (a project unlocking material M precedes anything whose costs include M) and from
+// explicit PROJECT_PREREQS building unlocks — both only when the prerequisite project is in
+// the list. Every edge runs to a strictly higher layer, so ordering by layer is a valid
+// topological order (Frame Factory → Gel Refinery → Wire Tower → their consumers).
+function unlockLayers(perProject){
+  const n=perProject.length;
+  const unlockerOf={};   // material -> index of the in-list project that unlocks it
+  const idxOfCat={};     // catId -> index
+  perProject.forEach((p,i)=>{const m=UNLOCKS[p.catId];if(m)unlockerOf[m]=i;if(p.catId)idxOfCat[p.catId]=i;});
+  const preds=perProject.map((p,i)=>{
+    const set={};
+    UNLOCK_MATERIALS.forEach(m=>{const u=unlockerOf[m];if(u!=null&&u!==i&&(p.sub[m]||0)>0)set[u]=1;});
+    (PROJECT_PREREQS[p.catId]||[]).forEach(cat=>{const u=idxOfCat[cat];if(u!=null&&u!==i)set[u]=1;});
+    return Object.keys(set).map(Number);
+  });
+  const layer=new Array(n).fill(-1);
+  const calc=(i,stack)=>{
+    if(layer[i]>=0)return layer[i];
+    if(stack[i])return 0;            // defensive cycle guard
+    stack[i]=1;let L=0;
+    preds[i].forEach(u=>{const d=calc(u,stack)+1;if(d>L)L=d;});
+    stack[i]=0;return layer[i]=L;
+  };
+  for(let i=0;i<n;i++)calc(i,{});
+  return layer;
+}
 function buildProjectPhases(seq,net,perProject){
+  const layer=unlockLayers(perProject);
+  const maxL=perProject.length?Math.max.apply(null,layer):0;
+  const invStart=()=>{const o={};ALLITEMS.forEach(it=>o[it]=num(S.inventory&&S.inventory[it])||0);return o;};
   if(!seq){
-    const ph=solvePhaseFor(net,perProject.length>1?"All projects":perProject[0].name);
-    ph.doneAt=ph.eta;return [ph];
+    if(maxL===0){   // nothing gated — original single combined phase (no regression)
+      const ph=solvePhaseFor(net,perProject.length>1?"All projects":perProject[0].name);
+      ph.demandSub={};ALLITEMS.forEach(it=>ph.demandSub[it]=perProject.reduce((s,p)=>s+(p.sub[it]||0),0));
+      ph.doneAt=ph.eta;return [ph];
+    }
+    // unlocks force ordered "waves": combine within a layer, sequence the layers, carrying
+    // crafted surplus forward as inventory so later waves only make what's still missing.
+    const invRun=invStart();let cum=0;const phases=[];
+    for(let L=0;L<=maxL;L++){
+      const members=perProject.filter((_,i)=>layer[i]===L);
+      if(!members.length)continue;
+      const sumSub={};ALLITEMS.forEach(it=>sumSub[it]=members.reduce((s,p)=>s+(p.sub[it]||0),0));
+      const ph=solvePhaseFor(projNetVec(sumSub,invRun),members.map(m=>m.name).join(" + "));
+      ph.members=members.map(m=>m.name);ph.demandSub=sumSub;ph.wave=phases.length+1;
+      ALLITEMS.forEach(it=>{invRun[it]=Math.max(0,(invRun[it]||0)-sumSub[it]);});
+      cum+=ph.eta;ph.doneAt=cum;phases.push(ph);
+    }
+    return phases;
   }
-  const invInit={};ALLITEMS.forEach(it=>invInit[it]=num(S.inventory&&S.inventory[it])||0);
+  // sequenced: one project per phase, ordered by (unlock layer, manual priority, cheapest makespan)
+  const invInit=invStart();
   const cost=perProject.map(p=>{const ph=solvePhaseFor(projNetVec(p.sub,invInit),p.name);return ph.feasible?ph.eta:Infinity;});
   const order=perProject.map((p,i)=>({p,i})).sort((a,b)=>{
-    if(!!a.p.first!==!!b.p.first)return a.p.first?-1:1;
-    return cost[a.i]-cost[b.i];
+    if(layer[a.i]!==layer[b.i])return layer[a.i]-layer[b.i];   // unlock precedence (hard)
+    const pa=a.p.prio,pb=b.p.prio;
+    if(pa!=null&&pb!=null){if(pa!==pb)return pa-pb;}            // manual order, lower first
+    else if(pa!=null)return -1;
+    else if(pb!=null)return 1;
+    return cost[a.i]-cost[b.i];                                // else cheapest makespan
   });
-  const invRun={};ALLITEMS.forEach(it=>invRun[it]=num(S.inventory&&S.inventory[it])||0);
-  let cum=0;const phases=[];
+  const invRun=invStart();let cum=0;const phases=[];
   order.forEach(({p})=>{
     const ph=solvePhaseFor(projNetVec(p.sub,invRun),p.name);
-    ph.first=!!p.first;
+    ph.prio=(p.prio!=null?p.prio:null);ph.demandSub=p.sub;
     ALLITEMS.forEach(it=>{invRun[it]=Math.max(0,(invRun[it]||0)-(p.sub[it]||0));});
     cum+=ph.eta;ph.doneAt=cum;phases.push(ph);
   });
@@ -557,14 +608,15 @@ function optimizeProjectTop(){
     if(!best||betterProjCand(cand,best))best=cand;
   }
   const {phases,loadout}=best;
+  const waved=!seq&&phases.length>1;   // all-at-once split into unlock-ordered waves
   const eta=phases.reduce((s,ph)=>s+ph.eta,0);
   const feasible=phases.length>0&&phases.every(ph=>ph.feasible);
   const unsat=[...new Set([].concat(...phases.map(ph=>ph.unsat||[])))];
   const infeasItems=[...new Set([].concat(...phases.map(ph=>ph.infeasItems||[])))];
   const main=phases[0]||{plan:[],balance:[],rate:{},demandItems:[],bottleneck:null};
-  return {empty:false,mode:"project",sequenced:seq,phases,perProject,gross,net,
+  return {empty:false,mode:"project",sequenced:seq,waved,phases,perProject,gross,net,
     plan:main.plan,balance:main.balance,
-    demandItems:seq?ALLITEMS.filter(it=>net[it]>1e-9):main.demandItems,
+    demandItems:(seq||waved)?ALLITEMS.filter(it=>net[it]>1e-9):main.demandItems,
     rate:main.rate,bottleneck:main.bottleneck,eta,unsat,infeasItems,feasible,
     gelReserved:loadout.perLine.length?{lines:loadout.perLine.length,outHr:loadout.gelHr,vespHr:loadout.vespHr,perLine:loadout.perLine}:null,
     objective:feasible&&eta>0?1/eta:0,ms:performance.now()-t0};
