@@ -108,6 +108,14 @@ button.btn.poke-on{animation:pokePulse 1.15s ease-out infinite}
 }
 .card>.head .sub{font-size:11.5px;color:var(--ink3);letter-spacing:.3px}
 .card>.body{padding:14px}
+/* "results out of date" bar — shown when crafter-line inputs change before a resolve */
+.stale-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  margin:14px 14px 0;padding:9px 12px;border-radius:6px;
+  background:rgba(210,129,58,.10);border:1px solid var(--copper-d)}
+.stale-bar[hidden]{display:none}
+.stale-msg{font-size:12px;font-weight:600;color:var(--amber);letter-spacing:.2px}
+.stale-bar .btn{white-space:nowrap;animation:pokePulse 1.15s ease-out infinite}
+#results.stale{opacity:.42;filter:saturate(.55);transition:opacity .15s,filter .15s}
 #results{overflow-x:auto;scrollbar-color:var(--copper-d) var(--bg2)}
 #results table{min-width:520px}
 .stack{display:flex;flex-direction:column;gap:16px}
