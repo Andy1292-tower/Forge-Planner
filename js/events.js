@@ -5,7 +5,7 @@ function doSolve(){renderT=null;save();renderResults();}
 // Debounce the (potentially heavy) re-solve: while typing, wait until the user pauses;
 // leaving a field, pressing Enter, or making a selection flushes it immediately. State is
 // still captured on every keystroke (handlers update S synchronously), so nothing is lost.
-function scheduleSolve(){clearTimeout(renderT);renderT=setTimeout(doSolve,500);}
+function scheduleSolve(){clearTimeout(renderT);renderT=setTimeout(doSolve,2500);}
 function flushSolve(){if(renderT){clearTimeout(renderT);doSolve();}}
 document.addEventListener("change",e=>{if(e.target&&e.target.matches&&e.target.matches("input,select"))flushSolve();});
 document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target&&e.target.matches&&e.target.matches("input"))flushSolve();});
