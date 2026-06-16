@@ -519,28 +519,44 @@ function renderSteps(){
       ?"Do these phases <b>in order</b>. Within a phase, a line listing two jobs splits its time — do the input job first so you don't stall. Reset the lines when you start the next phase."
       :res.waved
       ?"Do these waves <b>in order</b> — finish a wave before starting the next so the unlocks land first. Within a wave, a line listing two jobs splits its time; do the input job first."
-      :"Set every line as shown and let it run. A line listing two jobs splits its time across the run; do the input job first."} Total ≈ <b>${fmtDuration(res.eta)}</b>.</p>`;
+      :"Set every line as shown and let it run. A line listing two jobs splits its time across the run; do the input job first."} Total ≈ <b>${fmtDuration(res.eta)}</b>. <span style="color:var(--ink3)">Clock times assume you start now — <b>refresh the page and they'll no longer be accurate.</b></span></p>`;
+  const now=new Date();
+  const fmtClock=h=>{
+    if(!isFinite(h)||h<0)return "";
+    const d=new Date(now.getTime()+h*3600000);
+    let t=d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
+    const dayDiff=Math.round((new Date(d.getFullYear(),d.getMonth(),d.getDate())-new Date(now.getFullYear(),now.getMonth(),now.getDate()))/86400000);
+    if(dayDiff>0)t+=` (+${dayDiff}d)`;
+    return t;
+  };
+  let phaseStart=0;
   res.phases.forEach((ph,i)=>{
+    const pStart=phaseStart; phaseStart+=ph.eta||0;
     const lines=(ph.plan||[]).filter(p=>p.entries&&p.entries.length).map(p=>({
       line:p.line,max:p.max,reserved:p.reserved,
       segs:p.entries.slice().sort((a,b)=>itemTier(a.item)-itemTier(b.item)||b.frac-a.frac)
     }));
     h+=`<div class="step-phase">`;
     h+=res.sequenced
-      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>${escapeAttr(ph.name)}</b> ${ph.prio!=null?'<span class="pill craft" style="font-size:9px">#'+ph.prio+'</span>':""} <span class="proj-mini">· ~${fmtDuration(ph.eta)} · done by ${fmtDuration(ph.doneAt)}</span></div>`
+      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>${escapeAttr(ph.name)}</b> ${ph.prio!=null?'<span class="pill craft" style="font-size:9px">#'+ph.prio+'</span>':""} <span class="proj-mini">· ~${fmtDuration(ph.eta)} · done by ${fmtDuration(ph.doneAt)} </span><span class="step-clock">(~${fmtClock(pStart+(ph.eta||0))})</span></div>`
       : res.waved
-      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>Wave ${i+1} — build together</b> ${ph.members&&ph.members.length?'<span class="proj-mini">'+escapeAttr(ph.members.join(" + "))+'</span>':""} <span class="proj-mini">· ~${fmtDuration(ph.eta)} · done by ${fmtDuration(ph.doneAt)}</span></div>`
-      : `<div class="step-h"><b>Set all lines like this and run</b> <span class="proj-mini">· ~${fmtDuration(ph.eta)}</span></div>`;
+      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>Wave ${i+1} — build together</b> ${ph.members&&ph.members.length?'<span class="proj-mini">'+escapeAttr(ph.members.join(" + "))+'</span>':""} <span class="proj-mini">· ~${fmtDuration(ph.eta)} · done by ${fmtDuration(ph.doneAt)} </span><span class="step-clock">(~${fmtClock(pStart+(ph.eta||0))})</span></div>`
+      : `<div class="step-h"><b>Set all lines like this and run</b> <span class="proj-mini">· ~${fmtDuration(ph.eta)} · finish by </span><span class="step-clock">~${fmtClock(pStart+(ph.eta||0))}</span></div>`;
     if(!ph.feasible)h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">Can't fully produce this one with the current lines${ph.unsat&&ph.unsat.length?" — "+ph.unsat.join(", ")+" need Gel":""}.</div>`;
     if(!lines.length){h+=`<div class="proj-mini" style="padding:2px 0">No line activity.</div></div>`;return;}
     h+=`<ol class="step-list">`;
     lines.forEach(L=>{
+      let cum=0;
       const parts=L.segs.map(s=>{
-        if(L.reserved)return `reserve for <b>Gel</b> @${s.lvl}× (whole phase)`;
+        cum+=s.frac;
+        const at=fmtClock(pStart+Math.min(cum,1)*(ph.eta||0));
+        const tag=at?` <span class="proj-mini">· until </span><span class="step-clock">~${at}</span>`:"";
+        if(L.reserved)return `reserve for <b>Gel</b> @${s.lvl}× (whole phase)${tag}`;
         const verb=RAWS.includes(s.item)?"produce":"craft";
-        return `${verb} <b>${s.item}</b> @${s.lvl}×${s.frac>=0.999?" (whole phase)":` for ~${fmtDuration(s.frac*ph.eta)}`}`;
+        return `${verb} <b>${s.item}</b> @${s.lvl}×${s.frac>=0.999?" (whole phase)":` for ~${fmtDuration(s.frac*ph.eta)}`}${tag}`;
       });
-      h+=`<li><span class="mono" style="color:var(--amber)">Line #${L.line}</span> <span class="proj-mini">(${L.max}× cap)</span> → ${parts.join(' <span style="color:var(--ink3)">then</span> ')}</li>`;
+      const segHtml=parts.map((p,idx)=>`<div class="step-seg">${idx===0?'<span class="step-then">→</span>':'<span class="step-then">then</span>'} ${p}</div>`).join('');
+      h+=`<li><span class="mono" style="color:var(--amber)">Line #${L.line}</span> <span class="proj-mini">(${L.max}× cap)</span>${segHtml}</li>`;
     });
     h+=`</ol></div>`;
   });

@@ -443,3 +443,7 @@ button.gel-head .sub{color:var(--amber)}
 .step-n{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--copper);color:#15110a;font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:700;flex:0 0 auto}
 .step-list{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
 .step-list li{font-size:12.5px;line-height:1.5;color:var(--ink)}
+.step-clock{font-family:"JetBrains Mono",monospace;font-size:11.5px;font-weight:600;color:var(--amber);white-space:nowrap}
+.step-seg{padding-left:16px;margin-top:3px;text-indent:-12px}
+.step-seg:first-of-type{margin-top:4px}
+.step-then{color:var(--ink3);font-style:italic}
