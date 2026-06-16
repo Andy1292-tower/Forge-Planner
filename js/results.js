@@ -9,6 +9,17 @@ function gelReservedNote(gr){
   const vesp=gr.vespHr!=null?` — burning <b>${disp(gr.vespHr)}</b>${inc>0?" of your <b>"+disp(inc)+"</b>":""} vespium/hr`:"";
   return `<div class="notice info" style="font-size:11.5px"><b>${gr.lines}</b> line${gr.lines>1?"s":""} on Gel (compression auto-picked) → <b>${disp(gr.outHr)}</b> Gel/hr${vesp}, fed into the plan.</div>`;
 }
+// Explains any lines the plan left idle. A line goes idle when throughput is capped by a
+// bottleneck elsewhere — a material input, or (in project mode) the Gel/vespium budget — so the
+// spare capacity can't make anything that finishes the plan sooner. It's still free to bank a
+// surplus on Bits or Concrete, whose only real input is abundant "Worthless Rocks". Works on both
+// plan shapes: project rows carry `entries`, items/credits rows carry a single `job`.
+function idleLinesNote(plan){
+  const idle=(plan||[]).filter(p=>p.entries?!p.entries.length:(p.job&&p.job.kind==="idle"));
+  if(!idle.length)return "";
+  const s=idle.length>1, which=idle.map(p=>"#"+p.line).join(", ");
+  return `<div class="notice info" style="font-size:11.5px"><b>${s?"Lines "+which+" are":"Line "+which+" is"} idle.</b> The plan is capped by a bottleneck elsewhere — a material input, or your Gel/vespium budget — so spare capacity here wouldn't finish anything sooner. If you like, run ${s?"them":"it"} on <b>Bits</b> or <b>Concrete</b> to bank a surplus: those cost only abundant <b>Worthless Rocks</b>, so it's effectively free.</div>`;
+}
 function lineAssignTableHtml(plan){
   let h=`<table><thead><tr><th>Line</th><th>Cap</th><th>Job</th><th>Lvl</th>
       <th class="num">Time share</th><th class="num">Output /hr</th><th>Consumes /hr</th></tr></thead><tbody>`;
@@ -95,6 +106,7 @@ function renderProjectResults(res,el,stat){
     });
     html+=`</tbody></table>`;
     html+=`<div class="subhead">Line assignment — % is the share of this line's time on that job</div>${lineAssignTableHtml(res.plan)}`;
+    html+=idleLinesNote(res.plan);
     if(res.balance&&res.balance.length){
       html+=`<div class="subhead">Resource balance (per hour)</div>
         <table><thead><tr><th>Resource</th><th class="num">Produced</th><th class="num">Consumed</th><th class="num">Surplus</th></tr></thead><tbody>`;
@@ -190,6 +202,7 @@ function renderResults(){
       <td class="num">${outv}</td><td style="color:var(--ink2);font-size:11.5px">${cons}</td></tr>`;
   });
   html+=`</tbody></table>`;
+  html+=idleLinesNote(res.plan);
   // balance table — Frames' & Wire's pre-produced Bits ride along as a display-only row (never in the solver)
   const ppBits=preprodBitsHr(res.plan);
   if(res.balance&&res.balance.length){
