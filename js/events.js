@@ -10,21 +10,38 @@ function flushSolve(){if(renderT){clearTimeout(renderT);doSolve();}}
 document.addEventListener("change",e=>{if(e.target&&e.target.matches&&e.target.matches("input,select"))flushSolve();});
 document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target&&e.target.matches&&e.target.matches("input"))flushSolve();});
 
+// Crafter-line edits can drive a heavy re-solve (credits mode runs ~1s+), and people
+// typically batch many speed/turbo changes before checking output. So rather than
+// auto-solving on every keystroke, those edits just persist (save) and mark the shown
+// results stale; the user clicks Resimulate — or presses Enter in a line field — to
+// recompute once. Any actual repaint (resimulate, mode switch, …) clears the stale UI.
+function showStale(on){
+  const bar=document.getElementById("staleBar");if(bar)bar.hidden=!on;
+  const res=document.getElementById("results");if(res)res.classList.toggle("stale",on);
+}
+function clearStaleUI(){showStale(false);}
+function markStale(){clearTimeout(renderT);renderT=null;save();showStale(true);}
+function resimulate(){doSolve();}   // doSolve→renderResults repaints and clears the stale UI
+document.getElementById("btnResim").addEventListener("click",resimulate);
+
 document.getElementById("lines").addEventListener("change",e=>{
   const li=e.target.dataset.line;
-  if(li!==undefined){S.lines[+li].max=+e.target.value;scheduleSolve();}
+  if(li!==undefined){S.lines[+li].max=+e.target.value;markStale();}
 });
 document.getElementById("lines").addEventListener("input",e=>{
   const si=e.target.dataset.spx, ti=e.target.dataset.turbo;
-  if(si!==undefined){S.lines[+si].spx=num(e.target.value)||1;refreshLineNotes();scheduleSolve();}
-  if(ti!==undefined){S.lines[+ti].turbo=Math.max(0,num(e.target.value)||0);refreshLineNotes();scheduleSolve();}
+  if(si!==undefined){S.lines[+si].spx=num(e.target.value)||1;refreshLineNotes();markStale();}
+  if(ti!==undefined){S.lines[+ti].turbo=Math.max(0,num(e.target.value)||0);refreshLineNotes();markStale();}
+});
+document.getElementById("lines").addEventListener("keydown",e=>{
+  if(e.key==="Enter"){e.preventDefault();resimulate();}
 });
 document.getElementById("lines").addEventListener("click",e=>{
   const d=e.target.dataset.del;
-  if(d!==undefined){if(S.lines.length>1){S.lines.splice(+d,1);S.manual.splice(+d,1);syncManual(S);renderLines();save();renderResults();}}
+  if(d!==undefined){if(S.lines.length>1){S.lines.splice(+d,1);S.manual.splice(+d,1);syncManual(S);renderLines();markStale();}}
 });
 document.getElementById("btnAddLine").addEventListener("click",()=>{
-  S.lines.push({max:512,spx:1,turbo:0});syncManual(S);renderLines();save();renderResults();
+  S.lines.push({max:512,spx:1,turbo:0});syncManual(S);renderLines();markStale();
 });
 
 document.getElementById("margin").addEventListener("input",e=>{
@@ -35,11 +52,11 @@ document.getElementById("margin").addEventListener("input",e=>{
 
 document.getElementById("maxTurbo").addEventListener("input",e=>{
   S.maxTurbo=Math.max(0,num(e.target.value)||0);
-  refreshLineNotes();scheduleSolve();
+  refreshLineNotes();markStale();
 });
 document.getElementById("dupe").addEventListener("input",e=>{
   S.dupe=Math.max(0,num(e.target.value)||0);
-  scheduleSolve();
+  markStale();
 });
 
 document.getElementById("targets").addEventListener("change",e=>{

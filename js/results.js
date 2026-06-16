@@ -123,6 +123,7 @@ function renderProjectResults(res,el,stat){
 
 
 function renderResults(){
+  if(typeof clearStaleUI==="function")clearStaleUI();   // results are about to reflect current inputs
   const el=document.getElementById("results");
   const stat=document.getElementById("solveStat");
   if(S.mode==="manual"){renderManual(el,stat);return;}
