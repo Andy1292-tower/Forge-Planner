@@ -555,7 +555,8 @@ function renderSteps(){
         const verb=RAWS.includes(s.item)?"produce":"craft";
         return `${verb} <b>${s.item}</b> @${s.lvl}×${s.frac>=0.999?" (whole phase)":` for ~${fmtDuration(s.frac*ph.eta)}`}${tag}`;
       });
-      h+=`<li><span class="mono" style="color:var(--amber)">Line #${L.line}</span> <span class="proj-mini">(${L.max}× cap)</span> → ${parts.join(' <span style="color:var(--ink3)">then</span> ')}</li>`;
+      const segHtml=parts.map((p,idx)=>`<div class="step-seg">${idx===0?'<span class="step-then">→</span>':'<span class="step-then">then</span>'} ${p}</div>`).join('');
+      h+=`<li><span class="mono" style="color:var(--amber)">Line #${L.line}</span> <span class="proj-mini">(${L.max}× cap)</span>${segHtml}</li>`;
     });
     h+=`</ol></div>`;
   });
