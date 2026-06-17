@@ -416,6 +416,12 @@ document.getElementById("projAdd").addEventListener("click",()=>{
   S.projects.push({id:newId(),name:"New project",on:true,from:1,to:1,levels:[{costs:[]}],_open:true});
   renderProjects();save();scheduleSolve();
 });
+document.getElementById("projClear").addEventListener("click",()=>{
+  if(!(S.projects||[]).length)return;
+  if(!confirm("Remove all projects from the shopping list? This clears every added catalog project and custom project."))return;
+  S.projects=[];
+  renderProjects();save();scheduleSolve();
+});
 document.getElementById("projInvClear").addEventListener("click",()=>{
   if(!confirm("Clear all inventory amounts?"))return;
   ALLITEMS.forEach(it=>{S.inventory[it]=null;S.inventoryText[it]="";});
