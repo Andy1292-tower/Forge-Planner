@@ -153,7 +153,7 @@ function renderForgie(){
     const txt=S.forgieText[it]!=null?S.forgieText[it]:(v!=null?formatGameNum(v,4):"");
     return `<div class="price-row">
       <div class="pnm">${tag(it)}${it}</div>
-      <input type="text" data-forgie="${it}" placeholder="—" value="${txt}">
+      <input type="text" inputmode="decimal" data-forgie="${it}" placeholder="—" value="${txt}">
     </div>`;
   }).join("");
   box.innerHTML=`<div class="price-grp first">Finished &amp; crafted</div>${rows(PRODUCTS)}<div class="price-grp">Raw materials</div>${rows(RAWS)}`;
