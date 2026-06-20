@@ -212,6 +212,24 @@ document.getElementById("gelCostDone").addEventListener("click",closeGelCost);
 gelCostModal.addEventListener("click",e=>{if(e.target===gelCostModal)closeGelCost();});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!gelCostModal.hidden)closeGelCost();});
 
+/* ---------- settings modal (max solve time) ---------- */
+const settingsModal=document.getElementById("settingsModal");
+const solveBudgetInput=document.getElementById("solveBudget");
+const solveBudgetVal=document.getElementById("solveBudgetVal");
+function fmtBudget(ms){return (ms/1000).toFixed(ms<1000?1:(ms%1000?1:0))+" s";}
+function syncBudgetUI(){const ms=Math.max(200,Math.min(60000,num(S.solveBudget)||2000));
+  if(solveBudgetInput)solveBudgetInput.value=(ms/1000);if(solveBudgetVal)solveBudgetVal.textContent=fmtBudget(ms);}
+function openSettings(){syncBudgetUI();settingsModal.hidden=false;}
+function closeSettings(){settingsModal.hidden=true;}
+document.getElementById("btnSettings").addEventListener("click",openSettings);
+document.getElementById("settingsClose").addEventListener("click",closeSettings);
+document.getElementById("settingsDone").addEventListener("click",closeSettings);
+settingsModal.addEventListener("click",e=>{if(e.target===settingsModal)closeSettings();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!settingsModal.hidden)closeSettings();});
+if(solveBudgetInput)solveBudgetInput.addEventListener("input",()=>{
+  S.solveBudget=Math.round(Math.max(0.2,Math.min(15,Number(solveBudgetInput.value)||2))*1000);
+  if(solveBudgetVal)solveBudgetVal.textContent=fmtBudget(S.solveBudget);save();});
+
 /* ---------- collapsible crafting-data panel ---------- */
 function setRecipesOpen(open){
   document.getElementById("recipeBody").hidden=!open;

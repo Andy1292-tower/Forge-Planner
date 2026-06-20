@@ -30,6 +30,7 @@
       <button class="btn primary" id="btnForgie">Lil' Forgie</button>
       <button class="btn primary" id="btnProjects">Shopping list</button>
       <button class="btn ghost" id="btnRecipes">Crafting data</button>
+      <button class="btn ghost" id="btnSettings">Settings</button>
     </div>
   </header>
 
@@ -92,7 +93,13 @@
         <span class="stale-msg">Crafter line inputs changed — press Resimulate to update the plan below.</span>
         <button class="btn primary" id="btnResim">Resimulate</button>
       </div>
-      <div class="body" id="results"></div>
+      <div class="results-wrap">
+        <div class="body" id="results"></div>
+        <div class="solve-overlay" id="solveOverlay" hidden>
+          <span class="spinner" aria-hidden="true"></span>
+          <span class="solve-overlay-txt">Solving…</span>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -161,6 +168,24 @@
       <div id="gelCostRows"></div>
     </div>
     <div class="modal-f"><button class="btn primary" id="gelCostDone">Done</button></div>
+  </div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-bg" id="settingsModal" hidden>
+  <div class="modal" style="max-width:520px">
+    <div class="modal-h"><h3>Settings</h3><button class="iconbtn" id="settingsClose" title="Close">×</button></div>
+    <div class="modal-b">
+      <label class="fl" style="display:block">
+        <span>Max solve time <i class="tip" tabindex="0" data-tip="How long the optimizer may search before returning its best plan. The solve runs in the background (no freeze) with a progress spinner. More time = better plans on big factories (many lines, Gel chains); less time = snappier. Easy setups finish early regardless.">?</i></span>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:6px">
+          <input type="range" id="solveBudget" min="0.2" max="15" step="0.1" style="flex:1">
+          <span class="mono" id="solveBudgetVal" style="min-width:64px;text-align:right"></span>
+        </div>
+      </label>
+      <p class="help" style="margin-top:10px">The plan is computed in a background thread, so a longer budget won't freeze the page. Bigger factories (7+ lines, Gel chains) benefit most from extra time; simple setups return as soon as they're solved.</p>
+    </div>
+    <div class="modal-f"><button class="btn primary" id="settingsDone">Done</button></div>
   </div>
 </div>
 
