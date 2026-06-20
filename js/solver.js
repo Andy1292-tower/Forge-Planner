@@ -125,7 +125,14 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   let best={score:0,choice:new Array(N).fill(0),produced:new Float64Array(R),consumed:new Float64Array(R)};
   const EPS=1e-9;
 
-  let nodes=0;let capped=false;const tStart=performance.now();
+  let nodes=0;let capped=false;const tStart=performance.now();let tLastGain=tStart;
+  // The budget is a ceiling, not a target: stop once the incumbent has gone this long without
+  // improving, so a converged solve takes the same wall-time whether the budget is 1s or 15s
+  // (the user's complaint). The window is fixed, not budget-scaled — it only needs to exceed the
+  // largest gap between real improvements. Multi-target search has wider gaps (~0.6s seen) than a
+  // single-target solve (each credits item), which converges almost immediately. Capped by the
+  // budget so a tiny budget can still cut it short.
+  const convergeWindow=Math.min(timeBudget,targets.length>1?1000:300);
 
   // Constructive feasible incumbent. The DFS prunes nothing until it owns a feasible
   // plan with positive score, and stumbling onto one by raw search is what made high
@@ -193,13 +200,13 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   let _rng=0x2545f491>>>0;const rnd=()=>{_rng^=_rng<<13;_rng^=_rng>>>17;_rng^=_rng<<5;_rng>>>=0;return _rng/4294967296;};
 
   function dfs(i,prevIdx){
-    if(((++nodes)&8191)===0&&performance.now()-tStart>timeBudget)capped=true;
+    if(((++nodes)&8191)===0){const _n=performance.now();if(_n-tStart>timeBudget||_n-tLastGain>convergeWindow)capped=true;}
     if(capped)return;
     if(i===N){
       for(let r=0;r<R;r++)if(produced[r]<consumed[r]*(1-tol)-1e-7)return;
       let sc=Infinity;
       for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]];sc=Math.min(sc,net/w[k]);}
-      if(sc>best.score+EPS){best={score:sc,choice:choice.slice(),produced:produced.slice(),consumed:consumed.slice()};}
+      if(sc>best.score+EPS){best={score:sc,choice:choice.slice(),produced:produced.slice(),consumed:consumed.slice()};tLastGain=performance.now();}
       return;
     }
     // feasibility prune: any resource whose current shortfall can't be covered by remaining lines kills this branch
@@ -254,7 +261,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   // then iterated local search. Pure argmax rounding flattens lines the LP split between Gel and a
   // target and loses a lot, so we also draw several randomized roundings weighted by the LP fractions.
   let inc=null;const lp=N>0?lpRelax():null;
-  const trySeed=ch=>{const c=ch.slice();const sc=localOpt(c);if(sc!=null&&(!inc||sc>inc.sc))inc={sc,ch:c.slice()};};
+  const trySeed=ch=>{const c=ch.slice();const sc=localOpt(c);if(sc!=null&&(!inc||sc>inc.sc)){inc={sc,ch:c.slice()};tLastGain=performance.now();}};
   // The seed set is fixed (budget-independent) on purpose: the ilsT/DFS caps are measured from the
   // solve start, so seeds just consume part of the budget rather than extending it — and a fixed set
   // keeps the search trajectory monotonic in budget (more time never yields a worse plan).
@@ -283,19 +290,21 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
       trySeed(ch);
     }
   }
-  targets.map(t=>resIndex[t]).forEach(res=>{const ch=new Array(N);for(let i=0;i<N;i++){const bj=bestJobFor(i,res);ch[i]=bj>=0?bj:idleIdx(i);}const sc=localOpt(ch);if(sc!=null&&(!inc||sc>inc.sc))inc={sc,ch:ch.slice()};});
+  targets.map(t=>resIndex[t]).forEach(res=>{const ch=new Array(N);for(let i=0;i<N;i++){const bj=bestJobFor(i,res);ch[i]=bj>=0?bj:idleIdx(i);}const sc=localOpt(ch);if(sc!=null&&(!inc||sc>inc.sc)){inc={sc,ch:ch.slice()};tLastGain=performance.now();}});
   if(inc&&N>0){
     // ILS gets the bulk of the budget so accuracy scales with the user's max-time setting: at high
     // line counts the exact DFS caps out without beating the heuristic, so perturbing the incumbent
     // is the productive use of extra time. A stagnation cutoff stops once perturbation stops paying
     // off, so an easy factory — or a generous budget on a simple one — doesn't burn time it can't use.
-    const ilsT=timeBudget*0.8;let stag=0;
+    // ILS uses an iteration-based stagnation cutoff (not wall-clock): stopping at a fixed iteration
+    // is budget-independent, which keeps the result monotonic in budget. The single-target case
+    // (each credits item) converges in a handful of iterations, so it gets a much smaller limit.
+    const ilsT=timeBudget*0.8,stagLimit=targets.length>1?8000:1200;let stag=0;
     for(let it=0;it<2000000;it++){
-      if(performance.now()-tStart>ilsT)break;   // check every iteration: one localOpt can be ms-scale
-      if(stag>8000)break;   // generous margin over the largest improvement gap seen (~3.4k at 7 lines)
+      if(performance.now()-tStart>ilsT||stag>stagLimit)break;
       const ch=inc.ch.slice();const k=1+((rnd()*2)|0);
       for(let m=0;m<=k;m++){const li=(rnd()*N)|0,js=lineJobs[li];ch[li]=(rnd()*js.length)|0;}
-      const sc=localOpt(ch);if(sc!=null&&sc>inc.sc+EPS){inc={sc,ch:ch.slice()};stag=0;}else stag++;
+      const sc=localOpt(ch);if(sc!=null&&sc>inc.sc+EPS){inc={sc,ch:ch.slice()};stag=0;tLastGain=performance.now();}else stag++;
     }
     evalChoice(inc.ch);best={score:scoreNow(),choice:inc.ch.slice(),produced:produced.slice(),consumed:consumed.slice()};
   }
