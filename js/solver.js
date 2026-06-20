@@ -290,6 +290,30 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
       trySeed(ch);
     }
   }
+  // Role-based seeds (single target): the LP reveals which feeder items the chain needs, but the
+  // local search can't decide WHICH line takes each feeder role — putting the bottleneck feeder on
+  // the fastest line briefly lowers the target, so no single improving move finds it. Enumerate the
+  // line->role assignments (rest = target at an efficient level) and localOpt each. Bounded by a
+  // fixed count, so it stays deterministic (monotonic in budget) and within the seed budget; full
+  // coverage for up to ~8 lines / 3 feeders, a deterministic prefix beyond that.
+  if(lp&&targets.length===1){
+    const tgt=tIdx[0],tgtRes=resources[tgt];
+    const arg=[];for(let i=0;i<N;i++){let bj=0,bf=-1;const fr=lp.frac[i];for(let j=0;j<fr.length;j++)if(fr[j]>bf){bf=fr[j];bj=j;}arg.push(lineJobs[i][bj]);}
+    const feeders=[...new Set(arg.filter(j=>j&&j.kind!=="idle"&&j.res!==tgtRes).map(j=>j.res))];
+    const roleJob=(li,res)=>{let bj=-1,bl=-1;const js=lineJobs[li];for(let k=0;k<js.length;k++){const j=js[k];if((j.kind==="craft"||j.kind==="produce")&&j.res===res&&j.lvl>bl){bl=j.lvl;bj=k;}}return bj;};
+    const tgtSeed=i=>{const js=lineJobs[i];for(let k=0;k<js.length;k++)if(js[k].kind==="craft"&&js[k].res===tgtRes&&js[k].lvl<=8)return k;const b=bestJobFor(i,tgt);return b>=0?b:idleIdx(i);};
+    if(feeders.length&&feeders.length<=4){
+      let tried=0;const cap=350;
+      const rec=(fi,used)=>{
+        if(tried>=cap)return;
+        if(fi===feeders.length){const ch=new Array(N);for(let i=0;i<N;i++)ch[i]=tgtSeed(i);
+          for(let k=0;k<feeders.length;k++){const bj=roleJob(used[k],feeders[k]);if(bj>=0)ch[used[k]]=bj;}
+          trySeed(ch);tried++;return;}
+        for(let i=N-1;i>=0&&tried<cap;i--){if(used.indexOf(i)>=0)continue;rec(fi+1,used.concat(i));}  // fastest-first
+      };
+      rec(0,[]);
+    }
+  }
   targets.map(t=>resIndex[t]).forEach(res=>{const ch=new Array(N);for(let i=0;i<N;i++){const bj=bestJobFor(i,res);ch[i]=bj>=0?bj:idleIdx(i);}const sc=localOpt(ch);if(sc!=null&&(!inc||sc>inc.sc)){inc={sc,ch:ch.slice()};tLastGain=performance.now();}});
   if(inc&&N>0){
     // ILS gets the bulk of the budget so accuracy scales with the user's max-time setting: at high
