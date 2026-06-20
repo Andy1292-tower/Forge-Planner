@@ -1,0 +1,814 @@
+{
+  "items.single.noGel.L5": {
+    "mode": "items",
+    "feasible": true,
+    "capped": false,
+    "objective": 101.004,
+    "plan": [
+      {
+        "line": 1,
+        "reserved": false,
+        "job": "Rods@2"
+      },
+      {
+        "line": 2,
+        "reserved": false,
+        "job": "Ingots@4"
+      },
+      {
+        "line": 3,
+        "reserved": false,
+        "job": "Frames@1"
+      },
+      {
+        "line": 4,
+        "reserved": false,
+        "job": "Frames@2"
+      },
+      {
+        "line": 5,
+        "reserved": false,
+        "job": "Plates@1"
+      }
+    ],
+    "balance": [
+      "Frames:101.004",
+      "Ingots:627.011",
+      "Plates:93.2341",
+      "Rods:5.12378"
+    ]
+  },
+  "items.multi.noGel.L5": {
+    "mode": "items",
+    "feasible": false,
+    "capped": false,
+    "objective": 0,
+    "plan": [
+      {
+        "line": 1,
+        "reserved": false,
+        "job": "idle"
+      },
+      {
+        "line": 2,
+        "reserved": false,
+        "job": "idle"
+      },
+      {
+        "line": 3,
+        "reserved": false,
+        "job": "idle"
+      },
+      {
+        "line": 4,
+        "reserved": false,
+        "job": "idle"
+      },
+      {
+        "line": 5,
+        "reserved": false,
+        "job": "idle"
+      }
+    ],
+    "balance": [
+      "Bits:0",
+      "Frames:0",
+      "Glass:0",
+      "Ingots:0",
+      "Plates:0",
+      "Rods:0"
+    ]
+  },
+  "items.wire.gel.L5": {
+    "mode": "items",
+    "feasible": true,
+    "capped": false,
+    "objective": 4.66598,
+    "plan": [
+      {
+        "line": 1,
+        "reserved": true,
+        "job": "Gel@4"
+      },
+      {
+        "line": 2,
+        "reserved": false,
+        "job": "Rods@1"
+      },
+      {
+        "line": 3,
+        "reserved": false,
+        "job": "Wire@1"
+      },
+      {
+        "line": 4,
+        "reserved": false,
+        "job": "Ingots@2"
+      },
+      {
+        "line": 5,
+        "reserved": false,
+        "job": "Wire@1"
+      }
+    ],
+    "balance": [
+      "Gel:0.664925",
+      "Ingots:980.82",
+      "Rods:274.934",
+      "Wire:4.66598"
+    ],
+    "gelReserved": {
+      "lines": 1,
+      "outHr": 9.99688
+    }
+  },
+  "items.multiWire.gel.L5": {
+    "mode": "items",
+    "feasible": true,
+    "capped": false,
+    "objective": 4.66598,
+    "plan": [
+      {
+        "line": 1,
+        "reserved": true,
+        "job": "Gel@4"
+      },
+      {
+        "line": 2,
+        "reserved": false,
+        "job": "Ingots@4"
+      },
+      {
+        "line": 3,
+        "reserved": false,
+        "job": "Wire@1"
+      },
+      {
+        "line": 4,
+        "reserved": false,
+        "job": "Rods@2"
+      },
+      {
+        "line": 5,
+        "reserved": false,
+        "job": "Wire@1"
+      }
+    ],
+    "balance": [
+      "Gel:0.664925",
+      "Ingots:1792.39",
+      "Rods:287.882",
+      "Wire:4.66598"
+    ],
+    "gelReserved": {
+      "lines": 1,
+      "outHr": 9.99688
+    }
+  },
+  "credits.noGel.L5": {
+    "mode": "credits",
+    "feasible": true,
+    "capped": false,
+    "objective": 2628.4,
+    "plan": [
+      {
+        "line": 1,
+        "reserved": false,
+        "job": "Glass@4"
+      },
+      {
+        "line": 2,
+        "reserved": false,
+        "job": "Glass@2"
+      },
+      {
+        "line": 3,
+        "reserved": false,
+        "job": "Bits@2"
+      },
+      {
+        "line": 4,
+        "reserved": false,
+        "job": "Glass@2"
+      },
+      {
+        "line": 5,
+        "reserved": false,
+        "job": "Glass@1"
+      }
+    ],
+    "balance": [
+      "Bits:78.022",
+      "Glass:876.133"
+    ],
+    "credits": 2628.4,
+    "bestItem": "Glass"
+  },
+  "credits.wire.gel.L5": {
+    "mode": "credits",
+    "feasible": true,
+    "capped": false,
+    "objective": 1294.78,
+    "plan": [
+      {
+        "line": 1,
+        "reserved": false,
+        "job": "Rods@2"
+      },
+      {
+        "line": 2,
+        "reserved": false,
+        "job": "Ingots@4"
+      },
+      {
+        "line": 3,
+        "reserved": false,
+        "job": "Rods@2"
+      },
+      {
+        "line": 4,
+        "reserved": false,
+        "job": "Rods@2"
+      },
+      {
+        "line": 5,
+        "reserved": false,
+        "job": "Ingots@1"
+      }
+    ],
+    "balance": [
+      "Ingots:75.6668",
+      "Rods:1294.78"
+    ],
+    "credits": 1294.78,
+    "bestItem": "Rods"
+  },
+  "project.frames.noGel.L5": {
+    "mode": "project",
+    "feasible": true,
+    "capped": false,
+    "objective": 0.578498,
+    "plan": [
+      {
+        "line": 1,
+        "reserved": false,
+        "jobs": [
+          "Bits@4:0.132253",
+          "Ingots@4:0.867747"
+        ]
+      },
+      {
+        "line": 2,
+        "reserved": false,
+        "jobs": [
+          "Bits@4:0.051606",
+          "Frames@1:0.203738",
+          "Rods@4:0.744656"
+        ]
+      },
+      {
+        "line": 3,
+        "reserved": false,
+        "jobs": [
+          "Frames@1:0.627712",
+          "Plates@2:0.372288"
+        ]
+      },
+      {
+        "line": 4,
+        "reserved": false,
+        "jobs": [
+          "Frames@1:1"
+        ]
+      },
+      {
+        "line": 5,
+        "reserved": false,
+        "jobs": [
+          "Frames@1:1"
+        ]
+      }
+    ],
+    "balance": [
+      "Bits:925.597",
+      "Frames:115.7",
+      "Ingots:1.81899e-12",
+      "Plates:2.27374e-13",
+      "Rods:-1.13687e-13"
+    ],
+    "eta": 1.72861,
+    "unsat": [],
+    "phases": 1
+  },
+  "project.wire.gel.L5": {
+    "mode": "project",
+    "feasible": true,
+    "capped": false,
+    "objective": 0.0610318,
+    "plan": [
+      {
+        "line": 1,
+        "reserved": false,
+        "jobs": [
+          "Bits@4:0.00282791",
+          "Gel@4:0.734915",
+          "Ingots@4:0.164786",
+          "Wire@1:0.0974715"
+        ]
+      },
+      {
+        "line": 2,
+        "reserved": false,
+        "jobs": [
+          "Gel@4:0.811452",
+          "Rods@4:0.188548"
+        ]
+      },
+      {
+        "line": 3,
+        "reserved": false,
+        "jobs": [
+          "Wire@1:1"
+        ]
+      },
+      {
+        "line": 4,
+        "reserved": false,
+        "jobs": [
+          "Wire@1:1"
+        ]
+      },
+      {
+        "line": 5,
+        "reserved": false,
+        "jobs": [
+          "Wire@1:1"
+        ]
+      }
+    ],
+    "balance": [
+      "Bits:14.6476",
+      "Gel:1.06581e-14",
+      "Ingots:2.27374e-13",
+      "Rods:1.27898e-13",
+      "Wire:7.32382"
+    ],
+    "eta": 16.3849,
+    "unsat": [],
+    "phases": 1,
+    "gelReserved": {
+      "lines": 2,
+      "outHr": 14.6476
+    }
+  },
+  "items.single.noGel.L7": {
+    "mode": "items",
+    "feasible": true,
+    "capped": false,
+    "objective": 157.332,
+    "plan": [
+      {
+        "line": 1,
+        "reserved": false,
+        "job": "Frames@1"
+      },
+      {
+        "line": 2,
+        "reserved": false,
+        "job": "Frames@1"
+      },
+      {
+        "line": 3,
+        "reserved": false,
+        "job": "Frames@1"
+      },
+      {
+        "line": 4,
+        "reserved": false,
+        "job": "Rods@1"
+      },
+      {
+        "line": 5,
+        "reserved": false,
+        "job": "Plates@1"
+      },
+      {
+        "line": 6,
+        "reserved": false,
+        "job": "Ingots@4"
+      },
+      {
+        "line": 7,
+        "reserved": false,
+        "job": "Rods@2"
+      }
+    ],
+    "balance": [
+      "Frames:157.332",
+      "Ingots:264.101",
+      "Plates:34.9628",
+      "Rods:36.1859"
+    ]
+  },
+  "items.multi.noGel.L7": {
+    "mode": "items",
+    "feasible": true,
+    "capped": false,
+    "objective": 104.888,
+    "plan": [
+      {
+        "line": 1,
+        "reserved": false,
+        "job": "Frames@1"
+      },
+      {
+        "line": 2,
+        "reserved": false,
+        "job": "Ingots@4"
+      },
+      {
+        "line": 3,
+        "reserved": false,
+        "job": "Frames@1"
+      },
+      {
+        "line": 4,
+        "reserved": false,
+        "job": "Bits@2"
+      },
+      {
+        "line": 5,
+        "reserved": false,
+        "job": "Plates@1"
+      },
+      {
+        "line": 6,
+        "reserved": false,
+        "job": "Rods@2"
+      },
+      {
+        "line": 7,
+        "reserved": false,
+        "job": "Glass@2"
+      }
+    ],
+    "balance": [
+      "Bits:2128.91",
+      "Frames:104.888",
+      "Glass:196.806",
+      "Ingots:875.609",
+      "Plates:139.851",
+      "Rods:15.4921"
+    ]
+  },
+  "items.wire.gel.L7": {
+    "mode": "items",
+    "feasible": true,
+    "capped": false,
+    "objective": 8.53207,
+    "plan": [
+      {
+        "line": 1,
+        "reserved": false,
+        "job": "Wire@1"
+      },
+      {
+        "line": 2,
+        "reserved": true,
+        "job": "Gel@4"
+      },
+      {
+        "line": 3,
+        "reserved": false,
+        "job": "Wire@1"
+      },
+      {
+        "line": 4,
+        "reserved": false,
+        "job": "Ingots@2"
+      },
+      {
+        "line": 5,
+        "reserved": false,
+        "job": "Rods@1"
+      },
+      {
+        "line": 6,
+        "reserved": true,
+        "job": "Gel@4"
+      },
+      {
+        "line": 7,
+        "reserved": false,
+        "job": "Wire@1"
+      }
+    ],
+    "balance": [
+      "Gel:0.330426",
+      "Ingots:1213.88",
+      "Rods:96.5469",
+      "Wire:8.53207"
+    ],
+    "gelReserved": {
+      "lines": 2,
+      "outHr": 17.3946
+    }
+  },
+  "items.multiWire.gel.L7": {
+    "mode": "items",
+    "feasible": true,
+    "capped": false,
+    "objective": 8.53207,
+    "plan": [
+      {
+        "line": 1,
+        "reserved": false,
+        "job": "Wire@1"
+      },
+      {
+        "line": 2,
+        "reserved": true,
+        "job": "Gel@4"
+      },
+      {
+        "line": 3,
+        "reserved": false,
+        "job": "Wire@1"
+      },
+      {
+        "line": 4,
+        "reserved": false,
+        "job": "Ingots@2"
+      },
+      {
+        "line": 5,
+        "reserved": false,
+        "job": "Rods@1"
+      },
+      {
+        "line": 6,
+        "reserved": true,
+        "job": "Gel@4"
+      },
+      {
+        "line": 7,
+        "reserved": false,
+        "job": "Wire@1"
+      }
+    ],
+    "balance": [
+      "Gel:0.330426",
+      "Ingots:1213.88",
+      "Rods:96.5469",
+      "Wire:8.53207"
+    ],
+    "gelReserved": {
+      "lines": 2,
+      "outHr": 17.3946
+    }
+  },
+  "credits.noGel.L7": {
+    "mode": "credits",
+    "feasible": true,
+    "capped": false,
+    "objective": 3907.64,
+    "plan": [
+      {
+        "line": 1,
+        "reserved": false,
+        "job": "Bits@4"
+      },
+      {
+        "line": 2,
+        "reserved": false,
+        "job": "Glass@4"
+      },
+      {
+        "line": 3,
+        "reserved": false,
+        "job": "Glass@2"
+      },
+      {
+        "line": 4,
+        "reserved": false,
+        "job": "Glass@2"
+      },
+      {
+        "line": 5,
+        "reserved": false,
+        "job": "Glass@1"
+      },
+      {
+        "line": 6,
+        "reserved": false,
+        "job": "Glass@4"
+      },
+      {
+        "line": 7,
+        "reserved": false,
+        "job": "Glass@2"
+      }
+    ],
+    "balance": [
+      "Bits:487.395",
+      "Glass:1302.55"
+    ],
+    "credits": 3907.64,
+    "bestItem": "Glass"
+  },
+  "credits.wire.gel.L7": {
+    "mode": "credits",
+    "feasible": true,
+    "capped": false,
+    "objective": 1921.45,
+    "plan": [
+      {
+        "line": 1,
+        "reserved": false,
+        "job": "Rods@2"
+      },
+      {
+        "line": 2,
+        "reserved": false,
+        "job": "Ingots@4"
+      },
+      {
+        "line": 3,
+        "reserved": false,
+        "job": "Rods@2"
+      },
+      {
+        "line": 4,
+        "reserved": false,
+        "job": "Rods@2"
+      },
+      {
+        "line": 5,
+        "reserved": false,
+        "job": "Rods@1"
+      },
+      {
+        "line": 6,
+        "reserved": false,
+        "job": "Ingots@4"
+      },
+      {
+        "line": 7,
+        "reserved": false,
+        "job": "Rods@2"
+      }
+    ],
+    "balance": [
+      "Ingots:36.7095",
+      "Rods:1921.45"
+    ],
+    "credits": 1921.45,
+    "bestItem": "Rods"
+  },
+  "project.frames.noGel.L7": {
+    "mode": "project",
+    "feasible": true,
+    "capped": false,
+    "objective": 0.809897,
+    "plan": [
+      {
+        "line": 1,
+        "reserved": false,
+        "jobs": [
+          "Ingots@4:1"
+        ]
+      },
+      {
+        "line": 2,
+        "reserved": false,
+        "jobs": [
+          "Bits@4:0.277975",
+          "Frames@1:0.374123",
+          "Ingots@4:0.238718",
+          "Rods@4:0.109185"
+        ]
+      },
+      {
+        "line": 3,
+        "reserved": false,
+        "jobs": [
+          "Frames@1:1"
+        ]
+      },
+      {
+        "line": 4,
+        "reserved": false,
+        "jobs": [
+          "Frames@1:1"
+        ]
+      },
+      {
+        "line": 5,
+        "reserved": false,
+        "jobs": [
+          "Frames@1:1"
+        ]
+      },
+      {
+        "line": 6,
+        "reserved": false,
+        "jobs": [
+          "Rods@4:1"
+        ]
+      },
+      {
+        "line": 7,
+        "reserved": false,
+        "jobs": [
+          "Frames@1:0.451366",
+          "Plates@2:0.548634"
+        ]
+      }
+    ],
+    "balance": [
+      "Bits:1295.84",
+      "Frames:161.979",
+      "Ingots:-2.27374e-12",
+      "Plates:-3.97904e-13",
+      "Rods:0"
+    ],
+    "eta": 1.23472,
+    "unsat": [],
+    "phases": 1
+  },
+  "project.wire.gel.L7": {
+    "mode": "project",
+    "feasible": true,
+    "capped": false,
+    "objective": 0.0854446,
+    "plan": [
+      {
+        "line": 1,
+        "reserved": false,
+        "jobs": [
+          "Bits@4:0.00395907",
+          "Gel@4:0.548881",
+          "Ingots@4:0.2307",
+          "Wire@1:0.21646"
+        ]
+      },
+      {
+        "line": 2,
+        "reserved": false,
+        "jobs": [
+          "Gel@4:1"
+        ]
+      },
+      {
+        "line": 3,
+        "reserved": false,
+        "jobs": [
+          "Wire@1:1"
+        ]
+      },
+      {
+        "line": 4,
+        "reserved": false,
+        "jobs": [
+          "Wire@1:1"
+        ]
+      },
+      {
+        "line": 5,
+        "reserved": false,
+        "jobs": [
+          "Wire@1:1"
+        ]
+      },
+      {
+        "line": 6,
+        "reserved": false,
+        "jobs": [
+          "Gel@4:0.717178",
+          "Rods@4:0.282822"
+        ]
+      },
+      {
+        "line": 7,
+        "reserved": false,
+        "jobs": [
+          "Wire@1:1"
+        ]
+      }
+    ],
+    "balance": [
+      "Bits:20.5067",
+      "Gel:-1.42109e-14",
+      "Ingots:4.54747e-13",
+      "Rods:-2.55795e-13",
+      "Wire:10.2533"
+    ],
+    "eta": 11.7035,
+    "unsat": [],
+    "phases": 1,
+    "gelReserved": {
+      "lines": 3,
+      "outHr": 20.5067
+    }
+  }
+}

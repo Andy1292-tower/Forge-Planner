@@ -466,3 +466,15 @@ button.gel-head .sub{color:var(--amber)}
 .step-seg{padding-left:16px;margin-top:3px;text-indent:-12px}
 .step-seg:first-of-type{margin-top:4px}
 .step-then{color:var(--ink3);font-style:italic}
+
+/* ---- async-solve spinner overlay ---- */
+.results-wrap{position:relative}
+.solve-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:11px;
+  background:rgba(14,16,20,.60);backdrop-filter:blur(1.5px);-webkit-backdrop-filter:blur(1.5px);
+  border-radius:var(--r);z-index:6}
+.solve-overlay[hidden]{display:none}   /* override the class display:flex when hidden */
+.solve-overlay-txt{font-family:"Chakra Petch",sans-serif;font-size:13px;font-weight:600;
+  color:var(--ink2);letter-spacing:.3px}
+.spinner{width:22px;height:22px;border:3px solid var(--line2);border-top-color:var(--amber);
+  border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}

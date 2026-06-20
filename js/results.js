@@ -1,6 +1,50 @@
 "use strict";
 /* ---------- RENDER: results ---------- */
 let _lastProjectRes=null;
+
+/* ---------- async solve via Web Worker ----------
+   The solve runs off the main thread so a long budget shows a spinner instead of freezing. Each
+   request gets an id; results from superseded requests are dropped. A new request terminates the
+   in-flight worker (true cancellation) rather than queuing behind it. Falls back to a synchronous
+   solve if Workers are unavailable (e.g. opened over file://) or the worker fails to start. */
+let _solveWorker=null,_solveReq=0,_solvePending=null,_workerBroken=false;
+function _spawnSolveWorker(){
+  const w=new Worker("js/solver.worker.js");
+  w.onmessage=ev=>{const d=ev.data||{};
+    if(d.reqId!==_solveReq)return;            // a newer solve superseded this one
+    hideSolveSpinner();const cb=_solvePending;_solvePending=null;
+    if(d.error){solveError(d.error);return;}
+    if(cb)cb(d.res);};
+  w.onerror=()=>{_workerBroken=true;try{w.terminate();}catch(e){}_solveWorker=null;
+    if(_solvePending){const cb=_solvePending;_solveSync(cb,_solveReq);}};
+  return w;
+}
+function solveAsync(cb){
+  const reqId=++_solveReq;_solvePending=cb;
+  showSolveSpinner();
+  if(_workerBroken||typeof Worker==="undefined"){_solveSync(cb,reqId);return;}
+  try{
+    if(_solveWorker)_solveWorker.terminate();   // cancel any in-flight solve
+    _solveWorker=_spawnSolveWorker();
+    _solveWorker.postMessage({reqId,state:JSON.parse(JSON.stringify(S)),budget:Math.max(200,Math.min(60000,num(S.solveBudget)||2000))});
+  }catch(e){_workerBroken=true;_solveSync(cb,reqId);}
+}
+// Synchronous fallback. The 0ms defer lets the spinner paint before the (briefly blocking) solve.
+function _solveSync(cb,reqId){
+  setTimeout(()=>{
+    if(reqId!==_solveReq)return;               // superseded while waiting
+    let res=null;try{res=optimize();}catch(e){solveError((e&&e.stack)||String(e));return;}
+    hideSolveSpinner();_solvePending=null;if(cb)cb(res);
+  },0);
+}
+function solveError(msg){
+  hideSolveSpinner();
+  const el=document.getElementById("results"),stat=document.getElementById("solveStat");
+  if(el)el.innerHTML=`<div class="notice warn"><b>Solver error.</b> ${String(msg).split("\n")[0]}</div>`;
+  if(stat)stat.textContent="";
+}
+function showSolveSpinner(){const o=document.getElementById("solveOverlay");if(o)o.hidden=false;}
+function hideSolveSpinner(){const o=document.getElementById("solveOverlay");if(o)o.hidden=true;}
 // One-line summary of the Gel the planner reserved (compression auto-picked per line), and how
 // much of the vespium income it spends — shown under the plan in every mode.
 function gelReservedNote(gr){
@@ -26,8 +70,9 @@ function lineAssignTableHtml(plan){
   plan.forEach(p=>{
     if(!p.entries||!p.entries.length){h+=`<tr><td class="mono">#${p.line}</td><td class="mono">${p.max}×</td><td><span class="pill idle">idle</span></td><td></td><td class="num"></td><td class="num"></td><td></td></tr>`;return;}
     p.entries.forEach((e,ei)=>{
-      const reserved=p.reserved, isRaw=RAWS.includes(e.item);
+      const isGel=e.item===GEL, reserved=p.reserved||isGel, isRaw=RAWS.includes(e.item);
       const pill=reserved?'<span class="pill" style="background:rgba(63,182,160,.14);color:var(--teal);border:1px solid var(--teal-d)">gel</span>':isRaw?'<span class="pill prod">produce</span>':'<span class="pill craft">craft</span>';
+      // Gel is forged from mined ore against the vespium budget (shown in the Gel note), not from a craftable input.
       const cons=reserved?'<span style="color:var(--ink3)">mined ore (free)</span>':(e.cons.length?e.cons.map(c=>disp(c.hr)+" "+c.item).join(", "):'<span style="color:var(--ink3)">—</span>');
       h+=`<tr${reserved?' style="background:rgba(63,182,160,.05)"':''}>
         <td class="mono">${ei===0?"#"+p.line:""}</td><td class="mono">${ei===0?p.max+"×":""}</td>
@@ -127,7 +172,11 @@ function renderResults(){
   const el=document.getElementById("results");
   const stat=document.getElementById("solveStat");
   if(S.mode==="manual"){renderManual(el,stat);return;}
-  const res=optimize();
+  // Off the main thread: a long solve (the user's max-solve-time budget) shows a spinner instead
+  // of freezing. solveAsync ignores superseded solves, so only the latest request paints.
+  solveAsync(res=>{if(res)renderSolveResult(res,el,stat);});
+}
+function renderSolveResult(res,el,stat){
   if(res.mode==="project"){renderProjectResults(res,el,stat);return;}
   // nudge toward Sell prices when credits mode is selected but no prices exist yet
   if(typeof setPricePoke==="function")setPricePoke(res.mode==="credits"&&![...RAWS,...PRODUCTS].some(it=>(num(S.sellPrice[it])||0)>0));
