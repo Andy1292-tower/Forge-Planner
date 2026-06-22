@@ -385,7 +385,7 @@ const PROJECT_CATALOG=[
             "qty": 2560
           },
           {
-            "item": "Plates",
+            "item": "Concrete",
             "qty": 850
           },
           {
@@ -393,7 +393,7 @@ const PROJECT_CATALOG=[
             "qty": 160
           },
           {
-            "item": "Concrete",
+            "item": "Bricks",
             "qty": 120
           },
           {
