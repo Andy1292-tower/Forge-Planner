@@ -90,6 +90,10 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   const R=resources.length;
   const tIdx=targets.map(t=>resIndex[t]);
   const tol=Math.max(0,Math.min(50,num(S.margin)||0))/100;
+  // Active feasibility tolerance for the current search pass. The margin solve runs two passes
+  // (strict tol=0, then the user's margin) so its result is monotone in margin — see the staged
+  // search at the bottom of solveCore (issue #60).
+  let curTol=tol;
   // Exogenous supply (per second) of each resource, added to the produced side. For materials this
   // is Lil' Forgie's passive output; for Vespium it's the user's mined income — unrelated sources
   // that share the same "supply baseline" slot in the balance.
@@ -146,7 +150,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   const totalDeficit=()=>{let D=0;for(let r=0;r<R;r++){const d=consumed[r]-produced[r];if(d>0)D+=d;}return D;};
   const idleIdx=i=>{const k=lineJobs[i].findIndex(j=>j.kind==="idle");return k<0?0:k;};
   function bestJobFor(i,res){let bj=-1,bg=0;lineJobs[i].forEach((job,k)=>{for(const[r,a]of job.prod)if(r===res){const g=a*sorted[i].sp*sorted[i].dp;if(g>bg){bg=g;bj=k;}}});return bj;}
-  const feasibleNow=()=>{for(let r=0;r<R;r++)if(produced[r]<consumed[r]*(1-tol)-1e-7)return false;return true;};
+  const feasibleNow=()=>{for(let r=0;r<R;r++)if(produced[r]<consumed[r]*(1-curTol)-1e-7)return false;return true;};
   const scoreNow=()=>{let sc=Infinity;for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]];sc=Math.min(sc,net/w[k]);}return sc;};
   // repair input shortfall down to a feasible plan: each step makes the single line-switch
   // (toward producing ANY short resource) that cuts total shortfall most. Returns feasibility.
@@ -203,14 +207,14 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
     if(((++nodes)&8191)===0){const _n=performance.now();if(_n-tStart>timeBudget||_n-tLastGain>convergeWindow)capped=true;}
     if(capped)return;
     if(i===N){
-      for(let r=0;r<R;r++)if(produced[r]<consumed[r]*(1-tol)-1e-7)return;
+      for(let r=0;r<R;r++)if(produced[r]<consumed[r]*(1-curTol)-1e-7)return;
       let sc=Infinity;
       for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]];sc=Math.min(sc,net/w[k]);}
       if(sc>best.score+EPS){best={score:sc,choice:choice.slice(),produced:produced.slice(),consumed:consumed.slice()};tLastGain=performance.now();}
       return;
     }
     // feasibility prune: any resource whose current shortfall can't be covered by remaining lines kills this branch
-    for(let r=0;r<R;r++)if(produced[r]+maxProd[r][i]<consumed[r]*(1-tol)-1e-7)return;
+    for(let r=0;r<R;r++)if(produced[r]+maxProd[r][i]<consumed[r]*(1-curTol)-1e-7)return;
     // max-min upper bound: best achievable min-over-targets if remaining lines max-produce each target
     let ub=Infinity;
     for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]]+SP[k][i];ub=Math.min(ub,net/w[k]);}
@@ -260,8 +264,20 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   // multi-start local search: diversified roundings of the LP relaxation + one seed per target,
   // then iterated local search. Pure argmax rounding flattens lines the LP split between Gel and a
   // target and loses a lot, so we also draw several randomized roundings weighted by the LP fractions.
-  let inc=null;const lp=N>0?lpRelax():null;
+  const lp=N>0?lpRelax():null;
+  // Two-pass margin search for monotonicity (issue #60). A plan feasible with NO margin is feasible
+  // at ANY margin with the same objective, so we solve strict (tol=0) first, then seed the relaxed
+  // pass with that strict optimum — the margin result can only match or beat the no-margin result,
+  // never fall below it. With no margin there's a single pass (identical to before). Both passes
+  // share the wall-clock budget (tStart is global); each gets a fresh convergence window and
+  // incumbent so an easy factory still has time left to exploit the margin.
+  const stages=tol>0?[0,tol]:[tol];
+  let carry=null;
+  for(let si=0;si<stages.length;si++){
+  curTol=stages[si];capped=false;tLastGain=performance.now();
+  let inc=null;
   const trySeed=ch=>{const c=ch.slice();const sc=localOpt(c);if(sc!=null&&(!inc||sc>inc.sc)){inc={sc,ch:c.slice()};tLastGain=performance.now();}};
+  if(carry)trySeed(carry);   // strict optimum seeds the relaxed pass -> never drops below no-margin
   // The seed set is fixed (budget-independent) on purpose: the ilsT/DFS caps are measured from the
   // solve start, so seeds just consume part of the budget rather than extending it — and a fixed set
   // keeps the search trajectory monotonic in budget (more time never yields a worse plan).
@@ -339,6 +355,8 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   if(best.score>EPS&&N>0){
     const ch=minDeficitAtScore(best.choice.slice(),best.score);
     evalChoice(ch);best={score:scoreNow(),choice:ch.slice(),produced:produced.slice(),consumed:consumed.slice()};
+  }
+  carry=best.choice.slice();   // hand this pass's optimum to the next (relaxed) pass as a floor
   }
   let usesMargin=false;for(let r=0;r<R;r++)if(best.produced[r]<best.consumed[r]-1e-6)usesMargin=true;
   const forgie={};resources.forEach((r,i)=>forgie[r]=baseArr[i]*3600);
