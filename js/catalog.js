@@ -835,15 +835,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Glass",
-            "qty": 13332
+            "qty": 12307
           },
           {
             "item": "Plates",
-            "qty": 17775
+            "qty": 16407
           },
           {
             "item": "Bricks",
-            "qty": 2669
+            "qty": 2464
           }
         ]
       },
@@ -851,15 +851,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Glass",
-            "qty": 24958
+            "qty": 21266
           },
           {
             "item": "Plates",
-            "qty": 33275
+            "qty": 28351
           },
           {
             "item": "Bricks",
-            "qty": 4996
+            "qty": 4258
           }
         ]
       },
@@ -867,15 +867,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Glass",
-            "qty": 46721
+            "qty": 36748
           },
           {
             "item": "Plates",
-            "qty": 62291
+            "qty": 48991
           },
           {
             "item": "Bricks",
-            "qty": 9353
+            "qty": 7358
           }
         ]
       },
@@ -883,15 +883,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Glass",
-            "qty": 87462
+            "qty": 63501
           },
           {
             "item": "Plates",
-            "qty": 116609
+            "qty": 84656
           },
           {
             "item": "Bricks",
-            "qty": 17509
+            "qty": 12715
           }
         ]
       },
@@ -899,15 +899,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Glass",
-            "qty": 163729
+            "qty": 109730
           },
           {
             "item": "Plates",
-            "qty": 218292
+            "qty": 146286
           },
           {
             "item": "Bricks",
-            "qty": 32777
+            "qty": 21972
           }
         ]
       }
@@ -1258,15 +1258,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Concrete",
-            "qty": 26663
+            "qty": 24612
           },
           {
             "item": "Rods",
-            "qty": 17775
+            "qty": 16407
           },
           {
             "item": "Plates",
-            "qty": 8888
+            "qty": 8205
           }
         ]
       },
@@ -1274,15 +1274,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Concrete",
-            "qty": 49913
+            "qty": 42530
           },
           {
             "item": "Rods",
-            "qty": 33275
+            "qty": 28351
           },
           {
             "item": "Plates",
-            "qty": 16638
+            "qty": 14178
           }
         ]
       },
@@ -1290,15 +1290,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Concrete",
-            "qty": 93437
+            "qty": 73492
           },
           {
             "item": "Rods",
-            "qty": 62291
+            "qty": 48991
           },
           {
             "item": "Plates",
-            "qty": 31146
+            "qty": 24500
           }
         ]
       },
@@ -1306,15 +1306,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Concrete",
-            "qty": 174914
+            "qty": 126994
           },
           {
             "item": "Rods",
-            "qty": 116609
+            "qty": 84656
           },
           {
             "item": "Plates",
-            "qty": 58305
+            "qty": 42336
           }
         ]
       },
@@ -1322,15 +1322,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Concrete",
-            "qty": 327439
+            "qty": 219446
           },
           {
             "item": "Rods",
-            "qty": 218292
+            "qty": 146286
           },
           {
             "item": "Plates",
-            "qty": 109147
+            "qty": 73157
           }
         ]
       }
@@ -1681,15 +1681,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Concrete",
-            "qty": 26663
+            "qty": 24612
           },
           {
             "item": "Glass",
-            "qty": 2224
+            "qty": 2053
           },
           {
             "item": "Bricks",
-            "qty": 889
+            "qty": 821
           }
         ]
       },
@@ -1697,15 +1697,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Concrete",
-            "qty": 49913
+            "qty": 42530
           },
           {
             "item": "Glass",
-            "qty": 4163
+            "qty": 3548
           },
           {
             "item": "Bricks",
-            "qty": 1664
+            "qty": 1419
           }
         ]
       },
@@ -1713,15 +1713,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Concrete",
-            "qty": 93437
+            "qty": 73492
           },
           {
             "item": "Glass",
-            "qty": 7793
+            "qty": 6131
           },
           {
             "item": "Bricks",
-            "qty": 3115
+            "qty": 2452
           }
         ]
       },
@@ -1729,15 +1729,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Concrete",
-            "qty": 174914
+            "qty": 126994
           },
           {
             "item": "Glass",
-            "qty": 14588
+            "qty": 10594
           },
           {
             "item": "Bricks",
-            "qty": 5831
+            "qty": 4237
           }
         ]
       },
@@ -1745,15 +1745,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Concrete",
-            "qty": 327439
+            "qty": 219446
           },
           {
             "item": "Glass",
-            "qty": 27309
+            "qty": 18306
           },
           {
             "item": "Bricks",
-            "qty": 10916
+            "qty": 7322
           }
         ]
       }
@@ -2104,15 +2104,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bits",
-            "qty": 26663
+            "qty": 24612
           },
           {
             "item": "Rods",
-            "qty": 17775
+            "qty": 16407
           },
           {
             "item": "Concrete",
-            "qty": 22221
+            "qty": 20511
           }
         ]
       },
@@ -2120,15 +2120,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bits",
-            "qty": 49913
+            "qty": 42530
           },
           {
             "item": "Rods",
-            "qty": 33275
+            "qty": 28351
           },
           {
             "item": "Concrete",
-            "qty": 41598
+            "qty": 35443
           }
         ]
       },
@@ -2136,15 +2136,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bits",
-            "qty": 93437
+            "qty": 73492
           },
           {
             "item": "Rods",
-            "qty": 62291
+            "qty": 48991
           },
           {
             "item": "Concrete",
-            "qty": 77871
+            "qty": 61246
           }
         ]
       },
@@ -2152,15 +2152,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bits",
-            "qty": 174914
+            "qty": 126994
           },
           {
             "item": "Rods",
-            "qty": 116609
+            "qty": 84656
           },
           {
             "item": "Concrete",
-            "qty": 145775
+            "qty": 105833
           }
         ]
       },
@@ -2168,15 +2168,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bits",
-            "qty": 327439
+            "qty": 219446
           },
           {
             "item": "Rods",
-            "qty": 218292
+            "qty": 146286
           },
           {
             "item": "Concrete",
-            "qty": 272891
+            "qty": 182879
           }
         ]
       }
@@ -2527,15 +2527,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bits",
-            "qty": 26663
+            "qty": 24612
           },
           {
             "item": "Bricks",
-            "qty": 8888
+            "qty": 8205
           },
           {
             "item": "Glass",
-            "qty": 2224
+            "qty": 2053
           }
         ]
       },
@@ -2543,15 +2543,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bits",
-            "qty": 49913
+            "qty": 42530
           },
           {
             "item": "Bricks",
-            "qty": 16638
+            "qty": 14178
           },
           {
             "item": "Glass",
-            "qty": 4163
+            "qty": 3548
           }
         ]
       },
@@ -2559,15 +2559,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bits",
-            "qty": 93437
+            "qty": 73492
           },
           {
             "item": "Bricks",
-            "qty": 31146
+            "qty": 24500
           },
           {
             "item": "Glass",
-            "qty": 7793
+            "qty": 6131
           }
         ]
       },
@@ -2575,15 +2575,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bits",
-            "qty": 174914
+            "qty": 126994
           },
           {
             "item": "Bricks",
-            "qty": 58305
+            "qty": 42336
           },
           {
             "item": "Glass",
-            "qty": 14588
+            "qty": 10594
           }
         ]
       },
@@ -2591,15 +2591,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bits",
-            "qty": 327439
+            "qty": 219446
           },
           {
             "item": "Bricks",
-            "qty": 109147
+            "qty": 73157
           },
           {
             "item": "Glass",
-            "qty": 27309
+            "qty": 18306
           }
         ]
       }
@@ -2950,15 +2950,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bricks",
-            "qty": 6666
+            "qty": 6153
           },
           {
             "item": "Plates",
-            "qty": 17775
+            "qty": 16407
           },
           {
             "item": "Bits",
-            "qty": 22221
+            "qty": 20511
           }
         ]
       },
@@ -2966,15 +2966,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bricks",
-            "qty": 12479
+            "qty": 10632
           },
           {
             "item": "Plates",
-            "qty": 33275
+            "qty": 28351
           },
           {
             "item": "Bits",
-            "qty": 41598
+            "qty": 35443
           }
         ]
       },
@@ -2982,15 +2982,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bricks",
-            "qty": 23361
+            "qty": 18372
           },
           {
             "item": "Plates",
-            "qty": 62291
+            "qty": 48991
           },
           {
             "item": "Bits",
-            "qty": 77871
+            "qty": 61246
           }
         ]
       },
@@ -2998,15 +2998,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bricks",
-            "qty": 43732
+            "qty": 31747
           },
           {
             "item": "Plates",
-            "qty": 116609
+            "qty": 84656
           },
           {
             "item": "Bits",
-            "qty": 145775
+            "qty": 105833
           }
         ]
       },
@@ -3014,15 +3014,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bricks",
-            "qty": 81866
+            "qty": 54859
           },
           {
             "item": "Plates",
-            "qty": 218292
+            "qty": 146286
           },
           {
             "item": "Bits",
-            "qty": 272891
+            "qty": 182879
           }
         ]
       }
