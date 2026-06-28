@@ -3291,11 +3291,11 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Rods",
-            "qty": 40000
+            "qty": 90000
           },
           {
             "item": "Frames",
-            "qty": 90
+            "qty": 270
           }
         ]
       }
