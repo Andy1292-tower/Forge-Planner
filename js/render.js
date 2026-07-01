@@ -2,7 +2,7 @@
 /* ---------- RENDER: lines ---------- */
 const TIPS={
   line:"Crafter unit slot. The solver auto-sorts lines by max compression — this number only identifies which row you're editing.",
-  max:"Highest compression tier this crafter is upgraded to (1×–1024×). Each level doubles yield per craft but triples material cost per cycle — so the solver picks the most efficient level ≤ this cap.",
+  max:"Highest compression tier this crafter is upgraded to (1×–4096×). Each level doubles yield per craft but triples material cost per cycle — so the solver picks the most efficient level ≤ this cap.",
   spx:"The total speed × currently shown above the crafter unit in-game (e.g. ×49.38) — enter it exactly as displayed, with your current turbo stacks already baked in.",
   turbo:"How many turbo stacks this crafter has active right now (each stack = +1% speed). With the global max-turbo-stacks figure, the planner backs out your base speed and projects the speed you'll have at full turbo.",
   maxTurbo:"The most turbo stacks any crafter can reach — a global cap (each stack = +1% speed). The planner projects every line's current speed up to this many stacks, so the plan reflects your sustained speed at full turbo.",
