@@ -669,7 +669,9 @@ function buildProjectPhases(seq,net,perProject){
   const maxL=perProject.length?Math.max.apply(null,layer):0;
   const invStart=()=>{const o={};ALLITEMS.forEach(it=>o[it]=num(S.inventory&&S.inventory[it])||0);return o;};
   if(!seq){
-    if(maxL===0){   // nothing gated — original single combined phase (no regression)
+    // Single combined phase when nothing is gated, or when the user has turned unlock gating
+    // off (projectGate===false) to craft the whole list at once, ignoring unlock waves.
+    if(maxL===0||S.projectGate===false){
       const ph=solvePhaseFor(net,perProject.length>1?"All projects":perProject[0].name);
       ph.demandSub={};ALLITEMS.forEach(it=>ph.demandSub[it]=perProject.reduce((s,p)=>s+(p.sub[it]||0),0));
       ph.doneAt=ph.eta;return [ph];
@@ -729,12 +731,13 @@ function optimizeProjectTop(){
   // no line-reservation sweep — solve the phases directly.
   const phases=buildProjectPhases(seq,net,perProject);
   const waved=!seq&&phases.length>1;   // all-at-once split into unlock-ordered waves
+  const single=!seq&&S.projectGate===false&&perProject.length>1;   // gating off — one combined phase
   const eta=phases.reduce((s,ph)=>s+ph.eta,0);
   const feasible=phases.length>0&&phases.every(ph=>ph.feasible);
   const unsat=[...new Set([].concat(...phases.map(ph=>ph.unsat||[])))];
   const infeasItems=[...new Set([].concat(...phases.map(ph=>ph.infeasItems||[])))];
   const main=phases[0]||{plan:[],balance:[],rate:{},demandItems:[],bottleneck:null};
-  return {empty:false,mode:"project",sequenced:seq,waved,phases,perProject,gross,net,
+  return {empty:false,mode:"project",sequenced:seq,waved,single,phases,perProject,gross,net,
     plan:main.plan,balance:main.balance,
     demandItems:(seq||waved)?ALLITEMS.filter(it=>net[it]>1e-9):main.demandItems,
     rate:main.rate,bottleneck:main.bottleneck,eta,unsat,infeasItems,feasible,
