@@ -560,7 +560,11 @@ function lpMaximize(c,A,b){
 }
 // Build & solve the makespan LP: each line splits its time-fraction across (item,level) jobs so that
 // net production meets the demand ratio. z = throughput multiplier (1/hr); makespan = 1/z.
-function projectSchedule(net,targets){
+// `avail` (optional) is per-item stock that may be DRAWN DOWN over the project instead of produced —
+// e.g. Ingots held in inventory but never a direct project cost. Modelled as extra supply of
+// avail[it]/T units/hr (T=makespan), which linearises to a +avail[it]·z/D0 term on the supply side,
+// so a material fully covered by stock earns no crafting line at all (issue #73).
+function projectSchedule(net,targets,avail){
   const lns=sortedLines();
   const prodT=targets.filter(it=>PRODUCTS.includes(it));
   const rawT=targets.filter(it=>RAWS.includes(it));
@@ -594,7 +598,9 @@ function projectSchedule(net,targets){
   items.forEach(it=>{
     const row=new Array(n).fill(0);
     vars.forEach((v,vi)=>{if(v.item===it)row[vi]-=v.rate;v.cons.forEach(c=>{if(c.item===it)row[vi]+=c.perHr;});});
-    row[zCol]=(net[it]||0)/D0;
+    // Net demand rate minus stock drawn down over the makespan. For a pure intermediate (net 0)
+    // held in stock this goes negative, letting the LP consume it instead of producing it.
+    row[zCol]=((net[it]||0)-(avail&&avail[it]||0))/D0;
     A.push(row);b.push(it===VESP?gelBudgetHr:forgieHr(it));
   });
   const c=new Array(n).fill(0);c[zCol]=1;
@@ -610,7 +616,8 @@ function projectSchedule(net,targets){
   return {rate,plan,items,z:(y[zCol]||0)/D0};
 }
 // Solve one batch of demand (a single project, or all of them combined) into a pipelined phase.
-function solvePhaseFor(net,name){
+// `avail` (optional) is the stock the LP may draw down in place of producing an item (issue #73).
+function solvePhaseFor(net,name,avail){
   const demandItems=ALLITEMS.filter(it=>net[it]>1e-9);
   // Gel is reachable if the LP can forge it (vespium budget) or Lil' Forgie supplies some.
   const gelAvail=gelVespBudgetHr()>0||forgieHr(GEL)>1e-9;
@@ -618,7 +625,7 @@ function solvePhaseFor(net,name){
   const targets=demandItems.filter(it=>unsat.indexOf(it)<0);
   if(targets.length===0)
     return {name,plan:[],balance:[],demandItems,net,rate:{},eta:0,bottleneck:null,infeasItems:[],unsat,items:[],z:0,feasible:false};
-  const sch=projectSchedule(net,targets);
+  const sch=projectSchedule(net,targets,avail);
   const rate={};targets.forEach(it=>rate[it]=Math.max(0,sch.rate[it]||0));
   let eta=0,bottleneck=null;const infeasItems=[];
   targets.forEach(it=>{if(rate[it]<=1e-9)infeasItems.push(it);else{const t=net[it]/rate[it];if(t>eta){eta=t;bottleneck=it;}}});
@@ -626,7 +633,10 @@ function solvePhaseFor(net,name){
   const prodHr={},consHr={};sch.items.forEach(it=>{prodHr[it]=0;consHr[it]=0;});
   sch.plan.forEach(p=>p.entries.forEach(e=>{prodHr[e.item]=(prodHr[e.item]||0)+e.outHr;e.cons.forEach(c=>{consHr[c.item]=(consHr[c.item]||0)+c.hr;});}));
   // Vespium is the Gel budget, not a craftable material — keep it out of the balance table (the Gel note shows its burn).
-  const balance=sch.items.filter(it=>it!==VESP).map(it=>({res:it,prod:prodHr[it]||0,forgie:forgieHr(it),cons:consHr[it]||0}));
+  // `stock` is the /hr an item is pulled from inventory (the deficit the LP left the drawdown term to cover);
+  // in a project LP a shortfall is only ever legitimate stock drawdown, never a paper margin.
+  const balance=sch.items.filter(it=>it!==VESP).map(it=>{const prod=prodHr[it]||0,cons=consHr[it]||0,f=forgieHr(it);
+    return {res:it,prod,forgie:f,cons,stock:Math.max(0,cons-prod-f)};});
   return {name,plan:sch.plan,balance,demandItems,net,rate,eta,bottleneck,infeasItems,unsat,items:sch.items,z:sch.z,feasible};
 }
 // net demand for a project's level-sum `sub`, against an inventory map (folds in Frame bits).
@@ -635,6 +645,18 @@ function projNetVec(sub,invMap){
   const ppBits=PREPROD_BITS.Frames*(net.Frames||0)+PREPROD_BITS.Wire*(net.Wire||0);
   if(ppBits>0)net.Bits=Math.max(0,(sub.Bits||0)+ppBits-(invMap.Bits||0));
   return net;
+}
+// Stock available to DRAW DOWN for each item — the inventory left after covering the item's own
+// direct project demand (projNetVec already nets that). For a raw/intermediate that's never a direct
+// cost (e.g. Ingots) this is its whole stock; that stock feeds its consumers so they aren't produced
+// from scratch (issue #73). Complements projNetVec: net covers "make less of what I hold", this covers
+// "don't make an input I already have". Symmetric Bits fold-in so pre-produced Frame/Wire Bits count.
+function projAvailVec(sub,invMap){
+  const net=projNetVec(sub,invMap);
+  const av={};ALLITEMS.forEach(it=>av[it]=Math.max(0,((invMap&&invMap[it])||0)-(sub[it]||0)));
+  const ppBits=PREPROD_BITS.Frames*(net.Frames||0)+PREPROD_BITS.Wire*(net.Wire||0);
+  av.Bits=Math.max(0,((invMap&&invMap.Bits)||0)-((sub.Bits||0)+ppBits));
+  return av;
 }
 // Assign each project an "unlock layer": 0 if it depends on no in-list unlock, else
 // 1 + the deepest unlock it depends on. Edges (prerequisite → dependent) come from material
@@ -664,6 +686,13 @@ function unlockLayers(perProject){
   for(let i=0;i<n;i++)calc(i,{});
   return layer;
 }
+// Carry inventory to the next phase: subtract this phase's direct demand AND the stock it drew down
+// on intermediates (ph.balance.stock × makespan), so a later phase can't spend the same units twice.
+function consumeInv(invRun,sub,ph){
+  const eta=isFinite(ph.eta)?(ph.eta||0):0;
+  const draw={};(ph.balance||[]).forEach(b=>{draw[b.res]=(b.stock||0)*eta;});
+  ALLITEMS.forEach(it=>{invRun[it]=Math.max(0,(invRun[it]||0)-(sub[it]||0)-(draw[it]||0));});
+}
 function buildProjectPhases(seq,net,perProject){
   const layer=unlockLayers(perProject);
   const maxL=perProject.length?Math.max.apply(null,layer):0;
@@ -672,8 +701,9 @@ function buildProjectPhases(seq,net,perProject){
     // Single combined phase when nothing is gated, or when the user has turned unlock gating
     // off (projectGate===false) to craft the whole list at once, ignoring unlock waves.
     if(maxL===0||S.projectGate===false){
-      const ph=solvePhaseFor(net,perProject.length>1?"All projects":perProject[0].name);
-      ph.demandSub={};ALLITEMS.forEach(it=>ph.demandSub[it]=perProject.reduce((s,p)=>s+(p.sub[it]||0),0));
+      const sumSub={};ALLITEMS.forEach(it=>sumSub[it]=perProject.reduce((s,p)=>s+(p.sub[it]||0),0));
+      const ph=solvePhaseFor(net,perProject.length>1?"All projects":perProject[0].name,projAvailVec(sumSub,invStart()));
+      ph.demandSub=sumSub;
       ph.doneAt=ph.eta;return [ph];
     }
     // unlocks force ordered "waves": combine within a layer, sequence the layers, carrying
@@ -683,16 +713,16 @@ function buildProjectPhases(seq,net,perProject){
       const members=perProject.filter((_,i)=>layer[i]===L);
       if(!members.length)continue;
       const sumSub={};ALLITEMS.forEach(it=>sumSub[it]=members.reduce((s,p)=>s+(p.sub[it]||0),0));
-      const ph=solvePhaseFor(projNetVec(sumSub,invRun),members.map(m=>m.name).join(" + "));
+      const ph=solvePhaseFor(projNetVec(sumSub,invRun),members.map(m=>m.name).join(" + "),projAvailVec(sumSub,invRun));
       ph.members=members.map(m=>m.name);ph.demandSub=sumSub;ph.wave=phases.length+1;
-      ALLITEMS.forEach(it=>{invRun[it]=Math.max(0,(invRun[it]||0)-sumSub[it]);});
+      consumeInv(invRun,sumSub,ph);
       cum+=ph.eta;ph.doneAt=cum;phases.push(ph);
     }
     return phases;
   }
   // sequenced: one project per phase, ordered by (unlock layer, manual priority, cheapest makespan)
   const invInit=invStart();
-  const cost=perProject.map(p=>{const ph=solvePhaseFor(projNetVec(p.sub,invInit),p.name);return ph.feasible?ph.eta:Infinity;});
+  const cost=perProject.map(p=>{const ph=solvePhaseFor(projNetVec(p.sub,invInit),p.name,projAvailVec(p.sub,invInit));return ph.feasible?ph.eta:Infinity;});
   const order=perProject.map((p,i)=>({p,i})).sort((a,b)=>{
     if(layer[a.i]!==layer[b.i])return layer[a.i]-layer[b.i];   // unlock precedence (hard)
     const pa=a.p.prio,pb=b.p.prio;
@@ -703,9 +733,9 @@ function buildProjectPhases(seq,net,perProject){
   });
   const invRun=invStart();let cum=0;const phases=[];
   order.forEach(({p})=>{
-    const ph=solvePhaseFor(projNetVec(p.sub,invRun),p.name);
+    const ph=solvePhaseFor(projNetVec(p.sub,invRun),p.name,projAvailVec(p.sub,invRun));
     ph.prio=(p.prio!=null?p.prio:null);ph.demandSub=p.sub;
-    ALLITEMS.forEach(it=>{invRun[it]=Math.max(0,(invRun[it]||0)-(p.sub[it]||0));});
+    consumeInv(invRun,p.sub,ph);
     cum+=ph.eta;ph.doneAt=cum;phases.push(ph);
   });
   return phases;
