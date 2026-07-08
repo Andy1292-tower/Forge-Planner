@@ -3485,5 +3485,731 @@ const PROJECT_CATALOG=[
         ]
       }
     ]
+  },
+  {
+    "catId": "rig-parts-production-facility",
+    "name": "Rig Parts Production Facility",
+    "description": "",
+    "levels": [
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 100
+          },
+          {
+            "item": "Frames",
+            "qty": 16
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 130
+          },
+          {
+            "item": "Frames",
+            "qty": 21
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 169
+          },
+          {
+            "item": "Frames",
+            "qty": 28
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 220
+          },
+          {
+            "item": "Frames",
+            "qty": 36
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 286
+          },
+          {
+            "item": "Frames",
+            "qty": 46
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 372
+          },
+          {
+            "item": "Frames",
+            "qty": 60
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 483
+          },
+          {
+            "item": "Frames",
+            "qty": 78
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 628
+          },
+          {
+            "item": "Frames",
+            "qty": 101
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 816
+          },
+          {
+            "item": "Frames",
+            "qty": 131
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 1061
+          },
+          {
+            "item": "Frames",
+            "qty": 170
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 1379
+          },
+          {
+            "item": "Frames",
+            "qty": 221
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 1972
+          },
+          {
+            "item": "Frames",
+            "qty": 316
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 2820
+          },
+          {
+            "item": "Frames",
+            "qty": 452
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 4032
+          },
+          {
+            "item": "Frames",
+            "qty": 646
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 5765
+          },
+          {
+            "item": "Frames",
+            "qty": 923
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 8244
+          },
+          {
+            "item": "Frames",
+            "qty": 1319
+          },
+          {
+            "item": "Plates",
+            "qty": 7420
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 11790
+          },
+          {
+            "item": "Frames",
+            "qty": 1887
+          },
+          {
+            "item": "Plates",
+            "qty": 10610
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 16860
+          },
+          {
+            "item": "Frames",
+            "qty": 2698
+          },
+          {
+            "item": "Plates",
+            "qty": 15170
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 24110
+          },
+          {
+            "item": "Frames",
+            "qty": 3857
+          },
+          {
+            "item": "Plates",
+            "qty": 21700
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 34470
+          },
+          {
+            "item": "Frames",
+            "qty": 5516
+          },
+          {
+            "item": "Plates",
+            "qty": 31030
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 49290
+          },
+          {
+            "item": "Frames",
+            "qty": 7888
+          },
+          {
+            "item": "Plates",
+            "qty": 44370
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 77540
+          },
+          {
+            "item": "Frames",
+            "qty": 12410
+          },
+          {
+            "item": "Plates",
+            "qty": 69790
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 121970
+          },
+          {
+            "item": "Frames",
+            "qty": 19520
+          },
+          {
+            "item": "Plates",
+            "qty": 109770
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 191860
+          },
+          {
+            "item": "Frames",
+            "qty": 30700
+          },
+          {
+            "item": "Plates",
+            "qty": 172670
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 301790
+          },
+          {
+            "item": "Frames",
+            "qty": 48290
+          },
+          {
+            "item": "Plates",
+            "qty": 271610
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 474720
+          },
+          {
+            "item": "Frames",
+            "qty": 75960
+          },
+          {
+            "item": "Plates",
+            "qty": 427250
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "catId": "all-round-giga-scanner",
+    "name": "All Round Giga-Scanner",
+    "description": "",
+    "levels": [
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 10
+          },
+          {
+            "item": "Gel",
+            "qty": 4
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 13
+          },
+          {
+            "item": "Gel",
+            "qty": 6
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 17
+          },
+          {
+            "item": "Gel",
+            "qty": 7
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 22
+          },
+          {
+            "item": "Gel",
+            "qty": 9
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 29
+          },
+          {
+            "item": "Gel",
+            "qty": 12
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 38
+          },
+          {
+            "item": "Gel",
+            "qty": 15
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 49
+          },
+          {
+            "item": "Gel",
+            "qty": 20
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 63
+          },
+          {
+            "item": "Gel",
+            "qty": 26
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 82
+          },
+          {
+            "item": "Gel",
+            "qty": 33
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 107
+          },
+          {
+            "item": "Gel",
+            "qty": 43
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 138
+          },
+          {
+            "item": "Gel",
+            "qty": 56
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 198
+          },
+          {
+            "item": "Gel",
+            "qty": 79
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 282
+          },
+          {
+            "item": "Gel",
+            "qty": 113
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 404
+          },
+          {
+            "item": "Gel",
+            "qty": 162
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 577
+          },
+          {
+            "item": "Gel",
+            "qty": 231
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 825
+          },
+          {
+            "item": "Gel",
+            "qty": 330
+          },
+          {
+            "item": "Bits",
+            "qty": 16490
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 1179
+          },
+          {
+            "item": "Gel",
+            "qty": 472
+          },
+          {
+            "item": "Bits",
+            "qty": 23580
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 1686
+          },
+          {
+            "item": "Gel",
+            "qty": 675
+          },
+          {
+            "item": "Bits",
+            "qty": 33720
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 2411
+          },
+          {
+            "item": "Gel",
+            "qty": 965
+          },
+          {
+            "item": "Bits",
+            "qty": 48210
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 3448
+          },
+          {
+            "item": "Gel",
+            "qty": 1379
+          },
+          {
+            "item": "Bits",
+            "qty": 68940
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 4930
+          },
+          {
+            "item": "Gel",
+            "qty": 1972
+          },
+          {
+            "item": "Bits",
+            "qty": 98590
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 7754
+          },
+          {
+            "item": "Gel",
+            "qty": 3102
+          },
+          {
+            "item": "Bits",
+            "qty": 155080
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 12200
+          },
+          {
+            "item": "Gel",
+            "qty": 4879
+          },
+          {
+            "item": "Bits",
+            "qty": 243940
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 19190
+          },
+          {
+            "item": "Gel",
+            "qty": 7675
+          },
+          {
+            "item": "Bits",
+            "qty": 383720
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 30180
+          },
+          {
+            "item": "Gel",
+            "qty": 12070
+          },
+          {
+            "item": "Bits",
+            "qty": 603590
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 47470
+          },
+          {
+            "item": "Gel",
+            "qty": 18990
+          },
+          {
+            "item": "Bits",
+            "qty": 949440
+          }
+        ]
+      }
+    ]
   }
 ];
