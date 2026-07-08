@@ -5,14 +5,16 @@
 // normal product job that consumes it — no separate reservation pass needed.
 const VESP="Vespium";
 function relevantChain(targets){
-  const relP=new Set(targets);
+  // A raw can now be a target itself (issue #78); only products have a recipe chain to expand,
+  // so seed the product set from product targets and add any raw target straight into relR.
+  const relP=new Set(targets.filter(t=>PRODUCTS.includes(t)));
   let changed=true;
   while(changed){changed=false;
     [...relP].forEach(P=>RECIPE[P].inputs.forEach(k=>{
       if(PRODUCTS.includes(k)&&!relP.has(k)){relP.add(k);changed=true;}
     }));
   }
-  const relR=new Set();
+  const relR=new Set(targets.filter(t=>RAWS.includes(t)));
   relP.forEach(P=>RECIPE[P].inputs.forEach(k=>{if(RAWS.includes(k))relR.add(k);}));
   return {prods:[...relP],raws:[...relR]};
 }
@@ -35,15 +37,30 @@ function preprodBitsNote(who){return who.map(n=>`${PREPROD_BITS[n]} per ${PREPRO
 function buildJobs(maxVal,resIndex,relRaws,relProds,targets,w){
   const allowed=LEVELS.filter(L=>L<=maxVal);
   const jobs=[{label:"Idle",kind:"idle",res:null,lvl:null,prod:[],cons:[],h:0}];
-  relRaws.forEach(R=>{
-    let best=null;
-    allowed.forEach(L=>{
-      const t=craftTime(R,L);if(!(t>0))return;
-      const rate=L/t;
-      if(!best||rate>best.rate)best={rate,L,t};
-    });
-    if(best)jobs.push({label:"Produce "+R,kind:"produce",res:R,lvl:best.L,ct:best.t,
-      prod:[[resIndex[R],best.rate]],cons:[],h:0});
+  relRaws.forEach(Rw=>{
+    const ti=targets.indexOf(Rw);
+    if(ti>=0){
+      // Raw selected as an OUTPUT target (issue #78): offer every compression level, the way
+      // products do, so the search can pick the floored-output-maximizing level (effective speed
+      // is capped at the cycle time) and trade lines against the other targets — not just the
+      // single fastest-rate feeder job.
+      allowed.forEach(L=>{
+        const t=craftTime(Rw,L);if(!(t>0))return;
+        const rate=L/t;
+        jobs.push({label:"Produce "+Rw,kind:"produce",res:Rw,lvl:L,ct:t,
+          prod:[[resIndex[Rw],rate]],cons:[],h:rate/w[ti]});
+      });
+    }else{
+      // Raw needed only as a feeder input: one fastest-rate produce job is enough.
+      let best=null;
+      allowed.forEach(L=>{
+        const t=craftTime(Rw,L);if(!(t>0))return;
+        const rate=L/t;
+        if(!best||rate>best.rate)best={rate,L,t};
+      });
+      if(best)jobs.push({label:"Produce "+Rw,kind:"produce",res:Rw,lvl:best.L,ct:best.t,
+        prod:[[resIndex[Rw],best.rate]],cons:[],h:0});
+    }
   });
   relProds.forEach(P=>{
     const ins=RECIPE[P].inputs;
@@ -117,7 +134,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   const spEff=lineJobs.map((js,i)=>{const sp=sorted[i].sp;return js.map(j=>(j.ct>0&&sp>j.ct)?j.ct:sp);});
   const sameAsPrev=sorted.map((s,i)=>i>0&&s.max===sorted[i-1].max&&s.sp===sorted[i-1].sp&&s.dp===sorted[i-1].dp);
   // items bound: best (speed+dup scaled) production rate of each target reachable per line
-  const bp=lineJobs.map((js,i)=>targets.map(t=>{let m=0;js.forEach(j=>{if(j.kind==="craft"&&j.res===t)m=Math.max(m,j.prod[0][1]);});return m*sorted[i].sp*sorted[i].dp;}));
+  const bp=lineJobs.map((js,i)=>targets.map(t=>{let m=0;js.forEach(j=>{if((j.kind==="craft"||j.kind==="produce")&&j.res===t)m=Math.max(m,j.prod[0][1]);});return m*sorted[i].sp*sorted[i].dp;}));
   const SP=targets.map((t,ti)=>{const a=new Array(N+1).fill(0);for(let i=N-1;i>=0;i--)a[i]=a[i+1]+bp[i][ti];return a;});
   // feasibility prune: max extra production of each resource available from lines i..N-1.
   // If current produced + this suffix still can't cover current consumed, the branch is dead.
@@ -421,9 +438,9 @@ function optimizeInner(timeBudget){
   const itemsBudget=timeBudget||userBudget, credBudget=timeBudget||userBudget;
   const mode=S.mode==="credits"?"credits":"items";
   if(mode==="items"){
-    const targets=PRODUCTS.filter(p=>S.targets[p].on);
+    const targets=[...PRODUCTS,...RAWS].filter(it=>S.targets[it]&&S.targets[it].on);
     if(targets.length===0)return {empty:true,mode};
-    const w=targets.map(p=>S.targets[p].w);
+    const w=targets.map(it=>S.targets[it].w);
     const rc=relevantChain(targets);
     const t0=performance.now();
     const sr=solveCore(targets,w,rc.prods,rc.raws,itemsBudget);

@@ -44,18 +44,25 @@ function refreshLineNotes(){
 }
 
 /* ---------- RENDER: targets ---------- */
+function targetRow(it){
+  const t=S.targets[it];
+  const row=document.createElement("div");row.className="tg-row"+(t.on?" on":"");
+  row.innerHTML=`<label><input type="checkbox" data-tg="${it}" ${t.on?"checked":""}> ${it}</label>
+    <div class="prio" style="${t.on?"":"visibility:hidden"}">
+      <span>PRIORITY</span>
+      <input type="range" min="1" max="9" step="1" value="${t.w}" data-w="${it}">
+      <span class="pv mono">${t.w}</span></div>`;
+  return row;
+}
 function renderTargets(){
   const box=document.getElementById("targets");box.innerHTML="";
-  PRODUCTS.forEach(p=>{
-    const t=S.targets[p];
-    const row=document.createElement("div");row.className="tg-row"+(t.on?" on":"");
-    row.innerHTML=`<label><input type="checkbox" data-tg="${p}" ${t.on?"checked":""}> ${p}</label>
-      <div class="prio" style="${t.on?"":"visibility:hidden"}">
-        <span>PRIORITY</span>
-        <input type="range" min="1" max="9" step="1" value="${t.w}" data-w="${p}">
-        <span class="pv mono">${t.w}</span></div>`;
-    box.appendChild(row);
-  });
+  PRODUCTS.forEach(p=>box.appendChild(targetRow(p)));
+  // Raw materials (Ingots / Bits / Concrete) are selectable too, so you can read their
+  // max output/hr without spinning up a throwaway project plan (issue #78).
+  const sub=document.createElement("div");sub.className="tg-sub";
+  sub.textContent="Raw materials";
+  box.appendChild(sub);
+  RAWS.forEach(r=>box.appendChild(targetRow(r)));
 }
 
 /* ---------- RENDER: Gel panel ---------- */
