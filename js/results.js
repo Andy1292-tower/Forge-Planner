@@ -84,6 +84,28 @@ function lineAssignTableHtml(plan){
   });
   return h+`</tbody></table>`;
 }
+// Lil' Forgie's passive supply of the items these projects actually use (issue #77). Works in
+// every project sub-mode (sequenced/waved have no balance table), so his contribution is always
+// visible: it's already credited into the plan below, so it's crafting the player doesn't do.
+function projectForgieNote(res){
+  if(!S.forgie)return "";
+  const demanded=new Set();
+  (res.perProject||[]).forEach(p=>ALLITEMS.forEach(it=>{if((p.sub&&p.sub[it]||0)>0)demanded.add(it);}));
+  (res.demandItems||[]).forEach(it=>demanded.add(it));
+  (res.phases||[]).forEach(ph=>{const s=ph.demandSub||{};ALLITEMS.forEach(it=>{if((s[it]||0)>0)demanded.add(it);});});
+  // Expand product demand to its full input chain so Forgie's raws (e.g. Ingots feeding Plates→Frames) count.
+  const relevant=new Set(demanded);
+  const prods=[...demanded].filter(it=>PRODUCTS.includes(it));
+  if(prods.length&&typeof relevantChain==="function"){
+    const rc=relevantChain(prods);
+    rc.prods.forEach(it=>relevant.add(it));rc.raws.forEach(it=>relevant.add(it));
+  }
+  if(demanded.has("Frames")||demanded.has("Wire"))relevant.add("Bits");   // pre-produced Bits
+  const made=ALLITEMS.filter(it=>relevant.has(it)&&(num(S.forgie[it])||0)>1e-9);
+  if(!made.length)return "";
+  const parts=made.map(it=>`<b>${disp(num(S.forgie[it])||0)}</b>/hr ${it}`).join(", ");
+  return `<div class="notice info" style="font-size:11.5px"><b>Lil' Forgie</b> is passively supplying ${parts} — already credited toward these projects, so it's crafting you don't have to do.</div>`;
+}
 function renderProjectResults(res,el,stat){
   _lastProjectRes=res;
   if(res.empty){
@@ -98,6 +120,7 @@ function renderProjectResults(res,el,stat){
       <button class="btn primary" id="btnSteps">Step-by-step ▸</button>
     </div></div>`;
   html+=`<div class="notice info"><b>Project plan.</b> ${res.sequenced?"Completes projects one at a time so you unlock bonuses sooner; within each project, lines split their time in a pipelined plan.":"Sums all ticked projects and crafts everything together with a pipelined line setup, inputs &amp; outputs flowing together."} Overshoot from compression is ignored.</div>`;
+  html+=projectForgieNote(res);
   if(res.waved)html+=`<div class="notice info" style="font-size:11.5px"><b>Unlock-aware order.</b> Some projects unlock materials others need (Frames, Gel, Wire), so this is split into <b>${res.phases.length} waves</b> — finish each wave before starting the next. Everything within a wave is crafted together.</div>`;
   if(res.unsat&&res.unsat.length){
     const gelInc=Math.max(0,num(S.gelVesp)||0)>0;
@@ -153,14 +176,18 @@ function renderProjectResults(res,el,stat){
     html+=`<div class="subhead">Line assignment — % is the share of this line's time on that job</div>${lineAssignTableHtml(res.plan)}`;
     html+=idleLinesNote(res.plan);
     if(res.balance&&res.balance.length){
+      // Break out Lil' Forgie's passive supply into its own column (issue #77), mirroring the
+      // items/credits balance table — shown only when he's contributing something here.
+      const showForgie=res.balance.some(b=>(b.forgie||0)>1e-6);
       html+=`<div class="subhead">Resource balance (per hour)</div>
-        <table><thead><tr><th>Resource</th><th class="num">Produced</th><th class="num">Consumed</th><th class="num">Surplus</th></tr></thead><tbody>`;
+        <table><thead><tr><th>Resource</th><th class="num">Lines</th>${showForgie?'<th class="num">Passive</th>':''}<th class="num">Consumed</th><th class="num">Surplus</th></tr></thead><tbody>`;
       res.balance.forEach(b=>{const f=b.forgie||0,surplus=b.prod+f-b.cons,stock=b.stock||0;
+        const fCell=showForgie?`<td class="num" style="color:${f>1e-6?'var(--teal)':'var(--ink3)'}">${f>1e-6?disp(f):"—"}</td>`:"";
         // A shortfall in project mode is inventory being drawn down (issue #73), not a paper margin.
         const surCell=stock>1e-6
           ?`<span style="color:var(--teal)">${disp(stock)}/hr from stock</span>`
           :`<span class="${surplus<-1e-6?'bal-tight':''}">${disp(surplus)}</span>`;
-        html+=`<tr><td>${b.res}</td><td class="num">${disp(b.prod+f)}</td><td class="num">${disp(b.cons)}</td>
+        html+=`<tr><td>${b.res}</td><td class="num">${disp(b.prod)}</td>${fCell}<td class="num">${disp(b.cons)}</td>
           <td class="num">${surCell}</td></tr>`;});
       html+=`</tbody></table>`;
     }
