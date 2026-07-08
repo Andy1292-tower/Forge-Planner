@@ -155,9 +155,13 @@ function renderProjectResults(res,el,stat){
     if(res.balance&&res.balance.length){
       html+=`<div class="subhead">Resource balance (per hour)</div>
         <table><thead><tr><th>Resource</th><th class="num">Produced</th><th class="num">Consumed</th><th class="num">Surplus</th></tr></thead><tbody>`;
-      res.balance.forEach(b=>{const f=b.forgie||0,surplus=b.prod+f-b.cons;
+      res.balance.forEach(b=>{const f=b.forgie||0,surplus=b.prod+f-b.cons,stock=b.stock||0;
+        // A shortfall in project mode is inventory being drawn down (issue #73), not a paper margin.
+        const surCell=stock>1e-6
+          ?`<span style="color:var(--teal)">${disp(stock)}/hr from stock</span>`
+          :`<span class="${surplus<-1e-6?'bal-tight':''}">${disp(surplus)}</span>`;
         html+=`<tr><td>${b.res}</td><td class="num">${disp(b.prod+f)}</td><td class="num">${disp(b.cons)}</td>
-          <td class="num ${surplus<-1e-6?'bal-tight':''}">${disp(surplus)}</td></tr>`;});
+          <td class="num">${surCell}</td></tr>`;});
       html+=`</tbody></table>`;
     }
   }

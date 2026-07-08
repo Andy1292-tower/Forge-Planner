@@ -555,10 +555,36 @@ document.getElementById("progResetAll").addEventListener("click",()=>{
 
 /* ---------- Step-by-step plan modal ---------- */
 function itemTier(it){if(it===GEL||RAWS.includes(it))return 0;if(it==="Frames")return 2;if(it==="Wire")return 3;return 1;}
+// Issue #69: let the user set a project complete or change its levels without leaving this page.
+// Reuses the same fields the Shopping list & Progress tracker edit (on / from / to / done), so all
+// three views stay in sync. Completion = every level in the from→to span checked off (done=span).
+function stepsProjControls(){
+  const active=(S.projects||[]).filter(p=>(p.levels||[]).length);
+  if(!active.length)return "";
+  const rows=active.map(p=>{
+    const {from,to,span}=projSpan(p),done=projDone(p),complete=done>=span;
+    const badge=complete?' <span class="pill craft" style="font-size:9px">done</span>':"";
+    return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--line)">
+      <input type="checkbox" data-spon="${escapeAttr(p.id)}" ${p.on?"checked":""} title="Include in the plan">
+      <span style="flex:1 1 130px;min-width:110px;${complete?"color:var(--ink3)":""}">${escapeAttr(p.name||"Project")}${badge}</span>
+      <span class="proj-mini" style="white-space:nowrap">lv <input type="number" min="1" step="1" data-spfrom="${escapeAttr(p.id)}" value="${from}" style="width:46px"> → <input type="number" min="1" step="1" data-spto="${escapeAttr(p.id)}" value="${to}" style="width:46px"></span>
+      <span class="mono proj-mini" title="levels completed">${done}/${span}</span>
+      <button class="btn ghost" style="padding:2px 9px;font-size:11px" data-spcomplete="${escapeAttr(p.id)}">${complete?"Reopen":"Mark complete"}</button>
+    </div>`;
+  }).join("");
+  return `<div style="border:1px solid var(--line);border-radius:8px;padding:6px 11px 9px;margin-bottom:14px">
+    <div class="proj-mini" style="font-weight:600;padding:2px 0 1px">Projects — set complete or change levels</div>
+    ${rows}
+  </div>`;
+}
+// Re-solve synchronously (as Track progress does) so the step plan updates in place, and kick the
+// debounced main-panel solve too.
+function stepsRefresh(){try{_lastProjectRes=optimizeProjectTop();}catch(e){}renderSteps();scheduleSolve();}
 function renderSteps(){
   const res=_lastProjectRes, body=document.getElementById("stepsBody");
-  if(!res||res.empty||!res.phases||!res.phases.length){body.innerHTML=`<div class="notice info">Build a project plan first — add a project in Shopping list and switch to Project plan mode.</div>`;return;}
-  let h=`<p class="help" style="margin-bottom:12px">${res.sequenced
+  const controls=stepsProjControls();
+  if(!res||res.empty||!res.phases||!res.phases.length){body.innerHTML=controls+`<div class="notice info">Build a project plan first — add a project in Shopping list and tick it on (above), then switch to Project plan mode.</div>`;return;}
+  let h=controls+`<p class="help" style="margin-bottom:12px">${res.sequenced
       ?"Do these phases <b>in order</b>. Within a phase, a line listing two jobs splits its time — do the input job first so you don't stall. Reset the lines when you start the next phase."
       :res.waved
       ?"Do these waves <b>in order</b> — finish a wave before starting the next so the unlocks land first. Within a wave, a line listing two jobs splits its time; do the input job first."
@@ -612,6 +638,28 @@ document.getElementById("stepsClose").addEventListener("click",closeSteps);
 document.getElementById("stepsDone").addEventListener("click",closeSteps);
 stepsModal.addEventListener("click",e=>{if(e.target===stepsModal)closeSteps();});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!stepsModal.hidden)closeSteps();});
+// Issue #69 — inline project controls inside the Step-by-step page (level range, complete/reopen).
+// Typing in a level box only updates state (no re-render, so focus is kept); the plan rebuilds on
+// commit (change/blur) and on the checkbox/complete buttons.
+const stepsBody=document.getElementById("stepsBody");
+const stepsProj=pid=>(S.projects||[]).find(x=>x.id===pid);
+stepsBody.addEventListener("input",e=>{
+  const t=e.target,g=a=>t.getAttribute(a);let v;
+  if((v=g("data-spfrom"))!=null){const p=stepsProj(v);if(p){p.from=Math.max(1,Math.floor(num(t.value)||1));if(p.to<p.from)p.to=p.from;save();scheduleSolve();}return;}
+  if((v=g("data-spto"))!=null){const p=stepsProj(v);if(p){p.to=Math.max(1,Math.floor(num(t.value)||1));save();scheduleSolve();}return;}
+});
+stepsBody.addEventListener("change",e=>{
+  const t=e.target,g=a=>t.getAttribute(a);let v;
+  if((v=g("data-spon"))!=null){const p=stepsProj(v);if(p){p.on=t.checked;save();stepsRefresh();}return;}
+  if(g("data-spfrom")!=null||g("data-spto")!=null){stepsRefresh();return;}   // commit level edit -> rebuild plan
+});
+stepsBody.addEventListener("click",e=>{
+  const btn=e.target.closest&&e.target.closest("[data-spcomplete]");if(!btn)return;
+  const p=stepsProj(btn.getAttribute("data-spcomplete"));if(!p)return;
+  const {span}=projSpan(p);
+  p.done=projDone(p)>=span?0:span;   // toggle: mark every level in the span done, or reopen
+  save();stepsRefresh();
+});
 // the Step-by-step button lives inside #results, which is re-rendered each solve
 document.getElementById("results").addEventListener("click",e=>{
   if(e.target.closest&&e.target.closest("#btnProgress")){openProgress();return;}
