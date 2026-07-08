@@ -398,6 +398,8 @@ button.gel-head .sub{color:var(--amber)}
 .proj-mini{font-size:10.5px;color:var(--ink3);letter-spacing:.3px}
 .proj-add-lvl{font-size:10.5px;padding:5px 9px}
 .seq-toggle{display:flex;gap:8px;align-items:flex-start;margin-bottom:14px;cursor:pointer;font-size:11.5px;color:var(--ink2);line-height:1.45}
+.seq-toggle.disabled{opacity:.45;cursor:default}
+.seq-toggle.disabled input{cursor:default}
 .seq-toggle input,.proj-first .pfirst{appearance:none;width:16px;height:16px;border:1px solid var(--line2);border-radius:4px;background:var(--surface2);cursor:pointer;position:relative;flex:0 0 auto;margin-top:1px}
 .seq-toggle input:checked,.proj-first .pfirst:checked{background:var(--copper);border-color:var(--copper)}
 .seq-toggle input:checked::after,.proj-first .pfirst:checked::after{content:"";position:absolute;left:5px;top:1px;width:4px;height:9px;border:solid #15110a;border-width:0 2px 2px 0;transform:rotate(45deg)}

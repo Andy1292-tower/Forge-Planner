@@ -92,7 +92,7 @@ function renderProjectResults(res,el,stat){
   }
   let html="";
   html+=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px">
-    <div class="proj-mini" style="font-size:11.5px">${res.sequenced?'Order: <b style="color:var(--ink2)">one project at a time</b> — unlocks first, then your order, then cheapest. Change in Shopping list.':res.waved?'Order: <b style="color:var(--ink2)">all together, in unlock waves</b> — material unlocks first, then the rest. Change in Shopping list.':'Order: <b style="color:var(--ink2)">all projects together</b> (fastest total). Change in Shopping list.'}</div>
+    <div class="proj-mini" style="font-size:11.5px">${res.sequenced?'Order: <b style="color:var(--ink2)">one project at a time</b> — unlocks first, then your order, then cheapest. Change in Shopping list.':res.waved?'Order: <b style="color:var(--ink2)">all together, in unlock waves</b> — material unlocks first, then the rest. Change in Shopping list.':res.single?'Order: <b style="color:var(--ink2)">all projects in one phase</b> — unlock ordering off. Change in Shopping list.':'Order: <b style="color:var(--ink2)">all projects together</b> (fastest total). Change in Shopping list.'}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn primary" id="btnProgress">Track progress</button>
       <button class="btn primary" id="btnSteps">Step-by-step ▸</button>
@@ -106,7 +106,7 @@ function renderProjectResults(res,el,stat){
   if(res.infeasItems&&res.infeasItems.length)html+=`<div class="notice warn"><b>Can't sustainably produce:</b> ${res.infeasItems.join(", ")}. Raise a line's max compression, add a line, or check recipe costs — the time below excludes these.</div>`;
   html+=`<div class="metrics">
     <div class="metric"><div class="l">Total time</div><div class="v">${fmtDuration(res.eta)}</div><div class="u">${res.sequenced?"to finish every project":"to finish all ticked projects"}</div></div>
-    <div class="metric"><div class="l">Projects</div><div class="v">${res.perProject.length}</div><div class="u">${res.sequenced?"one at a time":res.waved?res.phases.length+" unlock waves":"scheduled together"}</div></div>
+    <div class="metric"><div class="l">Projects</div><div class="v">${res.perProject.length}</div><div class="u">${res.sequenced?"one at a time":res.waved?res.phases.length+" unlock waves":res.single?"all in one phase":"scheduled together"}</div></div>
     ${!res.sequenced&&!res.waved&&res.bottleneck?`<div class="metric"><div class="l">Bottleneck</div><div class="v" style="font-size:17px">${res.bottleneck}</div><div class="u">sets the finish time</div></div>`:""}
   </div>`;
   if(res.sequenced||res.waved){
