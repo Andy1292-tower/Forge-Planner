@@ -349,7 +349,7 @@ function projCard(p,pi){
     <div class="proj-h">
       <span class="pchev" data-ptoggle="${pi}">▸</span>
       <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule">
-      <input class="pname" data-pname="${pi}" value="${escapeAttr(p.name)}" placeholder="Project name">
+      <input type="text" class="pname" data-pname="${pi}" value="${escapeAttr(p.name)}" placeholder="Project name">
       <div class="proj-tools">
         <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–">order</label>
         <span class="proj-lvls">lv <input type="number" min="1" step="1" data-pfrom="${pi}" value="${p.from||1}"> → <input type="number" min="1" step="1" data-pto="${pi}" value="${p.to||lv.length||1}"></span>
