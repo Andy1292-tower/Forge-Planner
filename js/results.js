@@ -127,6 +127,7 @@ function renderProjectResults(res,el,stat){
     html+=`<div class="notice warn"><b>Needs Gel:</b> ${res.unsat.join(", ")} require Gel, which the planner forges from your <b>vespium income</b>. ${gelInc?"Your current income is too low to forge any — raise <b>vespium / minute income</b> in the Gel panel":"Enter your <b>vespium / minute income</b> in the Gel panel"} to include them — they're excluded from the time below for now.</div>`;
   }
   if(res.infeasItems&&res.infeasItems.length)html+=`<div class="notice warn"><b>Can't sustainably produce:</b> ${res.infeasItems.join(", ")}. Raise a line's max compression, add a line, or check recipe costs — the time below excludes these.</div>`;
+  if(res.atRiskItems&&res.atRiskItems.length)html+=`<div class="notice warn"><b>Relies entirely on stock:</b> ${res.atRiskItems.join(", ")}. No line is crafting ${res.atRiskItems.length>1?"these":"this"} — the plan is spending down your current inventory to cover them. Once it runs out you'll need dedicated crafters.</div>`;
   html+=`<div class="metrics">
     <div class="metric"><div class="l">Total time</div><div class="v">${fmtDuration(res.eta)}</div><div class="u">${res.sequenced?"to finish every project":"to finish all ticked projects"}</div></div>
     <div class="metric"><div class="l">Projects</div><div class="v">${res.perProject.length}</div><div class="u">${res.sequenced?"one at a time":res.waved?res.phases.length+" unlock waves":res.single?"all in one phase":"scheduled together"}</div></div>
@@ -183,9 +184,12 @@ function renderProjectResults(res,el,stat){
         <table><thead><tr><th>Resource</th><th class="num">Lines</th>${showForgie?'<th class="num">Passive</th>':''}<th class="num">Consumed</th><th class="num">Surplus</th></tr></thead><tbody>`;
       res.balance.forEach(b=>{const f=b.forgie||0,surplus=b.prod+f-b.cons,stock=b.stock||0;
         const fCell=showForgie?`<td class="num" style="color:${f>1e-6?'var(--teal)':'var(--ink3)'}">${f>1e-6?disp(f):"—"}</td>`:"";
-        // A shortfall in project mode is inventory being drawn down (issue #73), not a paper margin.
+        // A shortfall in project mode is inventory being drawn down (issue #73), not a paper margin —
+        // unless no line is crafting it at all, which means the plan depends on exhausting stock
+        // with nothing behind it (issue #80), so that gets flagged red instead of reassuring teal.
+        const atRisk=res.atRiskItems&&res.atRiskItems.indexOf(b.res)>=0;
         const surCell=stock>1e-6
-          ?`<span style="color:var(--teal)">${disp(stock)}/hr from stock</span>`
+          ?`<span style="color:${atRisk?'var(--danger)':'var(--teal)'}">${disp(stock)}/hr from stock${atRisk?" (no crafters!)":""}</span>`
           :`<span class="${surplus<-1e-6?'bal-tight':''}">${disp(surplus)}</span>`;
         html+=`<tr><td>${b.res}</td><td class="num">${disp(b.prod)}</td>${fCell}<td class="num">${disp(b.cons)}</td>
           <td class="num">${surCell}</td></tr>`;});
