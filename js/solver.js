@@ -4,6 +4,14 @@
 // solver as a resource whose free supply equals the user's vespium income, so Gel is just a
 // normal product job that consumes it — no separate reservation pass needed.
 const VESP="Vespium";
+// A project-plan phase may credit an intermediate's leftover stock as free supply instead of
+// crafting it (issue #73). Left uncapped, that credit scales with the phase's own throughput
+// multiplier (z) exactly like an indefinitely-sustained production rate would, so a chronic (if
+// small) shortfall between an item's real supply (Forgie + crafting) and its consumption gets
+// entirely papered over by draining 100% of on-hand stock, with zero lines ever assigned to
+// replenish it (issue #80). Reserving a margin forces the LP to keep some real production whenever
+// stock alone can't be trusted to cover the gap, rather than banking on exhausting it to the unit.
+const STOCK_SAFETY_FRAC=0.9;
 function relevantChain(targets){
   // A raw can now be a target itself (issue #78); only products have a recipe chain to expand,
   // so seed the product set from product targets and add any raw target straight into relR.
@@ -616,8 +624,10 @@ function projectSchedule(net,targets,avail){
     const row=new Array(n).fill(0);
     vars.forEach((v,vi)=>{if(v.item===it)row[vi]-=v.rate;v.cons.forEach(c=>{if(c.item===it)row[vi]+=c.perHr;});});
     // Net demand rate minus stock drawn down over the makespan. For a pure intermediate (net 0)
-    // held in stock this goes negative, letting the LP consume it instead of producing it.
-    row[zCol]=((net[it]||0)-(avail&&avail[it]||0))/D0;
+    // held in stock this goes negative, letting the LP consume it instead of producing it — but
+    // only up to STOCK_SAFETY_FRAC of what's on hand, so a persistent shortfall still earns real
+    // crafting-line time instead of being fully absorbed by inventory (issue #80).
+    row[zCol]=((net[it]||0)-(avail&&avail[it]||0)*STOCK_SAFETY_FRAC)/D0;
     A.push(row);b.push(it===VESP?gelBudgetHr:forgieHr(it));
   });
   const c=new Array(n).fill(0);c[zCol]=1;
@@ -641,7 +651,7 @@ function solvePhaseFor(net,name,avail){
   const unsat=gelAvail?[]:demandItems.filter(it=>chainNeedsGel(it));
   const targets=demandItems.filter(it=>unsat.indexOf(it)<0);
   if(targets.length===0)
-    return {name,plan:[],balance:[],demandItems,net,rate:{},eta:0,bottleneck:null,infeasItems:[],unsat,items:[],z:0,feasible:false};
+    return {name,plan:[],balance:[],demandItems,net,rate:{},eta:0,bottleneck:null,infeasItems:[],unsat,atRisk:[],items:[],z:0,feasible:false};
   const sch=projectSchedule(net,targets,avail);
   const rate={};targets.forEach(it=>rate[it]=Math.max(0,sch.rate[it]||0));
   let eta=0,bottleneck=null;const infeasItems=[];
@@ -654,7 +664,18 @@ function solvePhaseFor(net,name,avail){
   // in a project LP a shortfall is only ever legitimate stock drawdown, never a paper margin.
   const balance=sch.items.filter(it=>it!==VESP).map(it=>{const prod=prodHr[it]||0,cons=consHr[it]||0,f=forgieHr(it);
     return {res:it,prod,forgie:f,cons,stock:Math.max(0,cons-prod-f)};});
-  return {name,plan:sch.plan,balance,demandItems,net,rate,eta,bottleneck,infeasItems,unsat,items:sch.items,z:sch.z,feasible};
+  // Flag items the plan is pressed up against the safety cap on — drawing stock down with ZERO
+  // crafters assigned to replenish it, close enough to the STOCK_SAFETY_FRAC ceiling that the LP
+  // would draw down MORE if it were allowed to (issue #80: "no Crafters set to Ingots, yet the plan
+  // needs them"). A comfortably ample stock (issue #73's case) draws far less than its cap and
+  // isn't flagged — only a plan that's genuinely running an item at its structural limit is.
+  const atRisk=balance.filter(b=>{
+    const av=(avail&&avail[b.res])||0;
+    if(av<=1e-6||b.prod>1e-6)return false;
+    const used=b.stock*eta;   // total units of this item's stock the phase draws down
+    return used>=STOCK_SAFETY_FRAC*av*0.98;
+  }).map(b=>b.res);
+  return {name,plan:sch.plan,balance,demandItems,net,rate,eta,bottleneck,infeasItems,unsat,atRisk,items:sch.items,z:sch.z,feasible};
 }
 // net demand for a project's level-sum `sub`, against an inventory map (folds in Frame bits).
 function projNetVec(sub,invMap){
@@ -783,11 +804,12 @@ function optimizeProjectTop(){
   const feasible=phases.length>0&&phases.every(ph=>ph.feasible);
   const unsat=[...new Set([].concat(...phases.map(ph=>ph.unsat||[])))];
   const infeasItems=[...new Set([].concat(...phases.map(ph=>ph.infeasItems||[])))];
+  const atRiskItems=[...new Set([].concat(...phases.map(ph=>ph.atRisk||[])))];
   const main=phases[0]||{plan:[],balance:[],rate:{},demandItems:[],bottleneck:null};
   return {empty:false,mode:"project",sequenced:seq,waved,single,phases,perProject,gross,net,
     plan:main.plan,balance:main.balance,
     demandItems:(seq||waved)?ALLITEMS.filter(it=>net[it]>1e-9):main.demandItems,
-    rate:main.rate,bottleneck:main.bottleneck,eta,unsat,infeasItems,feasible,
+    rate:main.rate,bottleneck:main.bottleneck,eta,unsat,infeasItems,atRiskItems,feasible,
     gelReserved:gelReservedFromPlan(main.plan),
     objective:feasible&&eta>0?1/eta:0,ms:performance.now()-t0};
 }

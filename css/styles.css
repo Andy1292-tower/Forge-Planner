@@ -381,7 +381,7 @@ button.gel-head .sub{color:var(--amber)}
 .proj-h input[type=checkbox]{appearance:none;width:17px;height:17px;border:1px solid var(--line2);border-radius:4px;background:var(--surface2);cursor:pointer;position:relative;flex:0 0 auto}
 .proj-h input[type=checkbox]:checked{background:var(--copper);border-color:var(--copper)}
 .proj-h input[type=checkbox]:checked::after{content:"";position:absolute;left:5px;top:1px;width:4px;height:9px;border:solid #15110a;border-width:0 2px 2px 0;transform:rotate(45deg)}
-.proj-h .pname{font-size:13.5px;font-weight:600;background:transparent;border:1px solid transparent;border-radius:4px;padding:4px 6px;width:100%;font-family:"Chakra Petch",sans-serif}
+.proj-h .pname{font-size:13.5px;font-weight:600;background:transparent;color:var(--ink);border:1px solid transparent;border-radius:4px;padding:4px 6px;width:100%;font-family:"Chakra Petch",sans-serif}
 .proj-h .pname:hover,.proj-h .pname:focus{border-color:var(--line2);background:var(--surface2);outline:none}
 .pchev{color:var(--copper);font-size:11px;transition:transform .15s;cursor:pointer;user-select:none}
 .proj.open .pchev{transform:rotate(90deg)}

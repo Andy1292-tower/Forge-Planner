@@ -349,7 +349,7 @@ function projCard(p,pi){
     <div class="proj-h">
       <span class="pchev" data-ptoggle="${pi}">▸</span>
       <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule">
-      <input class="pname" data-pname="${pi}" value="${escapeAttr(p.name)}" placeholder="Project name">
+      <input type="text" class="pname" data-pname="${pi}" value="${escapeAttr(p.name)}" placeholder="Project name">
       <div class="proj-tools">
         <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–">order</label>
         <span class="proj-lvls">lv <input type="number" min="1" step="1" data-pfrom="${pi}" value="${p.from||1}"> → <input type="number" min="1" step="1" data-pto="${pi}" value="${p.to||lv.length||1}"></span>
@@ -612,6 +612,7 @@ function renderSteps(){
       ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>Wave ${i+1} — build together</b> ${ph.members&&ph.members.length?'<span class="proj-mini">'+escapeAttr(ph.members.join(" + "))+'</span>':""} <span class="proj-mini">· ~${fmtDuration(ph.eta)} · done by ${fmtDuration(ph.doneAt)} </span><span class="step-clock">(~${fmtClock(pStart+(ph.eta||0))})</span></div>`
       : `<div class="step-h"><b>Set all lines like this and run</b> <span class="proj-mini">· ~${fmtDuration(ph.eta)} · finish by </span><span class="step-clock">~${fmtClock(pStart+(ph.eta||0))}</span></div>`;
     if(!ph.feasible)h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">Can't fully produce this one with the current lines${ph.unsat&&ph.unsat.length?" — "+ph.unsat.join(", ")+" need Gel":""}.</div>`;
+    if(ph.atRisk&&ph.atRisk.length)h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">No line here is crafting ${ph.atRisk.join(", ")} — this plan is spending down your current stock of ${ph.atRisk.length>1?"them":"it"} instead. Once that stock is gone, this schedule stops working.</div>`;
     if(!lines.length){h+=`<div class="proj-mini" style="padding:2px 0">No line activity.</div></div>`;return;}
     h+=`<ol class="step-list">`;
     lines.forEach(L=>{
