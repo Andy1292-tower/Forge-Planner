@@ -1,6 +1,7 @@
 "use strict";
 /* ---------- RENDER: results ---------- */
 let _lastProjectRes=null;
+let _lastItemsCreditsRes=null;   // items/credits solve result, cached so "Copy to Manual" has something to read
 
 /* ---------- async solve via Web Worker ----------
    The solve runs off the main thread so a long budget shows a spinner instead of freezing. Each
@@ -213,6 +214,7 @@ function renderResults(){
 }
 function renderSolveResult(res,el,stat){
   if(res.mode==="project"){renderProjectResults(res,el,stat);return;}
+  _lastItemsCreditsRes=res;
   // nudge toward Sell prices when credits mode is selected but no prices exist yet
   if(typeof setPricePoke==="function")setPricePoke(res.mode==="credits"&&![...RAWS,...PRODUCTS].some(it=>(num(S.sellPrice[it])||0)>0));
   if(res.empty){el.innerHTML=`<div class="notice info">Select one or more outputs on the left to optimize — or switch to <b>Max credits/hr</b> mode to auto-search the most profitable mix.</div>`;stat.textContent="";return;}
@@ -261,7 +263,10 @@ function renderSolveResult(res,el,stat){
     html+=`</tbody></table>`;
   }
   // plan table
-  html+=`<div class="subhead">Line assignment</div>
+  html+=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:16px 0 8px">
+    <div class="subhead" style="margin:0">Line assignment</div>
+    <button class="btn ghost" id="btnCopyManual" title="Copy this plan into Manual mode so you can fine-tune it by hand">Copy to Manual</button>
+  </div>
     <table><thead><tr><th>Line</th><th>Cap</th><th>Job</th><th>Lvl</th>
       <th class="num">~s/craft</th><th class="num">Output /hr</th><th>Consumes /hr</th></tr></thead><tbody>`;
   res.plan.forEach(p=>{
