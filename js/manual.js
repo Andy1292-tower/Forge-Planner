@@ -45,6 +45,21 @@ function manualResult(){
   const vespIncomeHr=Math.max(0,num(S.gelVesp)||0)*60;
   return {plan,balance,out,resIndex,issues:[...issueSet],lineProd,soldItems:[...sold],creditRows,totalCredits,missingPrice,vespCons,vespIncomeHr};
 }
+// Copy a solved Max item/hr or Max credits/hr plan into Manual mode as an editable starting
+// point (issue #85), instead of recreating it by hand. In credits mode the item the solver
+// dedicated the factory to is flagged for sale; items mode has no such concept, so sell starts off.
+function copyPlanToManual(res){
+  if(!res||!res.plan)return;
+  S.manual=res.plan.map((p,i)=>{
+    const j=p.job||{}, cap=(S.lines[i]&&S.lines[i].max)||1;
+    if(j.kind==="idle"||!j.res)return {job:"Idle",lvl:cap,sell:false};
+    return {job:j.res,lvl:j.lvl||cap,sell:res.mode==="credits"&&j.res===res.bestItem};
+  });
+  syncManual(S);
+  S.mode="manual";
+  if(typeof renderModeSwitch==="function")renderModeSwitch();
+  save();renderResults();
+}
 /* ---- saved manual setups (named presets of the per-line job/level/sell) ---- */
 function saveManualPreset(name){
   syncManual(S);

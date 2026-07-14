@@ -665,6 +665,7 @@ stepsBody.addEventListener("click",e=>{
 document.getElementById("results").addEventListener("click",e=>{
   if(e.target.closest&&e.target.closest("#btnProgress")){openProgress();return;}
   if(e.target.closest&&e.target.closest("#btnSteps"))openSteps();
+  if(e.target.closest&&e.target.closest("#btnCopyManual")){copyPlanToManual(_lastItemsCreditsRes);return;}
   if(e.target.closest&&e.target.closest("#manualUpdate")){if(S.manualActiveId)updateManualPreset(S.manualActiveId);return;}
   if(e.target.closest&&e.target.closest("#manualSaveNew")){const name=(prompt("Name this setup:","")||"").trim();if(name)saveManualPreset(name);return;}
   if(e.target.closest&&e.target.closest("#manualDelPreset")){const sel=document.getElementById("manualPreset");const id=(sel&&sel.value)||S.manualActiveId;if(id&&confirm("Delete this saved setup?"))deleteManualPreset(id);return;}
