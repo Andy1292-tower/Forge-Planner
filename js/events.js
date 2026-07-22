@@ -492,7 +492,7 @@ document.getElementById("invRows").addEventListener("input",e=>{
 
 /* ---------- Progress tracker modal ---------- */
 // Levels completed for a project, clamped to its from→to span (non-destructive).
-function projSpan(p){const from=Math.max(1,Math.floor(num(p.from)||1));const to=Math.max(from,Math.min((p.levels||[]).length,Math.floor(num(p.to)||(p.levels||[]).length)));return {from,to,span:to-from+1};}
+function projSpan(p){const n=(p.levels||[]).length;const from=Math.max(1,Math.min(n||1,Math.floor(num(p.from)||1)));const to=Math.max(from,Math.min(n,Math.floor(num(p.to)||n)));return {from,to,span:to-from+1};}
 function projDone(p){const {span}=projSpan(p);return Math.max(0,Math.min(span,Math.floor(num(p.done)||0)));}
 function renderProgress(){
   const list=document.getElementById("progList");

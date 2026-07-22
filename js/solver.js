@@ -552,7 +552,7 @@ function projectDemand(){
   (S.projects||[]).forEach(p=>{
     if(!p.on)return;
     const lv=p.levels||[];
-    const from=Math.max(1,Math.floor(num(p.from)||1));
+    const from=Math.max(1,Math.min(lv.length,Math.floor(num(p.from)||1)));   // clamp to level count so from>levels isn't read as "complete" (issue #87)
     const to=Math.min(lv.length,Math.max(from,Math.floor(num(p.to)||lv.length)));
     // levels completed in the tracker are skipped — non-destructive progress that
     // raises the effective start level without touching the user's from→to target.
@@ -563,7 +563,7 @@ function projectDemand(){
     for(let i=start;i<to&&i<lv.length;i++){
       (lv[i].costs||[]).forEach(c=>{const it=c.item,q=num(c.qty)||0;if(ALLITEMS.includes(it)&&q>0){sub[it]+=q;gross[it]+=q;}});
     }
-    perProject.push({name:p.name||"Project",catId:p.catId||"",prio:(p.prio!=null?p.prio:null),from:start+1,to,levels:lv.length,sub});
+    perProject.push({id:p.id||"",name:p.name||"Project",catId:p.catId||"",prio:(p.prio!=null?p.prio:null),from:start+1,to,levels:lv.length,sub});
   });
   const inv=it=>num(S.inventory&&S.inventory[it])||0;
   const net={};ALLITEMS.forEach(it=>{net[it]=Math.max(0,gross[it]-inv(it));});
@@ -659,7 +659,7 @@ function projectSchedule(net,targets,avail,opts){
   // Tier-2 hysteresis (issue #87 item 5): keep last solve's per-line jobs unless the free solve beats
   // a pinned re-solve by more than HYST_FRAC of throughput. Only real phase solves opt in
   // (opts.stabilize); the ordering/cost passes stay free so project sequencing reflects true makespans.
-  let stabilized=false, stabKey=null;
+  let stabilized=false, stabKey=null, zPin=null;   // zPin: pinned-solve throughput (diagnostic / band test)
   if(opts&&opts.stabilize){
     // Key by phase + physical-line set + demanded-item set (sorted, so it's invariant to speed-driven
     // line reordering). Structural changes — add/remove a line, change a cap or which items are
@@ -678,6 +678,7 @@ function projectSchedule(net,targets,avail,opts){
           const pin=buildScheduleLP(rvars,lns,items,net,avail,D0);
           const y2=lpMaximize(pin.c,pin.A,pin.b).x;
           const z2=y2?(y2[pin.zCol]||0):0;
+          zPin=z2/D0;
           if(y2&&z2>1e-15&&z2>=zFree*(1-HYST_FRAC)){
             const yFull=new Float64Array(n);
             for(let k=0;k<rvars.length;k++)yFull[idxMap[k]]=y2[k]||0;
@@ -698,13 +699,15 @@ function projectSchedule(net,targets,avail,opts){
     _lineStability[stabKey]=rec;
     const keys=Object.keys(_lineStability);if(keys.length>256)delete _lineStability[keys[0]];
   }
-  return {rate,plan,items,z:(y[zCol]||0)/D0,stabilized};
+  return {rate,plan,items,z:(y[zCol]||0)/D0,stabilized,zFree:zFree/D0,zPin};
 }
 // Solve one batch of demand (a single project, or all of them combined) into a pipelined phase.
 // `avail` (optional) is the stock the LP may draw down in place of producing an item (issue #73).
 // `stabilize` opts this phase into the Tier-2 line-stability pass (issue #87 item 5) — set for the
 // real phase solves whose plan the user sees, left off for the ordering/cost-estimation passes.
-function solvePhaseFor(net,name,avail,stabilize){
+// `phaseKey` is the cache discriminator: a STABLE unique id (project id / member-id set), NOT the
+// display name, so two projects sharing a name don't collide on one cache slot. Falls back to name.
+function solvePhaseFor(net,name,avail,stabilize,phaseKey){
   const demandItems=ALLITEMS.filter(it=>net[it]>1e-9);
   // Gel is reachable if the LP can forge it (vespium budget) or Lil' Forgie supplies some.
   const gelAvail=gelVespBudgetHr()>0||forgieHr(GEL)>1e-9;
@@ -712,7 +715,7 @@ function solvePhaseFor(net,name,avail,stabilize){
   const targets=demandItems.filter(it=>unsat.indexOf(it)<0);
   if(targets.length===0)
     return {name,plan:[],balance:[],demandItems,net,rate:{},eta:0,bottleneck:null,infeasItems:[],unsat,atRisk:[],items:[],z:0,feasible:false};
-  const sch=projectSchedule(net,targets,avail,stabilize?{stabilize:true,phaseKey:name}:null);
+  const sch=projectSchedule(net,targets,avail,stabilize?{stabilize:true,phaseKey:(phaseKey!=null?phaseKey:name)}:null);
   const rate={};targets.forEach(it=>rate[it]=Math.max(0,sch.rate[it]||0));
   let eta=0,bottleneck=null;const infeasItems=[];
   targets.forEach(it=>{if(rate[it]<=1e-9)infeasItems.push(it);else{const t=net[it]/rate[it];if(t>eta){eta=t;bottleneck=it;}}});
@@ -735,7 +738,7 @@ function solvePhaseFor(net,name,avail,stabilize){
     const used=b.stock*eta;   // total units of this item's stock the phase draws down
     return used>=STOCK_SAFETY_FRAC*av*0.98;
   }).map(b=>b.res);
-  return {name,plan:sch.plan,balance,demandItems,net,rate,eta,bottleneck,infeasItems,unsat,atRisk,items:sch.items,z:sch.z,feasible,stabilized:!!sch.stabilized};
+  return {name,plan:sch.plan,balance,demandItems,net,rate,eta,bottleneck,infeasItems,unsat,atRisk,items:sch.items,z:sch.z,feasible,stabilized:!!sch.stabilized,zFree:sch.zFree,zPin:sch.zPin};
 }
 // net demand for a project's level-sum `sub`, against an inventory map (folds in Frame bits).
 function projNetVec(sub,invMap){
@@ -801,7 +804,8 @@ function buildProjectPhases(seq,net,perProject){
     if(maxL===0||S.projectGate===false){
       const sumSub={};ALLITEMS.forEach(it=>sumSub[it]=perProject.reduce((s,p)=>s+(p.sub[it]||0),0));
       const inv0=invStart();
-      const ph=solvePhaseFor(net,perProject.length>1?"All projects":perProject[0].name,projAvailVec(sumSub,inv0),true);
+      const combKey=perProject.length>1?perProject.map(p=>p.id).sort().join("+"):perProject[0].id;
+      const ph=solvePhaseFor(net,perProject.length>1?"All projects":perProject[0].name,projAvailVec(sumSub,inv0),true,combKey);
       ph.demandSub=sumSub;ph.invStart=inv0;   // stock on hand when this phase begins (issue #87 on-hand projection)
       ph.doneAt=ph.eta;return [ph];
     }
@@ -813,7 +817,7 @@ function buildProjectPhases(seq,net,perProject){
       if(!members.length)continue;
       const sumSub={};ALLITEMS.forEach(it=>sumSub[it]=members.reduce((s,p)=>s+(p.sub[it]||0),0));
       const inv0=Object.assign({},invRun);   // snapshot before consumeInv draws it down for the next wave
-      const ph=solvePhaseFor(projNetVec(sumSub,invRun),members.map(m=>m.name).join(" + "),projAvailVec(sumSub,invRun),true);
+      const ph=solvePhaseFor(projNetVec(sumSub,invRun),members.map(m=>m.name).join(" + "),projAvailVec(sumSub,invRun),true,members.map(m=>m.id).sort().join("+"));
       ph.members=members.map(m=>m.name);ph.demandSub=sumSub;ph.wave=phases.length+1;ph.invStart=inv0;
       consumeInv(invRun,sumSub,ph);
       cum+=ph.eta;ph.doneAt=cum;phases.push(ph);
@@ -834,7 +838,7 @@ function buildProjectPhases(seq,net,perProject){
   const invRun=invStart();let cum=0;const phases=[];
   order.forEach(({p})=>{
     const inv0=Object.assign({},invRun);   // snapshot before consumeInv draws it down for the next phase
-    const ph=solvePhaseFor(projNetVec(p.sub,invRun),p.name,projAvailVec(p.sub,invRun),true);
+    const ph=solvePhaseFor(projNetVec(p.sub,invRun),p.name,projAvailVec(p.sub,invRun),true,p.id);
     ph.prio=(p.prio!=null?p.prio:null);ph.demandSub=p.sub;ph.invStart=inv0;
     consumeInv(invRun,p.sub,ph);
     cum+=ph.eta;ph.doneAt=cum;phases.push(ph);

@@ -42,8 +42,8 @@ const runner = `
   function dom(r){ const ph=r.phases[0]; const m={};
     (ph.plan||[]).forEach(p=>{ const e=(p.entries||[])[0]; m[p.line]= e?(e.item+"@"+e.lvl):"idle"; }); return m; }
   function run(lines,frames){ let s=base(lines); s.projects=proj(frames); normalize(s); syncManual(s); S=s;
-    const r=optimize(); return {dom:dom(r), z:r.phases[0].z, eta:r.eta, stab:!!r.phases[0].stabilized,
-      feasible:r.feasible, phases:r.phases.length}; }
+    const r=optimize(),p0=r.phases[0]; return {dom:dom(r), z:p0.z, eta:r.eta, stab:!!p0.stabilized,
+      feasible:r.feasible, phases:r.phases.length, zFree:p0.zFree, zPin:p0.zPin}; }
 
   const results=[]; const rec=(name,pass,detail)=>results.push({name,pass,detail});
 
@@ -65,10 +65,27 @@ const runner = `
   rec("held plan keeps throughput within HYST_FRAC", stable.z>=free.z*(1-HYST_FRAC)-1e-9,
     "stableZ="+stable.z.toFixed(6)+" freeZ="+free.z.toFixed(6)+" ratio="+(stable.z/free.z).toFixed(6));
 
-  // 4) no lock-in: a 100x demand change must re-optimize, not stay pinned to the old plan.
+  // 4) no lock-in: a 100x demand change must re-optimize AND actually release the pin (not just shift
+  //    the dominant job within a stabilized set) — assert big.stab===false, not only that dom changed.
   resetLineStability(); run(LINES,200); const big=run(LINES,20000);
-  rec("large change re-optimizes (not stuck)", JSON.stringify(big.dom)!==baseStr && big.feasible && isFinite(big.eta) && big.eta>0,
-    "changed="+(JSON.stringify(big.dom)!==baseStr)+" feasible="+big.feasible);
+  rec("large change re-optimizes and releases the pin", JSON.stringify(big.dom)!==baseStr && big.stab===false && big.feasible && isFinite(big.eta) && big.eta>0,
+    "changed="+(JSON.stringify(big.dom)!==baseStr)+" released="+(big.stab===false)+" feasible="+big.feasible);
+
+  // 4a) HYST_FRAC band — MUST HOLD: a Frames-demand bump whose pinned re-solve costs a *strict, sub-5%*
+  //     amount of throughput is kept stable. This pins the band's lower edge: shrink HYST_FRAC below the
+  //     gap and this flips to a release, failing the test (the ratio==1 swap case can't catch that).
+  resetLineStability(); run(LINES,200); const hold=run(LINES,420);
+  { const gap=hold.zFree>0?(1-hold.zPin/hold.zFree):0;
+    rec("HYST band: sub-band cost is HELD", hold.stab===true && gap>0.001 && gap<HYST_FRAC,
+      "held="+hold.stab+" pinGap="+(gap*100).toFixed(2)+"% (< "+(HYST_FRAC*100)+"%)"); }
+
+  // 4b) HYST_FRAC band — MUST RELEASE: a bigger bump whose pinned re-solve costs *more* than the band is
+  //     rejected in favour of the free optimum. This pins the upper edge: grow HYST_FRAC past the gap and
+  //     this flips to a hold, failing the test.
+  resetLineStability(); run(LINES,200); const rel=run(LINES,500);
+  { const gap=rel.zFree>0?(1-rel.zPin/rel.zFree):0;
+    rec("HYST band: past-band cost is RELEASED", rel.stab===false && rel.zPin!=null && gap>HYST_FRAC,
+      "released="+(rel.stab===false)+" pinGap="+(gap*100).toFixed(2)+"% (> "+(HYST_FRAC*100)+"%)"); }
 
   // 5) worker-safety: cache still pins after a JSON round-trip (the real worker path serializes it).
   resetLineStability(); run(LINES,200);
@@ -90,6 +107,31 @@ const runner = `
   rec("multi-phase: both phases present and feasible under stability",
     s1.phases.length===2 && s2.phases.length===2 && s2.phases.every(p=>p.feasible) && isFinite(s2.eta) && s2.eta>0,
     "phases="+s2.phases.length+" feasible="+s2.phases.map(p=>p.feasible).join(",")+" eta="+s2.eta.toFixed(4));
+
+  // 7) cache eviction: seed the cache full (256 synthetic keys), do one real solve, and confirm it
+  //    doesn't grow past the cap and drops the OLDEST key (k0) while keeping newer ones (k1).
+  resetLineStability();
+  const seed={}; for(let i=0;i<256;i++)seed["k"+i]={};
+  setLineStability(seed);
+  run(LINES,200);                                   // writes one fresh real key -> triggers eviction
+  { const keys=Object.keys(getLineStability());
+    rec("cache evicts the oldest key past the 256 cap",
+      keys.length<=256 && !keys.includes("k0") && keys.includes("k1"),
+      "size="+keys.length+" k0_evicted="+(!keys.includes("k0"))+" k1_kept="+keys.includes("k1")); }
+
+  // 8) cache-key collision fix (issue #87 review): two sequenced projects with the SAME display name
+  //    must key on their own project id, not the shared name — so phase B is NOT cross-pinned to A on
+  //    its first solve. Pre-fix this produced ONE shared cache slot and phase B came back stabilized.
+  function twoProj(){ const s=defaults(); s.dupe=0; s.margin=0; s.mode="project"; s.projectSeq=true;
+    s.lines=JSON.parse(JSON.stringify(LINES));
+    s.projects=[
+      {id:"p1",name:"New project",catId:"",on:true,from:1,to:1,done:0,prio:1,levels:[{costs:[{item:"Frames",qty:100},{item:"Bricks",qty:4000}]}]},
+      {id:"p2",name:"New project",catId:"",on:true,from:1,to:1,done:0,prio:2,levels:[{costs:[{item:"Frames",qty:4000},{item:"Bricks",qty:100}]}]}];
+    normalize(s); syncManual(s); return s; }
+  resetLineStability(); S=twoProj(); const col=optimize();
+  rec("same-named projects don't share a cache slot (keyed by id)",
+    Object.keys(getLineStability()).length===2 && col.phases[1] && col.phases[1].stabilized===false,
+    "keys="+Object.keys(getLineStability()).length+" phaseB_firstSolveStabilized="+(col.phases[1]&&col.phases[1].stabilized));
 
   __emit(JSON.stringify(results));
 })();
