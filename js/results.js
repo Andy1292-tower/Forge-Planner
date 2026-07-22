@@ -15,6 +15,9 @@ function _spawnSolveWorker(){
     if(d.reqId!==_solveReq)return;            // a newer solve superseded this one
     hideSolveSpinner();const cb=_solvePending;_solvePending=null;
     if(d.error){solveError(d.error);return;}
+    // Copy the worker's updated line-stability cache back to the main thread (issue #87 item 5): the
+    // worker is discarded after each solve, so the main thread owns the cache across solves.
+    if(d.res&&d.res.__stab&&typeof setLineStability==="function"){setLineStability(d.res.__stab);delete d.res.__stab;}
     if(cb)cb(d.res);};
   w.onerror=()=>{_workerBroken=true;try{w.terminate();}catch(e){}_solveWorker=null;
     if(_solvePending){const cb=_solvePending;_solveSync(cb,_solveReq);}};
@@ -27,7 +30,8 @@ function solveAsync(cb){
   try{
     if(_solveWorker)_solveWorker.terminate();   // cancel any in-flight solve
     _solveWorker=_spawnSolveWorker();
-    _solveWorker.postMessage({reqId,state:JSON.parse(JSON.stringify(S)),budget:Math.max(200,Math.min(60000,num(S.solveBudget)||2000))});
+    const stab=(typeof getLineStability==="function")?getLineStability():null;
+    _solveWorker.postMessage({reqId,state:JSON.parse(JSON.stringify(S)),budget:Math.max(200,Math.min(60000,num(S.solveBudget)||2000)),stab});
   }catch(e){_workerBroken=true;_solveSync(cb,reqId);}
 }
 // Synchronous fallback. The 0ms defer lets the spinner paint before the (briefly blocking) solve.
@@ -110,6 +114,20 @@ function projectForgieNote(res){
 function renderProjectResults(res,el,stat){
   _lastProjectRes=res;
   if(res.empty){
+    // Distinguish "everything's done" from "nothing configured" (issue #87 item 2). When active
+    // projects exist but are fully checked off, keep the Track-progress / Step-by-step openers so the
+    // user can still review or reopen them — the buttons re-wire via the delegated #results handler.
+    const hasActive=(S.projects||[]).some(p=>p.on&&(p.levels||[]).length);
+    if(hasActive){
+      el.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <div class="proj-mini" style="font-size:11.5px">Every ticked project is complete.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn primary" id="btnProgress">Track progress</button>
+          <button class="btn primary" id="btnSteps">Step-by-step ▸</button>
+        </div></div>
+        <div class="notice info"><b>All projects complete 🎉</b> Nothing left to craft. Open <b>Track progress</b> to review or reopen a level, or add a new project in the <b>Shopping list</b>.</div>`;
+      stat.textContent="";return;
+    }
     el.innerHTML=`<div class="notice info">No project demand yet. Open <b>Shopping list</b>, add a project with item costs, tick it <b>on</b>, then come back. Enter your current <b>inventory</b> there too — it's subtracted from what you need to craft.</div>`;
     stat.textContent="";return;
   }

@@ -230,6 +230,12 @@
 <div class="modal-bg" id="stepsModal" hidden>
   <div class="modal" style="max-width:720px">
     <div class="modal-h"><h3>Step-by-step plan</h3><button class="iconbtn" id="stepsClose" title="Close">×</button></div>
+    <div class="steps-start">
+      <label for="stepsStart">Plan start</label>
+      <input type="datetime-local" id="stepsStart">
+      <button class="btn ghost" id="stepsStartNow" title="Anchor the schedule to right now">Now</button>
+      <span class="proj-mini steps-start-hint">clock times count from here</span>
+    </div>
     <div class="modal-b" id="stepsBody"></div>
     <div class="modal-f"><button class="btn primary" id="stepsDone">Done</button></div>
   </div>
