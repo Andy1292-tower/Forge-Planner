@@ -633,16 +633,29 @@ function renderSteps(){
     if(!ph.feasible)h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">Can't fully produce this one with the current lines${ph.unsat&&ph.unsat.length?" — "+ph.unsat.join(", ")+" need Gel":""}.</div>`;
     if(ph.atRisk&&ph.atRisk.length)h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">No line here is crafting ${ph.atRisk.join(", ")} — this plan is spending down your current stock of ${ph.atRisk.length>1?"them":"it"} instead. Once that stock is gone, this schedule stops working.</div>`;
     if(!lines.length){h+=`<div class="proj-mini" style="padding:2px 0">No line activity.</div></div>`;return;}
+    // Projected on-hand stock of each item at a given point in the phase (issue #87 follow-up):
+    // stock when the phase began + net (produced + Lil' Forgie − consumed by other lines) so far. Uses
+    // the phase-average rates from the LP's balance table, so a just-in-time intermediate reads ~0 (it's
+    // eaten as fast as it's made) while a finished product climbs toward the amount the project needs.
+    const bal={};(ph.balance||[]).forEach(b=>{bal[b.res]=b;});
+    const inv0=ph.invStart||{};
+    const onHandAt=(item,elapsed)=>{
+      const b=bal[item];const netRate=b?((b.prod||0)+(b.forgie||0)-(b.cons||0)):0;
+      const v=(num(inv0[item])||0)+netRate*elapsed;
+      return isFinite(v)?Math.max(0,v):0;
+    };
     h+=`<ol class="step-list">`;
     lines.forEach(L=>{
       let cum=0;
       const parts=L.segs.map(s=>{
         cum+=s.frac;
-        const at=fmtClock(pStart+Math.min(cum,1)*(ph.eta||0));
+        const elapsed=Math.min(cum,1)*(ph.eta||0);
+        const at=fmtClock(pStart+elapsed);
         const tag=at?` <span class="proj-mini">· until </span><span class="step-clock">~${at}</span>`:"";
-        if(L.reserved)return `reserve for <b>Gel</b> @${s.lvl}× (whole phase)${tag}`;
+        const stock=at?` <span class="proj-mini">· ~<b>${disp(onHandAt(s.item,elapsed))}</b> on hand</span>`:"";
+        if(L.reserved)return `reserve for <b>Gel</b> @${s.lvl}× (whole phase)${tag}${stock}`;
         const verb=RAWS.includes(s.item)?"produce":"craft";
-        return `${verb} <b>${s.item}</b> @${s.lvl}×${s.frac>=0.999?" (whole phase)":` for ~${fmtDuration(s.frac*ph.eta)}`}${tag}`;
+        return `${verb} <b>${s.item}</b> @${s.lvl}×${s.frac>=0.999?" (whole phase)":` for ~${fmtDuration(s.frac*ph.eta)}`}${tag}${stock}`;
       });
       const segHtml=parts.map((p,idx)=>`<div class="step-seg">${idx===0?'<span class="step-then">→</span>':'<span class="step-then">then</span>'} ${p}</div>`).join('');
       h+=`<li><span class="mono" style="color:var(--amber)">Line #${L.line}</span> <span class="proj-mini">(${L.max}× cap)</span>${segHtml}</li>`;

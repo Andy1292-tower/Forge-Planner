@@ -800,8 +800,9 @@ function buildProjectPhases(seq,net,perProject){
     // off (projectGate===false) to craft the whole list at once, ignoring unlock waves.
     if(maxL===0||S.projectGate===false){
       const sumSub={};ALLITEMS.forEach(it=>sumSub[it]=perProject.reduce((s,p)=>s+(p.sub[it]||0),0));
-      const ph=solvePhaseFor(net,perProject.length>1?"All projects":perProject[0].name,projAvailVec(sumSub,invStart()),true);
-      ph.demandSub=sumSub;
+      const inv0=invStart();
+      const ph=solvePhaseFor(net,perProject.length>1?"All projects":perProject[0].name,projAvailVec(sumSub,inv0),true);
+      ph.demandSub=sumSub;ph.invStart=inv0;   // stock on hand when this phase begins (issue #87 on-hand projection)
       ph.doneAt=ph.eta;return [ph];
     }
     // unlocks force ordered "waves": combine within a layer, sequence the layers, carrying
@@ -811,8 +812,9 @@ function buildProjectPhases(seq,net,perProject){
       const members=perProject.filter((_,i)=>layer[i]===L);
       if(!members.length)continue;
       const sumSub={};ALLITEMS.forEach(it=>sumSub[it]=members.reduce((s,p)=>s+(p.sub[it]||0),0));
+      const inv0=Object.assign({},invRun);   // snapshot before consumeInv draws it down for the next wave
       const ph=solvePhaseFor(projNetVec(sumSub,invRun),members.map(m=>m.name).join(" + "),projAvailVec(sumSub,invRun),true);
-      ph.members=members.map(m=>m.name);ph.demandSub=sumSub;ph.wave=phases.length+1;
+      ph.members=members.map(m=>m.name);ph.demandSub=sumSub;ph.wave=phases.length+1;ph.invStart=inv0;
       consumeInv(invRun,sumSub,ph);
       cum+=ph.eta;ph.doneAt=cum;phases.push(ph);
     }
@@ -831,8 +833,9 @@ function buildProjectPhases(seq,net,perProject){
   });
   const invRun=invStart();let cum=0;const phases=[];
   order.forEach(({p})=>{
+    const inv0=Object.assign({},invRun);   // snapshot before consumeInv draws it down for the next phase
     const ph=solvePhaseFor(projNetVec(p.sub,invRun),p.name,projAvailVec(p.sub,invRun),true);
-    ph.prio=(p.prio!=null?p.prio:null);ph.demandSub=p.sub;
+    ph.prio=(p.prio!=null?p.prio:null);ph.demandSub=p.sub;ph.invStart=inv0;
     consumeInv(invRun,p.sub,ph);
     cum+=ph.eta;ph.doneAt=cum;phases.push(ph);
   });
