@@ -15,6 +15,9 @@ function _spawnSolveWorker(){
     if(d.reqId!==_solveReq)return;            // a newer solve superseded this one
     hideSolveSpinner();const cb=_solvePending;_solvePending=null;
     if(d.error){solveError(d.error);return;}
+    // Copy the worker's updated line-stability cache back to the main thread (issue #87 item 5): the
+    // worker is discarded after each solve, so the main thread owns the cache across solves.
+    if(d.res&&d.res.__stab&&typeof setLineStability==="function"){setLineStability(d.res.__stab);delete d.res.__stab;}
     if(cb)cb(d.res);};
   w.onerror=()=>{_workerBroken=true;try{w.terminate();}catch(e){}_solveWorker=null;
     if(_solvePending){const cb=_solvePending;_solveSync(cb,_solveReq);}};
@@ -27,7 +30,8 @@ function solveAsync(cb){
   try{
     if(_solveWorker)_solveWorker.terminate();   // cancel any in-flight solve
     _solveWorker=_spawnSolveWorker();
-    _solveWorker.postMessage({reqId,state:JSON.parse(JSON.stringify(S)),budget:Math.max(200,Math.min(60000,num(S.solveBudget)||2000))});
+    const stab=(typeof getLineStability==="function")?getLineStability():null;
+    _solveWorker.postMessage({reqId,state:JSON.parse(JSON.stringify(S)),budget:Math.max(200,Math.min(60000,num(S.solveBudget)||2000)),stab});
   }catch(e){_workerBroken=true;_solveSync(cb,reqId);}
 }
 // Synchronous fallback. The 0ms defer lets the spinner paint before the (briefly blocking) solve.
