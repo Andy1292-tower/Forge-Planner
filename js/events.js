@@ -309,6 +309,16 @@ function catLevelView(L){
   const parts=(L.costs||[]).filter(c=>c.qty).map(c=>`${escapeAttr(c.item)} <b class="mono">${formatGameNum(c.qty,2)}</b>`);
   return parts.length?parts.join(' <span style="color:var(--ink3)">·</span> '):'<span style="color:var(--ink3)">free</span>';
 }
+// Compact +1/−1 level-completion stepper for a shopping-list card (issue #87 item 3). Uses the same
+// projSpan/projDone clamps as the tracker and step modal, so completion stays consistent everywhere.
+function projStepper(p,pi){
+  const {span}=projSpan(p),done=projDone(p);
+  return `<span class="lvl-step" title="Levels completed — increment as you finish them">
+    <button class="iconbtn" data-psdec="${pi}" ${done<=0?"disabled":""} title="Mark one fewer level done">−</button>
+    <span class="mono proj-mini" title="levels completed">${done}/${span}</span>
+    <button class="iconbtn" data-psinc="${pi}" ${done>=span?"disabled":""} title="Mark one more level done">+</button>
+  </span>`;
+}
 // Compact card for a catalog-sourced project: name is a fixed label, costs are
 // read-only, user only controls on/off, level range, "1st", and remove. Reuses
 // the same data-* hooks as the editable card so existing handlers apply.
@@ -328,6 +338,7 @@ function compactProjCard(p,pi){
       <div class="proj-tools">
         <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–">order</label>
         ${range}
+        ${projStepper(p,pi)}
         <button class="iconbtn" data-pdel="${pi}" title="Remove from list">×</button>
       </div>
     </div>
@@ -353,6 +364,7 @@ function projCard(p,pi){
       <div class="proj-tools">
         <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–">order</label>
         <span class="proj-lvls">lv <input type="number" min="1" step="1" data-pfrom="${pi}" value="${p.from||1}"> → <input type="number" min="1" step="1" data-pto="${pi}" value="${p.to||lv.length||1}"></span>
+        ${projStepper(p,pi)}
         <button class="iconbtn" data-pdup="${pi}" title="Duplicate" style="font-size:13px">⧉</button>
         <button class="iconbtn" data-pdel="${pi}" title="Delete project">×</button>
       </div>
@@ -457,6 +469,8 @@ document.getElementById("projList").addEventListener("click",e=>{
   if((v=g("data-pdellvl"))!=null){const pi=+v,li=+g("data-li"),p=S.projects[pi];p.levels.splice(li,1);if(p.levels.length===0)p.levels.push({costs:[]});if(p.to>p.levels.length)p.to=p.levels.length;if(p.from>p.levels.length)p.from=p.levels.length;renderProjects();save();scheduleSolve();return;}
   if((v=g("data-paddcost"))!=null){const pi=+v,li=+g("data-li");S.projects[pi].levels[li].costs.push({item:PRODUCTS[0],qty:null});renderProjects();save();scheduleSolve();return;}
   if((v=g("data-cdel"))!=null){const[pi,li,ci]=v.split("_").map(Number);S.projects[pi].levels[li].costs.splice(ci,1);renderProjects();save();scheduleSolve();return;}
+  // +1/−1 level completion on a shopping-list card (issue #87 item 3) — clamped to the from→to span.
+  if((v=g("data-psinc"))!=null||(v=g("data-psdec"))!=null){const inc=g("data-psinc")!=null,p=S.projects[+v];if(!p)return;const {span}=projSpan(p);p.done=Math.max(0,Math.min(span,projDone(p)+(inc?1:-1)));renderProjects();save();scheduleSolve();return;}
 });
 document.getElementById("projList").addEventListener("input",e=>{
   const t=e.target,g=a=>t.getAttribute(a);let v;
@@ -568,7 +582,11 @@ function stepsProjControls(){
       <input type="checkbox" data-spon="${escapeAttr(p.id)}" ${p.on?"checked":""} title="Include in the plan">
       <span style="flex:1 1 130px;min-width:110px;${complete?"color:var(--ink3)":""}">${escapeAttr(p.name||"Project")}${badge}</span>
       <span class="proj-mini" style="white-space:nowrap">lv <input type="number" min="1" step="1" data-spfrom="${escapeAttr(p.id)}" value="${from}" style="width:46px"> → <input type="number" min="1" step="1" data-spto="${escapeAttr(p.id)}" value="${to}" style="width:46px"></span>
-      <span class="mono proj-mini" title="levels completed">${done}/${span}</span>
+      <span class="lvl-step" title="Mark levels done one at a time">
+        <button class="iconbtn" data-spdec="${escapeAttr(p.id)}" ${done<=0?"disabled":""} title="Mark one fewer level done">−</button>
+        <span class="mono proj-mini" title="levels completed">${done}/${span}</span>
+        <button class="iconbtn" data-spinc="${escapeAttr(p.id)}" ${done>=span?"disabled":""} title="Mark one more level done">+</button>
+      </span>
       <button class="btn ghost" style="padding:2px 9px;font-size:11px" data-spcomplete="${escapeAttr(p.id)}">${complete?"Reopen":"Mark complete"}</button>
     </div>`;
   }).join("");
@@ -588,8 +606,9 @@ function renderSteps(){
       ?"Do these phases <b>in order</b>. Within a phase, a line listing two jobs splits its time — do the input job first so you don't stall. Reset the lines when you start the next phase."
       :res.waved
       ?"Do these waves <b>in order</b> — finish a wave before starting the next so the unlocks land first. Within a wave, a line listing two jobs splits its time; do the input job first."
-      :"Set every line as shown and let it run. A line listing two jobs splits its time across the run; do the input job first."} Total ≈ <b>${fmtDuration(res.eta)}</b>. <span style="color:var(--ink3)">Clock times assume you start now — <b>refresh the page and they'll no longer be accurate.</b></span></p>`;
-  const now=new Date();
+      :"Set every line as shown and let it run. A line listing two jobs splits its time across the run; do the input job first."} Total ≈ <b>${fmtDuration(res.eta)}</b>. <span style="color:var(--ink3)">Clock times count from the <b>plan start</b> above — edit it or tap “Now” to re-anchor.</span></p>`;
+  const _ps=(S.planStart!=null&&isFinite(S.planStart))?new Date(S.planStart):null;
+  const now=(_ps&&!isNaN(_ps.getTime()))?_ps:new Date();
   const fmtClock=h=>{
     if(!isFinite(h)||h<0)return "";
     const d=new Date(now.getTime()+h*3600000);
@@ -633,12 +652,43 @@ function renderSteps(){
   body.innerHTML=h;
 }
 const stepsModal=document.getElementById("stepsModal");
-function openSteps(){renderSteps();stepsModal.hidden=false;}
+// Persistent, overridable plan start (issue #87 item 1). S.planStart is epoch ms (or null = live "now").
+// It's a display anchor only — the schedule's durations are elapsed-hours from the solver and don't
+// depend on it. Seeded once, the first time there's a real plan to anchor, so estimates stop silently
+// re-anchoring to the current moment on every reload.
+const stepsStartInput=document.getElementById("stepsStart");
+const stepsStartNow=document.getElementById("stepsStartNow");
+function toDatetimeLocalValue(ms){
+  const d=new Date(ms);if(isNaN(d.getTime()))return "";
+  const pad=n=>String(n).padStart(2,"0");
+  return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+"T"+pad(d.getHours())+":"+pad(d.getMinutes());
+}
+function syncStepsStart(){
+  if(!stepsStartInput)return;
+  stepsStartInput.value=(S.planStart!=null&&isFinite(S.planStart))?toDatetimeLocalValue(S.planStart):"";
+}
+function openSteps(){
+  if(S.planStart==null){   // seed the baseline the first time a non-empty plan is viewed
+    let r=_lastProjectRes;
+    if(!r||r.empty){try{r=optimizeProjectTop();}catch(e){r=null;}}
+    if(r&&!r.empty&&r.phases&&r.phases.length){S.planStart=Date.now();save();}
+  }
+  syncStepsStart();renderSteps();stepsModal.hidden=false;
+}
 function closeSteps(){stepsModal.hidden=true;}
 document.getElementById("stepsClose").addEventListener("click",closeSteps);
 document.getElementById("stepsDone").addEventListener("click",closeSteps);
 stepsModal.addEventListener("click",e=>{if(e.target===stepsModal)closeSteps();});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!stepsModal.hidden)closeSteps();});
+if(stepsStartInput)stepsStartInput.addEventListener("input",()=>{
+  const v=stepsStartInput.value;
+  if(!v){S.planStart=null;}
+  else{const t=new Date(v).getTime();if(!isNaN(t))S.planStart=t;}
+  save();renderSteps();
+});
+if(stepsStartNow)stepsStartNow.addEventListener("click",()=>{
+  S.planStart=Date.now();save();syncStepsStart();renderSteps();
+});
 // Issue #69 — inline project controls inside the Step-by-step page (level range, complete/reopen).
 // Typing in a level box only updates state (no re-render, so focus is kept); the plan rebuilds on
 // commit (change/blur) and on the checkbox/complete buttons.
@@ -646,8 +696,11 @@ const stepsBody=document.getElementById("stepsBody");
 const stepsProj=pid=>(S.projects||[]).find(x=>x.id===pid);
 stepsBody.addEventListener("input",e=>{
   const t=e.target,g=a=>t.getAttribute(a);let v;
-  if((v=g("data-spfrom"))!=null){const p=stepsProj(v);if(p){p.from=Math.max(1,Math.floor(num(t.value)||1));if(p.to<p.from)p.to=p.from;save();scheduleSolve();}return;}
-  if((v=g("data-spto"))!=null){const p=stepsProj(v);if(p){p.to=Math.max(1,Math.floor(num(t.value)||1));save();scheduleSolve();}return;}
+  // Editing `from` must never touch `to` mid-keystroke (issue #87 item 4) — reconciliation happens
+  // on read via projSpan()/projectDemand() (they pull `to` up to `from`). Skip the write while the box
+  // is transiently empty so backspacing doesn't coerce the value to 1; the commit re-render restores it.
+  if((v=g("data-spfrom"))!=null){const p=stepsProj(v);if(p&&t.value.trim()!==""){p.from=Math.max(1,Math.floor(num(t.value)||1));save();scheduleSolve();}return;}
+  if((v=g("data-spto"))!=null){const p=stepsProj(v);if(p&&t.value.trim()!==""){p.to=Math.max(1,Math.floor(num(t.value)||1));save();scheduleSolve();}return;}
 });
 stepsBody.addEventListener("change",e=>{
   const t=e.target,g=a=>t.getAttribute(a);let v;
@@ -655,6 +708,16 @@ stepsBody.addEventListener("change",e=>{
   if(g("data-spfrom")!=null||g("data-spto")!=null){stepsRefresh();return;}   // commit level edit -> rebuild plan
 });
 stepsBody.addEventListener("click",e=>{
+  // Granular +1/−1 level completion (issue #87 item 3) — clamped to the project's from→to span,
+  // reusing the same projSpan/projDone helpers the tracker and solver read, so all views stay in sync.
+  const inc=e.target.closest&&e.target.closest("[data-spinc]");
+  const dec=e.target.closest&&e.target.closest("[data-spdec]");
+  if(inc||dec){
+    const step=inc||dec, p=stepsProj(step.getAttribute(inc?"data-spinc":"data-spdec"));if(!p)return;
+    const {span}=projSpan(p);
+    p.done=Math.max(0,Math.min(span,projDone(p)+(inc?1:-1)));
+    save();stepsRefresh();return;
+  }
   const btn=e.target.closest&&e.target.closest("[data-spcomplete]");if(!btn)return;
   const p=stepsProj(btn.getAttribute("data-spcomplete"));if(!p)return;
   const {span}=projSpan(p);

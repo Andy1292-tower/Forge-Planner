@@ -110,6 +110,20 @@ function projectForgieNote(res){
 function renderProjectResults(res,el,stat){
   _lastProjectRes=res;
   if(res.empty){
+    // Distinguish "everything's done" from "nothing configured" (issue #87 item 2). When active
+    // projects exist but are fully checked off, keep the Track-progress / Step-by-step openers so the
+    // user can still review or reopen them — the buttons re-wire via the delegated #results handler.
+    const hasActive=(S.projects||[]).some(p=>p.on&&(p.levels||[]).length);
+    if(hasActive){
+      el.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <div class="proj-mini" style="font-size:11.5px">Every ticked project is complete.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn primary" id="btnProgress">Track progress</button>
+          <button class="btn primary" id="btnSteps">Step-by-step ▸</button>
+        </div></div>
+        <div class="notice info"><b>All projects complete 🎉</b> Nothing left to craft. Open <b>Track progress</b> to review or reopen a level, or add a new project in the <b>Shopping list</b>.</div>`;
+      stat.textContent="";return;
+    }
     el.innerHTML=`<div class="notice info">No project demand yet. Open <b>Shopping list</b>, add a project with item costs, tick it <b>on</b>, then come back. Enter your current <b>inventory</b> there too — it's subtracted from what you need to craft.</div>`;
     stat.textContent="";return;
   }
