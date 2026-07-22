@@ -614,7 +614,7 @@ function renderSteps(){
     const d=new Date(now.getTime()+h*3600000);
     let t=d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
     const dayDiff=Math.round((new Date(d.getFullYear(),d.getMonth(),d.getDate())-new Date(now.getFullYear(),now.getMonth(),now.getDate()))/86400000);
-    if(dayDiff>0)t+=` (+${dayDiff}d)`;
+    if(dayDiff>0)t+=` (${d.toLocaleDateString([],{month:"short",day:"numeric"})})`;   // show the actual date when it lands on a later day, not "+Nd"
     return t;
   };
   let phaseStart=0;
