@@ -590,19 +590,15 @@ function stepsProjControls(){
       <button class="btn ghost" style="padding:2px 9px;font-size:11px" data-spcomplete="${escapeAttr(p.id)}">${complete?"Reopen":"Mark complete"}</button>
     </div>`;
   }).join("");
-  return `<div style="border:1px solid var(--line);border-radius:8px;padding:6px 11px 9px;margin-bottom:14px">
-    <div class="proj-mini" style="font-weight:600;padding:2px 0 1px">Projects — set complete or change levels</div>
-    ${rows}
-  </div>`;
+  // Rows only — the caller (renderProjectResults) wraps these in a collapsible <details> panel.
+  return rows;
 }
-// Re-solve synchronously (as Track progress does) so the step plan updates in place, and kick the
-// debounced main-panel solve too.
-function stepsRefresh(){try{_lastProjectRes=optimizeProjectTop();}catch(e){}renderSteps();scheduleSolve();}
-function renderSteps(){
-  const res=_lastProjectRes, body=document.getElementById("stepsBody");
-  const controls=stepsProjControls();
-  if(!res||res.empty||!res.phases||!res.phases.length){body.innerHTML=controls+`<div class="notice info">Build a project plan first — add a project in Shopping list and tick it on (above), then switch to Project plan mode.</div>`;return;}
-  let h=controls+`<p class="help" style="margin-bottom:12px">${res.sequenced
+// Build the step-by-step plan HTML — the main Project-mode panel (was a modal body). Pure: returns the
+// intro + phase cards for a solved project result and lets renderProjectResults own the DOM and the
+// surrounding controls. Returns "" when there's no plan yet.
+function stepPlanHtml(res){
+  if(!res||res.empty||!res.phases||!res.phases.length)return "";
+  let h=`<p class="help" style="margin:0 0 12px">${res.sequenced
       ?"Do these phases <b>in order</b>. Within a phase, a line listing two jobs splits its time — do the input job first so you don't stall. Reset the lines when you start the next phase."
       :res.waved
       ?"Do these waves <b>in order</b> — finish a wave before starting the next so the unlocks land first. Within a wave, a line listing two jobs splits its time; do the input job first."
@@ -662,93 +658,40 @@ function renderSteps(){
     });
     h+=`</ol></div>`;
   });
-  body.innerHTML=h;
+  return h;
 }
-const stepsModal=document.getElementById("stepsModal");
-// Persistent, overridable plan start (issue #87 item 1). S.planStart is epoch ms (or null = live "now").
-// It's a display anchor only — the schedule's durations are elapsed-hours from the solver and don't
-// depend on it. Seeded once, the first time there's a real plan to anchor, so estimates stop silently
-// re-anchoring to the current moment on every reload.
-const stepsStartInput=document.getElementById("stepsStart");
-const stepsStartNow=document.getElementById("stepsStartNow");
-function toDatetimeLocalValue(ms){
-  const d=new Date(ms);if(isNaN(d.getTime()))return "";
-  const pad=n=>String(n).padStart(2,"0");
-  return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+"T"+pad(d.getHours())+":"+pad(d.getMinutes());
-}
-function syncStepsStart(){
-  if(!stepsStartInput)return;
-  stepsStartInput.value=(S.planStart!=null&&isFinite(S.planStart))?toDatetimeLocalValue(S.planStart):"";
-}
-function openSteps(){
-  if(S.planStart==null){   // seed the baseline the first time a non-empty plan is viewed
-    let r=_lastProjectRes;
-    if(!r||r.empty){try{r=optimizeProjectTop();}catch(e){r=null;}}
-    if(r&&!r.empty&&r.phases&&r.phases.length){S.planStart=Date.now();save();}
-  }
-  syncStepsStart();renderSteps();stepsModal.hidden=false;
-}
-function closeSteps(){stepsModal.hidden=true;}
-document.getElementById("stepsClose").addEventListener("click",closeSteps);
-document.getElementById("stepsDone").addEventListener("click",closeSteps);
-stepsModal.addEventListener("click",e=>{if(e.target===stepsModal)closeSteps();});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!stepsModal.hidden)closeSteps();});
-if(stepsStartInput)stepsStartInput.addEventListener("input",()=>{
-  const v=stepsStartInput.value;
-  if(!v){S.planStart=null;}
-  else{const t=new Date(v).getTime();if(!isNaN(t))S.planStart=t;}
-  save();renderSteps();
-});
-if(stepsStartNow)stepsStartNow.addEventListener("click",()=>{
-  S.planStart=Date.now();save();syncStepsStart();renderSteps();
-});
-// Issue #69 — inline project controls inside the Step-by-step page (level range, complete/reopen).
-// Typing in a level box only updates state (no re-render, so focus is kept); the plan rebuilds on
-// commit (change/blur) and on the checkbox/complete buttons.
-const stepsBody=document.getElementById("stepsBody");
+// ── Plan-start + inline project controls, now living in the Project-mode panel (#results) ──
+// The step plan and its controls used to be a modal; promoting them into #results means every edit
+// re-renders the plan in place. #results is rebuilt on each solve, so all of this is delegated.
+// S.planStart (issue #87 item 1) is epoch ms, or null for a live "now" — a display anchor only; the
+// schedule's durations are elapsed-hours from the solver and don't depend on it. It's seeded once, the
+// first time a real plan exists, in renderProjectResults (results.js).
 const stepsProj=pid=>(S.projects||[]).find(x=>x.id===pid);
-stepsBody.addEventListener("input",e=>{
-  const t=e.target,g=a=>t.getAttribute(a);let v;
-  // Editing `from` must never touch `to` mid-keystroke (issue #87 item 4) — reconciliation happens
-  // on read via projSpan()/projectDemand() (they pull `to` up to `from`). Skip the write while the box
-  // is transiently empty so backspacing doesn't coerce the value to 1; the commit re-render restores it.
-  if((v=g("data-spfrom"))!=null){const p=stepsProj(v);if(p&&t.value.trim()!==""){p.from=Math.max(1,Math.floor(num(t.value)||1));save();scheduleSolve();}return;}
-  if((v=g("data-spto"))!=null){const p=stepsProj(v);if(p&&t.value.trim()!==""){p.to=Math.max(1,Math.floor(num(t.value)||1));save();scheduleSolve();}return;}
+// Repaint the project panel from the cached result WITHOUT re-solving — for changes that only move the
+// display anchor (plan start / "Now"), not the plan itself.
+function repaintProject(){
+  if(S.mode!=="project")return;
+  const el=document.getElementById("results"),stat=document.getElementById("solveStat");
+  if(el&&_lastProjectRes)renderProjectResults(_lastProjectRes,el,stat);
+}
+document.getElementById("results").addEventListener("input",e=>{
+  const t=e.target;if(!t||!t.getAttribute)return;let v;
+  // Level-range typing: update state only (no re-render) so the caret is kept; the plan rebuilds on
+  // commit (change). Editing `from` must never touch `to` mid-keystroke (issue #87 item 4) —
+  // reconciliation happens on read via projSpan()/projectDemand(). Skip the write while transiently
+  // empty so backspacing doesn't coerce to 1; the commit re-render restores it.
+  if((v=t.getAttribute("data-spfrom"))!=null){const p=stepsProj(v);if(p&&t.value.trim()!==""){p.from=Math.max(1,Math.floor(num(t.value)||1));save();}return;}
+  if((v=t.getAttribute("data-spto"))!=null){const p=stepsProj(v);if(p&&t.value.trim()!==""){p.to=Math.max(1,Math.floor(num(t.value)||1));save();}return;}
 });
-stepsBody.addEventListener("change",e=>{
-  const t=e.target,g=a=>t.getAttribute(a);let v;
-  if((v=g("data-spon"))!=null){const p=stepsProj(v);if(p){p.on=t.checked;save();stepsRefresh();}return;}
-  if(g("data-spfrom")!=null||g("data-spto")!=null){stepsRefresh();return;}   // commit level edit -> rebuild plan
-});
-stepsBody.addEventListener("click",e=>{
-  // Granular +1/−1 level completion (issue #87 item 3) — clamped to the project's from→to span,
-  // reusing the same projSpan/projDone helpers the tracker and solver read, so all views stay in sync.
-  const inc=e.target.closest&&e.target.closest("[data-spinc]");
-  const dec=e.target.closest&&e.target.closest("[data-spdec]");
-  if(inc||dec){
-    const step=inc||dec, p=stepsProj(step.getAttribute(inc?"data-spinc":"data-spdec"));if(!p)return;
-    const {span}=projSpan(p);
-    p.done=Math.max(0,Math.min(span,projDone(p)+(inc?1:-1)));
-    save();stepsRefresh();return;
-  }
-  const btn=e.target.closest&&e.target.closest("[data-spcomplete]");if(!btn)return;
-  const p=stepsProj(btn.getAttribute("data-spcomplete"));if(!p)return;
-  const {span}=projSpan(p);
-  p.done=projDone(p)>=span?0:span;   // toggle: mark every level in the span done, or reopen
-  save();stepsRefresh();
-});
-// the Step-by-step button lives inside #results, which is re-rendered each solve
-document.getElementById("results").addEventListener("click",e=>{
-  if(e.target.closest&&e.target.closest("#btnProgress")){openProgress();return;}
-  if(e.target.closest&&e.target.closest("#btnSteps"))openSteps();
-  if(e.target.closest&&e.target.closest("#btnCopyManual")){copyPlanToManual(_lastItemsCreditsRes);return;}
-  if(e.target.closest&&e.target.closest("#manualUpdate")){if(S.manualActiveId)updateManualPreset(S.manualActiveId);return;}
-  if(e.target.closest&&e.target.closest("#manualSaveNew")){const name=(prompt("Name this setup:","")||"").trim();if(name)saveManualPreset(name);return;}
-  if(e.target.closest&&e.target.closest("#manualDelPreset")){const sel=document.getElementById("manualPreset");const id=(sel&&sel.value)||S.manualActiveId;if(id&&confirm("Delete this saved setup?"))deleteManualPreset(id);return;}
-});
-// Manual-mode dropdowns also live inside #results (re-rendered each change)
 document.getElementById("results").addEventListener("change",e=>{
-  const t=e.target;if(!t||!t.getAttribute)return;
+  const t=e.target;if(!t||!t.getAttribute)return;let v;
+  // Plan-start anchor: display-only, so repaint from cache (no solve).
+  if(t.id==="spStart"){const val=t.value;if(!val)S.planStart=null;else{const ms=new Date(val).getTime();if(!isNaN(ms))S.planStart=ms;}save();repaintProject();return;}
+  // Inline project controls — same fields as Shopping list / Track progress, kept in sync. These change
+  // demand, so re-solve; doSolve() rebuilds #results (and thus the plan) right away.
+  if((v=t.getAttribute("data-spon"))!=null){const p=stepsProj(v);if(p){p.on=t.checked;save();doSolve();}return;}
+  if(t.getAttribute("data-spfrom")!=null||t.getAttribute("data-spto")!=null){doSolve();return;}   // commit level edit
+  // Manual-mode dropdowns also live inside #results (re-rendered each change)
   if(t.id==="manualPreset"){if(t.value)loadManualPreset(t.value);return;}
   const ri=t.getAttribute("data-mres");
   if(ri!=null){const i=+ri;if(S.manual[i]){S.manual[i].job=t.value;if(S.manual[i].lvl>S.lines[i].max)S.manual[i].lvl=S.lines[i].max;}save();renderResults();return;}
@@ -756,5 +699,28 @@ document.getElementById("results").addEventListener("change",e=>{
   if(lv!=null){const i=+lv;if(S.manual[i])S.manual[i].lvl=+t.value;save();renderResults();return;}
   const sl=t.getAttribute("data-msell");
   if(sl!=null){const i=+sl;if(S.manual[i])S.manual[i].sell=t.checked;save();renderResults();return;}
+});
+document.getElementById("results").addEventListener("click",e=>{
+  const cl=sel=>e.target.closest&&e.target.closest(sel);
+  if(cl("#btnProgress")){openProgress();return;}
+  // Plan-start "Now" — re-anchor the clock to the current moment (display only).
+  if(cl("#spNow")){S.planStart=Date.now();save();repaintProject();return;}
+  // Persist a disclosure's open state across the next re-render. The native <details> toggle still
+  // fires; at click time .open is the pre-toggle state, so the new state is its inverse.
+  const sm=cl("summary[data-paneltoggle]");
+  if(sm){const k=sm.getAttribute("data-paneltoggle"),willOpen=!(sm.parentElement&&sm.parentElement.open);
+    if(k==="adjust")_projAdjustOpen=willOpen;else if(k==="breakdown")_breakdownOpen=willOpen;return;}
+  // Granular +1/−1 level completion (issue #87 item 3) — clamped to the from→to span, reusing the
+  // projSpan/projDone helpers the tracker and solver read, so every view stays in sync.
+  const inc=cl("[data-spinc]"),dec=cl("[data-spdec]");
+  if(inc||dec){const p=stepsProj((inc||dec).getAttribute(inc?"data-spinc":"data-spdec"));if(!p)return;
+    const {span}=projSpan(p);p.done=Math.max(0,Math.min(span,projDone(p)+(inc?1:-1)));save();doSolve();return;}
+  const cbtn=cl("[data-spcomplete]");
+  if(cbtn){const p=stepsProj(cbtn.getAttribute("data-spcomplete"));if(!p)return;
+    const {span}=projSpan(p);p.done=projDone(p)>=span?0:span;save();doSolve();return;}   // toggle done/reopen
+  if(cl("#btnCopyManual")){copyPlanToManual(_lastItemsCreditsRes);return;}
+  if(cl("#manualUpdate")){if(S.manualActiveId)updateManualPreset(S.manualActiveId);return;}
+  if(cl("#manualSaveNew")){const name=(prompt("Name this setup:","")||"").trim();if(name)saveManualPreset(name);return;}
+  if(cl("#manualDelPreset")){const sel=document.getElementById("manualPreset");const id=(sel&&sel.value)||S.manualActiveId;if(id&&confirm("Delete this saved setup?"))deleteManualPreset(id);return;}
 });
 
