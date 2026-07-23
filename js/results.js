@@ -2,6 +2,30 @@
 /* ---------- RENDER: results ---------- */
 let _lastProjectRes=null;
 let _lastItemsCreditsRes=null;   // items/credits solve result, cached so "Copy to Manual" has something to read
+// The step-by-step plan is now the main Project-mode panel (was a modal). These two flags persist the
+// state of its collapsible sections across the frequent #results re-renders (every solve rebuilds the
+// panel's innerHTML), so an expanded "Full breakdown" doesn't slam shut when you tweak a level. Flipped
+// by the delegated #results click handler in events.js.
+let _projAdjustOpen=false;   // "Adjust project levels & completion" disclosure
+let _breakdownOpen=false;    // "Full breakdown — demand, line assignment, resource balance" disclosure
+// Plan start → a datetime-local value (or "" for live "now"). Shared with the inline anchor renderer.
+function fmtDatetimeLocal(ms){
+  const d=new Date(ms);if(isNaN(d.getTime()))return "";
+  const pad=n=>String(n).padStart(2,"0");
+  return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+"T"+pad(d.getHours())+":"+pad(d.getMinutes());
+}
+// The plan-start anchor, promoted out of the old modal header. Clock times in the step plan count from
+// here; it's a display anchor only (durations are elapsed-hours from the solver). Edited via delegated
+// #results handlers in events.js. Kept compact so the step plan stays the hero.
+function projPlanAnchorHtml(){
+  const v=(S.planStart!=null&&isFinite(S.planStart))?fmtDatetimeLocal(S.planStart):"";
+  return `<div class="plan-anchor">
+    <label for="spStart">Plan start</label>
+    <input type="datetime-local" id="spStart" value="${v}">
+    <button class="btn ghost" id="spNow" title="Anchor the schedule to right now">Now</button>
+    <span class="proj-mini">clock times count from here</span>
+  </div>`;
+}
 
 /* ---------- async solve via Web Worker ----------
    The solve runs off the main thread so a long budget shows a spinner instead of freezing. Each
@@ -113,17 +137,19 @@ function projectForgieNote(res){
 }
 function renderProjectResults(res,el,stat){
   _lastProjectRes=res;
+  // Seed the plan-start anchor once, the first time a real plan exists (issue #87 item 1) — moved here
+  // from the old modal's open handler now that the step plan is always on screen. Display anchor only.
+  if(S.planStart==null&&res&&!res.empty&&res.phases&&res.phases.length){S.planStart=Date.now();save();}
   if(res.empty){
     // Distinguish "everything's done" from "nothing configured" (issue #87 item 2). When active
-    // projects exist but are fully checked off, keep the Track-progress / Step-by-step openers so the
-    // user can still review or reopen them — the buttons re-wire via the delegated #results handler.
+    // projects exist but are fully checked off, keep the Track-progress opener so the user can still
+    // review or reopen them — the button re-wires via the delegated #results handler.
     const hasActive=(S.projects||[]).some(p=>p.on&&(p.levels||[]).length);
     if(hasActive){
       el.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px">
         <div class="proj-mini" style="font-size:11.5px">Every ticked project is complete.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn primary" id="btnProgress">Track progress</button>
-          <button class="btn primary" id="btnSteps">Step-by-step ▸</button>
         </div></div>
         <div class="notice info"><b>All projects complete 🎉</b> Nothing left to craft. Open <b>Track progress</b> to review or reopen a level, or add a new project in the <b>Shopping list</b>.</div>`;
       stat.textContent="";return;
@@ -132,13 +158,17 @@ function renderProjectResults(res,el,stat){
     stat.textContent="";return;
   }
   let html="";
-  html+=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+  // Header: ordering note + Track-progress opener. The step plan below is the main event, so there's
+  // no longer a "Step-by-step" button — this panel *is* it.
+  html+=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
     <div class="proj-mini" style="font-size:11.5px">${res.sequenced?'Order: <b style="color:var(--ink2)">one project at a time</b> — unlocks first, then your order, then cheapest. Change in Shopping list.':res.waved?'Order: <b style="color:var(--ink2)">all together, in unlock waves</b> — material unlocks first, then the rest. Change in Shopping list.':res.single?'Order: <b style="color:var(--ink2)">all projects in one phase</b> — unlock ordering off. Change in Shopping list.':'Order: <b style="color:var(--ink2)">all projects together</b> (fastest total). Change in Shopping list.'}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn primary" id="btnProgress">Track progress</button>
-      <button class="btn primary" id="btnSteps">Step-by-step ▸</button>
     </div></div>`;
-  html+=`<div class="notice info"><b>Project plan.</b> ${res.sequenced?"Completes projects one at a time so you unlock bonuses sooner; within each project, lines split their time in a pipelined plan.":"Sums all ticked projects and crafts everything together with a pipelined line setup, inputs &amp; outputs flowing together."} Overshoot from compression is ignored.</div>`;
+  // Plan-start anchor (promoted from the old modal header)
+  html+=projPlanAnchorHtml();
+  // Key notices — the ones that change what you actually do. The old verbose "Project plan." explainer
+  // is dropped; the step-plan intro below already tells you how to run it.
   html+=projectForgieNote(res);
   if(res.waved)html+=`<div class="notice info" style="font-size:11.5px"><b>Unlock-aware order.</b> Some projects unlock materials others need (Frames, Gel, Wire), so this is split into <b>${res.phases.length} waves</b> — finish each wave before starting the next. Everything within a wave is crafted together.</div>`;
   if(res.unsat&&res.unsat.length){
@@ -147,13 +177,22 @@ function renderProjectResults(res,el,stat){
   }
   if(res.infeasItems&&res.infeasItems.length)html+=`<div class="notice warn"><b>Can't sustainably produce:</b> ${res.infeasItems.join(", ")}. Raise a line's max compression, add a line, or check recipe costs — the time below excludes these.</div>`;
   if(res.atRiskItems&&res.atRiskItems.length)html+=`<div class="notice warn"><b>Relies entirely on stock:</b> ${res.atRiskItems.join(", ")}. No line is crafting ${res.atRiskItems.length>1?"these":"this"} — the plan is spending down your current inventory to cover them. Once it runs out you'll need dedicated crafters.</div>`;
+  // Summary metrics
   html+=`<div class="metrics">
     <div class="metric"><div class="l">Total time</div><div class="v">${fmtDuration(res.eta)}</div><div class="u">${res.sequenced?"to finish every project":"to finish all ticked projects"}</div></div>
     <div class="metric"><div class="l">Projects</div><div class="v">${res.perProject.length}</div><div class="u">${res.sequenced?"one at a time":res.waved?res.phases.length+" unlock waves":res.single?"all in one phase":"scheduled together"}</div></div>
     ${!res.sequenced&&!res.waved&&res.bottleneck?`<div class="metric"><div class="l">Bottleneck</div><div class="v" style="font-size:17px">${res.bottleneck}</div><div class="u">sets the finish time</div></div>`:""}
   </div>`;
+  // Quick project controls (on/off, level range, mark done) — collapsed so the plan stays the hero.
+  // Same fields as Shopping list / Track progress, kept in sync; wired via delegated #results handlers.
+  const adj=stepsProjControls();
+  if(adj)html+=`<details class="cat-panel" ${_projAdjustOpen?"open":""}><summary data-paneltoggle="adjust"><span class="cat-sum-lbl">Adjust project levels &amp; completion</span><span class="cat-sum-meta">on/off · levels · mark done</span></summary><div class="panel-pad">${adj}</div></details>`;
+  // ── The step-by-step plan: the main event ──
+  html+=`<div class="step-main">${stepPlanHtml(res)}</div>`;
+  // Everything analytical folds into one collapsed breakdown so it's a click away, not in the way.
+  let bd="";
   if(res.sequenced||res.waved){
-    html+=`<div class="subhead">${res.waved?"Build order — waves, each crafted together":"Completion order — done one project at a time"}</div>
+    bd+=`<div class="subhead" style="margin-top:0">${res.waved?"Build order — waves, each crafted together":"Completion order — done one project at a time"}</div>
       <table><thead><tr><th>#</th><th>${res.waved?"Wave":"Project"}</th><th>Needs</th><th class="num">Phase</th><th class="num">Done by</th></tr></thead><tbody>`;
     res.phases.forEach((ph,i)=>{
       const sub=ph.demandSub||{};
@@ -162,14 +201,13 @@ function renderProjectResults(res,el,stat){
       const badge=(ph.prio!=null)?` <span class="pill craft" style="font-size:9px">#${ph.prio}</span>`:"";
       const warn=!ph.feasible?' <span style="color:var(--danger);font-size:10.5px">(blocked — see notes)</span>':"";
       const nm=escapeAttr(ph.members&&ph.members.length>1?ph.members.join(" + "):ph.name);
-      html+=`<tr><td class="mono">${i+1}</td><td>${nm}${badge}${warn}</td>
+      bd+=`<tr><td class="mono">${i+1}</td><td>${nm}${badge}${warn}</td>
         <td style="color:var(--ink2);font-size:11.5px">${needs||"—"}</td>
         <td class="num mono">${fmtDuration(ph.eta)}</td><td class="num mono" style="color:var(--amber)">${fmtDuration(ph.doneAt)}</td></tr>`;
     });
-    html+=`</tbody></table>`;
-    html+=`<div class="notice info" style="font-size:11.5px">Tap <b>Step-by-step</b> for the exact line setup in each ${res.waved?"wave":"phase"} and when to switch lines over.</div>`;
+    bd+=`</tbody></table>`;
   } else {
-    html+=`<div class="subhead">Combined demand</div>
+    bd+=`<div class="subhead" style="margin-top:0">Combined demand</div>
       <table><thead><tr><th>Item</th><th class="num">Have</th><th class="num">Net needed</th><th class="num">Made /hr</th><th class="num">Done in</th></tr></thead><tbody>`;
     res.demandItems.forEach(it=>{
       const inv=num(S.inventory&&S.inventory[it])||0;
@@ -177,29 +215,29 @@ function renderProjectResults(res,el,stat){
       const r=res.rate[it]||0,done=r>1e-12?res.net[it]/r:Infinity;
       const rateCell=isUnsat?'<span style="color:var(--ink3)">needs Gel</span>':(r>1e-9?disp(r):'<span style="color:var(--danger)">0</span>');
       const doneCell=isUnsat?'<span style="color:var(--ink3)">needs Gel</span>':(isFinite(done)?fmtDuration(done):"—");
-      html+=`<tr><td>${it}</td><td class="num mono" style="color:var(--ink2)">${inv>0?disp(inv):"—"}</td>
+      bd+=`<tr><td>${it}</td><td class="num mono" style="color:var(--ink2)">${inv>0?disp(inv):"—"}</td>
         <td class="num">${disp(res.net[it])}</td><td class="num">${rateCell}</td>
         <td class="num mono" style="color:${isUnsat||!isFinite(done)?'var(--ink3)':'var(--ink2)'}">${doneCell}</td></tr>`;
     });
-    html+=`</tbody></table>`;
-    html+=`<div class="subhead">Projects (≈ done in = when its items finish in the shared pipeline)</div>
+    bd+=`</tbody></table>`;
+    bd+=`<div class="subhead">Projects (≈ done in = when its items finish in the shared pipeline)</div>
       <table><thead><tr><th>Project</th><th>Levels</th><th>Needs</th><th class="num">≈ Done in</th></tr></thead><tbody>`;
     res.perProject.forEach(p=>{
       const items=ALLITEMS.filter(it=>(p.sub[it]||0)>0);
       let pdone=0;items.forEach(it=>{const r=res.rate[it]||0;if(r>1e-12){const d=(res.net[it]||0)/r;if(d>pdone)pdone=d;}});
       const needs=items.slice(0,6).map(it=>disp(p.sub[it])+" "+it).join(", ")+(items.length>6?" …":"");
-      html+=`<tr><td>${p.name||"Project"}</td><td class="mono" style="color:var(--ink2)">${p.from}–${p.to} / ${p.levels}</td>
+      bd+=`<tr><td>${p.name||"Project"}</td><td class="mono" style="color:var(--ink2)">${p.from}–${p.to} / ${p.levels}</td>
         <td style="color:var(--ink2);font-size:11.5px">${needs||"—"}</td>
         <td class="num mono">${items.length?fmtDuration(pdone):"—"}</td></tr>`;
     });
-    html+=`</tbody></table>`;
-    html+=`<div class="subhead">Line assignment — % is the share of this line's time on that job</div>${lineAssignTableHtml(res.plan)}`;
-    html+=idleLinesNote(res.plan);
+    bd+=`</tbody></table>`;
+    bd+=`<div class="subhead">Line assignment — % is the share of this line's time on that job</div>${lineAssignTableHtml(res.plan)}`;
+    bd+=idleLinesNote(res.plan);
     if(res.balance&&res.balance.length){
       // Break out Lil' Forgie's passive supply into its own column (issue #77), mirroring the
       // items/credits balance table — shown only when he's contributing something here.
       const showForgie=res.balance.some(b=>(b.forgie||0)>1e-6);
-      html+=`<div class="subhead">Resource balance (per hour)</div>
+      bd+=`<div class="subhead">Resource balance (per hour)</div>
         <table><thead><tr><th>Resource</th><th class="num">Lines</th>${showForgie?'<th class="num">Passive</th>':''}<th class="num">Consumed</th><th class="num">Surplus</th></tr></thead><tbody>`;
       res.balance.forEach(b=>{const f=b.forgie||0,surplus=b.prod+f-b.cons,stock=b.stock||0;
         const fCell=showForgie?`<td class="num" style="color:${f>1e-6?'var(--teal)':'var(--ink3)'}">${f>1e-6?disp(f):"—"}</td>`:"";
@@ -210,12 +248,14 @@ function renderProjectResults(res,el,stat){
         const surCell=stock>1e-6
           ?`<span style="color:${atRisk?'var(--danger)':'var(--teal)'}">${disp(stock)}/hr from stock${atRisk?" (no crafters!)":""}</span>`
           :`<span class="${surplus<-1e-6?'bal-tight':''}">${disp(surplus)}</span>`;
-        html+=`<tr><td>${b.res}</td><td class="num">${disp(b.prod)}</td>${fCell}<td class="num">${disp(b.cons)}</td>
+        bd+=`<tr><td>${b.res}</td><td class="num">${disp(b.prod)}</td>${fCell}<td class="num">${disp(b.cons)}</td>
           <td class="num">${surCell}</td></tr>`;});
-      html+=`</tbody></table>`;
+      bd+=`</tbody></table>`;
     }
   }
-  html+=gelReservedNote(res.gelReserved);
+  const gelNote=gelReservedNote(res.gelReserved);
+  if(gelNote)bd+=gelNote;
+  html+=`<details class="cat-panel breakdown-panel" ${_breakdownOpen?"open":""}><summary data-paneltoggle="breakdown"><span class="cat-sum-lbl">Full breakdown — demand, line assignment, resource balance</span><span class="cat-sum-meta">the numbers</span></summary><div class="panel-pad">${bd}</div></details>`;
   el.innerHTML=html;
   stat.textContent="solved in "+(res.ms||0).toFixed(1)+" ms";
 }
