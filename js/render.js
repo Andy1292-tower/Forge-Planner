@@ -98,8 +98,7 @@ document.getElementById("gelToggle").addEventListener("click",()=>{
 });
 document.getElementById("gelBody").addEventListener("input",e=>{
   if(e.target.id!=="gelVesp")return;
-  S.gelVespText=e.target.value;
-  S.gelVesp=parseGameNum(e.target.value);
+  setMinedIncome("Vespium",e.target.value);
   renderGel();scheduleSolve();
 });
 
@@ -148,4 +147,3 @@ function prodCard(p){
     ${body}</div>`;
   return c;
 }
-

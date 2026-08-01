@@ -32,9 +32,9 @@ const runner = `
 
   const GEL = 'Gel', BUDGET = 5e23;
   const scen = {
-    'items.Wire+Gel': s => { s.mode='items'; on(s,['Wire','Frames']); s.gelVesp=BUDGET; },
-    'credits.Wire+Gel': s => { s.mode='credits'; ['Wire','Frames','Rods'].forEach(p=>s.sellPrice[p]= p==='Wire'?5000:10); s.gelVesp=BUDGET; },
-    'project.Wire+Gel': s => { s.mode='project'; s.gelVesp=BUDGET;
+    'items.Wire+Gel': s => { s.mode='items'; on(s,['Wire','Frames']); s.minedIncome.Vespium=BUDGET; },
+    'credits.Wire+Gel': s => { s.mode='credits'; ['Wire','Frames','Rods'].forEach(p=>s.sellPrice[p]= p==='Wire'?5000:10); s.minedIncome.Vespium=BUDGET; },
+    'project.Wire+Gel': s => { s.mode='project'; s.minedIncome.Vespium=BUDGET;
       s.projects=[{id:'a',name:'P',catId:'',on:true,from:1,to:1,done:0,prio:null,levels:[{costs:[{item:'Wire',qty:8000},{item:'Frames',qty:4000}]}]}]; },
   };
 
