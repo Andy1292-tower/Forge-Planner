@@ -74,24 +74,32 @@ function solveError(msg){
 }
 function showSolveSpinner(){const o=document.getElementById("solveOverlay");if(o)o.hidden=false;}
 function hideSolveSpinner(){const o=document.getElementById("solveOverlay");if(o)o.hidden=true;}
-// One-line summary of the Gel the planner reserved (compression auto-picked per line), and how
-// much of the vespium income it spends — shown under the plan in every mode.
-function gelReservedNote(gr){
-  if(!gr||!gr.lines)return "";
-  const inc=Math.max(0,num(S.gelVesp)||0)*60;
-  const vesp=gr.vespHr!=null?` — burning <b>${disp(gr.vespHr)}</b>${inc>0?" of your <b>"+disp(inc)+"</b>":""} vespium/hr`:"";
-  return `<div class="notice info" style="font-size:11.5px"><b>${gr.lines}</b> line${gr.lines>1?"s":""} on Gel (compression auto-picked) → <b>${disp(gr.outHr)}</b> Gel/hr${vesp}, fed into the plan.</div>`;
+function resultMinedUsage(res){
+  if(res&&Array.isArray(res.minedUsage))return res.minedUsage;
+  // Adapter for cached/legacy results that predate the generic minedUsage shape.
+  const gr=res&&res.gelReserved;
+  return gr&&gr.lines?[{item:GEL,resource:VESP,lines:gr.lines,outHr:gr.outHr,inputHr:gr.vespHr}]:[];
+}
+// Summary of every mined craft in a plan and the exact independent income it consumes.
+function minedUsageNote(usages){
+  if(!Array.isArray(usages)||!usages.length)return "";
+  const rows=usages.map(use=>{const inc=minedBudgetHr(use.resource),lines=use.lines||0;
+    return `<b>${lines}</b> line${lines===1?"":"s"} on <b>${use.item}</b> → <b>${disp(use.outHr||0)}</b>/hr, consuming <b>${disp(use.inputHr||0)}</b>${inc>0?" of your <b>"+disp(inc)+"</b>":""} ${use.resource}/hr`;
+  });
+  return `<div class="notice info" style="font-size:11.5px">${rows.join("<br>")}</div>`;
 }
 // Explains any lines the plan left idle. A line goes idle when throughput is capped by a
-// bottleneck elsewhere — a material input, or (in project mode) the Gel/vespium budget — so the
+// bottleneck elsewhere — an ordinary input or a craft's mined-income budget — so the
 // spare capacity can't make anything that finishes the plan sooner. It's still free to bank a
 // surplus on Bits or Concrete, whose only real input is abundant "Worthless Rocks". Works on both
 // plan shapes: project rows carry `entries`, items/credits rows carry a single `job`.
-function idleLinesNote(plan){
+function idleLinesNote(plan,minedUsage){
   const idle=(plan||[]).filter(p=>p.entries?!p.entries.length:(p.job&&p.job.kind==="idle"));
   if(!idle.length)return "";
   const s=idle.length>1, which=idle.map(p=>"#"+p.line).join(", ");
-  return `<div class="notice info" style="font-size:11.5px"><b>${s?"Lines "+which+" are":"Line "+which+" is"} idle.</b> The plan is capped by a bottleneck elsewhere — a material input, or your Gel/vespium budget — so spare capacity here wouldn't finish anything sooner. If you like, run ${s?"them":"it"} on <b>Bits</b> or <b>Concrete</b> to bank a surplus: those cost only abundant <b>Worthless Rocks</b>, so it's effectively free.</div>`;
+  const mined=[...new Set((minedUsage||[]).map(use=>use.item+" / "+use.resource))];
+  const bottleneck=mined.length?`a material input or the <b>${mined.join("; ")}</b> mined-income budget`:`a material input`;
+  return `<div class="notice info" style="font-size:11.5px"><b>${s?"Lines "+which+" are":"Line "+which+" is"} idle.</b> The plan is capped by ${bottleneck}, so spare capacity here wouldn't finish anything sooner. If you like, run ${s?"them":"it"} on <b>Bits</b> or <b>Concrete</b> to bank a surplus: those cost only abundant <b>Worthless Rocks</b>, so it's effectively free.</div>`;
 }
 function lineAssignTableHtml(plan){
   let h=`<table><thead><tr><th>Line</th><th>Cap</th><th>Job</th><th>Lvl</th>
@@ -99,11 +107,10 @@ function lineAssignTableHtml(plan){
   plan.forEach(p=>{
     if(!p.entries||!p.entries.length){h+=`<tr><td class="mono">#${p.line}</td><td class="mono">${p.max}×</td><td><span class="pill idle">idle</span></td><td></td><td class="num"></td><td class="num"></td><td></td></tr>`;return;}
     p.entries.forEach((e,ei)=>{
-      const isGel=e.item===GEL, reserved=p.reserved||isGel, isRaw=RAWS.includes(e.item);
-      const pill=reserved?'<span class="pill" style="background:rgba(63,182,160,.14);color:var(--teal);border:1px solid var(--teal-d)">gel</span>':isRaw?'<span class="pill prod">produce</span>':'<span class="pill craft">craft</span>';
-      // Gel is forged from mined ore against the vespium budget (shown in the Gel note), not from a craftable input.
-      const cons=reserved?'<span style="color:var(--ink3)">mined ore (free)</span>':(e.cons.length?e.cons.map(c=>disp(c.hr)+" "+c.item).join(", "):'<span style="color:var(--ink3)">—</span>');
-      h+=`<tr${reserved?' style="background:rgba(63,182,160,.05)"':''}>
+      const mined=MINED_CRAFTS[e.item],isRaw=RAWS.includes(e.item);
+      const pill=mined?'<span class="pill" style="background:rgba(63,182,160,.14);color:var(--teal);border:1px solid var(--teal-d)">mined craft</span>':isRaw?'<span class="pill prod">produce</span>':'<span class="pill craft">craft</span>';
+      const cons=e.cons.length?e.cons.map(c=>disp(c.hr)+" "+c.item+(isMinedResource(c.item)?" (mined income)":"")).join(", "):'<span style="color:var(--ink3)">—</span>';
+      h+=`<tr${mined?' style="background:rgba(63,182,160,.05)"':''}>
         <td class="mono">${ei===0?"#"+p.line:""}</td><td class="mono">${ei===0?p.max+"×":""}</td>
         <td>${pill} ${e.item}</td><td class="mono">${e.lvl}×</td>
         <td class="num mono" style="color:var(--ink2)">${fmt(e.frac*100,0)}%</td>
@@ -171,17 +178,18 @@ function renderProjectResults(res,el,stat){
   // is dropped; the step-plan intro below already tells you how to run it.
   html+=projectForgieNote(res);
   if(res.waved)html+=`<div class="notice info" style="font-size:11.5px"><b>Unlock-aware order.</b> Some projects unlock materials others need (Frames, Gel, Wire), so this is split into <b>${res.phases.length} waves</b> — finish each wave before starting the next. Everything within a wave is crafted together.</div>`;
-  if(res.unsat&&res.unsat.length){
-    const gelInc=Math.max(0,num(S.gelVesp)||0)>0;
-    html+=`<div class="notice warn"><b>Needs Gel:</b> ${res.unsat.join(", ")} require Gel, which the planner forges from your <b>vespium income</b>. ${gelInc?"Your current income is too low to forge any — raise <b>vespium / minute income</b> in the Gel panel":"Enter your <b>vespium / minute income</b> in the Gel panel"} to include them — they're excluded from the time below for now.</div>`;
+  if(res.blockedMined&&Object.keys(res.blockedMined).length){
+    const blocked=Object.entries(res.blockedMined).map(([item,resources])=>`<b>${item}</b> needs ${resources.map(r=>`<b>${r}</b>`).join(" and ")}`).join("; ");
+    html+=`<div class="notice warn"><b>Missing mined income:</b> ${blocked}. Enter those incomes in <b>Mined resources</b> to include the blocked items; they remain excluded from the plan time below.</div>`;
   }
   if(res.infeasItems&&res.infeasItems.length)html+=`<div class="notice warn"><b>Can't sustainably produce:</b> ${res.infeasItems.join(", ")}. Raise a line's max compression, add a line, or check recipe costs — the time below excludes these.</div>`;
   if(res.atRiskItems&&res.atRiskItems.length)html+=`<div class="notice warn"><b>Relies entirely on stock:</b> ${res.atRiskItems.join(", ")}. No line is crafting ${res.atRiskItems.length>1?"these":"this"} — the plan is spending down your current inventory to cover them. Once it runs out you'll need dedicated crafters.</div>`;
+  if(res.partial)html+=`<div class="notice warn"><b>Partial plan only.</b> The blocked items remain excluded, so the ticked projects are <b>not fully finishable</b> with the current mined incomes. The time shown is for currently plannable work only.</div>`;
   // Summary metrics
   html+=`<div class="metrics">
-    <div class="metric"><div class="l">Total time</div><div class="v">${fmtDuration(res.eta)}</div><div class="u">${res.sequenced?"to finish every project":"to finish all ticked projects"}</div></div>
+    <div class="metric"><div class="l">${res.partial?"Partial plan time":res.feasible?"Total time":"Plan time"}</div><div class="v">${fmtDuration(res.eta)}</div><div class="u">${res.partial?"currently plannable work only":res.feasible?(res.sequenced?"to finish every project":"to finish all ticked projects"):"blocked — no finish time available"}</div></div>
     <div class="metric"><div class="l">Projects</div><div class="v">${res.perProject.length}</div><div class="u">${res.sequenced?"one at a time":res.waved?res.phases.length+" unlock waves":res.single?"all in one phase":"scheduled together"}</div></div>
-    ${!res.sequenced&&!res.waved&&res.bottleneck?`<div class="metric"><div class="l">Bottleneck</div><div class="v" style="font-size:17px">${res.bottleneck}</div><div class="u">sets the finish time</div></div>`:""}
+    ${!res.sequenced&&!res.waved&&res.bottleneck?`<div class="metric"><div class="l">Bottleneck</div><div class="v" style="font-size:17px">${res.bottleneck}</div><div class="u">sets the ${res.partial?"partial plan":"finish"} time</div></div>`:""}
   </div>`;
   // Quick project controls (on/off, level range, mark done) — collapsed so the plan stays the hero.
   // Same fields as Shopping list / Track progress, kept in sync; wired via delegated #results handlers.
@@ -193,7 +201,7 @@ function renderProjectResults(res,el,stat){
   let bd="";
   if(res.sequenced||res.waved){
     bd+=`<div class="subhead" style="margin-top:0">${res.waved?"Build order — waves, each crafted together":"Completion order — done one project at a time"}</div>
-      <table><thead><tr><th>#</th><th>${res.waved?"Wave":"Project"}</th><th>Needs</th><th class="num">Phase</th><th class="num">Done by</th></tr></thead><tbody>`;
+      <table><thead><tr><th>#</th><th>${res.waved?"Wave":"Project"}</th><th>Needs</th><th class="num">${res.partial?"Plan time":"Phase"}</th><th class="num">${res.partial?"Plannable by":"Done by"}</th></tr></thead><tbody>`;
     res.phases.forEach((ph,i)=>{
       const sub=ph.demandSub||{};
       const items=ALLITEMS.filter(it=>(sub[it]||0)>0);
@@ -203,7 +211,7 @@ function renderProjectResults(res,el,stat){
       const nm=escapeAttr(ph.members&&ph.members.length>1?ph.members.join(" + "):ph.name);
       bd+=`<tr><td class="mono">${i+1}</td><td>${nm}${badge}${warn}</td>
         <td style="color:var(--ink2);font-size:11.5px">${needs||"—"}</td>
-        <td class="num mono">${fmtDuration(ph.eta)}</td><td class="num mono" style="color:var(--amber)">${fmtDuration(ph.doneAt)}</td></tr>`;
+        <td class="num mono">${ph.eta>0?fmtDuration(ph.eta):"—"}</td><td class="num mono" style="color:${ph.feasible?'var(--amber)':'var(--danger)'}">${ph.feasible?fmtDuration(ph.doneAt):ph.partial?fmtDuration(ph.doneAt)+" partial":"blocked"}</td></tr>`;
     });
     bd+=`</tbody></table>`;
   } else {
@@ -211,10 +219,11 @@ function renderProjectResults(res,el,stat){
       <table><thead><tr><th>Item</th><th class="num">Have</th><th class="num">Net needed</th><th class="num">Made /hr</th><th class="num">Done in</th></tr></thead><tbody>`;
     res.demandItems.forEach(it=>{
       const inv=num(S.inventory&&S.inventory[it])||0;
-      const isUnsat=res.unsat&&res.unsat.indexOf(it)>=0;
+      const blockers=res.blockedMined&&res.blockedMined[it],isUnsat=!!(blockers&&blockers.length);
       const r=res.rate[it]||0,done=r>1e-12?res.net[it]/r:Infinity;
-      const rateCell=isUnsat?'<span style="color:var(--ink3)">needs Gel</span>':(r>1e-9?disp(r):'<span style="color:var(--danger)">0</span>');
-      const doneCell=isUnsat?'<span style="color:var(--ink3)">needs Gel</span>':(isFinite(done)?fmtDuration(done):"—");
+      const blockedText=blockers?"needs "+blockers.join(" + "):"";
+      const rateCell=isUnsat?`<span style="color:var(--ink3)">${blockedText}</span>`:(r>1e-9?disp(r):'<span style="color:var(--danger)">0</span>');
+      const doneCell=isUnsat?`<span style="color:var(--ink3)">${blockedText}</span>`:(isFinite(done)?fmtDuration(done):"—");
       bd+=`<tr><td>${it}</td><td class="num mono" style="color:var(--ink2)">${inv>0?disp(inv):"—"}</td>
         <td class="num">${disp(res.net[it])}</td><td class="num">${rateCell}</td>
         <td class="num mono" style="color:${isUnsat||!isFinite(done)?'var(--ink3)':'var(--ink2)'}">${doneCell}</td></tr>`;
@@ -225,14 +234,15 @@ function renderProjectResults(res,el,stat){
     res.perProject.forEach(p=>{
       const items=ALLITEMS.filter(it=>(p.sub[it]||0)>0);
       let pdone=0;items.forEach(it=>{const r=res.rate[it]||0;if(r>1e-12){const d=(res.net[it]||0)/r;if(d>pdone)pdone=d;}});
+      const blocked=items.some(it=>res.blockedMined&&res.blockedMined[it]);
       const needs=items.slice(0,6).map(it=>disp(p.sub[it])+" "+it).join(", ")+(items.length>6?" …":"");
       bd+=`<tr><td>${p.name||"Project"}</td><td class="mono" style="color:var(--ink2)">${p.from}–${p.to} / ${p.levels}</td>
         <td style="color:var(--ink2);font-size:11.5px">${needs||"—"}</td>
-        <td class="num mono">${items.length?fmtDuration(pdone):"—"}</td></tr>`;
+        <td class="num mono">${blocked?'<span style="color:var(--danger)">not fully finishable</span>':items.length?fmtDuration(pdone):"—"}</td></tr>`;
     });
     bd+=`</tbody></table>`;
     bd+=`<div class="subhead">Line assignment — % is the share of this line's time on that job</div>${lineAssignTableHtml(res.plan)}`;
-    bd+=idleLinesNote(res.plan);
+    bd+=idleLinesNote(res.plan,resultMinedUsage(res));
     if(res.balance&&res.balance.length){
       // Break out Lil' Forgie's passive supply into its own column (issue #77), mirroring the
       // items/credits balance table — shown only when he's contributing something here.
@@ -253,8 +263,8 @@ function renderProjectResults(res,el,stat){
       bd+=`</tbody></table>`;
     }
   }
-  const gelNote=gelReservedNote(res.gelReserved);
-  if(gelNote)bd+=gelNote;
+  const minedNote=minedUsageNote(resultMinedUsage(res));
+  if(minedNote)bd+=minedNote;
   html+=`<details class="cat-panel breakdown-panel" ${_breakdownOpen?"open":""}><summary data-paneltoggle="breakdown"><span class="cat-sum-lbl">Full breakdown — demand, line assignment, resource balance</span><span class="cat-sum-meta">the numbers</span></summary><div class="panel-pad">${bd}</div></details>`;
   el.innerHTML=html;
   stat.textContent="solved in "+(res.ms||0).toFixed(1)+" ms";
@@ -337,20 +347,16 @@ function renderSolveResult(res,el,stat){
       outv=disp(j.prod[0][1]*sp*dp*3600);ct=fmt(craftTime(j.res,j.lvl)/sp,2);}
     else{pill='<span class="pill craft">craft</span>';job=j.res;lvl=j.lvl+"×";
       outv=disp(j.prod[0][1]*sp*dp*3600);ct=fmt(craftTime(j.res,j.lvl)/sp,2);
-      if(p.reserved){   // full-time Gel line: show its output + actual ore burn
-        outv=disp(p.gelHr||0);
-        const craftsHr=j.lvl>0?(p.gelHr||0)/(j.lvl*dp):0,oc=gelOreCost(j.lvl);
-        cons=`${disp(oc.rocks*craftsHr)} rocks, ${disp(p.vespHr||0)} vespium <span style="color:var(--ink3)">(free ore)</span>`;
-      }else cons=j.cons.map(c=>disp(c[1]*sp*3600)+" "+invName(res.resIndex,c[0])).join(", ");}
-    const resv=p.reserved?' <span class="pill" style="background:rgba(63,182,160,.14);color:var(--teal);border:1px solid var(--teal-d)">reserved</span>':"";
+      cons=j.cons.map(c=>{const resource=invName(res.resIndex,c[0]);return disp(c[1]*sp*3600)+" "+resource+(isMinedResource(resource)?" (mined income)":"");}).join(", ");}
+    const mined=MINED_CRAFTS[j.res],resv=mined?' <span class="pill" style="background:rgba(63,182,160,.14);color:var(--teal);border:1px solid var(--teal-d)">mined craft</span>':"";
     const tags=`${p.spx?` <span style="color:var(--ink3);font-size:10.5px">×${fmt(p.spx,2)} spd</span>`:""}${p.dup>0?` <span style="color:var(--ink3);font-size:10.5px">+${fmt(p.dup,2)}% dup</span>`:""}`;
-    html+=`<tr${p.reserved?' style="background:rgba(63,182,160,.05)"':''}><td class="mono">#${p.line}</td><td class="mono">${p.max}×${tags}</td>
+    html+=`<tr${mined?' style="background:rgba(63,182,160,.05)"':''}><td class="mono">#${p.line}</td><td class="mono">${p.max}×${tags}</td>
       <td>${pill} ${job}${resv}</td><td class="mono">${lvl}</td>
       <td class="num mono" style="color:var(--ink2)">${ct}</td>
       <td class="num">${outv}</td><td style="color:var(--ink2);font-size:11.5px">${cons}</td></tr>`;
   });
   html+=`</tbody></table>`;
-  html+=idleLinesNote(res.plan);
+  html+=idleLinesNote(res.plan,resultMinedUsage(res));
   // balance table — Frames' & Wire's pre-produced Bits ride along as a display-only row (never in the solver)
   const ppBits=preprodBitsHr(res.plan);
   if(res.balance&&res.balance.length){
@@ -392,11 +398,13 @@ function renderSolveResult(res,el,stat){
       (net>1e-6?`pre-produce about <b style="color:var(--amber)">${disp(net)}</b> Bits/hr to keep up.`
               :`Forgie already covers it — a <b style="color:var(--teal)">${disp(-net)}</b>/hr surplus.`)+`</div>`;
   }
-  if(res.gelReserved&&res.gelReserved.lines>0)html+=gelReservedNote(res.gelReserved);
-  else if((Math.max(0,num(S.gelVesp)||0)*60)>0)
-    html+=`<div class="notice info" style="font-size:11.5px">Vespium income set, but the planner makes more of your target by putting <b>0</b> lines on Gel here.</div>`;
+  const minedUses=resultMinedUsage(res);
+  if(minedUses.length)html+=minedUsageNote(minedUses);
+  MINED_RESOURCES.forEach(resource=>{if(minedBudgetHr(resource)<=0||minedUses.some(use=>use.resource===resource))return;
+    const crafts=Object.keys(MINED_CRAFTS).filter(item=>MINED_CRAFTS[item].resource===resource).join(" / ");
+    html+=`<div class="notice info" style="font-size:11.5px">${resource} income is set, but this plan puts <b>0</b> lines on <b>${crafts}</b>, so it uses none of that mined income.</div>`;
+  });
   el.innerHTML=html;
   stat.textContent="solved in "+res.ms.toFixed(1)+" ms";
 }
 function invName(resIndex,idx){for(const k in resIndex)if(resIndex[k]===idx)return k;return "";}
-

@@ -568,7 +568,12 @@ document.getElementById("progResetAll").addEventListener("click",()=>{
 });
 
 /* ---------- Step-by-step plan modal ---------- */
-function itemTier(it){if(it===GEL||RAWS.includes(it))return 0;if(it==="Frames")return 2;if(it==="Wire")return 3;return 1;}
+function itemTier(it,seen){
+  if(RAWS.includes(it)||it===GEL)return 0;
+  seen=seen||new Set();if(seen.has(it))return 0;seen.add(it);
+  const deps=(RECIPE[it]&&RECIPE[it].inputs||[]).filter(k=>RAWS.includes(k)||PRODUCTS.includes(k));
+  return deps.length?1+Math.max(...deps.map(k=>itemTier(k,new Set(seen)))):1;
+}
 // Issue #69: let the user set a project complete or change its levels without leaving this page.
 // Reuses the same fields the Shopping list & Progress tracker edit (on / from / to / done), so all
 // three views stay in sync. Completion = every level in the from→to span checked off (done=span).
@@ -602,7 +607,7 @@ function stepPlanHtml(res){
       ?"Do these phases <b>in order</b>. Within a phase, a line listing two jobs splits its time — do the input job first so you don't stall. Reset the lines when you start the next phase."
       :res.waved
       ?"Do these waves <b>in order</b> — finish a wave before starting the next so the unlocks land first. Within a wave, a line listing two jobs splits its time; do the input job first."
-      :"Set every line as shown and let it run. A line listing two jobs splits its time across the run; do the input job first."} Total ≈ <b>${fmtDuration(res.eta)}</b>. <span style="color:var(--ink3)">Clock times count from the <b>plan start</b> above — edit it or tap “Now” to re-anchor.</span></p>`;
+      :"Set every line as shown and let it run. A line listing two jobs splits its time across the run; do the input job first."} ${res.partial?"Currently plannable work":res.feasible?"Total":"No finish time"} ${res.feasible||res.partial?`≈ <b>${fmtDuration(res.eta)}</b>.`:"— this plan is blocked."} ${res.partial?'<span style="color:var(--danger)">Blocked items are excluded; this does not finish every ticked project.</span> ':""}<span style="color:var(--ink3)">Clock times count from the <b>plan start</b> above — edit it or tap “Now” to re-anchor.</span></p>`;
   const _ps=(S.planStart!=null&&isFinite(S.planStart))?new Date(S.planStart):null;
   const now=(_ps&&!isNaN(_ps.getTime()))?_ps:new Date();
   const fmtClock=h=>{
@@ -617,16 +622,18 @@ function stepPlanHtml(res){
   res.phases.forEach((ph,i)=>{
     const pStart=phaseStart; phaseStart+=ph.eta||0;
     const lines=(ph.plan||[]).filter(p=>p.entries&&p.entries.length).map(p=>({
-      line:p.line,max:p.max,reserved:p.reserved,
+      line:p.line,max:p.max,
       segs:p.entries.slice().sort((a,b)=>itemTier(a.item)-itemTier(b.item)||b.frac-a.frac)
     }));
     h+=`<div class="step-phase">`;
+    const blocked=Object.entries(ph.blockedMined||{}),phaseTime=ph.partial?"partial plan":ph.feasible?"phase":"blocked";
     h+=res.sequenced
-      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>${escapeAttr(ph.name)}</b> ${ph.prio!=null?'<span class="pill craft" style="font-size:9px">#'+ph.prio+'</span>':""} <span class="proj-mini">· ~${fmtDuration(ph.eta)} · done by ${fmtDuration(ph.doneAt)} </span><span class="step-clock">(~${fmtClock(pStart+(ph.eta||0))})</span></div>`
+      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>${escapeAttr(ph.name)}</b> ${ph.prio!=null?'<span class="pill craft" style="font-size:9px">#'+ph.prio+'</span>':""} <span class="proj-mini">· ${phaseTime}${ph.eta>0?" ~"+fmtDuration(ph.eta):""}${ph.feasible?" · done by "+fmtDuration(ph.doneAt):ph.partial?" · plannable work by "+fmtDuration(ph.doneAt):""} </span>${ph.eta>0?'<span class="step-clock">(~'+fmtClock(pStart+(ph.eta||0))+')</span>':""}</div>`
       : res.waved
-      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>Wave ${i+1} — build together</b> ${ph.members&&ph.members.length?'<span class="proj-mini">'+escapeAttr(ph.members.join(" + "))+'</span>':""} <span class="proj-mini">· ~${fmtDuration(ph.eta)} · done by ${fmtDuration(ph.doneAt)} </span><span class="step-clock">(~${fmtClock(pStart+(ph.eta||0))})</span></div>`
-      : `<div class="step-h"><b>Set all lines like this and run</b> <span class="proj-mini">· ~${fmtDuration(ph.eta)} · finish by </span><span class="step-clock">~${fmtClock(pStart+(ph.eta||0))}</span></div>`;
-    if(!ph.feasible)h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">Can't fully produce this one with the current lines${ph.unsat&&ph.unsat.length?" — "+ph.unsat.join(", ")+" need Gel":""}.</div>`;
+      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>Wave ${i+1} — build together</b> ${ph.members&&ph.members.length?'<span class="proj-mini">'+escapeAttr(ph.members.join(" + "))+'</span>':""} <span class="proj-mini">· ${phaseTime}${ph.eta>0?" ~"+fmtDuration(ph.eta):""}${ph.feasible?" · done by "+fmtDuration(ph.doneAt):ph.partial?" · plannable work by "+fmtDuration(ph.doneAt):""} </span>${ph.eta>0?'<span class="step-clock">(~'+fmtClock(pStart+(ph.eta||0))+')</span>':""}</div>`
+      : `<div class="step-h"><b>${ph.partial?"Run this partial line plan":ph.feasible?"Set all lines like this and run":"This phase is blocked"}</b> <span class="proj-mini">· ${ph.partial?"currently plannable work ~"+fmtDuration(ph.eta)+" · plannable work by ":ph.feasible?"finish time ~"+fmtDuration(ph.eta)+" · finish by ":"no finish time"}</span>${ph.eta>0?'<span class="step-clock">~'+fmtClock(pStart+(ph.eta||0))+'</span>':""}</div>`;
+    if(!ph.feasible){const why=blocked.length?" — "+blocked.map(([item,resources])=>item+" needs "+resources.join(" + ")).join("; "):"";
+      h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">Can't fully produce this phase with the current lines and incomes${why}. ${ph.partial?"The line work below is only the currently plannable portion.":""}</div>`;}
     if(ph.atRisk&&ph.atRisk.length)h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">No line here is crafting ${ph.atRisk.join(", ")} — this plan is spending down your current stock of ${ph.atRisk.length>1?"them":"it"} instead. Once that stock is gone, this schedule stops working.</div>`;
     if(!lines.length){h+=`<div class="proj-mini" style="padding:2px 0">No line activity.</div></div>`;return;}
     // Projected on-hand stock of each item at a given point in the phase (issue #87 follow-up):
@@ -649,14 +656,14 @@ function stepPlanHtml(res){
         const at=fmtClock(pStart+elapsed);
         const tag=at?` <span class="proj-mini">· until </span><span class="step-clock">~${at}</span>`:"";
         const stock=at?` <span class="proj-mini">· ~<b>${disp(onHandAt(s.item,elapsed))}</b> on hand</span>`:"";
-        if(L.reserved)return `reserve for <b>Gel</b> @${s.lvl}× (whole phase)${tag}${stock}`;
         const verb=RAWS.includes(s.item)?"produce":"craft";
-        return `${verb} <b>${s.item}</b> @${s.lvl}×${s.frac>=0.999?" (whole phase)":` for ~${fmtDuration(s.frac*ph.eta)}`}${tag}${stock}`;
+        const cfg=MINED_CRAFTS[s.item],mined=cfg?` <span class="proj-mini">· uses ${cfg.resource} income</span>`:"";
+        return `${verb} <b>${s.item}</b> @${s.lvl}×${s.frac>=0.999?" (whole phase)":` for ~${fmtDuration(s.frac*ph.eta)}`}${mined}${tag}${stock}`;
       });
       const segHtml=parts.map((p,idx)=>`<div class="step-seg">${idx===0?'<span class="step-then">→</span>':'<span class="step-then">then</span>'} ${p}</div>`).join('');
       h+=`<li><span class="mono" style="color:var(--amber)">Line #${L.line}</span> <span class="proj-mini">(${L.max}× cap)</span>${segHtml}</li>`;
     });
-    h+=`</ol></div>`;
+    h+=`</ol>${minedUsageNote(ph.minedUsage||[])}</div>`;
   });
   return h;
 }
@@ -723,4 +730,3 @@ document.getElementById("results").addEventListener("click",e=>{
   if(cl("#manualSaveNew")){const name=(prompt("Name this setup:","")||"").trim();if(name)saveManualPreset(name);return;}
   if(cl("#manualDelPreset")){const sel=document.getElementById("manualPreset");const id=(sel&&sel.value)||S.manualActiveId;if(id&&confirm("Delete this saved setup?"))deleteManualPreset(id);return;}
 });
-
