@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-01
 
-**Status:** Design approved; written specification awaiting review
+**Status:** Approved
 
 ## Goal
 
