@@ -74,8 +74,9 @@ const runner = `
   // table
   const pad=(s,w)=>(s+'').padEnd(w);
   const fmt=n=>Math.abs(n)>=1e6?Number(n).toExponential(4):Number(Number(n).toPrecision(5));
+  __emit('TELEMETRY — informational scale samples; only explicit ok/FAIL checks below affect this test result.');
   __emit(pad('lines',6)+pad('scenario',30)+pad('ms',8)+pad('capped',8)+pad('feasible',10)+pad('objective',14)+pad('Batteries/hr',16)+pad('Vespium/hr',16)+'Hydracite/hr');
-  out.forEach(r=> __emit(pad(r.N,6)+pad(r.name,30)+pad(r.err?'ERR':r.ms,8)+pad(r.capped,8)+pad(r.feasible,10)+
+  out.forEach(r=> __emit('TELEMETRY '+pad(r.N,6)+pad(r.name,30)+pad(r.err?'ERR':r.ms,8)+pad(r.capped,8)+pad(r.feasible,10)+
     pad(r.err||r.obj,14)+pad(fmt(r.batteryOut),16)+pad(fmt(r.mined.Vespium||0),16)+fmt(r.mined.Hydracite||0)));
 
   let scaleFail=false;
