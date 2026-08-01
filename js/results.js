@@ -26,6 +26,21 @@ function projPlanAnchorHtml(){
     <span class="proj-mini">clock times count from here</span>
   </div>`;
 }
+// How each line is used across a phase (S.projLineMode). "Fastest" is the makespan LP, where a line
+// may split its time between jobs — the quickest finish, but you have to come back and switch it
+// mid-run. "Set & forget" pins one job per line for the whole phase, picked so every demanded item
+// finishes at about the same time: a bit slower overall, nothing to babysit. Reuses the header's
+// .modesw pill styling; clicks are handled by the delegated #results handler in events.js.
+function projLineModeHtml(){
+  const stat=S.projLineMode==="static";
+  return `<div class="line-mode">
+    <span class="line-mode-l">Line plan</span>
+    <div class="modesw">
+      <button data-linemode="split" class="${stat?"":"on"}" title="Lines may split their time between jobs to finish the phase as fast as possible — you switch them part-way through.">Fastest (lines switch jobs)</button>
+      <button data-linemode="static" class="${stat?"on":""}" title="Each line runs a single job the whole phase — slightly slower, no mid-run switching.">Set &amp; forget (one job per line)</button>
+    </div>
+  </div>`;
+}
 
 /* ---------- async solve via Web Worker ----------
    The solve runs off the main thread so a long budget shows a spinner instead of freezing. Each
@@ -165,8 +180,9 @@ function renderProjectResults(res,el,stat){
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn primary" id="btnProgress">Track progress</button>
     </div></div>`;
-  // Plan-start anchor (promoted from the old modal header)
+  // Plan-start anchor (promoted from the old modal header) + how lines are used across a phase
   html+=projPlanAnchorHtml();
+  html+=projLineModeHtml();
   // Key notices — the ones that change what you actually do. The old verbose "Project plan." explainer
   // is dropped; the step-plan intro below already tells you how to run it.
   html+=projectForgieNote(res);
@@ -175,7 +191,16 @@ function renderProjectResults(res,el,stat){
     const gelInc=Math.max(0,num(S.gelVesp)||0)>0;
     html+=`<div class="notice warn"><b>Needs Gel:</b> ${res.unsat.join(", ")} require Gel, which the planner forges from your <b>vespium income</b>. ${gelInc?"Your current income is too low to forge any — raise <b>vespium / minute income</b> in the Gel panel":"Enter your <b>vespium / minute income</b> in the Gel panel"} to include them — they're excluded from the time below for now.</div>`;
   }
-  if(res.infeasItems&&res.infeasItems.length)html+=`<div class="notice warn"><b>Can't sustainably produce:</b> ${res.infeasItems.join(", ")}. Raise a line's max compression, add a line, or check recipe costs — the time below excludes these.</div>`;
+  if(res.infeasItems&&res.infeasItems.length){
+    // Set & forget can't time-share a line, so it needs at least one line per DISTINCT job in the
+    // chain — Frames alone needs five (Ingots, Bits, Plates, Rods, Frames). Under that the phase is
+    // genuinely unbuildable as a static plan even though the splitting LP juggles it fine, so name the
+    // cause and the two real fixes; otherwise flipping the switch just looks like the planner broke.
+    const staticHint=S.projLineMode==="static"
+      ? ` <b>Set &amp; forget</b> needs one line per job in the chain, because no line can double up — add lines, or switch back to <b>Fastest</b> above to let lines share their time.`
+      : "";
+    html+=`<div class="notice warn"><b>Can't sustainably produce:</b> ${res.infeasItems.join(", ")}. Raise a line's max compression, add a line, or check recipe costs — the time below excludes these.${staticHint}</div>`;
+  }
   if(res.atRiskItems&&res.atRiskItems.length)html+=`<div class="notice warn"><b>Relies entirely on stock:</b> ${res.atRiskItems.join(", ")}. No line is crafting ${res.atRiskItems.length>1?"these":"this"} — the plan is spending down your current inventory to cover them. Once it runs out you'll need dedicated crafters.</div>`;
   // Summary metrics
   html+=`<div class="metrics">

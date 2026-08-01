@@ -357,6 +357,17 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 .plan-anchor input[type=datetime-local]{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;color-scheme:dark}
 .plan-anchor .btn{padding:4px 12px;font-size:11px}
 .plan-anchor .proj-mini{flex:1 1 auto}
+/* Line-plan switch (Fastest / Set & forget) — sits under the plan-start anchor in Project mode and
+   reuses the header's .modesw pills. Its labels are sentences, not one-word modes, so they're left
+   in sentence case and allowed to wrap on a narrow screen. */
+.line-mode{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;margin-bottom:12px}
+.line-mode-l{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink3);font-weight:600}
+.line-mode .modesw button{text-transform:none;letter-spacing:.2px;padding:6px 11px}
+@media(max-width:560px){
+  .line-mode .modesw{display:grid;grid-template-columns:1fr;width:100%}
+  .line-mode .modesw button:nth-child(even){border-left:none}
+  .line-mode .modesw button+button{border-top:1px solid var(--line2)}
+}
 /* Content padding inside a collapsible cat-panel (Adjust projects / Full breakdown). The parent clips
    overflow, so let wide breakdown tables scroll within the panel instead of being cut off. */
 .panel-pad{padding:2px 12px 12px;overflow-x:auto}

@@ -598,7 +598,16 @@ function stepsProjControls(){
 // surrounding controls. Returns "" when there's no plan yet.
 function stepPlanHtml(res){
   if(!res||res.empty||!res.phases||!res.phases.length)return "";
-  let h=`<p class="help" style="margin:0 0 12px">${res.sequenced
+  // "Set & forget" mode (S.projLineMode) pins one job per line for the whole phase, so every
+  // "then …" instruction disappears — the intro has to promise that instead of explaining splits.
+  const isStatic=S.projLineMode==="static";
+  let h=`<p class="help" style="margin:0 0 12px">${isStatic
+      ?(res.sequenced
+        ?"Do these phases <b>in order</b>. Set each line once and leave it — no line ever switches jobs. Items finish at slightly different times; the last one sets the phase time. Reset the lines when you start the next phase."
+        :res.waved
+        ?"Do these waves <b>in order</b> — finish a wave before starting the next so the unlocks land first. Set each line once and leave it — no line ever switches jobs. Items finish at slightly different times; the last one sets the phase time."
+        :"Set each line once and leave it — no line ever switches jobs. Items finish at slightly different times; the last one sets the phase time.")
+      :res.sequenced
       ?"Do these phases <b>in order</b>. Within a phase, a line listing two jobs splits its time — do the input job first so you don't stall. Reset the lines when you start the next phase."
       :res.waved
       ?"Do these waves <b>in order</b> — finish a wave before starting the next so the unlocks land first. Within a wave, a line listing two jobs splits its time; do the input job first."
@@ -628,6 +637,20 @@ function stepPlanHtml(res){
       : `<div class="step-h"><b>Set all lines like this and run</b> <span class="proj-mini">· ~${fmtDuration(ph.eta)} · finish by </span><span class="step-clock">~${fmtClock(pStart+(ph.eta||0))}</span></div>`;
     if(!ph.feasible)h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">Can't fully produce this one with the current lines${ph.unsat&&ph.unsat.length?" — "+ph.unsat.join(", ")+" need Gel":""}.</div>`;
     if(ph.atRisk&&ph.atRisk.length)h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">No line here is crafting ${ph.atRisk.join(", ")} — this plan is spending down your current stock of ${ph.atRisk.length>1?"them":"it"} instead. Once that stock is gone, this schedule stops working.</div>`;
+    // Set & forget only: the whole point of the mode is that items land in demand ratio, so show WHEN
+    // each one actually lands. Finish = what's still needed / the rate the plan makes it at, from the
+    // same numbers the phase's eta comes from (eta is just the largest of these). Items with rate 0
+    // are already called out by the infeasible warning above, so they're skipped rather than shown as
+    // "never". Only worth printing when there's more than one item to compare — with a single item the
+    // finish IS the phase time, already in the header.
+    if(isStatic){
+      const fin=ALLITEMS.filter(it=>((ph.net&&ph.net[it])||0)>1e-9&&((ph.rate&&ph.rate[it])||0)>1e-9)
+        .map(it=>({it,h:ph.net[it]/ph.rate[it]})).sort((a,b)=>a.h-b.h);
+      if(fin.length>1)h+=`<div class="proj-mini" style="margin:2px 0 6px">Finishes: ${fin.map(f=>{
+        const at=fmtClock(pStart+f.h);
+        return `<b>${f.it}</b> ${at?"~"+at:"in ~"+fmtDuration(f.h)}`;
+      }).join(" · ")}</div>`;
+    }
     if(!lines.length){h+=`<div class="proj-mini" style="padding:2px 0">No line activity.</div></div>`;return;}
     // Projected on-hand stock of each item at a given point in the phase (issue #87 follow-up):
     // stock when the phase began + net (produced + Lil' Forgie − consumed by other lines) so far. Uses
@@ -705,6 +728,12 @@ document.getElementById("results").addEventListener("click",e=>{
   if(cl("#btnProgress")){openProgress();return;}
   // Plan-start "Now" — re-anchor the clock to the current moment (display only).
   if(cl("#spNow")){S.planStart=Date.now();save();repaintProject();return;}
+  // Line-plan switch: "Fastest" (lines may split their time) vs "Set & forget" (one job per line for
+  // the whole phase). This changes the schedule itself, so it re-solves; normalize() keeps it across
+  // reloads. Re-clicking the active option is a no-op rather than a pointless re-solve.
+  const lm=cl("[data-linemode]");
+  if(lm){const v=lm.getAttribute("data-linemode")==="static"?"static":"split";
+    if(v!==(S.projLineMode==="static"?"static":"split")){S.projLineMode=v;save();doSolve();}return;}
   // Persist a disclosure's open state across the next re-render. The native <details> toggle still
   // fires; at click time .open is the pre-toggle state, so the new state is its inverse.
   const sm=cl("summary[data-paneltoggle]");
