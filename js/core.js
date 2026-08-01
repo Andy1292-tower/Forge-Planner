@@ -29,10 +29,6 @@ function setMinedIncome(r,text){
   if(!MINED_RESOURCES.includes(r))return;
   S.minedIncomeText[r]=String(text==null?"":text);
   const v=parseGameNum(text);S.minedIncome[r]=v!=null&&v>=0?v:null;
-  if(r==="Vespium"){
-    S.gelVesp=S.minedIncome.Vespium;
-    S.gelVespText=S.minedIncomeText.Vespium;
-  }
 }
 const KIND={Ingots:"raw",Bits:"raw",Concrete:"raw",Glass:"pr",Bricks:"pr",Plates:"pr",Rods:"pr",Frames:"fin",Gel:"pr",Wire:"fin","Reinforced Concrete":"fin",Batteries:"fin"};
 // Bits consumed per uncompressed unit by products that assume their Bits are PRE-PRODUCED —
@@ -112,7 +108,6 @@ function defaults(){
     sellPrice:nulls(),priceText:{},
     forgie:nulls(),forgieText:{},
     minedIncome:{Vespium:null,Hydracite:null},minedIncomeText:{Vespium:"",Hydracite:""},
-    gelVesp:null,gelVespText:"",
     targets:tg,
     projects:[],inventory:nulls(),inventoryText:{},projectSeq:true,projectGate:true,
     planStart:null,
@@ -178,8 +173,7 @@ function normalize(st){
     st.minedIncome[r]=raw!==null&&raw!==undefined&&raw!==""&&Number.isFinite(v)&&v>=0?v:null;
     if(typeof st.minedIncomeText[r]!=="string")st.minedIncomeText[r]=st.minedIncome[r]!=null?String(st.minedIncome[r]):"";
   });
-  st.gelVesp=st.minedIncome.Vespium;
-  st.gelVespText=st.minedIncomeText.Vespium;
+  delete st.gelVesp;delete st.gelVespText;
   delete st.gelLines;delete st.gelComp;
   if(st.mode!=="credits"&&st.mode!=="items"&&st.mode!=="project"&&st.mode!=="manual")st.mode="items";
   if(!Array.isArray(st.projects))st.projects=[];

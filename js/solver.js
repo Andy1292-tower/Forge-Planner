@@ -562,7 +562,7 @@ function gelLoadout(rows,vespBudgetHr){
   return {gelHr:gel,vespHr:spent,perLine};
 }
 // Vespium/hr income from the user's vespium/minute figure (0 if unset → Gel off).
-function gelVespBudgetHr(){return Math.max(0,num(S.gelVesp)||0)*60;}
+function gelVespBudgetHr(){return minedBudgetHr("Vespium");}
 function projectDemand(){
   const gross={};ALLITEMS.forEach(it=>gross[it]=0);
   const perProject=[];

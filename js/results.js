@@ -105,14 +105,14 @@ function lineAssignTableHtml(plan){
   let h=`<table><thead><tr><th>Line</th><th>Cap</th><th>Job</th><th>Lvl</th>
       <th class="num">Time share</th><th class="num">Output /hr</th><th>Consumes /hr</th></tr></thead><tbody>`;
   plan.forEach(p=>{
-    if(!p.entries||!p.entries.length){h+=`<tr><td class="mono">#${p.line}</td><td class="mono">${p.max}×</td><td><span class="pill idle">idle</span></td><td></td><td class="num"></td><td class="num"></td><td></td></tr>`;return;}
+    if(!p.entries||!p.entries.length){h+=`<tr><td class="mono">#${p.line}</td><td class="mono">${compressionLabel(p.max)}</td><td><span class="pill idle">idle</span></td><td></td><td class="num"></td><td class="num"></td><td></td></tr>`;return;}
     p.entries.forEach((e,ei)=>{
       const mined=MINED_CRAFTS[e.item],isRaw=RAWS.includes(e.item);
       const pill=mined?'<span class="pill" style="background:rgba(63,182,160,.14);color:var(--teal);border:1px solid var(--teal-d)">mined craft</span>':isRaw?'<span class="pill prod">produce</span>':'<span class="pill craft">craft</span>';
       const cons=e.cons.length?e.cons.map(c=>disp(c.hr)+" "+c.item+(isMinedResource(c.item)?" (mined income)":"")).join(", "):'<span style="color:var(--ink3)">—</span>';
       h+=`<tr${mined?' style="background:rgba(63,182,160,.05)"':''}>
-        <td class="mono">${ei===0?"#"+p.line:""}</td><td class="mono">${ei===0?p.max+"×":""}</td>
-        <td>${pill} ${e.item}</td><td class="mono">${e.lvl}×</td>
+        <td class="mono">${ei===0?"#"+p.line:""}</td><td class="mono">${ei===0?compressionLabel(p.max):""}</td>
+        <td>${pill} ${e.item}</td><td class="mono">${compressionLabel(e.lvl)}</td>
         <td class="num mono" style="color:var(--ink2)">${fmt(e.frac*100,0)}%</td>
         <td class="num">${disp(e.outHr)}</td>
         <td style="color:var(--ink2);font-size:11.5px">${cons}</td></tr>`;
@@ -343,14 +343,14 @@ function renderSolveResult(res,el,stat){
     const sp=(j.ct>0&&rawSp>j.ct)?j.ct:rawSp;
     let pill,job,lvl="",outv="",cons="",ct="";
     if(j.kind==="idle"){pill='<span class="pill idle">idle</span>';job="";}
-    else if(j.kind==="produce"){pill='<span class="pill prod">produce</span>';job=j.res;lvl=j.lvl+"×";
+    else if(j.kind==="produce"){pill='<span class="pill prod">produce</span>';job=j.res;lvl=compressionLabel(j.lvl);
       outv=disp(j.prod[0][1]*sp*dp*3600);ct=fmt(craftTime(j.res,j.lvl)/sp,2);}
-    else{pill='<span class="pill craft">craft</span>';job=j.res;lvl=j.lvl+"×";
+    else{pill='<span class="pill craft">craft</span>';job=j.res;lvl=compressionLabel(j.lvl);
       outv=disp(j.prod[0][1]*sp*dp*3600);ct=fmt(craftTime(j.res,j.lvl)/sp,2);
       cons=j.cons.map(c=>{const resource=invName(res.resIndex,c[0]);return disp(c[1]*sp*3600)+" "+resource+(isMinedResource(resource)?" (mined income)":"");}).join(", ");}
     const mined=MINED_CRAFTS[j.res],resv=mined?' <span class="pill" style="background:rgba(63,182,160,.14);color:var(--teal);border:1px solid var(--teal-d)">mined craft</span>':"";
     const tags=`${p.spx?` <span style="color:var(--ink3);font-size:10.5px">×${fmt(p.spx,2)} spd</span>`:""}${p.dup>0?` <span style="color:var(--ink3);font-size:10.5px">+${fmt(p.dup,2)}% dup</span>`:""}`;
-    html+=`<tr${mined?' style="background:rgba(63,182,160,.05)"':''}><td class="mono">#${p.line}</td><td class="mono">${p.max}×${tags}</td>
+    html+=`<tr${mined?' style="background:rgba(63,182,160,.05)"':''}><td class="mono">#${p.line}</td><td class="mono">${compressionLabel(p.max)}${tags}</td>
       <td>${pill} ${job}${resv}</td><td class="mono">${lvl}</td>
       <td class="num mono" style="color:var(--ink2)">${ct}</td>
       <td class="num">${outv}</td><td style="color:var(--ink2);font-size:11.5px">${cons}</td></tr>`;

@@ -21,11 +21,11 @@ function manualResult(){
       const eff=effSpeed(sp,ct), rate=ct>0?L/ct:0, cons=[];
       if(!RAWS.includes(item)){
         RECIPE[item].inputs.forEach(k=>{const c=S.prodCost[item][k][L];
-          if(c==null||isNaN(c)){issueSet.add("No material cost entered for "+item+" @"+L+"×.");}
+          if(c==null||isNaN(c)){issueSet.add("No material cost entered for "+item+" @"+compressionLabel(L)+".");}
           else{cons.push([resIndex[k],c/ct]);consumed[resIndex[k]]+=(c/ct)*eff*3600;}});
         const cfg=MINED_CRAFTS[item];
         if(cfg){const c=minedCost(item,L)[cfg.resource];
-          if(c==null||isNaN(c)){issueSet.add("No mined cost entered for "+item+" @"+L+"×.");}
+          if(c==null||isNaN(c)){issueSet.add("No mined cost entered for "+item+" @"+compressionLabel(L)+".");}
           else minedCons[cfg.resource]=(minedCons[cfg.resource]||0)+(c/ct)*eff*3600;}
       }
       produced[resIndex[item]]+=rate*eff*dp*3600;
@@ -123,7 +123,7 @@ function renderManual(el,stat){
     const resOpts=`<option value="Idle"${m.job==="Idle"?" selected":""}>— idle —</option>`+
       `<optgroup label="Raw materials">`+RAWS.map(it=>`<option value="${it}"${it===m.job?" selected":""}>${it}</option>`).join("")+`</optgroup>`+
       `<optgroup label="Crafted">`+PRODUCTS.map(it=>`<option value="${it}"${it===m.job?" selected":""}>${it}</option>`).join("")+`</optgroup>`;
-    const lvlOpts=LEVELS.filter(L=>L<=ln.max).map(L=>`<option value="${L}"${L===m.lvl?" selected":""}>${L}×</option>`).join("");
+    const lvlOpts=LEVELS.filter(L=>L<=ln.max).map(L=>`<option value="${L}"${L===m.lvl?" selected":""}>${compressionLabel(L)}</option>`).join("");
     let outv="—",cons="";
     if(j.kind!=="idle"){const eff=effSpeed(p.sp,j.ct);
       outv=disp(j.prod[0][1]*eff*p.dp*3600);
@@ -137,7 +137,7 @@ function renderManual(el,stat){
     const tags=`<span style="color:var(--ink3);font-size:10.5px"> ×${fmt(p.sp,2)} spd</span>${p.dup>0?` <span style="color:var(--ink3);font-size:10.5px">+${fmt(p.dup,2)}% dup</span>`:""}`;
     const sellCell=j.kind==="idle"?'<span style="color:var(--ink3)">—</span>'
       :`<input type="checkbox" data-msell="${i}" ${m.sell?"checked":""} aria-label="Sell line ${p.line} surplus">`;
-    html+=`<tr><td class="mono">#${p.line}</td><td class="mono">${ln.max}×${tags}</td>
+    html+=`<tr><td class="mono">#${p.line}</td><td class="mono">${compressionLabel(ln.max)}${tags}</td>
       <td><select data-mres="${i}" aria-label="Line ${p.line} resource">${resOpts}</select></td>
       <td><select data-mlvl="${i}" aria-label="Line ${p.line} compression"${j.kind==="idle"?" disabled":""}>${lvlOpts}</select></td>
       <td class="num">${outv}</td><td style="color:var(--ink2);font-size:11.5px">${cons}</td>

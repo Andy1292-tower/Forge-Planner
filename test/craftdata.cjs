@@ -46,8 +46,8 @@ const runner=`
   eq("custom base time preserved",legacy.baseTime.Wire,12345);
   eq("custom recipe cost preserved",legacy.prodCost.Wire.Gel[4],999);
   eq("new hydracite blank",legacy.minedIncome.Hydracite,null);
-  eq("temporary numeric alias mirrored",legacy.gelVesp,7250000000000000000);
-  eq("temporary text alias mirrored",legacy.gelVespText,"7.25qu");
+  eq("legacy numeric removed",Object.prototype.hasOwnProperty.call(legacy,"gelVesp"),false);
+  eq("legacy text removed",Object.prototype.hasOwnProperty.call(legacy,"gelVespText"),false);
   if(fail)process.exitCode=1;
 })();`;
 eval(core+"\n"+solver+"\n"+runner);

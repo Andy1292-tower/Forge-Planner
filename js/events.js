@@ -179,38 +179,20 @@ document.getElementById("forgieRows").addEventListener("input",e=>{
   scheduleSolve();
 });
 
-/* ---------- Gel ore-cost reference modal ---------- */
-// Gel's mined-ore inputs are a read-only reference here (GEL_*_BASE / gelOreCost live in core.js).
-// Per-minute uses the fastest current line that reaches each compression level L.
-// Display-only ore burn for a running Gel line (not part of any balance/calculation):
-// crafts/sec = eff/ct, ore is per craft (dup doesn't change input cost).
-function gelOreConsumesHr(L,eff){
-  const ct=craftTime(GEL,L);if(!(ct>0)||!(eff>0))return "";
-  const {rocks,vesp}=gelOreCost(L),cps=eff/ct;
-  return `${disp(rocks*cps*3600)} rocks, ${disp(vesp*cps*3600)} vespium <span style="color:var(--ink3)">(free ore)</span>`;
-}
-function fastestGelSpeed(L){let best=null;S.lines.forEach(ln=>{if((ln.max||0)>=L){const sp=lineSpeed(ln);if(best==null||sp>best)best=sp;}});return best;}
-function renderGelCost(){
-  let h=`<table><thead><tr><th>Comp</th><th class="num">Rocks /craft</th><th class="num">Vespium /craft</th>
-    <th class="num">~s/craft</th><th class="num">Rocks /min</th><th class="num">Vespium /min</th></tr></thead><tbody>`;
-  LEVELS.forEach(L=>{
-    const {rocks,vesp}=gelOreCost(L), ct=craftTime(GEL,L), sp=fastestGelSpeed(L);
-    let sCraft="—",rMin="—",vMin="—";
-    if(sp!=null&&ct>0){const secs=ct/effSpeed(sp,ct),cpm=60/secs;sCraft=fmt(secs,2);rMin=disp(rocks*cpm);vMin=disp(vesp*cpm);}
-    h+=`<tr><td class="mono">${L}×</td><td class="num">${disp(rocks)}</td><td class="num">${disp(vesp)}</td>
-      <td class="num mono" style="color:var(--ink2)">${sCraft}</td><td class="num">${rMin}</td><td class="num">${vMin}</td></tr>`;
-  });
-  h+=`</tbody></table>`;
-  document.getElementById("gelCostRows").innerHTML=h;
-}
-const gelCostModal=document.getElementById("gelCostModal");
-function openGelCost(){renderGelCost();gelCostModal.hidden=false;}
-function closeGelCost(){gelCostModal.hidden=true;}
-document.getElementById("btnGelCost").addEventListener("click",openGelCost);
-document.getElementById("gelCostClose").addEventListener("click",closeGelCost);
-document.getElementById("gelCostDone").addEventListener("click",closeGelCost);
-gelCostModal.addEventListener("click",e=>{if(e.target===gelCostModal)closeGelCost();});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!gelCostModal.hidden)closeGelCost();});
+/* ---------- mined resources modal ---------- */
+const minedModal=document.getElementById("minedModal");
+function openMined(){renderMinedResources();minedModal.hidden=false;}
+function closeMined(){minedModal.hidden=true;}
+document.getElementById("btnMined").addEventListener("click",openMined);
+document.getElementById("minedClose").addEventListener("click",closeMined);
+document.getElementById("minedDone").addEventListener("click",closeMined);
+minedModal.addEventListener("click",e=>{if(e.target===minedModal)closeMined();});
+minedModal.addEventListener("input",e=>{
+  const resource=e.target.dataset.minedIncome;if(!resource)return;
+  setMinedIncome(resource,e.target.value);
+  renderMinedResources();scheduleSolve();
+});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!minedModal.hidden)closeMined();});
 
 /* ---------- settings modal (max solve time) ---------- */
 const settingsModal=document.getElementById("settingsModal");
@@ -257,7 +239,7 @@ function initCalib(){
   const it=document.getElementById("cbItem"), cp=document.getElementById("cbComp");
   if(it.options.length===0){
     [...RAWS,...PRODUCTS].forEach(n=>it.add(new Option(n,n)));
-    LEVELS.forEach(L=>cp.add(new Option(L+"× (level "+Math.round(Math.log2(L))+")",L)));
+    LEVELS.forEach(L=>cp.add(new Option(compressionLabel(L)+" (level "+Math.round(Math.log2(L))+")",L)));
     it.value="Ingots"; cp.value="512";
   }
   const out=document.getElementById("cbOut"), apply=document.getElementById("cbApply");
@@ -274,7 +256,7 @@ function initCalib(){
       apply.disabled=false;
     }else{
       computed=null;apply.disabled=true;
-      out.innerHTML=spd>0?`current ${item} base (${fmt(cur,2)}s) predicts a <b>${fmt(predict,2)}s</b> craft at ${L}× / ×${fmt(spd,2)}. Enter the real craft seconds to compare.`:`Enter that unit's speed × and a craft time to compute or verify.`;
+      out.innerHTML=spd>0?`current ${item} base (${fmt(cur,2)}s) predicts a <b>${fmt(predict,2)}s</b> craft at ${compressionLabel(L)} / ×${fmt(spd,2)}. Enter the real craft seconds to compare.`:`Enter that unit's speed × and a craft time to compute or verify.`;
     }
   }
   ["cbItem","cbComp","cbSpeed","cbSec"].forEach(id=>document.getElementById(id).addEventListener("input",recalc));
@@ -286,7 +268,7 @@ function initCalib(){
 }
 function renderAll(){
   renderModeSwitch();
-  renderLines();renderTargets();renderGel();renderRecipes();renderResults();
+  renderLines();renderTargets();renderMinedResources();renderRecipes();renderResults();
   document.getElementById("margin").value=S.margin||0;
   document.getElementById("marginv").textContent=fmt(S.margin||0,1)+"%";
   document.getElementById("maxTurbo").value=S.maxTurbo||0;
@@ -658,10 +640,10 @@ function stepPlanHtml(res){
         const stock=at?` <span class="proj-mini">· ~<b>${disp(onHandAt(s.item,elapsed))}</b> on hand</span>`:"";
         const verb=RAWS.includes(s.item)?"produce":"craft";
         const cfg=MINED_CRAFTS[s.item],mined=cfg?` <span class="proj-mini">· uses ${cfg.resource} income</span>`:"";
-        return `${verb} <b>${s.item}</b> @${s.lvl}×${s.frac>=0.999?" (whole phase)":` for ~${fmtDuration(s.frac*ph.eta)}`}${mined}${tag}${stock}`;
+        return `${verb} <b>${s.item}</b> @${compressionLabel(s.lvl)}${s.frac>=0.999?" (whole phase)":` for ~${fmtDuration(s.frac*ph.eta)}`}${mined}${tag}${stock}`;
       });
       const segHtml=parts.map((p,idx)=>`<div class="step-seg">${idx===0?'<span class="step-then">→</span>':'<span class="step-then">then</span>'} ${p}</div>`).join('');
-      h+=`<li><span class="mono" style="color:var(--amber)">Line #${L.line}</span> <span class="proj-mini">(${L.max}× cap)</span>${segHtml}</li>`;
+      h+=`<li><span class="mono" style="color:var(--amber)">Line #${L.line}</span> <span class="proj-mini">(${compressionLabel(L.max)} cap)</span>${segHtml}</li>`;
     });
     h+=`</ol>${minedUsageNote(ph.minedUsage||[])}</div>`;
   });
