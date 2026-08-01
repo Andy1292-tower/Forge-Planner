@@ -118,7 +118,7 @@ function renderPrices(){
       <input type="text" data-price="${it}" placeholder="—" value="${txt}">
     </div>`;
   }).join("");
-  box.innerHTML=`<div class="price-grp first">Finished &amp; crafted</div>${rows(PRODUCTS)}<div class="price-grp">Raw materials</div>${rows(RAWS)}`;
+  box.innerHTML=rows(GAME_ORDER);
 }
 const priceModal=document.getElementById("priceModal");
 function openPrices(){renderPrices();priceModal.hidden=false;}
@@ -156,7 +156,7 @@ function renderForgie(){
       <input type="text" inputmode="decimal" data-forgie="${it}" placeholder="—" value="${txt}">
     </div>`;
   }).join("");
-  box.innerHTML=`<div class="price-grp first">Finished &amp; crafted</div>${rows(PRODUCTS)}<div class="price-grp">Raw materials</div>${rows(RAWS)}`;
+  box.innerHTML=rows(GAME_ORDER);
 }
 const forgieModal=document.getElementById("forgieModal");
 function openForgie(){renderForgie();forgieModal.hidden=false;}
@@ -256,7 +256,7 @@ window.addEventListener("resize",()=>{if(!pricePoke.hidden)positionPoke();});
 function initCalib(){
   const it=document.getElementById("cbItem"), cp=document.getElementById("cbComp");
   if(it.options.length===0){
-    [...RAWS,...PRODUCTS].forEach(n=>it.add(new Option(n,n)));
+    GAME_ORDER.forEach(n=>it.add(new Option(n,n)));
     LEVELS.forEach(L=>cp.add(new Option(L+"× (level "+Math.round(Math.log2(L))+")",L)));
     it.value="Ingots"; cp.value="512";
   }
@@ -383,7 +383,7 @@ function renderInv(){
     const txt=S.inventoryText[it]!=null?S.inventoryText[it]:(v!=null?formatGameNum(v,4):"");
     return `<div class="price-row"><div class="pnm">${tag(it)}${it}</div><input type="text" data-inv="${it}" placeholder="0" value="${txt}"></div>`;
   }).join("");
-  box.innerHTML=`<div class="price-grp first">Finished &amp; crafted</div>${rows(PRODUCTS)}<div class="price-grp">Raw materials</div>${rows(RAWS)}`;
+  box.innerHTML=rows(GAME_ORDER);
 }
 function renderProjects(){
   if(!S.projects)S.projects=[];

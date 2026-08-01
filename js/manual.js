@@ -4,7 +4,7 @@
 // consumption and balance directly, so the user can try setups that aren't optimal
 // but suit their purposes — and see at a glance whether each input keeps up.
 function manualResult(){
-  const resources=[...RAWS,...PRODUCTS];
+  const resources=[...ALLITEMS];
   const resIndex={};resources.forEach((r,i)=>resIndex[r]=i);
   const produced=resources.map(()=>0), consumed=resources.map(()=>0);
   const forgie={};resources.forEach(r=>{forgie[r]=forgieHr(r);produced[resIndex[r]]+=forgie[r];});
@@ -104,7 +104,7 @@ function renderManual(el,stat){
   if(res.issues.length)html+=`<div class="notice warn"><b>Missing data:</b><br>${res.issues.join("<br>")}</div>`;
   // headline cards: credits from sold surplus first, then net surplus of items actually
   // crafted/produced on a line (Lil' Forgie's passive-only items are excluded)
-  const nets=[...PRODUCTS,...RAWS].filter(it=>res.lineProd[it]>1e-6&&res.out[it]>1e-6);
+  const nets=GAME_ORDER.filter(it=>res.lineProd[it]>1e-6&&res.out[it]>1e-6);
   let cards="";
   if(res.totalCredits>1e-6)cards+=`<div class="metric"><div class="l">Credits</div><div class="v">${disp(res.totalCredits)}</div><div class="u">per hour — sold surplus</div></div>`;
   nets.forEach(t=>{cards+=`<div class="metric"><div class="l">${t}</div><div class="v">${disp(res.out[t])}</div><div class="u">net surplus /hr</div></div>`;});
@@ -116,8 +116,7 @@ function renderManual(el,stat){
   res.plan.forEach((p,i)=>{
     const ln=S.lines[i], m=S.manual[i], j=p.job;
     const resOpts=`<option value="Idle"${m.job==="Idle"?" selected":""}>— idle —</option>`+
-      `<optgroup label="Raw materials">`+RAWS.map(it=>`<option value="${it}"${it===m.job?" selected":""}>${it}</option>`).join("")+`</optgroup>`+
-      `<optgroup label="Crafted">`+PRODUCTS.map(it=>`<option value="${it}"${it===m.job?" selected":""}>${it}</option>`).join("")+`</optgroup>`;
+      GAME_ORDER.map(it=>`<option value="${it}"${it===m.job?" selected":""}>${it}</option>`).join("");
     const lvlOpts=LEVELS.filter(L=>L<=ln.max).map(L=>`<option value="${L}"${L===m.lvl?" selected":""}>${L}×</option>`).join("");
     let outv="—",cons="";
     if(j.kind!=="idle"){const eff=effSpeed(p.sp,j.ct);

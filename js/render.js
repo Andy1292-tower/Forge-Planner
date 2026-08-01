@@ -56,13 +56,9 @@ function targetRow(it){
 }
 function renderTargets(){
   const box=document.getElementById("targets");box.innerHTML="";
-  PRODUCTS.forEach(p=>box.appendChild(targetRow(p)));
   // Raw materials (Ingots / Bits / Concrete) are selectable too, so you can read their
   // max output/hr without spinning up a throwaway project plan (issue #78).
-  const sub=document.createElement("div");sub.className="tg-sub";
-  sub.textContent="Raw materials";
-  box.appendChild(sub);
-  RAWS.forEach(r=>box.appendChild(targetRow(r)));
+  GAME_ORDER.forEach(it=>box.appendChild(targetRow(it)));
 }
 
 /* ---------- RENDER: Gel panel ---------- */
@@ -106,8 +102,7 @@ document.getElementById("gelBody").addEventListener("input",e=>{
 /* ---------- RENDER: recipe data ---------- */
 function renderRecipes(){
   const box=document.getElementById("recipes");box.innerHTML="";
-  RAWS.forEach(r=>box.appendChild(rawCard(r)));
-  PRODUCTS.forEach(p=>box.appendChild(prodCard(p)));
+  GAME_ORDER.forEach(it=>box.appendChild(RAWS.includes(it)?rawCard(it):prodCard(it)));
 }
 function baseTimeField(item){
   const v=S.baseTime[item]??12.85;

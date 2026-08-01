@@ -2,6 +2,10 @@
 const LEVELS=[1,2,4,8,16,32,64,128,256,512,1024,2048,4096];
 const RAWS=["Ingots","Bits","Concrete"];
 const PRODUCTS=["Glass","Bricks","Plates","Rods","Frames","Gel","Wire"];
+// Display order matching the in-game material list (raws and crafted interleaved).
+// Every menu/list shown to the user renders in this order; RAWS/PRODUCTS stay the
+// solver-facing groupings.
+const GAME_ORDER=["Bits","Concrete","Glass","Bricks","Gel","Ingots","Plates","Rods","Frames","Wire"];
 // Gel is produced only on user-reserved lines (free mined ore inputs), never freely crafted by the optimizer.
 const GEL="Gel";
 const RECIPE={
@@ -32,7 +36,7 @@ const UNLOCK_MATERIALS=Object.keys(UNLOCKS).map(k=>UNLOCKS[k]);   // ["Frames","
    they can never be in the list and need no edge here.) */
 const PROJECT_PREREQS={"gel-refinery":["vescas-workshop-mk2"]};
 /* ---- project-mode + shopping-list helpers (additive; match live's existing inline behavior) ---- */
-const ALLITEMS=[...RAWS,...PRODUCTS];
+const ALLITEMS=[...GAME_ORDER];   // same members as RAWS+PRODUCTS, in in-game display order
 const MIN_CRAFT_S=1;
 function effSpeed(sp,ct){return Math.min(sp,(ct||Infinity)/MIN_CRAFT_S);}
 // Final max crafting speed for a line. The user enters the speed × they currently see
