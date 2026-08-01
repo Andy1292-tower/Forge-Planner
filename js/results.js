@@ -83,10 +83,15 @@ function resultMinedUsage(res){
 // Summary of every mined craft in a plan and the exact independent income it consumes.
 function minedUsageNote(usages){
   if(!Array.isArray(usages)||!usages.length)return "";
-  const rows=usages.map(use=>{const inc=minedBudgetHr(use.resource),lines=use.lines||0;
-    return `<b>${lines}</b> line${lines===1?"":"s"} on <b>${use.item}</b> → <b>${disp(use.outHr||0)}</b>/hr, consuming <b>${disp(use.inputHr||0)}</b>${inc>0?" of your <b>"+disp(inc)+"</b>":""} ${use.resource}/hr`;
+  const rows=usages.map(use=>{const inc=minedBudgetHr(use.resource),lines=use.lines||0,budgeted=isMinedResource(use.resource);
+    return `<b>${lines}</b> line${lines===1?"":"s"} on <b>${use.item}</b> → <b>${disp(use.outHr||0)}</b>/hr, consuming <b>${disp(use.inputHr||0)}</b>${budgeted&&inc>0?" of your <b>"+disp(inc)+"</b>":""} ${use.resource}/hr${budgeted?"":" (informational)"}`;
   });
   return `<div class="notice info" style="font-size:11.5px">${rows.join("<br>")}</div>`;
+}
+function informationalMinedParts(item,lvl,craftsHr){
+  const cfg=MINED_CRAFTS[item];if(!cfg)return [];
+  const costs=minedCost(item,lvl);
+  return Object.keys(cfg.informationalCosts||{}).map(resource=>disp((costs[resource]||0)*craftsHr)+" "+resource+" (informational)");
 }
 // Explains any lines the plan left idle. A line goes idle when throughput is capped by a
 // bottleneck elsewhere — an ordinary input or a craft's mined-income budget — so the
@@ -97,7 +102,7 @@ function idleLinesNote(plan,minedUsage){
   const idle=(plan||[]).filter(p=>p.entries?!p.entries.length:(p.job&&p.job.kind==="idle"));
   if(!idle.length)return "";
   const s=idle.length>1, which=idle.map(p=>"#"+p.line).join(", ");
-  const mined=[...new Set((minedUsage||[]).map(use=>use.item+" / "+use.resource))];
+  const mined=[...new Set((minedUsage||[]).filter(use=>isMinedResource(use.resource)).map(use=>use.item+" / "+use.resource))];
   const bottleneck=mined.length?`a material input or the <b>${mined.join("; ")}</b> mined-income budget`:`a material input`;
   return `<div class="notice info" style="font-size:11.5px"><b>${s?"Lines "+which+" are":"Line "+which+" is"} idle.</b> The plan is capped by ${bottleneck}, so spare capacity here wouldn't finish anything sooner. If you like, run ${s?"them":"it"} on <b>Bits</b> or <b>Concrete</b> to bank a surplus: those cost only abundant <b>Worthless Rocks</b>, so it's effectively free.</div>`;
 }
@@ -109,7 +114,10 @@ function lineAssignTableHtml(plan){
     p.entries.forEach((e,ei)=>{
       const mined=MINED_CRAFTS[e.item],isRaw=RAWS.includes(e.item);
       const pill=mined?'<span class="pill" style="background:rgba(63,182,160,.14);color:var(--teal);border:1px solid var(--teal-d)">mined craft</span>':isRaw?'<span class="pill prod">produce</span>':'<span class="pill craft">craft</span>';
-      const cons=e.cons.length?e.cons.map(c=>disp(c.hr)+" "+c.item+(isMinedResource(c.item)?" (mined income)":"")).join(", "):'<span style="color:var(--ink3)">—</span>';
+      const ct=craftTime(e.item,e.lvl),craftsHr=ct>0?(effSpeed(p.sp,ct)/ct)*(e.frac||0)*3600:0;
+      const consParts=e.cons.map(c=>disp(c.hr)+" "+c.item+(isMinedResource(c.item)?" (mined income)":""));
+      consParts.push(...informationalMinedParts(e.item,e.lvl,craftsHr));
+      const cons=consParts.length?consParts.join(", "):'<span style="color:var(--ink3)">—</span>';
       h+=`<tr${mined?' style="background:rgba(63,182,160,.05)"':''}>
         <td class="mono">${ei===0?"#"+p.line:""}</td><td class="mono">${ei===0?compressionLabel(p.max):""}</td>
         <td>${pill} ${e.item}</td><td class="mono">${compressionLabel(e.lvl)}</td>
@@ -347,7 +355,9 @@ function renderSolveResult(res,el,stat){
       outv=disp(j.prod[0][1]*sp*dp*3600);ct=fmt(craftTime(j.res,j.lvl)/sp,2);}
     else{pill='<span class="pill craft">craft</span>';job=j.res;lvl=compressionLabel(j.lvl);
       outv=disp(j.prod[0][1]*sp*dp*3600);ct=fmt(craftTime(j.res,j.lvl)/sp,2);
-      cons=j.cons.map(c=>{const resource=invName(res.resIndex,c[0]);return disp(c[1]*sp*3600)+" "+resource+(isMinedResource(resource)?" (mined income)":"");}).join(", ");}
+      const consParts=j.cons.map(c=>{const resource=invName(res.resIndex,c[0]);return disp(c[1]*sp*3600)+" "+resource+(isMinedResource(resource)?" (mined income)":"");});
+      consParts.push(...informationalMinedParts(j.res,j.lvl,j.ct>0?(sp/j.ct)*3600:0));
+      cons=consParts.join(", ");}
     const mined=MINED_CRAFTS[j.res],resv=mined?' <span class="pill" style="background:rgba(63,182,160,.14);color:var(--teal);border:1px solid var(--teal-d)">mined craft</span>':"";
     const tags=`${p.spx?` <span style="color:var(--ink3);font-size:10.5px">×${fmt(p.spx,2)} spd</span>`:""}${p.dup>0?` <span style="color:var(--ink3);font-size:10.5px">+${fmt(p.dup,2)}% dup</span>`:""}`;
     html+=`<tr${mined?' style="background:rgba(63,182,160,.05)"':''}><td class="mono">#${p.line}</td><td class="mono">${compressionLabel(p.max)}${tags}</td>

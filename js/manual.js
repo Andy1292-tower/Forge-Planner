@@ -130,7 +130,7 @@ function renderManual(el,stat){
       const parts=j.cons.map(c=>disp(c[1]*eff*3600)+" "+invName(res.resIndex,c[0]));
       const cfg=MINED_CRAFTS[j.res];
       if(cfg)Object.entries(minedCost(j.res,j.lvl)).forEach(([resource,cost])=>{
-        const note=resource===cfg.resource?" (mined income)":" (free ore)";
+        const note=resource===cfg.resource?" (mined income)":" (informational)";
         parts.push(disp((cost/j.ct)*eff*3600)+" "+resource+note);
       });
       cons=parts.length?parts.join(", "):'<span style="color:var(--ink3)">none</span>';}
@@ -167,23 +167,24 @@ function renderManual(el,stat){
     else bal.push({res:"Bits",prod:0,forgie:num(S.forgie&&S.forgie.Bits)||0,cons:ppBits,preProd:true});
   }
   // Mined crafts keep independent income budgets; show each source and its own burn separately.
-  (res.minedBalances||[]).forEach(row=>bal.push({res:row.resource,prod:0,forgie:row.incomeHr,cons:row.consHr,mined:true}));
+  (res.minedBalances||[]).forEach(row=>bal.push({res:row.resource,prod:0,forgie:0,minedIncome:row.incomeHr,cons:row.consHr,mined:true}));
   if(!bal.length){
     html+=`<div class="notice info" style="font-size:11.5px">All lines are idle — pick a resource for at least one line above to see a balance.</div>`;
   }else{
-    const showForgie=bal.some(b=>(b.forgie||0)>1e-6);
+    const showForgie=bal.some(b=>(b.forgie||0)>1e-6),showMined=bal.some(b=>b.mined);
     html+=`<div class="subhead">Resource balance (per hour)</div>
-      <table><thead><tr><th>Resource</th><th class="num">Lines</th>${showForgie?'<th class="num">Passive</th>':''}<th class="num">Consumed</th>
+      <table><thead><tr><th>Resource</th><th class="num">Lines</th>${showForgie?'<th class="num">Passive</th>':''}${showMined?'<th class="num">Mined income</th>':''}<th class="num">Consumed</th>
         <th class="num">Surplus</th><th>Status</th></tr></thead><tbody>`;
     bal.forEach(b=>{
-      const f=b.forgie||0, surplus=b.prod+f-b.cons, ratio=b.cons>0?surplus/b.cons:1;
+      const f=b.forgie||0,mine=b.minedIncome||0,surplus=b.prod+f+mine-b.cons,ratio=b.cons>0?surplus/b.cons:1;
       let cls="bal-ok",lbl="healthy";
       if(b.preProd){cls=surplus<-1e-6?"bal-tight":"bal-ok";lbl=surplus<-1e-6?"pre-produce":"covered";}
       else if(surplus<-1e-6){cls="bal-tight";lbl="short";}
       else if(b.cons>0&&ratio<0.05){cls="bal-tight";lbl="tight";}
       const fCell=showForgie?`<td class="num" style="color:${f>1e-6?'var(--teal)':'var(--ink3)'}">${f>1e-6?disp(f):"—"}</td>`:"";
-      const linesCell=b.mined?'<span style="color:var(--ink3)">income →</span>':(b.preProd&&b.prod<=1e-6)?'<span style="color:var(--ink3)">pre-prod</span>':disp(b.prod);
-      html+=`<tr${b.preProd?' style="background:rgba(210,129,58,.05)"':b.mined?' style="background:rgba(63,182,160,.05)"':''}><td>${b.res}</td><td class="num">${linesCell}</td>${fCell}
+      const minedCell=showMined?`<td class="num" style="color:${mine>1e-6?'var(--teal)':'var(--ink3)'}">${mine>1e-6?disp(mine):"—"}</td>`:"";
+      const linesCell=(b.preProd&&b.prod<=1e-6)?'<span style="color:var(--ink3)">pre-prod</span>':b.mined?'—':disp(b.prod);
+      html+=`<tr${b.preProd?' style="background:rgba(210,129,58,.05)"':b.mined?' style="background:rgba(63,182,160,.05)"':''}><td>${b.res}</td><td class="num">${linesCell}</td>${fCell}${minedCell}
         <td class="num">${disp(b.cons)}</td>
         <td class="num ${surplus<-1e-6?'bal-tight':''}">${disp(surplus)}</td>
         <td class="${cls}" style="font-weight:600;font-size:11.5px">${lbl}</td></tr>`;

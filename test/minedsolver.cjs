@@ -44,6 +44,13 @@ const runner = `
   S.minedIncome.Vespium=7966260543580.132;
   r=optimize();
   check("margin cannot borrow vespium",!r.feasible||!(r.out.Gel>0),"out="+(r.out.Gel||0));
+  S=base();S.dupe=50;S.forgie.Gel=0;PRODUCTS.forEach(p=>S.targets[p].on=p==="Gel");
+  S.minedIncome.Vespium=1e30;
+  r=optimize();
+  const gelRow=(r.plan||[]).find(p=>p.job&&p.job.res==="Gel"),rocks=(r.minedUsage||[]).find(x=>x.item==="Gel"&&x.resource==="Rocks");
+  const rockExpected=1e23/3201*3600;
+  check("items report real informational Rocks consumption",rocks&&Math.abs(rocks.inputHr-rockExpected)<=1e-9*Math.max(1,rockExpected),"use="+(rocks&&rocks.inputHr)+", expected="+rockExpected);
+  check("Rocks consumption is not duplicated",rocks&&rocks.outHr>0&&Math.abs(rocks.inputHr/rockExpected-1)<=1e-9,"use="+(rocks&&rocks.inputHr)+", dup="+dupeMult());
   S=base();S.mode="credits";PRODUCTS.forEach(p=>S.targets[p].on=false);
   S.lines=Array.from({length:2},()=>({max:1,spx:1,turbo:0}));S.forgie.Gel=347;
   S.sellPrice.Batteries=10;S.minedIncome.Vespium=1e13;S.minedIncome.Hydracite=300000000;

@@ -2,7 +2,7 @@
 const LEVELS=[1,2,4,8,16,32,64,128,256,512,1024,2048,4096,8192,16384];
 const RAWS=["Ingots","Bits","Concrete"];
 const PRODUCTS=["Glass","Bricks","Plates","Rods","Frames","Gel","Wire","Reinforced Concrete","Batteries"];
-// Gel is produced only on user-reserved lines (free mined ore inputs), never freely crafted by the optimizer.
+// Gel is crafted on a crafter line, spending budgeted Vespium plus informational Rocks.
 const GEL="Gel";
 const RECIPE={
   Glass:{inputs:["Bits"]},Bricks:{inputs:["Concrete"]},Plates:{inputs:["Ingots"]},
@@ -87,7 +87,7 @@ function defaults(){
     Plates:{Ingots:c(2)},
     Rods:{Ingots:c(2)},
     Frames:{Plates:c(2),Rods:c(4)},
-    Gel:{},                                  // free mined ore inputs — not modelled
+    Gel:{},                                  // mined inputs are tracked separately from ordinary recipes
     Wire:{Gel:c(2),Rods:c(16)},              // Bits pre-produced (PREPROD_BITS.Wire), not a line input
     "Reinforced Concrete":{Bricks:c(10000),Concrete:c(100000),Frames:c(700)},
     Batteries:{Wire:c(500),Gel:c(100000)}

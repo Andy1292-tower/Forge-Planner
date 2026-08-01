@@ -148,10 +148,10 @@ function prodCard(p){
     });
     rows+=`<tr>${cells}</tr>`;
   });
-  const subt=ins.length?ins.join(" + ")+" → "+p:"mined ore → "+p;
+  const subt=ins.length?ins.join(" + ")+" → "+p:"Vespium + Rocks → "+p;
   const body=ins.length
     ? `<table class="rtab"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`
-    : `<div style="font-size:10.5px;color:var(--ink3);margin:0 2px">Forged from mined ore (free, not crafted). Set Vespium income and review eligible lines in <b>Mined resources</b>.</div>`;
+    : `<div style="font-size:10.5px;color:var(--ink3);margin:0 2px">Gel is crafted on a crafter line. Each craft consumes <b>Vespium</b> from your mined-income budget and also has an informational <b>Rocks</b> cost. Review both in <b>Mined resources</b>.</div>`;
   c.innerHTML=`<div class="rh"><span class="nm">${p}</span><span class="ty ${tyCls}">${tyLbl}</span></div>
     <div class="rb"><div style="font-size:10.5px;color:var(--ink3);margin:0 2px 6px">${subt}</div>
     ${baseTimeField(p)}

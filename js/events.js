@@ -181,9 +181,25 @@ document.getElementById("forgieRows").addEventListener("input",e=>{
 
 /* ---------- mined resources modal ---------- */
 const minedModal=document.getElementById("minedModal");
-function openMined(){renderMinedResources();minedModal.hidden=false;}
-function closeMined(){minedModal.hidden=true;}
-document.getElementById("btnMined").addEventListener("click",openMined);
+const btnMined=document.getElementById("btnMined");
+let minedInvoker=null;
+function minedFocusable(){
+  return [...minedModal.querySelectorAll('button,input,select,textarea,a[href],[tabindex]:not([tabindex="-1"])')]
+    .filter(el=>!el.disabled&&!el.hidden&&el.tabIndex!==-1);
+}
+function openMined(e){
+  minedInvoker=(e&&e.currentTarget)||document.activeElement||btnMined;
+  renderMinedResources();minedModal.hidden=false;
+  const focusables=minedFocusable();
+  const firstIncome=focusables.find(el=>el.dataset&&el.dataset.minedIncome);
+  (firstIncome||focusables[0]||minedModal).focus();
+}
+function closeMined(){
+  minedModal.hidden=true;
+  const restore=minedInvoker||btnMined;minedInvoker=null;
+  if(restore&&typeof restore.focus==="function")restore.focus();
+}
+btnMined.addEventListener("click",openMined);
 document.getElementById("minedClose").addEventListener("click",closeMined);
 document.getElementById("minedDone").addEventListener("click",closeMined);
 minedModal.addEventListener("click",e=>{if(e.target===minedModal)closeMined();});
@@ -192,7 +208,15 @@ minedModal.addEventListener("input",e=>{
   setMinedIncome(resource,e.target.value);
   renderMinedResources();scheduleSolve();
 });
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!minedModal.hidden)closeMined();});
+document.addEventListener("keydown",e=>{
+  if(minedModal.hidden)return;
+  if(e.key==="Escape"){e.preventDefault();closeMined();return;}
+  if(e.key!=="Tab")return;
+  const focusables=minedFocusable();if(!focusables.length){e.preventDefault();return;}
+  const first=focusables[0],last=focusables[focusables.length-1],active=document.activeElement;
+  if(e.shiftKey&&(active===first||!focusables.includes(active))){e.preventDefault();last.focus();}
+  else if(!e.shiftKey&&(active===last||!focusables.includes(active))){e.preventDefault();first.focus();}
+});
 
 /* ---------- settings modal (max solve time) ---------- */
 const settingsModal=document.getElementById("settingsModal");

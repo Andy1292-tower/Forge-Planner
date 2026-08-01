@@ -3,6 +3,8 @@
 // Mined resources enter the solver as independent resources whose free supplies equal the
 // user's corresponding mined incomes. Rocks remain informational rather than budgeted.
 const VESP="Vespium";
+// One correctness threshold for reconstructing project rates and executable LP plan entries.
+const LP_ASSIGN_EPS=1e-9;
 // A project-plan phase may credit an intermediate's leftover stock as free supply instead of
 // crafting it (issue #73). Left uncapped, that credit scales with the phase's own throughput
 // multiplier (z) exactly like an indefinitely-sustained production rate would, so a chronic (if
@@ -410,18 +412,18 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   return {best,sorted,lineJobs,resources,resIndex,R,N,tIdx,tol,capped,usesMargin,issues,forgie,feasible:best.score>1e-9,ms:performance.now()-tStart};
 }
 
-function minedUsageFromItemPlan(plan,resIndex){
+function minedUsageFromItemPlan(plan){
   const by={};
   (plan||[]).forEach(p=>{const j=p&&p.job,cfg=j&&j.kind==="craft"&&MINED_CRAFTS[j.res];
     if(!cfg)return;
-    const ri=resIndex[cfg.resource];if(ri==null)return;
-    const input=j.cons.find(c=>c[0]===ri);if(!input)return;
     const es=effSpeed(p.sp,j.ct);
-    const outHr=j.prod[0][1]*es*p.dp*3600,inputHr=input[1]*es*3600;
-    const key=j.res+"\u0000"+cfg.resource;
-    if(!by[key])by[key]={item:j.res,resource:cfg.resource,lines:0,outHr:0,inputHr:0,perLine:[]};
-    const use=by[key];use.lines++;use.outHr+=outHr;use.inputHr+=inputHr;
-    use.perLine.push({line:p.line,lvl:j.lvl,outHr,inputHr});
+    const outHr=j.prod[0][1]*es*p.dp*3600,craftsHr=j.ct>0?(es/j.ct)*3600:0;
+    Object.entries(minedCost(j.res,j.lvl)).forEach(([resource,cost])=>{
+      const inputHr=cost*craftsHr,key=j.res+"\u0000"+resource;
+      if(!by[key])by[key]={item:j.res,resource,lines:0,outHr:0,inputHr:0,perLine:[]};
+      const use=by[key];use.lines++;use.outHr+=outHr;use.inputHr+=inputHr;
+      use.perLine.push({line:p.line,lvl:j.lvl,outHr,inputHr});
+    });
   });
   return Object.values(by);
 }
@@ -435,7 +437,7 @@ function planFrom(sr){
     const row={line:s.orig+1,max:s.max,spx:s.sp,dup:(s.dp-1)*100,sp:s.sp,dp:s.dp,job};
     if(job&&job.kind==="craft"&&job.res===GEL)row.reserved=true;
     plan[s.orig]=row;});
-  const minedUsage=minedUsageFromItemPlan(plan,resIndex);
+  const minedUsage=minedUsageFromItemPlan(plan);
   const gelUse=minedUsage.find(u=>u.item===GEL&&u.resource===VESP);
   if(gelUse)gelUse.perLine.forEach(use=>{const row=plan[use.line-1];if(row){row.gelHr=use.outHr;row.vespHr=use.inputHr;}});
   // best.produced already includes Forgie's supply; split it back out for display. Mined budgets
@@ -712,9 +714,9 @@ function projectSchedule(net,targets,avail,opts){
     }
   }
   const rate={};items.forEach(it=>rate[it]=forgieHr(it));
-  vars.forEach((v,vi)=>{const yi=y[vi]||0;if(yi<=1e-9)return;rate[v.item]+=v.rate*yi;v.cons.forEach(c=>{rate[c.item]=(rate[c.item]||0)-c.perHr*yi;});});
+  vars.forEach((v,vi)=>{const yi=y[vi]||0;if(yi<=LP_ASSIGN_EPS)return;rate[v.item]+=v.rate*yi;v.cons.forEach(c=>{rate[c.item]=(rate[c.item]||0)-c.perHr*yi;});});
   const plan=lns.map(ln=>({line:ln.orig+1,max:ln.max,sp:ln.sp,dp:ln.dp,entries:[]}));
-  vars.forEach((v,vi)=>{const yi=y[vi]||0;if(yi<=1e-4)return;plan[v.li].entries.push({item:v.item,lvl:v.lvl,frac:yi,outHr:v.rate*yi,cons:v.cons.map(c=>({item:c.item,hr:c.perHr*yi}))});});
+  vars.forEach((v,vi)=>{const yi=y[vi]||0;if(yi<=LP_ASSIGN_EPS)return;plan[v.li].entries.push({item:v.item,lvl:v.lvl,frac:yi,outHr:v.rate*yi,cons:v.cons.map(c=>({item:c.item,hr:c.perHr*yi}))});});
   plan.forEach(p=>p.entries.sort((a,b)=>b.frac-a.frac));
   plan.sort((a,b)=>a.line-b.line);
   if(stabKey){   // remember this solve's per-line jobs (keyed by physical orig = plan.line-1) for next time
@@ -883,12 +885,14 @@ function gelReservedFromPlan(plan){
 function minedUsageFromProjectPlan(plan){
   const by={};
   (plan||[]).forEach(p=>(p.entries||[]).forEach(e=>{const cfg=MINED_CRAFTS[e.item];if(!cfg)return;
-    const input=(e.cons||[]).find(c=>c.item===cfg.resource);if(!input)return;
-    const key=e.item+"\u0000"+cfg.resource;
-    if(!by[key])by[key]={item:e.item,resource:cfg.resource,lines:0,outHr:0,inputHr:0,perLine:[],_lines:{}};
-    const use=by[key];if(!use._lines[p.line]){use._lines[p.line]=1;use.lines++;}
-    use.outHr+=e.outHr||0;use.inputHr+=input.hr||0;
-    use.perLine.push({line:p.line,lvl:e.lvl,outHr:e.outHr||0,inputHr:input.hr||0,frac:e.frac||0});
+    const ct=craftTime(e.item,e.lvl),craftsHr=ct>0?(effSpeed(p.sp,ct)/ct)*(e.frac||0)*3600:0;
+    Object.entries(minedCost(e.item,e.lvl)).forEach(([resource,cost])=>{
+      const inputHr=cost*craftsHr,key=e.item+"\u0000"+resource;
+      if(!by[key])by[key]={item:e.item,resource,lines:0,outHr:0,inputHr:0,perLine:[],_lines:{}};
+      const use=by[key];if(!use._lines[p.line]){use._lines[p.line]=1;use.lines++;}
+      use.outHr+=e.outHr||0;use.inputHr+=inputHr;
+      use.perLine.push({line:p.line,lvl:e.lvl,outHr:e.outHr||0,inputHr,frac:e.frac||0});
+    });
   }));
   return Object.values(by).map(use=>{delete use._lines;return use;});
 }

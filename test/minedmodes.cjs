@@ -41,6 +41,27 @@ const runner = `
     const row=(r.phases[0].balance||[]).find(x=>x.res===input);
     check("project batteries consume "+input,row&&row.cons>0,"cons="+(row&&row.cons));
   });
+  const rockUse=uses.find(x=>x.item==="Gel"&&x.resource==="Rocks");
+  let expectedRocks=0;
+  (r.phases[0].plan||[]).forEach(p=>(p.entries||[]).forEach(e=>{
+    if(e.item!=="Gel")return;
+    const tier=Math.log2(e.lvl),ct=3201*Math.pow(1.5,tier),cost=1e23*Math.pow(3,tier);
+    expectedRocks+=(cost/ct)*Math.min(p.sp,ct)*(e.frac||0)*3600;
+  }));
+  check("project reports real informational Rocks consumption",rockUse&&Math.abs(rockUse.inputHr-expectedRocks)<=1e-9*Math.max(1,expectedRocks),"use="+(rockUse&&rockUse.inputHr)+", expected="+expectedRocks);
+
+  S=project(1e40,1e40);
+  S.lines=Array.from({length:5},()=>({max:1,spx:1,turbo:0}));
+  S.projects=[{id:"skewed",name:"Skewed mixed project",catId:"",on:true,from:1,to:1,done:0,prio:null,
+    levels:[{costs:[{item:"Concrete",qty:1e10},{item:"Batteries",qty:1}]}]}];
+  r=optimize();
+  const skewPlan=(r.phases[0]&&r.phases[0].plan)||[];
+  const skewItems=skewPlan.flatMap(p=>(p.entries||[]).map(e=>e.item));
+  const skewUses=(r.phases[0]&&r.phases[0].minedUsage)||[];
+  check("skewed mixed project remains feasible",r.feasible&&r.eta>0,"feasible="+r.feasible+", eta="+r.eta);
+  check("skewed mixed project keeps executable Battery assignment",skewItems.includes("Batteries"),JSON.stringify(skewPlan));
+  check("skewed mixed project keeps executable Gel assignment",skewItems.includes("Gel"),JSON.stringify(skewPlan));
+  check("skewed mixed project keeps separate mined usage",skewUses.some(x=>x.item==="Batteries"&&x.resource==="Hydracite")&&skewUses.some(x=>x.item==="Gel"&&x.resource==="Vespium"),JSON.stringify(skewUses));
   S=project(0,0);
   S.projects=[{id:"reinforced",name:"Reinforced test",catId:"",on:true,from:1,to:1,done:0,prio:null,
     levels:[{costs:[{item:"Reinforced Concrete",qty:1}]}]}];
