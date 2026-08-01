@@ -3,16 +3,24 @@
  * budget) never freezes the UI. Loads the same core + solver source the page uses; the page posts
  * a snapshot of the state and gets back the plain result object optimize() produces.
  *
- * core.js touches localStorage/document only in functions the solve never calls (its load-time
- * load() swallows the missing-localStorage error), so it runs cleanly in a worker. */
-importScripts("core.js", "solver.js");
+ * The Worker imports the same field/schema boundary as the page; no unvalidated snapshot can
+ * become the solver's global state. */
+importScripts("core.js", "fields.js", "state.js", "solver.js");
 
 self.onmessage = function (e) {
   const { reqId, state, budget, stab } = e.data || {};
   try {
-    S = state;                       // rebind the lexical S the solver closes over
-    if (budget) S.solveBudget = budget;
-    syncManual(S);
+    if(!Number.isInteger(reqId)||reqId<0)throw new Error("Worker request id is invalid");
+    const checked=validateWorkerState(state);
+    if(!checked.ok)throw new Error("Worker state rejected: "+checked.errors.join("; "));
+    if(budget!==undefined&&budget!==checked.state.solveBudget)throw new Error("Worker budget does not match the validated state");
+    if(stab!==null&&stab!==undefined){
+      const stabilityErrors=[];
+      if(!_plainObject(stab))stabilityErrors.push("stability cache must be a plain object");
+      else _scanStructure(stab,stabilityErrors);
+      if(stabilityErrors.length)throw new Error("Worker stability cache rejected: "+stabilityErrors.join("; "));
+    }
+    commitState(checked.state);       // rebind the lexical S the solver closes over
     // This worker is re-created per solve, so its line-stability cache starts empty; seed it from the
     // main thread's copy, then hand the updated cache back so the next solve can pin to it (issue #87).
     if (typeof setLineStability === "function") setLineStability(stab || {});

@@ -190,12 +190,8 @@ function normalize(st){
   syncManual(st);
   return st;
 }
-let S=normalize(load())||defaults();syncManual(S);
-
-function load(){try{const r=localStorage.getItem(LSKEY);return r?JSON.parse(r):null;}catch(e){return null;}}
-function save(){try{localStorage.setItem(LSKEY,JSON.stringify(S));flashSaved();}catch(e){document.getElementById("saveind").innerHTML="<b style='color:var(--ink3)'>local save unavailable here</b>";}}
-let savT;
-function flashSaved(){const el=document.getElementById("saveind");el.innerHTML="<b>saved</b>";clearTimeout(savT);savT=setTimeout(()=>el.textContent="auto-saves locally",1400);}
+let S=defaults();
+let stateRevision=0;
 
 const num=v=>{if(v===""||v===null||v===undefined)return null;const n=Number(v);return isFinite(n)?n:null;};
 const fmt=(n,d=0)=>n.toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:0});

@@ -1,0 +1,10 @@
+{
+  "lines": [
+    { "max": 512, "spx": 49.38, "dup": 17.25 }
+  ],
+  "prodCost": {},
+  "baseTime": {},
+  "targets": {
+    "Frames": { "on": true, "w": 3 }
+  }
+}

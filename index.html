@@ -35,6 +35,20 @@
     </div>
   </header>
 
+  <section id="stateRecovery" class="notice warn" role="alert" aria-live="assertive" tabindex="-1" hidden style="margin:0 0 16px">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
+      <div style="flex:1;min-width:240px">
+        <b>Forge Planner couldn’t use your saved build.</b>
+        <div id="stateRecoveryReason" style="margin-top:4px">The planner started with safe defaults. Your rejected save was kept unchanged.</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn ghost" id="stateRecoveryDownload">Download rejected save</button>
+        <button class="btn primary" id="stateRecoveryImport">Try another import</button>
+        <button class="btn ghost" id="stateRecoveryDismiss">Dismiss</button>
+      </div>
+    </div>
+  </section>
+
   <div class="grid">
     <!-- LEFT -->
     <div class="stack">
@@ -239,6 +253,8 @@
 
 <script src="js/catalog.js"></script>
 <script src="js/core.js"></script>
+<script src="js/fields.js"></script>
+<script src="js/state.js"></script>
 <script src="js/render.js"></script>
 <script src="js/solver.js"></script>
 <script src="js/results.js"></script>

@@ -77,24 +77,59 @@ document.getElementById("recipes").addEventListener("input",e=>{
 });
 
 /* export / import / reset */
+const stateRecovery=document.getElementById("stateRecovery");
+const stateRecoveryReason=document.getElementById("stateRecoveryReason");
+const stateRecoveryDownload=document.getElementById("stateRecoveryDownload");
+let _recoveryDownload=null;
+function showStateRecovery(raw,reason,file){
+  if(typeof raw==="string")quarantineRejectedState(raw,reason);
+  _recoveryDownload=file||((typeof raw==="string")?new Blob([raw],{type:"application/json"}):null);
+  if(stateRecoveryDownload)stateRecoveryDownload.disabled=!_recoveryDownload;
+  if(stateRecoveryReason)stateRecoveryReason.textContent=String(reason||"The planner started with safe defaults. Your rejected save was kept unchanged.");
+  if(stateRecovery){stateRecovery.hidden=false;stateRecovery.focus();}
+}
+function dismissStateRecovery(restoreFocus=true){
+  if(stateRecovery)stateRecovery.hidden=true;
+  if(restoreFocus){const button=document.getElementById("btnImport");if(button)button.focus();}
+}
+stateRecoveryDownload.addEventListener("click",()=>{
+  if(!_recoveryDownload)return;
+  const url=URL.createObjectURL(_recoveryDownload),a=document.createElement("a");
+  a.href=url;a.download="forge-planner-rejected-save.json";a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),0);
+});
+document.getElementById("stateRecoveryImport").addEventListener("click",()=>document.getElementById("fileImport").click());
+document.getElementById("stateRecoveryDismiss").addEventListener("click",()=>dismissStateRecovery(true));
+
 document.getElementById("btnExport").addEventListener("click",()=>{
-  const blob=new Blob([JSON.stringify(S,null,2)],{type:"application/json"});
+  const result=validateAndMigrate(S);
+  if(!result.ok){showStateRecovery(null,"The current build contains a value that cannot be exported safely: "+result.errors.join("; "));return;}
+  const blob=new Blob([JSON.stringify(result.state,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);
   a.download="forge-build.json";a.click();URL.revokeObjectURL(a.href);
 });
 document.getElementById("btnImport").addEventListener("click",()=>document.getElementById("fileImport").click());
 document.getElementById("fileImport").addEventListener("change",e=>{
   const f=e.target.files[0];if(!f)return;
+  e.target.value="";
+  if(f.size>STATE_LIMITS.maxBytes){
+    showStateRecovery(null,"That import is too large to open safely. Your current build was not changed.",f);
+    return;
+  }
   const r=new FileReader();
-  r.onload=()=>{try{const d=JSON.parse(r.result);
-    if(d.lines&&d.prodCost&&d.targets){S=normalize(d);renderAll();save();}
-    else alert("That doesn't look like a Forge Planner build file.");
-  }catch(err){alert("Could not read that file.");}};
-  r.readAsText(f);e.target.value="";
+  r.onload=()=>{
+    const raw=String(r.result==null?"":r.result);let candidate;
+    try{candidate=JSON.parse(raw);}catch(error){showStateRecovery(raw,"Could not read that file because it is not valid JSON.");return;}
+    const result=applyImportedState(candidate,renderAll);
+    if(!result.ok){showStateRecovery(raw,result.errors.join("; "));return;}
+    dismissStateRecovery(false);flashSaved();
+  };
+  r.onerror=()=>showStateRecovery(null,"Could not read that file. Your current build was not changed.",f);
+  r.readAsText(f);
 });
 document.getElementById("btnReset").addEventListener("click",()=>{
   if(confirm("Reset everything to defaults? This clears your entered stats."))
-    {S=defaults();renderAll();save();}
+    {commitState(defaults());renderAll();save();dismissStateRecovery(false);}
 });
 
 /* ---------- mode switch ---------- */
@@ -298,9 +333,10 @@ function renderAll(){
   document.getElementById("maxTurbo").value=S.maxTurbo||0;
   document.getElementById("dupe").value=S.dupe||0;
 }
-renderAll();
+const initialState=initializeState(renderAll);
 initCalib();
 document.getElementById("saveind").textContent="auto-saves locally";
+if(initialState.recovery)showStateRecovery(initialState.recovery.raw,initialState.recovery.reason);
 function costRow(pi,li,ci,c){
   const opts=ALLITEMS.map(it=>`<option value="${it}" ${it===c.item?"selected":""}>${it}</option>`).join("");
   const txt=(c.qty!=null&&isFinite(c.qty))?formatGameNum(c.qty,4):"";
@@ -413,7 +449,7 @@ function addCatalogProject(catId){
   if(!src||projectHasCat(catId))return;
   S.projects.push({
     id:newId(),catId:src.catId,name:src.name,description:src.description||"",
-    on:true,prio:null,from:1,to:src.levels.length||1,
+    on:true,prio:null,from:1,to:src.levels.length||1,done:0,
     levels:JSON.parse(JSON.stringify(src.levels)),_open:false
   });
   renderProjects();renderCatalog();save();scheduleSolve();
@@ -451,7 +487,7 @@ document.getElementById("projDone").addEventListener("click",closeProjects);
 projModal.addEventListener("click",e=>{if(e.target===projModal)closeProjects();});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!projModal.hidden)closeProjects();});
 document.getElementById("projAdd").addEventListener("click",()=>{
-  S.projects.push({id:newId(),name:"New project",on:true,from:1,to:1,levels:[{costs:[]}],_open:true});
+  S.projects.push({id:newId(),name:"New project",on:true,prio:null,from:1,to:1,done:0,levels:[{costs:[]}],_open:true});
   renderProjects();save();scheduleSolve();
 });
 document.getElementById("projClear").addEventListener("click",()=>{

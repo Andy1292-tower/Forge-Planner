@@ -1,0 +1,14 @@
+{
+  "lines": [
+    { "max": 128, "spx": 43.85, "turbo": 0 }
+  ],
+  "prodCost": {},
+  "baseTime": {
+    "Ingots": 9.63,
+    "Bits": 12.85,
+    "Frames": 300.123
+  },
+  "targets": {
+    "Frames": { "on": true, "w": 1 }
+  }
+}

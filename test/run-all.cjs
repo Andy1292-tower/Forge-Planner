@@ -18,6 +18,7 @@ const tests = [
   "test/minedui.cjs",
   "test/rawtargets.cjs",
   "test/scale.cjs",
+  "test/state-schema.cjs",
   "test/stability.cjs",
   "test/stockrisk.cjs",
   "test/run-parity.cjs",

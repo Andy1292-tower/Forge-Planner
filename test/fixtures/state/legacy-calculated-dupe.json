@@ -1,0 +1,13 @@
+{
+  "lines": [
+    { "max": 512, "spx": 49.38, "turbo": 10 }
+  ],
+  "maxTurbo": 40,
+  "attrDupe": 8,
+  "trio4": 0.25,
+  "prodCost": {},
+  "baseTime": {},
+  "targets": {
+    "Frames": { "on": true, "w": 2 }
+  }
+}
