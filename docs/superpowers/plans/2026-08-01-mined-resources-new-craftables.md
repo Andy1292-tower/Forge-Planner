@@ -20,7 +20,7 @@
 - Preserve existing calibrated state, Gel UI behavior, solver seeds, Web Worker responsiveness, one-second craft floor, duplication rules, and pre-produced Bits behavior.
 - Do not infer new project unlock relationships.
 - Keep all implementation and delivery in `feature/mined-resources-and-new-crafts` and one pull request.
-- Do not mention Codex, AI, or model assistance in commits, branch descriptions, or pull-request text.
+- Keep commit, branch, and pull-request copy limited to the product changes and their verification.
 
 ---
 

@@ -150,4 +150,4 @@ Rendered QA will serve the app over HTTP so the real worker path runs. Desktop a
 
 ## Delivery
 
-All work stays on `feature/mined-resources-and-new-crafts` and ships in one pull request. Before publication, the branch will be checked against current `origin/main` and the overlapping open PR. The commit and pull-request title/body will describe only the product changes and verification, with no Codex or AI attribution.
+All work stays on `feature/mined-resources-and-new-crafts` and ships in one pull request. Before publication, the branch will be checked against current `origin/main` and the overlapping open PR. The commit and pull-request title/body will describe only the product changes and verification.
