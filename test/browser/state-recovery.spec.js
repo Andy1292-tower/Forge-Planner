@@ -83,6 +83,27 @@ test("a rejected future import leaves prior state and persisted bytes unchanged"
   await expect(page.locator('[data-spx="0"]')).toHaveValue(beforeSpeed);
 });
 
+test("a normal-size rejected import downloads the original File bytes instead of re-encoded text", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const originalBytes = Buffer.concat([
+    Buffer.from('{"schemaVersion":2,"note":"'),
+    Buffer.from([0x80]),
+    Buffer.from('"}'),
+  ]);
+
+  await page.locator("#fileImport").setInputFiles({
+    name: "future-invalid-utf8.json",
+    mimeType: "application/json",
+    buffer: originalBytes,
+  });
+
+  await expect(page.getByRole("alert")).toContainText("newer version");
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download rejected save", exact: true }).click();
+  const download = await downloadPromise;
+  expect(fs.readFileSync(await download.path())).toEqual(originalBytes);
+});
+
 test("a valid import commits once and retains the exact previous-good bytes", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   const beforeRaw = await page.evaluate(key => localStorage.getItem(key), STORAGE_KEY);

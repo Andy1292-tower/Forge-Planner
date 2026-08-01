@@ -269,10 +269,14 @@ function validateAndMigrate(candidate){
       const id=_own(project,"id")?_string(_readData(project,"id",path+".id",errors),FIELD_SCHEMA.id,path+".id",errors):"legacy-project-"+(index+1);
       const name=_own(project,"name")?_string(_readData(project,"name",path+".name",errors),FIELD_SCHEMA.projectName,path+".name",errors):"Project";
       const on=_own(project,"on")?_boolean(_readData(project,"on",path+".on",errors),path+".on",errors):true;
-      const from=_own(project,"from")?_number(_readData(project,"from",path+".from",errors),{...FIELD_SCHEMA.projectIndex,max:count},path+".from",errors):1;
-      const to=_own(project,"to")?_number(_readData(project,"to",path+".to",errors),{...FIELD_SCHEMA.projectIndex,max:count},path+".to",errors):count;
+      const legacyCursorRule={type:"integer",min:-1e6,max:1e6,allowBlank:false};
+      const cursorRule=current?{...FIELD_SCHEMA.projectIndex,max:count}:legacyCursorRule;
+      const from=_own(project,"from")?_number(_readData(project,"from",path+".from",errors),cursorRule,path+".from",errors):1;
+      const to=_own(project,"to")?_number(_readData(project,"to",path+".to",errors),cursorRule,path+".to",errors):count;
+      if(current&&Number.isFinite(from)&&Number.isFinite(to)&&from>to)_pushError(errors,path+".from","must not exceed "+path+".to");
       const span=Number.isFinite(from)&&Number.isFinite(to)?Math.max(0,to-from+1):count;
-      const done=_own(project,"done")?_number(_readData(project,"done",path+".done",errors),{...FIELD_SCHEMA.projectDone,max:span},path+".done",errors):0;
+      const doneRule=current?{...FIELD_SCHEMA.projectDone,max:span}:legacyCursorRule;
+      const done=_own(project,"done")?_number(_readData(project,"done",path+".done",errors),doneRule,path+".done",errors):0;
       let prio=null;
       if(_own(project,"prio"))prio=_number(_readData(project,"prio",path+".prio",errors),FIELD_SCHEMA.projectPriority,path+".prio",errors);
       else if(_readData(project,"first",path+".first",errors)===true)prio=1;
@@ -293,7 +297,11 @@ function validateAndMigrate(candidate){
     if(manual){if(current&&manual.length!==out.lines.length)_pushError(errors,"manual","must have one entry per crafter line");out.manual=[];manual.slice(0,STATE_LIMITS.maxLines).forEach((raw,index)=>{
       const path="manual["+index+"]",entry=_object(raw,path,errors);if(!entry)return;
       if(current)["job","lvl","sell"].forEach(key=>{if(!_own(entry,key))_pushError(errors,path+"."+key,"is required");});
-      out.manual.push({job:_enum(_readData(entry,"job",path+".job",errors),FIELD_SCHEMA.manualJob,path+".job",errors),lvl:_enum(_readData(entry,"lvl",path+".lvl",errors),FIELD_SCHEMA.lineMax,path+".lvl",errors),sell:_boolean(_readData(entry,"sell",path+".sell",errors),path+".sell",errors)});
+      const job=_enum(_readData(entry,"job",path+".job",errors),FIELD_SCHEMA.manualJob,path+".job",errors);
+      const lvl=_enum(_readData(entry,"lvl",path+".lvl",errors),FIELD_SCHEMA.lineMax,path+".lvl",errors);
+      const sell=_boolean(_readData(entry,"sell",path+".sell",errors),path+".sell",errors);
+      if(current&&Number.isFinite(lvl)&&out.lines[index]&&Number.isFinite(out.lines[index].max)&&lvl>out.lines[index].max)_pushError(errors,path+".lvl","must not exceed its crafter line cap");
+      out.manual.push({job,lvl,sell});
     });}
   }
   if(_own(candidate,"manualSaved")){

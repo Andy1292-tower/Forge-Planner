@@ -135,6 +135,20 @@ test("rejects malformed targets", () => {
   assert.match(result.errors.join(" "), /targets\.Frames\.w/i);
 });
 
+test("rejects a current project range with from after to instead of silently rewriting it", () => {
+  const candidate = currentState();
+  candidate.projects = [{
+    id: "bad-range", name: "Bad range", on: true, prio: null,
+    from: 2, to: 1, done: 0,
+    levels: [{ costs: [] }, { costs: [] }],
+  }];
+
+  const result = api("validateAndMigrate")(candidate);
+
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /projects\[0\].*from.*to/i);
+});
+
 test("rejects unknown line and Manual compression levels", () => {
   const candidate = currentState();
   candidate.lines[0].max = 3;
@@ -143,6 +157,17 @@ test("rejects unknown line and Manual compression levels", () => {
   assert.equal(result.ok, false);
   assert.match(result.errors.join(" "), /lines\[0\]\.max/i);
   assert.match(result.errors.join(" "), /manual\[0\]\.lvl/i);
+});
+
+test("rejects a current Manual level above its line cap instead of silently clamping it", () => {
+  const candidate = currentState();
+  candidate.lines[0].max = 1;
+  candidate.manual[0].lvl = 2;
+
+  const result = api("validateAndMigrate")(candidate);
+
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /manual\[0\]\.lvl.*line cap/i);
 });
 
 test("rejects negative and non-finite-like numeric values", () => {
@@ -231,6 +256,17 @@ test("migrates calculated duplication fixture", () => {
   assert.equal(Object.hasOwn(result.state, "trio4"), false);
 });
 
+test("preserves the established 60000 ms solve budget when migrating a pre-schema save", () => {
+  const candidate = currentState();
+  delete candidate.schemaVersion;
+  candidate.solveBudget = 60000;
+
+  const result = api("validateAndMigrate")(candidate);
+
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.state.solveBudget, 60000);
+});
+
 test("migrates old base-time defaults but preserves custom calibration", () => {
   const result = api("validateAndMigrate")(fixture("legacy-base-time.json"));
   assert.equal(result.ok, true, JSON.stringify(result.errors));
@@ -259,6 +295,29 @@ test("migrates Gel income, project first flag, and fills later compression costs
   assert.equal(result.state.prodCost.Wire.Gel[16384], api("defaults().prodCost.Wire.Gel[16384]"));
   assert.equal(result.state.projects[0].prio, 1);
   assert.equal(Object.hasOwn(result.state.projects[0], "first"), false);
+});
+
+test("repairs legacy project cursors that old normalize accepted instead of quarantining the build", () => {
+  const candidate = currentState();
+  delete candidate.schemaVersion;
+  candidate.projects = [{
+    id: "legacy-range", name: "Legacy range", on: true, prio: null,
+    from: 99, to: 0, done: 999,
+    levels: [{ costs: [] }, { costs: [] }],
+  }, {
+    id: "legacy-negative-done", name: "Legacy negative done", on: true, prio: null,
+    from: 1, to: 2, done: -4,
+    levels: [{ costs: [] }, { costs: [] }],
+  }];
+
+  const result = api("validateAndMigrate")(candidate);
+
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.sourceVersion, 0);
+  assert.equal(result.state.projects[0].from, 2);
+  assert.equal(result.state.projects[0].to, 2);
+  assert.equal(result.state.projects[0].done, 1);
+  assert.equal(result.state.projects[1].done, 0);
 });
 
 test("valid legacy validation never mutates the attacker-owned fixture", () => {

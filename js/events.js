@@ -119,9 +119,9 @@ document.getElementById("fileImport").addEventListener("change",e=>{
   const r=new FileReader();
   r.onload=()=>{
     const raw=String(r.result==null?"":r.result);let candidate;
-    try{candidate=JSON.parse(raw);}catch(error){showStateRecovery(raw,"Could not read that file because it is not valid JSON.");return;}
+    try{candidate=JSON.parse(raw);}catch(error){showStateRecovery(raw,"Could not read that file because it is not valid JSON.",f);return;}
     const result=applyImportedState(candidate,renderAll);
-    if(!result.ok){showStateRecovery(raw,result.errors.join("; "));return;}
+    if(!result.ok){showStateRecovery(raw,result.errors.join("; "),f);return;}
     dismissStateRecovery(false);flashSaved();
   };
   r.onerror=()=>showStateRecovery(null,"Could not read that file. Your current build was not changed.",f);

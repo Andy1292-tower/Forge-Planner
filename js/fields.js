@@ -30,7 +30,7 @@ const FIELD_SCHEMA=Object.freeze({
   maxTurbo:_field("number",_FIELD_DEFAULTS.maxTurbo,{min:0,max:1e6,allowBlank:false}),
   dupe:_field("number",_FIELD_DEFAULTS.dupe,{min:0,max:100,allowBlank:false}),
   margin:_field("number",_FIELD_DEFAULTS.margin,{min:0,max:20,allowBlank:false}),
-  solveBudget:_field("integer",_FIELD_DEFAULTS.solveBudget,{min:200,max:15000,allowBlank:false}),
+  solveBudget:_field("integer",_FIELD_DEFAULTS.solveBudget,{min:200,max:60000,allowBlank:false}),
   baseTime:_field("number",null,{min:1e-6,max:1e15,allowBlank:false}),
   amount:_field("number",null,{min:0,max:1e100,allowBlank:true}),
   recipeCost:_field("number",null,{min:0,max:1e100,allowBlank:true}),
