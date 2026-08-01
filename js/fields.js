@@ -39,7 +39,7 @@ const FIELD_SCHEMA=Object.freeze({
   mode:_field("enum",_FIELD_DEFAULTS.mode,{values:Object.freeze(["items","credits","project","manual"]),allowBlank:false}),
   flag:_field("boolean",false,{allowBlank:false}),
   displayText:_field("string","",{maxLength:128,allowBlank:true}),
-  id:_field("string","",{maxLength:128,allowBlank:false}),
+  id:_field("string","",{maxLength:64,allowBlank:false,pattern:/^[A-Za-z][A-Za-z0-9_-]{0,63}$/}),
   projectName:_field("string","Project",{maxLength:256,allowBlank:true}),
   projectDescription:_field("string","",{maxLength:2048,allowBlank:true}),
   projectIndex:_field("integer",1,{min:1,max:1e6,allowBlank:false}),

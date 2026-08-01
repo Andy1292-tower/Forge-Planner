@@ -13,7 +13,7 @@ npm test
 npm run test:browser
 ```
 
-`npm test` first checks JavaScript syntax, then runs the explicit fast Node-test list, including a fresh parity snapshot checked against `test/golden.json`. `npm run test:browser` serves the real static page, verifies its Worker result, and exercises every planning mode. The only intentionally ignored browser request is the local Vercel Analytics script's 404; remove that exception when analytics is removed.
+`npm test` first checks JavaScript syntax, then runs the explicit fast Node-test list, including a fresh parity snapshot checked against `test/golden.json`. `npm run test:browser` serves the real static page, verifies its Worker result, exercises every planning mode, and fails on any console error or failed request.
 
 ## What it does
 

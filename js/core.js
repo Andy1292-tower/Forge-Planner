@@ -67,7 +67,6 @@ function lineSpeed(row){
 function dupeChance(){return Math.max(0,num(S.dupe)||0);}
 function dupeMult(){return 1+dupeChance()/100;}
 const newId=()=>"p"+Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36);
-const escapeAttr=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
 function fmtDuration(h){
   if(!isFinite(h)||h<=0)return "—";
   let s=Math.round(h*3600);

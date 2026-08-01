@@ -63,6 +63,29 @@ test("exports a current schema and pure field descriptors", () => {
   assert.equal(schema.dupe.max, 100);
   assert.equal(schema.projectName.type, "string");
   assert.equal(schema.projectName.maxLength, 256);
+  assert.equal(schema.id.maxLength, 64);
+  assert.equal(schema.timestamp.type, "number");
+  assert.equal(schema.timestamp.allowBlank, true);
+});
+
+test("rejects unsafe imported IDs and a non-numeric plan start", () => {
+  const candidate = currentState();
+  candidate.projects = [{
+    id: "unsafe project id", name: "Project", on: true, prio: null,
+    from: 1, to: 1, done: 0, levels: [{ costs: [] }],
+  }];
+  candidate.manualSaved = [{ id: "x\"><img", name: "Setup", config: candidate.manual.map(entry => ({ ...entry })) }];
+  candidate.manualActiveId = "x\"><img";
+  candidate.planStart = "now";
+
+  const result = api("validateAndMigrate")(candidate);
+
+  assert.equal(result.ok, false);
+  const errors = result.errors.join(" ");
+  assert.match(errors, /projects\[0\]\.id.*safe ID format/i);
+  assert.match(errors, /manualSaved\[0\]\.id.*safe ID format/i);
+  assert.match(errors, /manualActiveId.*safe ID format/i);
+  assert.match(errors, /planStart.*finite number/i);
 });
 
 test("accepts a complete current state into a fresh object", () => {

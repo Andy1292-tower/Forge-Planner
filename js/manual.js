@@ -91,6 +91,23 @@ function deleteManualPreset(id){
   if(S.manualActiveId===id)S.manualActiveId=null;
   save();renderResults();
 }
+function renderManualPresetBar(container,saved,active){
+  const select=domElement("select");
+  select.id="manualPreset";
+  select.setAttribute("aria-label","Load a saved setup");
+  select.style.cssText="flex:1;min-width:150px";
+  select.appendChild(domOption("",saved.length?"— load a saved setup —":"— no saved setups yet —",false));
+  saved.forEach(p=>select.appendChild(domOption(p.id,p.name,p.id===S.manualActiveId)));
+  const controls=[select];
+  if(active){
+    const update=domElement("button","btn ghost",`Update “${active.name}”`);
+    update.id="manualUpdate";update.title=`Overwrite “${active.name}” with the current setup`;
+    controls.push(update);
+  }
+  const saveNew=domElement("button","btn ghost","Save as new…");saveNew.id="manualSaveNew";controls.push(saveNew);
+  if(saved.length){const del=domElement("button","btn ghost","Delete");del.id="manualDelPreset";del.title="Delete the selected saved setup";controls.push(del);}
+  container.replaceChildren(...controls);
+}
 function renderManual(el,stat){
   syncManual(S);
   const res=manualResult();
@@ -98,14 +115,7 @@ function renderManual(el,stat){
   // saved-setup bar: name the current layout, then swap between presets at will
   const saved=S.manualSaved||[];
   const active=saved.find(p=>p.id===S.manualActiveId);
-  const presetOpts=`<option value="">${saved.length?"— load a saved setup —":"— no saved setups yet —"}</option>`+
-    saved.map(p=>`<option value="${p.id}"${p.id===S.manualActiveId?" selected":""}>${escapeAttr(p.name)}</option>`).join("");
-  html+=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
-    <select id="manualPreset" aria-label="Load a saved setup" style="flex:1;min-width:150px">${presetOpts}</select>
-    ${active?`<button class="btn ghost" id="manualUpdate" title="Overwrite “${escapeAttr(active.name)}” with the current setup">Update “${escapeAttr(active.name)}”</button>`:""}
-    <button class="btn ghost" id="manualSaveNew">Save as new…</button>
-    ${saved.length?'<button class="btn ghost" id="manualDelPreset" title="Delete the selected saved setup">Delete</button>':""}
-  </div>`;
+  html+=`<div id="manualPresetBar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px"></div>`;
   if(res.issues.length)html+=`<div class="notice warn"><b>Missing data:</b><br>${res.issues.join("<br>")}</div>`;
   // headline cards: credits from sold surplus first, then net surplus of items actually
   // crafted/produced on a line (Lil' Forgie's passive-only items are excluded)
@@ -203,5 +213,6 @@ function renderManual(el,stat){
               :`Forgie already covers it — a <b style="color:var(--teal)">${disp(-net)}</b>/hr surplus.`)+`</div>`;
   }
   el.innerHTML=html;
+  renderManualPresetBar(document.getElementById("manualPresetBar"),saved,active);
   stat.textContent="manual setup";
 }

@@ -69,7 +69,11 @@ function _solveSync(cb,reqId){
 function solveError(msg){
   hideSolveSpinner();
   const el=document.getElementById("results"),stat=document.getElementById("solveStat");
-  if(el)el.innerHTML=`<div class="notice warn"><b>Solver error.</b> ${String(msg).split("\n")[0]}</div>`;
+  if(el){
+    const notice=domElement("div","notice warn");
+    notice.append(domElement("b","","Solver error."),document.createTextNode(" "+String(msg).split("\n")[0]));
+    el.replaceChildren(notice);
+  }
   if(stat)stat.textContent="";
 }
 function showSolveSpinner(){const o=document.getElementById("solveOverlay");if(o)o.hidden=false;}
@@ -216,7 +220,7 @@ function renderProjectResults(res,el,stat){
       const needs=items.slice(0,5).map(it=>disp(sub[it])+" "+it).join(", ")+(items.length>5?" …":"");
       const badge=(ph.prio!=null)?` <span class="pill craft" style="font-size:9px">#${ph.prio}</span>`:"";
       const warn=!ph.feasible?' <span style="color:var(--danger);font-size:10.5px">(blocked — see notes)</span>':"";
-      const nm=escapeAttr(ph.members&&ph.members.length>1?ph.members.join(" + "):ph.name);
+      const nm=htmlText(ph.members&&ph.members.length>1?ph.members.join(" + "):ph.name);
       bd+=`<tr><td class="mono">${i+1}</td><td>${nm}${badge}${warn}</td>
         <td style="color:var(--ink2);font-size:11.5px">${needs||"—"}</td>
         <td class="num mono">${ph.eta>0?fmtDuration(ph.eta):"—"}</td><td class="num mono" style="color:${ph.feasible?'var(--amber)':'var(--danger)'}">${ph.feasible?fmtDuration(ph.doneAt):ph.partial?fmtDuration(ph.doneAt)+" partial":"blocked"}</td></tr>`;
@@ -244,7 +248,7 @@ function renderProjectResults(res,el,stat){
       let pdone=0;items.forEach(it=>{const r=res.rate[it]||0;if(r>1e-12){const d=(res.net[it]||0)/r;if(d>pdone)pdone=d;}});
       const blocked=items.some(it=>res.blockedMined&&res.blockedMined[it]);
       const needs=items.slice(0,6).map(it=>disp(p.sub[it])+" "+it).join(", ")+(items.length>6?" …":"");
-      bd+=`<tr><td>${p.name||"Project"}</td><td class="mono" style="color:var(--ink2)">${p.from}–${p.to} / ${p.levels}</td>
+      bd+=`<tr><td>${htmlText(p.name||"Project")}</td><td class="mono" style="color:var(--ink2)">${p.from}–${p.to} / ${p.levels}</td>
         <td style="color:var(--ink2);font-size:11.5px">${needs||"—"}</td>
         <td class="num mono">${blocked?'<span style="color:var(--danger)">not fully finishable</span>':items.length?fmtDuration(pdone):"—"}</td></tr>`;
     });

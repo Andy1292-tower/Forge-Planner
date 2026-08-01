@@ -3,8 +3,8 @@
 const fs=require("fs"),path=require("path");
 
 class El{
-  constructor(){this.innerHTML="";this.textContent="";this.value="";this.hidden=false;this.dataset={};this.children=[];this.className="";}
-  addEventListener(){} setAttribute(){} appendChild(x){this.children.push(x);return x;} querySelector(){return null;}
+  constructor(){this.innerHTML="";this.textContent="";this.value="";this.hidden=false;this.dataset={};this.children=[];this.className="";this.style={};}
+  addEventListener(){} setAttribute(){} appendChild(x){this.children.push(x);return x;} append(...xs){this.children.push(...xs);} replaceChildren(...xs){this.children=xs;} querySelector(){return null;}
 }
 const els={};
 globalThis.document={
@@ -15,7 +15,7 @@ globalThis.document={
 };
 globalThis.localStorage={getItem:()=>null,setItem:()=>{}};
 globalThis.performance={now:()=>0};
-const src=["core.js","solver.js","results.js","manual.js","render.js"]
+const src=["core.js","dom.js","solver.js","results.js","manual.js","render.js"]
   .map(f=>fs.readFileSync(path.join(__dirname,"..","js",f),"utf8")).join("\n;\n");
 
 const runner=`

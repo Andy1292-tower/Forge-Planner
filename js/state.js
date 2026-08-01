@@ -72,6 +72,7 @@ function _string(value,rule,path,errors){
   }
   if(!rule.allowBlank&&value.length===0)_pushError(errors,path,"must not be blank");
   if(value.length>rule.maxLength)_pushError(errors,path,"exceeds the "+rule.maxLength+" character length limit");
+  if(rule.pattern&&!rule.pattern.test(value))_pushError(errors,path,"must use a safe ID format (letter first; then letters, numbers, underscores, or hyphens)");
   return value;
 }
 function _boolean(value,path,errors){

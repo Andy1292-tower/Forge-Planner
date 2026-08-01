@@ -2,18 +2,9 @@
 
 const { test, expect } = require("@playwright/test");
 
-const LOCAL_ORIGIN = "http://127.0.0.1:4173";
-
-function isKnownAnalytics404(responseUrl, status) {
-  const url = new URL(responseUrl);
-  return url.origin === LOCAL_ORIGIN &&
-    url.pathname === "/_vercel/insights/script.js" && status === 404;
+if (process.env.PLAYWRIGHT_CHROME_PATH) {
+  test.use({ launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROME_PATH } });
 }
-
-test("only the local Vercel Analytics 404 is ignored", () => {
-  expect(isKnownAnalytics404("http://127.0.0.1:4173/_vercel/insights/script.js", 404)).toBe(true);
-  expect(isKnownAnalytics404("https://example.test/_vercel/insights/script.js", 404)).toBe(false);
-});
 
 test("the planner serves, solves in its Worker, and opens every planning mode", async ({ page }) => {
   const consoleErrors = [];
@@ -40,18 +31,11 @@ test("the planner serves, solves in its Worker, and opens every planning mode", 
   });
 
   page.on("console", message => {
-    const location = message.location();
-    const isKnownAnalytics404 =
-      location.url === "http://127.0.0.1:4173/_vercel/insights/script.js";
-    if (message.type() === "error" && !isKnownAnalytics404) {
-      consoleErrors.push(message.text());
-    }
+    if (message.type() === "error") consoleErrors.push(message.text());
   });
   page.on("pageerror", error => pageErrors.push(error.message));
   page.on("response", response => {
-    if (response.status() >= 400 && !isKnownAnalytics404(response.url(), response.status())) {
-      failedResponses.push(`${response.status()} ${response.url()}`);
-    }
+    if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`);
   });
 
   await page.goto("/", { waitUntil: "domcontentloaded" });

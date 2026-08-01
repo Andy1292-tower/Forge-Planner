@@ -142,18 +142,31 @@ document.getElementById("modesw").addEventListener("click",e=>{
 });
 
 /* ---------- sell prices ---------- */
+function itemTypeTag(it){
+  const kind=KIND[it]==="raw"?["raw","raw"]:KIND[it]==="fin"?["fin","assembly"]:["pr","craft"];
+  return domElement("span","ty "+kind[0],kind[1]);
+}
+function renderItemValueRows(box,textMap,numberMap,dataName,placeholder,inputMode){
+  const nodes=[];
+  const addGroup=(label,items,first)=>{
+    nodes.push(domElement("div","price-grp"+(first?" first":""),label));
+    items.forEach(it=>{
+      const row=domElement("div","price-row");
+      const name=domElement("div","pnm");
+      name.append(itemTypeTag(it),document.createTextNode(it));
+      const value=numberMap[it];
+      const text=textMap[it]!=null?textMap[it]:(value!=null?formatGameNum(value,4):"");
+      row.append(name,domTextInput(dataName,it,text,{placeholder,inputMode}));
+      nodes.push(row);
+    });
+  };
+  addGroup("Finished & crafted",PRODUCTS,true);
+  addGroup("Raw materials",RAWS,false);
+  box.replaceChildren(...nodes);
+}
 function renderPrices(){
   const box=document.getElementById("priceRows");
-  const tag=it=>KIND[it]==="raw"?'<span class="ty raw">raw</span>':KIND[it]==="fin"?'<span class="ty fin">assembly</span>':'<span class="ty pr">craft</span>';
-  const rows=(items)=>items.map(it=>{
-    const v=S.sellPrice[it];
-    const txt=S.priceText[it]!=null?S.priceText[it]:(v!=null?formatGameNum(v,4):"");
-    return `<div class="price-row">
-      <div class="pnm">${tag(it)}${it}</div>
-      <input type="text" data-price="${it}" placeholder="—" value="${txt}">
-    </div>`;
-  }).join("");
-  box.innerHTML=`<div class="price-grp first">Finished &amp; crafted</div>${rows(PRODUCTS)}<div class="price-grp">Raw materials</div>${rows(RAWS)}`;
+  renderItemValueRows(box,S.priceText,S.sellPrice,"price","—","");
 }
 const priceModal=document.getElementById("priceModal");
 function openPrices(){renderPrices();priceModal.hidden=false;}
@@ -182,16 +195,7 @@ document.getElementById("priceRows").addEventListener("input",e=>{
 /* ---------- Lil' Forgie supply modal ---------- */
 function renderForgie(){
   const box=document.getElementById("forgieRows");
-  const tag=it=>KIND[it]==="raw"?'<span class="ty raw">raw</span>':KIND[it]==="fin"?'<span class="ty fin">assembly</span>':'<span class="ty pr">craft</span>';
-  const rows=(items)=>items.map(it=>{
-    const v=S.forgie[it];
-    const txt=S.forgieText[it]!=null?S.forgieText[it]:(v!=null?formatGameNum(v,4):"");
-    return `<div class="price-row">
-      <div class="pnm">${tag(it)}${it}</div>
-      <input type="text" inputmode="decimal" data-forgie="${it}" placeholder="—" value="${txt}">
-    </div>`;
-  }).join("");
-  box.innerHTML=`<div class="price-grp first">Finished &amp; crafted</div>${rows(PRODUCTS)}<div class="price-grp">Raw materials</div>${rows(RAWS)}`;
+  renderItemValueRows(box,S.forgieText,S.forgie,"forgie","—","decimal");
 }
 const forgieModal=document.getElementById("forgieModal");
 function openForgie(){renderForgie();forgieModal.hidden=false;}
@@ -348,7 +352,7 @@ function costRow(pi,li,ci,c){
 }
 // Read-only cost lines for one level of a catalog project (non-zero costs only).
 function catLevelView(L){
-  const parts=(L.costs||[]).filter(c=>c.qty).map(c=>`${escapeAttr(c.item)} <b class="mono">${formatGameNum(c.qty,2)}</b>`);
+  const parts=(L.costs||[]).filter(c=>c.qty).map(c=>`${htmlText(c.item)} <b class="mono">${formatGameNum(c.qty,2)}</b>`);
   return parts.length?parts.join(' <span style="color:var(--ink3)">·</span> '):'<span style="color:var(--ink3)">free</span>';
 }
 // Compact +1/−1 level-completion stepper for a shopping-list card (issue #87 item 3). Uses the same
@@ -367,7 +371,7 @@ function projStepper(p,pi){
 function compactProjCard(p,pi){
   const lv=p.levels||[];
   const view=lv.map((L,li)=>`<div class="cat-lvl"><span class="cat-lvl-n">Lv ${li+1}</span><span>${catLevelView(L)}</span></div>`).join("");
-  const desc=p.description?`<span class="cat-card-desc">${escapeAttr(p.description)}</span>`:"";
+  const desc=p.description?`<span class="cat-card-desc">${htmlText(p.description)}</span>`:"";
   const single=lv.length<=1;
   const range=single
     ? `<span class="proj-lvls one">1 level</span>`
@@ -376,7 +380,7 @@ function compactProjCard(p,pi){
     <div class="proj-h">
       <span class="pchev" data-ptoggle="${pi}" title="Show level costs">▸</span>
       <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule">
-      <span class="pname-static">${escapeAttr(p.name)}${desc}</span>
+      <span class="pname-static">${htmlText(p.name)}${desc}</span>
       <div class="proj-tools">
         <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–">order</label>
         ${range}
@@ -402,7 +406,7 @@ function projCard(p,pi){
     <div class="proj-h">
       <span class="pchev" data-ptoggle="${pi}">▸</span>
       <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule">
-      <input type="text" class="pname" data-pname="${pi}" value="${escapeAttr(p.name)}" placeholder="Project name">
+      <input type="text" class="pname" data-pname="${pi}" value="${htmlAttribute(p.name)}" placeholder="Project name">
       <div class="proj-tools">
         <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–">order</label>
         <span class="proj-lvls">lv <input type="number" min="1" step="1" data-pfrom="${pi}" value="${p.from||1}"> → <input type="number" min="1" step="1" data-pto="${pi}" value="${p.to||lv.length||1}"></span>
@@ -419,13 +423,7 @@ function projCard(p,pi){
 }
 function renderInv(){
   const box=document.getElementById("invRows");
-  const tag=it=>KIND[it]==="raw"?'<span class="ty raw">raw</span>':KIND[it]==="fin"?'<span class="ty fin">assembly</span>':'<span class="ty pr">craft</span>';
-  const rows=(items)=>items.map(it=>{
-    const v=S.inventory[it];
-    const txt=S.inventoryText[it]!=null?S.inventoryText[it]:(v!=null?formatGameNum(v,4):"");
-    return `<div class="price-row"><div class="pnm">${tag(it)}${it}</div><input type="text" data-inv="${it}" placeholder="0" value="${txt}"></div>`;
-  }).join("");
-  box.innerHTML=`<div class="price-grp first">Finished &amp; crafted</div>${rows(PRODUCTS)}<div class="price-grp">Raw materials</div>${rows(RAWS)}`;
+  renderItemValueRows(box,S.inventoryText,S.inventory,"inv","0","");
 }
 function renderProjects(){
   if(!S.projects)S.projects=[];
@@ -463,10 +461,10 @@ function renderCatalog(){
   list.innerHTML=items.length?items.map(c=>{
     const has=projectHasCat(c.catId);
     const lvls=c.levels.length;
-    const meta=`${lvls} level${lvls===1?"":"s"}${c.description?" · "+escapeAttr(c.description):""}`;
+    const meta=`${lvls} level${lvls===1?"":"s"}${c.description?" · "+htmlText(c.description):""}`;
     return `<div class="cat-row${has?" added":""}">
-      <div class="cat-row-info"><span class="cat-row-name">${escapeAttr(c.name)}</span><span class="cat-row-meta">${meta}</span></div>
-      <button class="btn ${has?"ghost":"primary"} cat-add" data-cat-add="${escapeAttr(c.catId)}" ${has?"disabled":""}>${has?"Added":"Add"}</button>
+      <div class="cat-row-info"><span class="cat-row-name">${htmlText(c.name)}</span><span class="cat-row-meta">${meta}</span></div>
+      <button class="btn ${has?"ghost":"primary"} cat-add" data-cat-add="${htmlAttribute(c.catId)}" ${has?"disabled":""}>${has?"Added":"Add"}</button>
     </div>`;
   }).join(""):`<div class="proj-mini" style="padding:6px 2px">No matching projects.</div>`;
 }
@@ -566,13 +564,13 @@ function renderProgress(){
     const chips=[];
     for(let L=from;L<=to;L++){
       const idx=L-from, isDone=idx<done, isNext=idx===done;
-      chips.push(`<button class="prog-lvl${isDone?" done":""}${isNext?" next":""}" data-pid="${escapeAttr(p.id)}" data-lvl="${L}" title="${isDone?"Completed — click to undo":"Mark completed through level "+L}"><span class="pl-box"></span>Lv ${L}</button>`);
+      chips.push(`<button class="prog-lvl${isDone?" done":""}${isNext?" next":""}" data-pid="${htmlAttribute(p.id)}" data-lvl="${L}" title="${isDone?"Completed — click to undo":"Mark completed through level "+L}"><span class="pl-box"></span>Lv ${L}</button>`);
     }
-    const desc=p.description?`<span class="prog-desc">${escapeAttr(p.description)}</span>`:"";
+    const desc=p.description?`<span class="prog-desc">${htmlText(p.description)}</span>`:"";
     return `<div class="prog-proj${complete?" complete":""}">
       <div class="prog-proj-h">
-        <div class="prog-proj-name">${escapeAttr(p.name||"Project")}${complete?' <span class="pill craft" style="font-size:9px">done</span>':""}${desc}</div>
-        <div class="prog-proj-meta"><span class="mono">${done}/${span}</span>${done>0?`<button class="prog-reset" data-preset="${escapeAttr(p.id)}" title="Reset this project's progress">reset</button>`:""}</div>
+        <div class="prog-proj-name">${htmlText(p.name||"Project")}${complete?' <span class="pill craft" style="font-size:9px">done</span>':""}${desc}</div>
+        <div class="prog-proj-meta"><span class="mono">${done}/${span}</span>${done>0?`<button class="prog-reset" data-preset="${htmlAttribute(p.id)}" title="Reset this project's progress">reset</button>`:""}</div>
       </div>
       <div class="prog-lvls">${chips.join("")}</div>
     </div>`;
@@ -626,15 +624,15 @@ function stepsProjControls(){
     const {from,to,span}=projSpan(p),done=projDone(p),complete=done>=span;
     const badge=complete?' <span class="pill craft" style="font-size:9px">done</span>':"";
     return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--line)">
-      <input type="checkbox" data-spon="${escapeAttr(p.id)}" ${p.on?"checked":""} title="Include in the plan">
-      <span style="flex:1 1 130px;min-width:110px;${complete?"color:var(--ink3)":""}">${escapeAttr(p.name||"Project")}${badge}</span>
-      <span class="proj-mini" style="white-space:nowrap">lv <input type="number" min="1" step="1" data-spfrom="${escapeAttr(p.id)}" value="${from}" style="width:46px"> → <input type="number" min="1" step="1" data-spto="${escapeAttr(p.id)}" value="${to}" style="width:46px"></span>
+      <input type="checkbox" data-spon="${htmlAttribute(p.id)}" ${p.on?"checked":""} title="Include in the plan">
+      <span style="flex:1 1 130px;min-width:110px;${complete?"color:var(--ink3)":""}">${htmlText(p.name||"Project")}${badge}</span>
+      <span class="proj-mini" style="white-space:nowrap">lv <input type="number" min="1" step="1" data-spfrom="${htmlAttribute(p.id)}" value="${from}" style="width:46px"> → <input type="number" min="1" step="1" data-spto="${htmlAttribute(p.id)}" value="${to}" style="width:46px"></span>
       <span class="lvl-step" title="Mark levels done one at a time">
-        <button class="iconbtn" data-spdec="${escapeAttr(p.id)}" ${done<=0?"disabled":""} title="Mark one fewer level done">−</button>
+        <button class="iconbtn" data-spdec="${htmlAttribute(p.id)}" ${done<=0?"disabled":""} title="Mark one fewer level done">−</button>
         <span class="mono proj-mini" title="levels completed">${done}/${span}</span>
-        <button class="iconbtn" data-spinc="${escapeAttr(p.id)}" ${done>=span?"disabled":""} title="Mark one more level done">+</button>
+        <button class="iconbtn" data-spinc="${htmlAttribute(p.id)}" ${done>=span?"disabled":""} title="Mark one more level done">+</button>
       </span>
-      <button class="btn ghost" style="padding:2px 9px;font-size:11px" data-spcomplete="${escapeAttr(p.id)}">${complete?"Reopen":"Mark complete"}</button>
+      <button class="btn ghost" style="padding:2px 9px;font-size:11px" data-spcomplete="${htmlAttribute(p.id)}">${complete?"Reopen":"Mark complete"}</button>
     </div>`;
   }).join("");
   // Rows only — the caller (renderProjectResults) wraps these in a collapsible <details> panel.
@@ -670,9 +668,9 @@ function stepPlanHtml(res){
     h+=`<div class="step-phase">`;
     const blocked=Object.entries(ph.blockedMined||{}),phaseTime=ph.partial?"partial plan":ph.feasible?"phase":"blocked";
     h+=res.sequenced
-      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>${escapeAttr(ph.name)}</b> ${ph.prio!=null?'<span class="pill craft" style="font-size:9px">#'+ph.prio+'</span>':""} <span class="proj-mini">· ${phaseTime}${ph.eta>0?" ~"+fmtDuration(ph.eta):""}${ph.feasible?" · done by "+fmtDuration(ph.doneAt):ph.partial?" · plannable work by "+fmtDuration(ph.doneAt):""} </span>${ph.eta>0?'<span class="step-clock">(~'+fmtClock(pStart+(ph.eta||0))+')</span>':""}</div>`
+      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>${htmlText(ph.name)}</b> ${ph.prio!=null?'<span class="pill craft" style="font-size:9px">#'+ph.prio+'</span>':""} <span class="proj-mini">· ${phaseTime}${ph.eta>0?" ~"+fmtDuration(ph.eta):""}${ph.feasible?" · done by "+fmtDuration(ph.doneAt):ph.partial?" · plannable work by "+fmtDuration(ph.doneAt):""} </span>${ph.eta>0?'<span class="step-clock">(~'+fmtClock(pStart+(ph.eta||0))+')</span>':""}</div>`
       : res.waved
-      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>Wave ${i+1} — build together</b> ${ph.members&&ph.members.length?'<span class="proj-mini">'+escapeAttr(ph.members.join(" + "))+'</span>':""} <span class="proj-mini">· ${phaseTime}${ph.eta>0?" ~"+fmtDuration(ph.eta):""}${ph.feasible?" · done by "+fmtDuration(ph.doneAt):ph.partial?" · plannable work by "+fmtDuration(ph.doneAt):""} </span>${ph.eta>0?'<span class="step-clock">(~'+fmtClock(pStart+(ph.eta||0))+')</span>':""}</div>`
+      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>Wave ${i+1} — build together</b> ${ph.members&&ph.members.length?'<span class="proj-mini">'+htmlText(ph.members.join(" + "))+'</span>':""} <span class="proj-mini">· ${phaseTime}${ph.eta>0?" ~"+fmtDuration(ph.eta):""}${ph.feasible?" · done by "+fmtDuration(ph.doneAt):ph.partial?" · plannable work by "+fmtDuration(ph.doneAt):""} </span>${ph.eta>0?'<span class="step-clock">(~'+fmtClock(pStart+(ph.eta||0))+')</span>':""}</div>`
       : `<div class="step-h"><b>${ph.partial?"Run this partial line plan":ph.feasible?"Set all lines like this and run":"This phase is blocked"}</b> <span class="proj-mini">· ${ph.partial?"currently plannable work ~"+fmtDuration(ph.eta)+" · plannable work by ":ph.feasible?"finish time ~"+fmtDuration(ph.eta)+" · finish by ":"no finish time"}</span>${ph.eta>0?'<span class="step-clock">~'+fmtClock(pStart+(ph.eta||0))+'</span>':""}</div>`;
     if(!ph.feasible){const why=blocked.length?" — "+blocked.map(([item,resources])=>item+" needs "+resources.join(" + ")).join("; "):"";
       h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">Can't fully produce this phase with the current lines and incomes${why}. ${ph.partial?"The line work below is only the currently plannable portion.":""}</div>`;}
