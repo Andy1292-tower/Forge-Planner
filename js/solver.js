@@ -1,9 +1,10 @@
 "use strict";
 /* ---------- OPTIMIZER ---------- */
-// Vespium is Gel's only budgeted input (mined ore; rocks are free/unlimited). It enters the
-// solver as a resource whose free supply equals the user's vespium income, so Gel is just a
-// normal product job that consumes it — no separate reservation pass needed.
+// Mined resources enter the solver as independent resources whose free supplies equal the
+// user's corresponding mined incomes. Rocks remain informational rather than budgeted.
 const VESP="Vespium";
+// One correctness threshold for reconstructing project rates and executable LP plan entries.
+const LP_ASSIGN_EPS=1e-9;
 // A project-plan phase may credit an intermediate's leftover stock as free supply instead of
 // crafting it (issue #73). Left uncapped, that credit scales with the phase's own throughput
 // multiplier (z) exactly like an indefinitely-sustained production rate would, so a chronic (if
@@ -42,6 +43,10 @@ function relevantChain(targets){
   const relR=new Set(targets.filter(t=>RAWS.includes(t)));
   relP.forEach(P=>RECIPE[P].inputs.forEach(k=>{if(RAWS.includes(k))relR.add(k);}));
   return {prods:[...relP],raws:[...relR]};
+}
+function activeMinedResources(products){
+  return [...new Set(products.map(p=>MINED_CRAFTS[p]&&MINED_CRAFTS[p].resource)
+    .filter(r=>r&&minedBudgetHr(r)>0))];
 }
 
 function craftTime(item,L){return (num(S.baseTime&&S.baseTime[item])||1)*Math.pow(1.5,Math.log2(L));}
@@ -92,13 +97,13 @@ function buildJobs(maxVal,resIndex,relRaws,relProds,targets,w){
     allowed.forEach(L=>{
       const tt=craftTime(P,L);if(!(tt>0))return;
       let ok=true;const cons=[];
-      if(P===GEL){
-        // Gel: forged from mined ore. Vespium is the only budgeted input (rocks are free); it's
-        // offered only when a vespium budget exists (resIndex carries Vespium), else Gel can't be made.
-        if(resIndex[VESP]==null)return;
-        cons.push([resIndex[VESP],gelOreCost(L).vesp/tt]);
-      }else{
-        ins.forEach(k=>{const c=S.prodCost[P][k][L];if(c==null||isNaN(c)||c<0){ok=false;}else cons.push([resIndex[k],c/tt]);});
+      ins.forEach(k=>{const c=S.prodCost[P][k][L];if(c==null||isNaN(c)||c<0){ok=false;}else cons.push([resIndex[k],c/tt]);});
+      const mined=MINED_CRAFTS[P];
+      if(mined){
+        const r=mined.resource;
+        if(resIndex[r]==null)return;
+        const c=minedCost(P,L)[r];
+        if(c==null||isNaN(c)||c<0)ok=false;else cons.push([resIndex[r],c/tt]);
       }
       if(!ok)return;
       const rate=L/tt;const ti=targets.indexOf(P);
@@ -124,10 +129,10 @@ const forgieHr=r=>num(S.forgie&&S.forgie[r])||0;
 // objective, so a deficit the targets can't use (free to close from surplus feeders) gets
 // closed instead of left on the margin as a phantom "may-work" plan.
 function solveCore(targets,w,relProds,relRaws,timeBudget){
-  // Vespium joins the resource set only when Gel is in the chain and the user has a budget; its
-  // "free supply" is that budget, so the produced>=consumed balance enforces total burn <= income.
-  const gelBudgetHr=relProds.includes(GEL)?gelVespBudgetHr():0;
-  const resources=[...relRaws,...relProds,...(gelBudgetHr>0?[VESP]:[])];
+  // Each mined resource joins only when its craft is in the chain and it has a positive budget.
+  // Its produced>=consumed balance then enforces that resource's burn independently.
+  const mined=activeMinedResources(relProds);
+  const resources=[...relRaws,...relProds,...mined];
   const resIndex={};resources.forEach((r,i)=>resIndex[r]=i);
   const R=resources.length;
   const tIdx=targets.map(t=>resIndex[t]);
@@ -136,10 +141,10 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   // (strict tol=0, then the user's margin) so its result is monotone in margin — see the staged
   // search at the bottom of solveCore (issue #60).
   let curTol=tol;
-  // Exogenous supply (per second) of each resource, added to the produced side. For materials this
-  // is Lil' Forgie's passive output; for Vespium it's the user's mined income — unrelated sources
-  // that share the same "supply baseline" slot in the balance.
-  const baseArr=Float64Array.from(resources.map(r=>r===VESP?gelBudgetHr/3600:forgieHr(r)/3600));
+  // Exogenous supply (per second) of each resource, added to the produced side. Craftable
+  // materials use Lil' Forgie; mined resources use their own independent income budgets.
+  const baseArr=Float64Array.from(resources.map(r=>
+    isMinedResource(r)?minedBudgetHr(r)/3600:forgieHr(r)/3600));
 
   // data-availability check (cost only — time is computed from compression)
   const issues=[];
@@ -192,7 +197,8 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   const totalDeficit=()=>{let D=0;for(let r=0;r<R;r++){const d=consumed[r]-produced[r];if(d>0)D+=d;}return D;};
   const idleIdx=i=>{const k=lineJobs[i].findIndex(j=>j.kind==="idle");return k<0?0:k;};
   function bestJobFor(i,res){let bj=-1,bg=0;lineJobs[i].forEach((job,k)=>{for(const[r,a]of job.prod)if(r===res){const g=a*sorted[i].sp*sorted[i].dp;if(g>bg){bg=g;bj=k;}}});return bj;}
-  const feasibleNow=()=>{for(let r=0;r<R;r++)if(produced[r]<consumed[r]*(1-curTol)-1e-7)return false;return true;};
+  const needFrac=r=>isMinedResource(resources[r])?1:(1-curTol);
+  const feasibleNow=()=>{for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac(r)-1e-7)return false;return true;};
   const scoreNow=()=>{let sc=Infinity;for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]];sc=Math.min(sc,net/w[k]);}return sc;};
   // repair input shortfall down to a feasible plan: each step makes the single line-switch
   // (toward producing ANY short resource) that cuts total shortfall most. Returns feasibility.
@@ -249,14 +255,14 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
     if(((++nodes)&8191)===0){const _n=performance.now();if(_n-tStart>timeBudget||_n-tLastGain>convergeWindow)capped=true;}
     if(capped)return;
     if(i===N){
-      for(let r=0;r<R;r++)if(produced[r]<consumed[r]*(1-curTol)-1e-7)return;
+      for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac(r)-1e-7)return;
       let sc=Infinity;
       for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]];sc=Math.min(sc,net/w[k]);}
       if(sc>best.score+EPS){best={score:sc,choice:choice.slice(),produced:produced.slice(),consumed:consumed.slice()};tLastGain=performance.now();}
       return;
     }
     // feasibility prune: any resource whose current shortfall can't be covered by remaining lines kills this branch
-    for(let r=0;r<R;r++)if(produced[r]+maxProd[r][i]<consumed[r]*(1-curTol)-1e-7)return;
+    for(let r=0;r<R;r++)if(produced[r]+maxProd[r][i]<consumed[r]*needFrac(r)-1e-7)return;
     // max-min upper bound: best achievable min-over-targets if remaining lines max-produce each target
     let ub=Infinity;
     for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]]+SP[k][i];ub=Math.min(ub,net/w[k]);}
@@ -336,6 +342,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   // budget greedy the modal preview uses), and let localOpt fill the rest. This hands the unified
   // search the starting points the old per-k decomposition explored — so it's never worse on a
   // Gel chain — at the cost of M+1 cheap local optimisations, not nested solves.
+  const gelBudgetHr=minedBudgetHr(VESP);
   if(resIndex[VESP]!=null&&gelBudgetHr>0){
     const o2s={};sorted.forEach((s,i)=>o2s[s.orig]=i);
     const ranked=lineRows().sort((a,b)=>gelOutHr(b,b.max)-gelOutHr(a,a.max));
@@ -405,28 +412,41 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   return {best,sorted,lineJobs,resources,resIndex,R,N,tIdx,tol,capped,usesMargin,issues,forgie,feasible:best.score>1e-9,ms:performance.now()-tStart};
 }
 
+function minedUsageFromItemPlan(plan){
+  const by={};
+  (plan||[]).forEach(p=>{const j=p&&p.job,cfg=j&&j.kind==="craft"&&MINED_CRAFTS[j.res];
+    if(!cfg)return;
+    const es=effSpeed(p.sp,j.ct);
+    const outHr=j.prod[0][1]*es*p.dp*3600,craftsHr=j.ct>0?(es/j.ct)*3600:0;
+    Object.entries(minedCost(j.res,j.lvl)).forEach(([resource,cost])=>{
+      const inputHr=cost*craftsHr,key=j.res+"\u0000"+resource;
+      if(!by[key])by[key]={item:j.res,resource,lines:0,outHr:0,inputHr:0,perLine:[]};
+      const use=by[key];use.lines++;use.outHr+=outHr;use.inputHr+=inputHr;
+      use.perLine.push({line:p.line,lvl:j.lvl,outHr,inputHr});
+    });
+  });
+  return Object.values(by);
+}
+
 // Build the per-line plan + resource balance (per hour) from a core solve.
 function planFrom(sr){
   const {best,sorted,lineJobs,resources,resIndex,feasible,forgie}=sr;
   const plan=new Array(sorted.length);
-  let gelLines=0,gelOut=0,gelVesp=0;
   sorted.forEach((s,i)=>{const idle=lineJobs[i].find(j=>j.kind==="idle")||lineJobs[i][0];
     const job=feasible?lineJobs[i][best.choice[i]]:idle;
     const row={line:s.orig+1,max:s.max,spx:s.sp,dup:(s.dp-1)*100,sp:s.sp,dp:s.dp,job};
-    if(job&&job.kind==="craft"&&job.res===GEL){   // Gel line: forged from mined ore against the vespium budget
-      const es=effSpeed(s.sp,job.ct);
-      row.reserved=true;
-      row.gelHr=job.prod[0][1]*es*s.dp*3600;
-      row.vespHr=(job.cons[0]?job.cons[0][1]:0)*es*3600;
-      gelLines++;gelOut+=row.gelHr;gelVesp+=row.vespHr;
-    }
+    if(job&&job.kind==="craft"&&job.res===GEL)row.reserved=true;
     plan[s.orig]=row;});
-  // best.produced already includes Forgie's supply; split it back out for display. Vespium is the
-  // Gel budget, not a craftable material — it's surfaced in the Gel note, so keep it out of the table.
-  const balance=resources.filter(r=>r!==VESP).map(r=>{const i=resIndex[r];const f=(forgie&&forgie[r])||0;
+  const minedUsage=minedUsageFromItemPlan(plan);
+  const gelUse=minedUsage.find(u=>u.item===GEL&&u.resource===VESP);
+  if(gelUse)gelUse.perLine.forEach(use=>{const row=plan[use.line-1];if(row){row.gelHr=use.outHr;row.vespHr=use.inputHr;}});
+  // best.produced already includes Forgie's supply; split it back out for display. Mined budgets
+  // are surfaced through minedUsage, so keep all of them out of the craftable balance table.
+  const balance=resources.filter(r=>!MINED_RESOURCES.includes(r)).map(r=>{const i=resIndex[r];const f=(forgie&&forgie[r])||0;
     const total=feasible?best.produced[i]*3600:0;
     return {res:r,prod:Math.max(0,total-f),forgie:feasible?f:0,cons:feasible?best.consumed[i]*3600:0};});
-  return {plan,balance,gelReserved:gelLines?{lines:gelLines,outHr:gelOut,vespHr:gelVesp}:null};
+  const gelReserved=gelUse?{lines:gelUse.lines,outHr:gelUse.outHr,vespHr:gelUse.inputHr}:null;
+  return {plan,balance,minedUsage,gelReserved};
 }
 function idlePlan(){
   const plan=[];
@@ -469,10 +489,10 @@ function optimizeInner(timeBudget){
     const rc=relevantChain(targets);
     const t0=performance.now();
     const sr=solveCore(targets,w,rc.prods,rc.raws,itemsBudget);
-    const {plan,balance,gelReserved}=planFrom(sr);
+    const {plan,balance,minedUsage,gelReserved}=planFrom(sr);
     const out={};targets.forEach((t,k)=>{out[t]=sr.feasible?(sr.best.produced[sr.tIdx[k]]-sr.best.consumed[sr.tIdx[k]])*3600:0;});
     const objective=sr.feasible?Math.min(...targets.map((t,k)=>(out[t]||0)/w[k])):0;
-    return {empty:false,mode,issues:sr.issues,plan,balance,gelReserved,out,resIndex:sr.resIndex,targets,objective,tol:sr.tol,usesMargin:sr.usesMargin,feasible:sr.feasible,capped:sr.capped,ms:performance.now()-t0};
+    return {empty:false,mode,issues:sr.issues,plan,balance,minedUsage,gelReserved,out,resIndex:sr.resIndex,targets,objective,tol:sr.tol,usesMargin:sr.usesMargin,feasible:sr.feasible,capped:sr.capped,ms:performance.now()-t0};
   }
   // credits: the optimum is always mono-product — dedicate the whole factory to ONE item.
   // So just compute each priced item's max output/hr × its price and take the winner.
@@ -488,27 +508,26 @@ function optimizeInner(timeBudget){
     const price=num(S.sellPrice[P])||0;
     const ins=RECIPE[P].inputs;
     const hasCost=LEVELS.some(L=>ins.every(k=>S.prodCost[P][k][L]!=null&&!isNaN(S.prodCost[P][k][L])));
-    if(!hasCost){issues.push("No material cost entered for "+P+" — can't price it.");cand.push({item:P,kind:"product",out:0,price,credits:0,plan:null,balance:null,resIndex:{},feasible:false});return;}
+    if(!hasCost){issues.push("No material cost entered for "+P+" — can't price it.");cand.push({item:P,kind:"product",out:0,price,credits:0,plan:null,balance:null,minedUsage:[],resIndex:{},feasible:false});return;}
     const rc=relevantChain([P]);
     const sr=solveCore([P],[1],rc.prods,rc.raws,budgetEach);
     if(sr.capped)capped=true;if(sr.usesMargin)usesMargin=true;
-    const {plan,balance,gelReserved}=planFrom(sr);
+    const {plan,balance,minedUsage,gelReserved}=planFrom(sr);
     const out=sr.feasible?(sr.best.produced[sr.resIndex[P]]-sr.best.consumed[sr.resIndex[P]])*3600:0;
-    cand.push({item:P,kind:"product",out,price,credits:out*price,plan,balance,gelReserved,resIndex:sr.resIndex,feasible:sr.feasible});
+    cand.push({item:P,kind:"product",out,price,credits:out*price,plan,balance,minedUsage,gelReserved,resIndex:sr.resIndex,feasible:sr.feasible});
   });
-  evalR.forEach(Rw=>{const s=solveRaw(Rw);const price=num(S.sellPrice[Rw])||0;cand.push({item:Rw,kind:"raw",out:s.out,price,credits:s.out*price,plan:s.plan,balance:s.balance,resIndex:s.resIndex,feasible:s.feasible});});
+  evalR.forEach(Rw=>{const s=solveRaw(Rw);const price=num(S.sellPrice[Rw])||0;cand.push({item:Rw,kind:"raw",out:s.out,price,credits:s.out*price,plan:s.plan,balance:s.balance,minedUsage:[],resIndex:s.resIndex,feasible:s.feasible});});
   cand.sort((a,b)=>b.credits-a.credits);
   const top=cand[0];
   const feasible=!!top&&top.credits>1e-9;
   return {empty:false,mode,issues,ranking:cand,bestItem:feasible?top.item:null,credits:feasible?top.credits:0,objective:feasible?top.credits:0,
-    plan:feasible?top.plan:idlePlan(),balance:feasible?top.balance:[],gelReserved:feasible?top.gelReserved:null,resIndex:feasible?top.resIndex:{},
+    plan:feasible?top.plan:idlePlan(),balance:feasible?top.balance:[],minedUsage:feasible?top.minedUsage:[],gelReserved:feasible?top.gelReserved:null,resIndex:feasible?top.resIndex:{},
     tol:Math.max(0,Math.min(50,num(S.margin)||0))/100,usesMargin,feasible,capped,ms:performance.now()-t0};
 }
 
-/* ---------- Gel loadout (display preview only) ----------
-   Gel is a native resource in the solve now (see solveCore / projectSchedule). gelLoadout no
-   longer feeds the optimizer — it survives only to power the Gel modal's "max Gel/hr + setup"
-   preview: given a vespium budget, greedily pick the most Gel-efficient compression per line. */
+/* ---------- Gel loadout ----------
+   Gel is a native resource in the solve now (see solveCore / projectSchedule). gelLoadout powers
+   both the Gel modal's "max Gel/hr + setup" preview and solveCore's reservation-style seeds. */
 // Gel output / vespium burn for a whole line running Gel @L (≤ the line's own cap), full time.
 function gelOutHr(row,L){const sp=lineSpeed(row),dp=dupeMult(),ct=craftTime(GEL,L);return ct>0?(L/ct)*effSpeed(sp,ct)*dp*3600:0;}
 function gelVespHr(row,L){const sp=lineSpeed(row),ct=craftTime(GEL,L);return ct>0?gelOreCost(L).vesp*(effSpeed(sp,ct)/ct)*3600:0;}
@@ -545,7 +564,7 @@ function gelLoadout(rows,vespBudgetHr){
   return {gelHr:gel,vespHr:spent,perLine};
 }
 // Vespium/hr income from the user's vespium/minute figure (0 if unset → Gel off).
-function gelVespBudgetHr(){return Math.max(0,num(S.gelVesp)||0)*60;}
+function gelVespBudgetHr(){return minedBudgetHr("Vespium");}
 function projectDemand(){
   const gross={};ALLITEMS.forEach(it=>gross[it]=0);
   const perProject=[];
@@ -572,12 +591,18 @@ function projectDemand(){
   if(ppBits>0)net.Bits=Math.max(0,(gross.Bits||0)+ppBits-inv("Bits"));
   return {gross,net,perProject};
 }
-// Does crafting this item require Gel anywhere in its chain? (Gel is only made on reserved lines.)
-function chainNeedsGel(item,seen){
-  if(item===GEL)return true;
-  seen=seen||new Set();if(seen.has(item))return false;seen.add(item);
-  const r=RECIPE[item];if(!r)return false;
-  return (r.inputs||[]).some(k=>chainNeedsGel(k,seen));
+// Which unavailable mined resources block this item or any product in its recipe chain?
+// Passive supply of the item itself bypasses its crafting chain.
+function chainMinedBlockers(item,seen){
+  if(forgieHr(item)>1e-9)return [];
+  seen=seen||new Set();if(seen.has(item))return [];seen.add(item);
+  const out=[],cfg=MINED_CRAFTS[item];
+  if(cfg&&minedBudgetHr(cfg.resource)<=0)out.push(cfg.resource);
+  const rec=RECIPE[item];
+  (rec&&rec.inputs||[]).forEach(k=>{
+    if(PRODUCTS.includes(k))out.push(...chainMinedBlockers(k,new Set(seen)));
+  });
+  return [...new Set(out)];
 }
 // Dense single-phase simplex. Maximize c·x s.t. A x <= b (b>=0), x>=0. Bland's rule (no cycling).
 function lpMaximize(c,A,b){
@@ -611,7 +636,7 @@ function buildScheduleLP(vars,lns,items,net,avail,D0){
     const row=new Array(n).fill(0);
     vars.forEach((v,vi)=>{if(v.item===it)row[vi]-=v.rate;v.cons.forEach(c=>{if(c.item===it)row[vi]+=c.perHr;});});
     row[zCol]=((net[it]||0)-(avail&&avail[it]||0)*STOCK_SAFETY_FRAC)/D0;
-    A.push(row);b.push(it===VESP?gelVespBudgetHr():forgieHr(it));
+    A.push(row);b.push(isMinedResource(it)?minedBudgetHr(it):forgieHr(it));
   });
   const c=new Array(n).fill(0);c[zCol]=1;
   return {A,b,c,zCol,n};
@@ -628,12 +653,11 @@ function projectSchedule(net,targets,avail,opts){
   const prodT=targets.filter(it=>PRODUCTS.includes(it));
   const rawT=targets.filter(it=>RAWS.includes(it));
   const rc=relevantChain(prodT);
-  // Gel is produced natively: it gets production variables (per line/level) that consume Vespium,
-  // and Vespium joins as a constrained resource whose supply is the user's income — so the LP
-  // allocates Gel lines itself, bounded by the budget, instead of a separate reservation pass.
-  const gelBudgetHr=gelVespBudgetHr();
-  const gelOn=gelBudgetHr>0&&[...rc.prods,...prodT].includes(GEL);
-  const items=[...new Set([...rc.raws,...rawT,...rc.prods,...prodT,...(gelOn?[VESP]:[])])];
+  // Every mined craft is a normal LP job with its ordinary recipe inputs plus its own mined input.
+  // Active mined resources join independently as constrained supplies from the user's incomes.
+  const products=[...new Set([...rc.prods,...prodT])];
+  const mined=activeMinedResources(products);
+  const items=[...new Set([...rc.raws,...rawT,...products,...mined])];
   const itemIdx={};items.forEach((it,i)=>itemIdx[it]=i);
   // jobs: one variable per (line,item,level<=cap). Letting the LP pick the level finds the true
   // makespan-optimal compression (leans high for raw speed, eases off when materials bottleneck).
@@ -642,11 +666,12 @@ function projectSchedule(net,targets,avail,opts){
     items.forEach(it=>{
       LEVELS.filter(L=>L<=ln.max).forEach(L=>{
         if(RAWS.includes(it)){const t=craftTime(it,L);if(!(t>0))return;const es=effSpeed(ln.sp,t);vars.push({li,item:it,lvl:L,rate:(L/t)*es*ln.dp*3600,cons:[]});}
-        else if(it===GEL){if(!gelOn)return;const tt=craftTime(GEL,L);if(!(tt>0))return;const es=effSpeed(ln.sp,tt);
-          vars.push({li,item:GEL,lvl:L,rate:(L/tt)*es*ln.dp*3600,cons:[{item:VESP,perHr:(gelOreCost(L).vesp/tt)*es*3600}]});}
         else if(PRODUCTS.includes(it)){const ins=RECIPE[it].inputs;const tt=craftTime(it,L);if(!(tt>0))return;
           if(!ins.every(k=>S.prodCost[it][k][L]!=null&&!isNaN(S.prodCost[it][k][L])))return;
-          const es=effSpeed(ln.sp,tt);vars.push({li,item:it,lvl:L,rate:(L/tt)*es*ln.dp*3600,cons:ins.map(k=>({item:k,perHr:(S.prodCost[it][k][L]/tt)*es*3600}))});}
+          const es=effSpeed(ln.sp,tt),cons=ins.map(k=>({item:k,perHr:(S.prodCost[it][k][L]/tt)*es*3600}));
+          const cfg=MINED_CRAFTS[it];
+          if(cfg){if(!items.includes(cfg.resource))return;const c=minedCost(it,L)[cfg.resource];if(c==null||isNaN(c)||c<0)return;cons.push({item:cfg.resource,perHr:(c/tt)*es*3600});}
+          vars.push({li,item:it,lvl:L,rate:(L/tt)*es*ln.dp*3600,cons});}
       });
     });
   });
@@ -689,9 +714,9 @@ function projectSchedule(net,targets,avail,opts){
     }
   }
   const rate={};items.forEach(it=>rate[it]=forgieHr(it));
-  vars.forEach((v,vi)=>{const yi=y[vi]||0;if(yi<=1e-9)return;rate[v.item]+=v.rate*yi;v.cons.forEach(c=>{rate[c.item]=(rate[c.item]||0)-c.perHr*yi;});});
+  vars.forEach((v,vi)=>{const yi=y[vi]||0;if(yi<=LP_ASSIGN_EPS)return;rate[v.item]+=v.rate*yi;v.cons.forEach(c=>{rate[c.item]=(rate[c.item]||0)-c.perHr*yi;});});
   const plan=lns.map(ln=>({line:ln.orig+1,max:ln.max,sp:ln.sp,dp:ln.dp,entries:[]}));
-  vars.forEach((v,vi)=>{const yi=y[vi]||0;if(yi<=1e-4)return;plan[v.li].entries.push({item:v.item,lvl:v.lvl,frac:yi,outHr:v.rate*yi,cons:v.cons.map(c=>({item:c.item,hr:c.perHr*yi}))});});
+  vars.forEach((v,vi)=>{const yi=y[vi]||0;if(yi<=LP_ASSIGN_EPS)return;plan[v.li].entries.push({item:v.item,lvl:v.lvl,frac:yi,outHr:v.rate*yi,cons:v.cons.map(c=>({item:c.item,hr:c.perHr*yi}))});});
   plan.forEach(p=>p.entries.sort((a,b)=>b.frac-a.frac));
   plan.sort((a,b)=>a.line-b.line);
   if(stabKey){   // remember this solve's per-line jobs (keyed by physical orig = plan.line-1) for next time
@@ -709,23 +734,25 @@ function projectSchedule(net,targets,avail,opts){
 // display name, so two projects sharing a name don't collide on one cache slot. Falls back to name.
 function solvePhaseFor(net,name,avail,stabilize,phaseKey){
   const demandItems=ALLITEMS.filter(it=>net[it]>1e-9);
-  // Gel is reachable if the LP can forge it (vespium budget) or Lil' Forgie supplies some.
-  const gelAvail=gelVespBudgetHr()>0||forgieHr(GEL)>1e-9;
-  const unsat=gelAvail?[]:demandItems.filter(it=>chainNeedsGel(it));
-  const targets=demandItems.filter(it=>unsat.indexOf(it)<0);
+  const blockedMined={};
+  demandItems.forEach(it=>{const blockers=chainMinedBlockers(it);if(blockers.length)blockedMined[it]=blockers;});
+  const unsat=Object.keys(blockedMined);   // legacy item-level blocker list
+  const targets=demandItems.filter(it=>!blockedMined[it]);
   if(targets.length===0)
-    return {name,plan:[],balance:[],demandItems,net,rate:{},eta:0,bottleneck:null,infeasItems:[],unsat,atRisk:[],items:[],z:0,feasible:false};
+    return {name,plan:[],balance:[],minedUsage:[],demandItems,net,rate:{},eta:0,bottleneck:null,infeasItems:[],unsat,blockedMined,atRisk:[],items:[],z:0,partial:false,feasible:false};
   const sch=projectSchedule(net,targets,avail,stabilize?{stabilize:true,phaseKey:(phaseKey!=null?phaseKey:name)}:null);
   const rate={};targets.forEach(it=>rate[it]=Math.max(0,sch.rate[it]||0));
   let eta=0,bottleneck=null;const infeasItems=[];
   targets.forEach(it=>{if(rate[it]<=1e-9)infeasItems.push(it);else{const t=net[it]/rate[it];if(t>eta){eta=t;bottleneck=it;}}});
-  const feasible=infeasItems.length===0&&sch.z>1e-15;
+  const hasThroughput=sch.z>1e-15;
+  const feasible=unsat.length===0&&infeasItems.length===0&&hasThroughput;
   const prodHr={},consHr={};sch.items.forEach(it=>{prodHr[it]=0;consHr[it]=0;});
   sch.plan.forEach(p=>p.entries.forEach(e=>{prodHr[e.item]=(prodHr[e.item]||0)+e.outHr;e.cons.forEach(c=>{consHr[c.item]=(consHr[c.item]||0)+c.hr;});}));
-  // Vespium is the Gel budget, not a craftable material — keep it out of the balance table (the Gel note shows its burn).
+  const minedUsage=minedUsageFromProjectPlan(sch.plan);
+  // Mined budgets are not craftable materials; their usage is displayed separately.
   // `stock` is the /hr an item is pulled from inventory (the deficit the LP left the drawdown term to cover);
   // in a project LP a shortfall is only ever legitimate stock drawdown, never a paper margin.
-  const balance=sch.items.filter(it=>it!==VESP).map(it=>{const prod=prodHr[it]||0,cons=consHr[it]||0,f=forgieHr(it);
+  const balance=sch.items.filter(it=>!MINED_RESOURCES.includes(it)).map(it=>{const prod=prodHr[it]||0,cons=consHr[it]||0,f=forgieHr(it);
     return {res:it,prod,forgie:f,cons,stock:Math.max(0,cons-prod-f)};});
   // Flag items the plan is pressed up against the safety cap on — drawing stock down with ZERO
   // crafters assigned to replenish it, close enough to the STOCK_SAFETY_FRAC ceiling that the LP
@@ -738,7 +765,7 @@ function solvePhaseFor(net,name,avail,stabilize,phaseKey){
     const used=b.stock*eta;   // total units of this item's stock the phase draws down
     return used>=STOCK_SAFETY_FRAC*av*0.98;
   }).map(b=>b.res);
-  return {name,plan:sch.plan,balance,demandItems,net,rate,eta,bottleneck,infeasItems,unsat,atRisk,items:sch.items,z:sch.z,feasible,stabilized:!!sch.stabilized,zFree:sch.zFree,zPin:sch.zPin};
+  return {name,plan:sch.plan,balance,minedUsage,demandItems,net,rate,eta,bottleneck,infeasItems,unsat,blockedMined,atRisk,items:sch.items,z:sch.z,partial:!feasible&&hasThroughput,feasible,stabilized:!!sch.stabilized,zFree:sch.zFree,zPin:sch.zPin};
 }
 // net demand for a project's level-sum `sub`, against an inventory map (folds in Frame bits).
 function projNetVec(sub,invMap){
@@ -855,6 +882,20 @@ function gelReservedFromPlan(plan){
     perLine.push({__i:p.line-1,max:p.max,L:e.lvl,gelHr:e.outHr||0,vespHr:v,frac:e.frac});}));
   return perLine.length?{lines:perLine.length,outHr,vespHr,perLine}:null;
 }
+function minedUsageFromProjectPlan(plan){
+  const by={};
+  (plan||[]).forEach(p=>(p.entries||[]).forEach(e=>{const cfg=MINED_CRAFTS[e.item];if(!cfg)return;
+    const ct=craftTime(e.item,e.lvl),craftsHr=ct>0?(effSpeed(p.sp,ct)/ct)*(e.frac||0)*3600:0;
+    Object.entries(minedCost(e.item,e.lvl)).forEach(([resource,cost])=>{
+      const inputHr=cost*craftsHr,key=e.item+"\u0000"+resource;
+      if(!by[key])by[key]={item:e.item,resource,lines:0,outHr:0,inputHr:0,perLine:[],_lines:{}};
+      const use=by[key];if(!use._lines[p.line]){use._lines[p.line]=1;use.lines++;}
+      use.outHr+=e.outHr||0;use.inputHr+=inputHr;
+      use.perLine.push({line:p.line,lvl:e.lvl,outHr:e.outHr||0,inputHr,frac:e.frac||0});
+    });
+  }));
+  return Object.values(by).map(use=>{delete use._lines;return use;});
+}
 // Top of project mode: builds one combined phase, or a sequence of per-project phases
 // (forced-"do first" projects ahead, then cheapest-makespan first), with inventory carried across.
 function optimizeProjectTop(){
@@ -870,13 +911,18 @@ function optimizeProjectTop(){
   const eta=phases.reduce((s,ph)=>s+ph.eta,0);
   const feasible=phases.length>0&&phases.every(ph=>ph.feasible);
   const unsat=[...new Set([].concat(...phases.map(ph=>ph.unsat||[])))];
+  const blockedMined={};phases.forEach(ph=>Object.entries(ph.blockedMined||{}).forEach(([it,resources])=>{
+    blockedMined[it]=[...new Set([...(blockedMined[it]||[]),...resources])];
+  }));
+  const partial=!feasible&&phases.some(ph=>ph.z>1e-15);
   const infeasItems=[...new Set([].concat(...phases.map(ph=>ph.infeasItems||[])))];
   const atRiskItems=[...new Set([].concat(...phases.map(ph=>ph.atRisk||[])))];
   const main=phases[0]||{plan:[],balance:[],rate:{},demandItems:[],bottleneck:null};
   return {empty:false,mode:"project",sequenced:seq,waved,single,phases,perProject,gross,net,
     plan:main.plan,balance:main.balance,
     demandItems:(seq||waved)?ALLITEMS.filter(it=>net[it]>1e-9):main.demandItems,
-    rate:main.rate,bottleneck:main.bottleneck,eta,unsat,infeasItems,atRiskItems,feasible,
+    rate:main.rate,bottleneck:main.bottleneck,eta,unsat,blockedMined,infeasItems,atRiskItems,partial,feasible,
+    minedUsage:main.minedUsage||[],
     gelReserved:gelReservedFromPlan(main.plan),
     objective:feasible&&eta>0?1/eta:0,ms:performance.now()-t0};
 }

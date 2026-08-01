@@ -21,7 +21,7 @@ let fail = 0, improved = 0, ok = 0;
 const keys = [...new Set([...Object.keys(gold), ...Object.keys(cur)])].sort();
 for (const k of keys) {
   const g = gold[k], c = cur[k];
-  const isGel = /gel/i.test(k);
+  const isGel = /\.gel\./i.test(k);
   if (!g || !c) { console.log(`FAIL  ${k}: missing in ${!g ? "golden" : "current"}`); fail++; continue; }
   if (c.error) { console.log(`FAIL  ${k}: threw ${c.error.split("\n")[0]}`); fail++; continue; }
 

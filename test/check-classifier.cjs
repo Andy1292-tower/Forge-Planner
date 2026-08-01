@@ -1,0 +1,12 @@
+"use strict";
+const fs=require("fs"),os=require("os"),path=require("path"),{spawnSync}=require("child_process");
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),"forge-check-"));
+const key="items.single.noGel.L5";
+const base={mode:"items",feasible:true,capped:false,objective:10,plan:[{line:1,job:"Frames@1"}]};
+const changed={...base,plan:[{line:1,job:"Bricks@1"}]};
+const gold=path.join(dir,"gold.json"),cur=path.join(dir,"cur.json");
+fs.writeFileSync(gold,JSON.stringify({[key]:base}));fs.writeFileSync(cur,JSON.stringify({[key]:changed}));
+const run=spawnSync(process.execPath,[path.join(__dirname,"check.cjs"),gold,cur],{encoding:"utf8"});
+const ok=run.status!==0;
+console.log((ok?"ok   ":"FAIL ")+"noGel plan changes are strict [exit="+run.status+"]");
+if(!ok)process.exitCode=1;

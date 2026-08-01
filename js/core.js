@@ -1,19 +1,36 @@
 "use strict";
-const LEVELS=[1,2,4,8,16,32,64,128,256,512,1024,2048,4096];
+const LEVELS=[1,2,4,8,16,32,64,128,256,512,1024,2048,4096,8192,16384];
 const RAWS=["Ingots","Bits","Concrete"];
-const PRODUCTS=["Glass","Bricks","Plates","Rods","Frames","Gel","Wire"];
-// Gel is produced only on user-reserved lines (free mined ore inputs), never freely crafted by the optimizer.
+const PRODUCTS=["Glass","Bricks","Plates","Rods","Frames","Gel","Wire","Reinforced Concrete","Batteries"];
+// Gel is crafted on a crafter line, spending budgeted Vespium plus informational Rocks.
 const GEL="Gel";
 const RECIPE={
-  Glass:{inputs:["Bits"]},
-  Bricks:{inputs:["Concrete"]},
-  Plates:{inputs:["Ingots"]},
-  Rods:{inputs:["Ingots"]},
-  Frames:{inputs:["Plates","Rods"]},
-  Gel:{inputs:[]},
-  Wire:{inputs:["Gel","Rods"]}   // Bits are pre-produced (see PREPROD_BITS), never given a crafting line
+  Glass:{inputs:["Bits"]},Bricks:{inputs:["Concrete"]},Plates:{inputs:["Ingots"]},
+  Rods:{inputs:["Ingots"]},Frames:{inputs:["Plates","Rods"]},Gel:{inputs:[]},
+  Wire:{inputs:["Gel","Rods"]},
+  "Reinforced Concrete":{inputs:["Bricks","Concrete","Frames"]},
+  Batteries:{inputs:["Wire","Gel"]}
 };
-const KIND={Ingots:"raw",Bits:"raw",Concrete:"raw",Glass:"pr",Bricks:"pr",Plates:"pr",Rods:"pr",Frames:"fin",Gel:"pr",Wire:"fin"};
+const MINED_CRAFTS={
+  Gel:{resource:"Vespium",baseCosts:{Vespium:5e14},informationalCosts:{Rocks:1e23}},
+  Batteries:{resource:"Hydracite",baseCosts:{Hydracite:5e12},informationalCosts:{}}
+};
+const MINED_RESOURCES=["Vespium","Hydracite"];
+function compressionLabel(L){return Number(L)===16384?"16.4k×":String(L)+"×";}
+function minedCost(item,L){
+  const cfg=MINED_CRAFTS[item],out={};if(!cfg)return out;
+  const mult=Math.pow(3,Math.log2(L));
+  Object.entries({...cfg.informationalCosts,...cfg.baseCosts}).forEach(([r,v])=>out[r]=v*mult);
+  return out;
+}
+function isMinedResource(r){return MINED_RESOURCES.includes(r);}
+function minedBudgetHr(r){return Math.max(0,num(S.minedIncome&&S.minedIncome[r])||0)*60;}
+function setMinedIncome(r,text){
+  if(!MINED_RESOURCES.includes(r))return;
+  S.minedIncomeText[r]=String(text==null?"":text);
+  const v=parseGameNum(text);S.minedIncome[r]=v!=null&&v>=0?v:null;
+}
+const KIND={Ingots:"raw",Bits:"raw",Concrete:"raw",Glass:"pr",Bricks:"pr",Plates:"pr",Rods:"pr",Frames:"fin",Gel:"pr",Wire:"fin","Reinforced Concrete":"fin",Batteries:"fin"};
 // Bits consumed per uncompressed unit by products that assume their Bits are PRE-PRODUCED —
 // kept OUT of the line optimization (Bits never earn a dedicated crafting line for these), used
 // only for the planning readout / pre-produce demand. Frames: 8 Bits each; Wire: 2 Bits each
@@ -70,10 +87,12 @@ function defaults(){
     Plates:{Ingots:c(2)},
     Rods:{Ingots:c(2)},
     Frames:{Plates:c(2),Rods:c(4)},
-    Gel:{},                                  // free mined ore inputs — not modelled
-    Wire:{Gel:c(2),Rods:c(16)}               // Bits pre-produced (PREPROD_BITS.Wire), not a line input
+    Gel:{},                                  // mined inputs are tracked separately from ordinary recipes
+    Wire:{Gel:c(2),Rods:c(16)},              // Bits pre-produced (PREPROD_BITS.Wire), not a line input
+    "Reinforced Concrete":{Bricks:c(10000),Concrete:c(100000),Frames:c(700)},
+    Batteries:{Wire:c(500),Gel:c(100000)}
   };
-  const baseTime={Ingots:10,Bits:6.178,Concrete:9.273,Glass:92.68,Bricks:108.2,Plates:30.89,Rods:46.34,Frames:308.9,Gel:3201,Wire:5400.8};
+  const baseTime={Ingots:10,Bits:6.178,Concrete:9.273,Glass:92.68,Bricks:108.2,Plates:30.89,Rods:46.34,Frames:308.9,Gel:3201,Wire:5400.8,"Reinforced Concrete":355531.88,Batteries:1034274.56};
   const nulls=()=>{const o={};[...RAWS,...PRODUCTS].forEach(it=>o[it]=null);return o;};
   const tg={};PRODUCTS.forEach(p=>tg[p]={on:p==="Frames",w:1});RAWS.forEach(r=>tg[r]={on:false,w:1});
   return {
@@ -88,7 +107,7 @@ function defaults(){
     prodCost,baseTime,margin:0,mode:"items",solveBudget:2000,
     sellPrice:nulls(),priceText:{},
     forgie:nulls(),forgieText:{},
-    gelVesp:null,gelVespText:"",
+    minedIncome:{Vespium:null,Hydracite:null},minedIncomeText:{Vespium:"",Hydracite:""},
     targets:tg,
     projects:[],inventory:nulls(),inventoryText:{},projectSeq:true,projectGate:true,
     planStart:null,
@@ -114,7 +133,63 @@ function syncManual(st){
 }
 
 const LSKEY="forgePlannerState_v3";
-function normalize(st){if(!st)return st;if(!Array.isArray(st.lines))st.lines=[];st.lines.forEach(l=>{if(l.spx==null||isNaN(l.spx)||l.spx<=0)l.spx=1;if(l.turbo==null||isNaN(l.turbo)||l.turbo<0)l.turbo=0;});if(st.maxTurbo==null||isNaN(st.maxTurbo)||st.maxTurbo<0)st.maxTurbo=0;if(st.dupe==null||isNaN(st.dupe)||st.dupe<0){let _d;if(st.attrDupe!=null&&!isNaN(st.attrDupe))_d=Math.max(0,Number(st.attrDupe)+(Number(st.maxTurbo)||0)*(Number(st.trio4)||0));else{const _l=st.lines.find(l=>l&&l.dup!=null&&!isNaN(l.dup));_d=_l?_l.dup:12.40;}st.dupe=_d;}delete st.attrDupe;delete st.trio4;if(st.margin==null||isNaN(st.margin))st.margin=0;if(st.solveBudget==null||isNaN(st.solveBudget)||st.solveBudget<200||st.solveBudget>60000)st.solveBudget=2000;if(!st.baseTime)st.baseTime={};const _DB=defaults().baseTime,_PB={Ingots:9.63,Bits:9.63,Concrete:9.63,Glass:87.3,Bricks:114.3,Plates:29.23,Rods:44.46,Frames:311.38};const _migrate=!st.baseTimeRev||st.baseTimeRev<2;[...RAWS,...PRODUCTS].forEach(it=>{const v=st.baseTime[it];if(v==null||isNaN(v)||v<=0)st.baseTime[it]=_DB[it];else if(_migrate&&(Math.abs(v-(_PB[it]||-1))<1e-4||Math.abs(v-12.85)<1e-4))st.baseTime[it]=_DB[it];});st.baseTimeRev=2;const _DP=defaults().prodCost;if(!st.prodCost)st.prodCost={};PRODUCTS.forEach(P=>{if(!st.prodCost[P])st.prodCost[P]={};RECIPE[P].inputs.forEach(k=>{if(!st.prodCost[P][k]||Object.keys(st.prodCost[P][k]).length===0)st.prodCost[P][k]=_DP[P][k];else LEVELS.forEach(L=>{if(!(L in st.prodCost[P][k]))st.prodCost[P][k][L]=_DP[P][k][L];});});});if(!st.sellPrice)st.sellPrice={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.sellPrice[it]===undefined)st.sellPrice[it]=null;});if(!st.priceText)st.priceText={};if(!st.forgie)st.forgie={};[...RAWS,...PRODUCTS].forEach(it=>{if(st.forgie[it]===undefined)st.forgie[it]=null;});if(!st.forgieText)st.forgieText={};if(!st.targets)st.targets={};PRODUCTS.forEach(p=>{if(!st.targets[p])st.targets[p]={on:false,w:1};});RAWS.forEach(r=>{if(!st.targets[r])st.targets[r]={on:false,w:1};});if(st.gelVesp===undefined||st.gelVesp!==null&&(typeof st.gelVesp!=="number"||isNaN(st.gelVesp)||st.gelVesp<0))st.gelVesp=null;if(typeof st.gelVespText!=="string")st.gelVespText=st.gelVesp!=null?String(st.gelVesp):"";delete st.gelLines;delete st.gelComp;if(st.mode!=="credits"&&st.mode!=="items"&&st.mode!=="project"&&st.mode!=="manual")st.mode="items";if(!Array.isArray(st.projects))st.projects=[];st.projects.forEach(p=>{if(!p.id)p.id="p"+Math.random().toString(36).slice(2,9);if(typeof p.name!=="string")p.name="Project";p.on=p.on!==false;if(p.prio!=null){const _pr=Math.floor(Number(p.prio));p.prio=_pr>=1?_pr:null;}else p.prio=p.first?1:null;delete p.first;if(p.catId&&typeof PROJECT_CATALOG!=="undefined"&&Array.isArray(PROJECT_CATALOG)){const _src=PROJECT_CATALOG.find(c=>c.catId===p.catId);if(_src){p.levels=JSON.parse(JSON.stringify(_src.levels));p.name=_src.name;p.description=_src.description||"";}}if(!Array.isArray(p.levels)||p.levels.length===0)p.levels=[{costs:[]}];p.levels.forEach(L=>{if(!Array.isArray(L.costs))L.costs=[];L.costs.forEach(c=>{if(!RAWS.includes(c.item)&&!PRODUCTS.includes(c.item))c.item=PRODUCTS[0];if(c.qty!=null&&(typeof c.qty!=="number"||isNaN(c.qty)||c.qty<0))c.qty=null;});});p.from=Math.max(1,Math.min(p.levels.length,Math.floor(Number(p.from)||1)));p.to=Math.max(p.from,Math.min(p.levels.length,Math.floor(Number(p.to)||p.levels.length)));p.done=Math.max(0,Math.min(p.to-p.from+1,Math.floor(Number(p.done)||0)));});if(!st.inventory)st.inventory={};ALLITEMS.forEach(it=>{if(st.inventory[it]===undefined)st.inventory[it]=null;});if(!st.inventoryText)st.inventoryText={};if(typeof st.projectSeq!=="boolean")st.projectSeq=true;if(typeof st.projectGate!=="boolean")st.projectGate=true;if(!Array.isArray(st.manualSaved))st.manualSaved=[];st.manualSaved=st.manualSaved.filter(p=>p&&typeof p==="object"&&Array.isArray(p.config)).map(p=>({id:typeof p.id==="string"?p.id:("m"+Math.random().toString(36).slice(2,9)),name:typeof p.name==="string"?p.name:"Setup",config:p.config.map(c=>({job:(c&&ALLITEMS.includes(c.job))?c.job:"Idle",lvl:(c&&LEVELS.includes(c.lvl))?c.lvl:1,sell:!!(c&&c.sell)}))}));if(typeof st.manualActiveId!=="string")st.manualActiveId=null;if(typeof st.planStart!=="number"||!isFinite(st.planStart))st.planStart=null;syncManual(st);return st;}
+function normalize(st){
+  if(!st)return st;
+  if(!Array.isArray(st.lines))st.lines=[];
+  st.lines.forEach(l=>{if(l.spx==null||isNaN(l.spx)||l.spx<=0)l.spx=1;if(l.turbo==null||isNaN(l.turbo)||l.turbo<0)l.turbo=0;});
+  if(st.maxTurbo==null||isNaN(st.maxTurbo)||st.maxTurbo<0)st.maxTurbo=0;
+  if(st.dupe==null||isNaN(st.dupe)||st.dupe<0){
+    let _d;
+    if(st.attrDupe!=null&&!isNaN(st.attrDupe))_d=Math.max(0,Number(st.attrDupe)+(Number(st.maxTurbo)||0)*(Number(st.trio4)||0));
+    else{const _l=st.lines.find(l=>l&&l.dup!=null&&!isNaN(l.dup));_d=_l?_l.dup:12.40;}
+    st.dupe=_d;
+  }
+  delete st.attrDupe;delete st.trio4;
+  if(st.margin==null||isNaN(st.margin))st.margin=0;
+  if(st.solveBudget==null||isNaN(st.solveBudget)||st.solveBudget<200||st.solveBudget>60000)st.solveBudget=2000;
+  if(!st.baseTime)st.baseTime={};
+  const _DB=defaults().baseTime,_PB={Ingots:9.63,Bits:9.63,Concrete:9.63,Glass:87.3,Bricks:114.3,Plates:29.23,Rods:44.46,Frames:311.38};
+  const _migrate=!st.baseTimeRev||st.baseTimeRev<2;
+  [...RAWS,...PRODUCTS].forEach(it=>{const v=st.baseTime[it];if(v==null||isNaN(v)||v<=0)st.baseTime[it]=_DB[it];else if(_migrate&&(Math.abs(v-(_PB[it]||-1))<1e-4||Math.abs(v-12.85)<1e-4))st.baseTime[it]=_DB[it];});
+  st.baseTimeRev=2;
+  const _DP=defaults().prodCost;
+  if(!st.prodCost)st.prodCost={};
+  PRODUCTS.forEach(P=>{if(!st.prodCost[P])st.prodCost[P]={};RECIPE[P].inputs.forEach(k=>{if(!st.prodCost[P][k]||Object.keys(st.prodCost[P][k]).length===0)st.prodCost[P][k]=_DP[P][k];else LEVELS.forEach(L=>{if(!(L in st.prodCost[P][k]))st.prodCost[P][k][L]=_DP[P][k][L];});});});
+  if(!st.sellPrice)st.sellPrice={};
+  [...RAWS,...PRODUCTS].forEach(it=>{if(st.sellPrice[it]===undefined)st.sellPrice[it]=null;});
+  if(!st.priceText)st.priceText={};
+  if(!st.forgie)st.forgie={};
+  [...RAWS,...PRODUCTS].forEach(it=>{if(st.forgie[it]===undefined)st.forgie[it]=null;});
+  if(!st.forgieText)st.forgieText={};
+  if(!st.targets)st.targets={};
+  PRODUCTS.forEach(p=>{if(!st.targets[p])st.targets[p]={on:false,w:1};});
+  RAWS.forEach(r=>{if(!st.targets[r])st.targets[r]={on:false,w:1};});
+  if(!st.minedIncome||typeof st.minedIncome!=="object"||Array.isArray(st.minedIncome))st.minedIncome={};
+  if(!st.minedIncomeText||typeof st.minedIncomeText!=="object"||Array.isArray(st.minedIncomeText))st.minedIncomeText={};
+  if(!Object.prototype.hasOwnProperty.call(st.minedIncome,"Vespium"))st.minedIncome.Vespium=st.gelVesp;
+  if(!Object.prototype.hasOwnProperty.call(st.minedIncomeText,"Vespium"))st.minedIncomeText.Vespium=st.gelVespText;
+  MINED_RESOURCES.forEach(r=>{
+    const raw=st.minedIncome[r],v=Number(raw);
+    st.minedIncome[r]=raw!==null&&raw!==undefined&&raw!==""&&Number.isFinite(v)&&v>=0?v:null;
+    if(typeof st.minedIncomeText[r]!=="string")st.minedIncomeText[r]=st.minedIncome[r]!=null?String(st.minedIncome[r]):"";
+  });
+  delete st.gelVesp;delete st.gelVespText;
+  delete st.gelLines;delete st.gelComp;
+  if(st.mode!=="credits"&&st.mode!=="items"&&st.mode!=="project"&&st.mode!=="manual")st.mode="items";
+  if(!Array.isArray(st.projects))st.projects=[];
+  st.projects.forEach(p=>{if(!p.id)p.id="p"+Math.random().toString(36).slice(2,9);if(typeof p.name!=="string")p.name="Project";p.on=p.on!==false;if(p.prio!=null){const _pr=Math.floor(Number(p.prio));p.prio=_pr>=1?_pr:null;}else p.prio=p.first?1:null;delete p.first;if(p.catId&&typeof PROJECT_CATALOG!=="undefined"&&Array.isArray(PROJECT_CATALOG)){const _src=PROJECT_CATALOG.find(c=>c.catId===p.catId);if(_src){p.levels=JSON.parse(JSON.stringify(_src.levels));p.name=_src.name;p.description=_src.description||"";}}if(!Array.isArray(p.levels)||p.levels.length===0)p.levels=[{costs:[]}];p.levels.forEach(L=>{if(!Array.isArray(L.costs))L.costs=[];L.costs.forEach(c=>{if(!RAWS.includes(c.item)&&!PRODUCTS.includes(c.item))c.item=PRODUCTS[0];if(c.qty!=null&&(typeof c.qty!=="number"||isNaN(c.qty)||c.qty<0))c.qty=null;});});p.from=Math.max(1,Math.min(p.levels.length,Math.floor(Number(p.from)||1)));p.to=Math.max(p.from,Math.min(p.levels.length,Math.floor(Number(p.to)||p.levels.length)));p.done=Math.max(0,Math.min(p.to-p.from+1,Math.floor(Number(p.done)||0)));});
+  if(!st.inventory)st.inventory={};
+  ALLITEMS.forEach(it=>{if(st.inventory[it]===undefined)st.inventory[it]=null;});
+  if(!st.inventoryText)st.inventoryText={};
+  if(typeof st.projectSeq!=="boolean")st.projectSeq=true;
+  if(typeof st.projectGate!=="boolean")st.projectGate=true;
+  if(!Array.isArray(st.manualSaved))st.manualSaved=[];
+  st.manualSaved=st.manualSaved.filter(p=>p&&typeof p==="object"&&Array.isArray(p.config)).map(p=>({id:typeof p.id==="string"?p.id:("m"+Math.random().toString(36).slice(2,9)),name:typeof p.name==="string"?p.name:"Setup",config:p.config.map(c=>({job:(c&&ALLITEMS.includes(c.job))?c.job:"Idle",lvl:(c&&LEVELS.includes(c.lvl))?c.lvl:1,sell:!!(c&&c.sell)}))}));
+  if(typeof st.manualActiveId!=="string")st.manualActiveId=null;
+  if(typeof st.planStart!=="number"||!isFinite(st.planStart))st.planStart=null;
+  syncManual(st);
+  return st;
+}
 let S=normalize(load())||defaults();syncManual(S);
 
 function load(){try{const r=localStorage.getItem(LSKEY);return r?JSON.parse(r):null;}catch(e){return null;}}
@@ -163,4 +238,3 @@ const disp=n=>formatGameNum(n,2);
    the planner budgets against — rocks stay informational (see the ore-cost modal). */
 const GEL_ROCKS_BASE=parseGameNum("100sx"), GEL_VESP_BASE=parseGameNum("500t");
 function gelOreCost(L){const s=Math.pow(3,Math.log2(L));return {rocks:GEL_ROCKS_BASE*s,vesp:GEL_VESP_BASE*s};}
-

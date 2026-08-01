@@ -309,6 +309,7 @@ tr:last-child td{border-bottom:none}
 .rtab td.lv{font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--ink2);width:40px}
 .rtab input{padding:4px 5px;font-size:11.5px;text-align:right}
 .rtab input::placeholder{color:var(--ink3);opacity:.5}
+.base-time-input{width:122px!important;max-width:58%;flex:0 0 auto;text-align:right}
 .help{font-size:11.5px;color:var(--ink3);line-height:1.5;margin-bottom:14px}
 .calib{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:16px}
 .calib-h{font-family:'Chakra Petch',sans-serif;font-size:13px;letter-spacing:.5px;text-transform:uppercase;color:var(--amber);margin-bottom:8px}
@@ -384,12 +385,37 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 .rsec-toggle .rsec-title{font-size:13px;font-weight:600;letter-spacing:.5px;text-transform:uppercase}
 .rsec-toggle .rsec-hint{margin-left:auto;font-size:11px;color:var(--ink3);text-align:right}
 @media(max-width:620px){.rsec-toggle .rsec-hint{display:none}}
-/* collapsible Gel panel header (a clickable card head) */
-button.gel-head{width:100%;appearance:none;-webkit-appearance:none;border:none;border-bottom:1px solid var(--line);
-  font-family:inherit;cursor:pointer;color:inherit}
-button.gel-head .gchev{color:var(--copper);font-size:11px;display:inline-block;transition:transform .15s;margin-right:5px}
-button.gel-head[aria-expanded="true"] .gchev{transform:rotate(90deg)}
-button.gel-head .sub{color:var(--amber)}
+/* mined-resource setup */
+.mined-modal{max-width:1180px}
+.mined-intro{margin-bottom:14px}
+.mined-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
+.mined-card{min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:8px;
+  background:linear-gradient(180deg,var(--bg2),var(--surface2));padding:14px}
+.mined-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:13px}
+.mined-card-head h4{font-size:14px;letter-spacing:.5px;color:var(--ink);margin-bottom:3px}
+.mined-card-head p{font-size:10.5px;line-height:1.4;color:var(--ink3)}
+.mined-badge{flex:0 0 auto;border:1px solid var(--copper-d);border-radius:20px;padding:3px 8px;
+  background:rgba(210,129,58,.12);color:var(--amber);font-size:9.5px;font-weight:600;letter-spacing:.45px;text-transform:uppercase}
+.mined-income{display:flex;flex-direction:column;gap:4px;min-width:0}
+.mined-income>span{font-size:10px;letter-spacing:.45px;text-transform:uppercase;color:var(--ink3)}
+.mined-capacity{margin-top:9px;color:var(--amber);font-family:"JetBrains Mono",monospace;font-size:12px;font-weight:600}
+.mined-help{margin:10px 0 0}
+.mined-summary{font-size:11.5px;margin:10px 0 0}
+.mined-table-title{margin:15px 0 7px;color:var(--ink3);font-size:10px;letter-spacing:.55px;text-transform:uppercase}
+.mined-table-wrap{width:100%;max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain;
+  scrollbar-color:var(--copper-d) var(--bg2);border:1px solid var(--line);border-radius:6px;background:var(--surface)}
+.mined-table-wrap table{min-width:650px}
+.mined-table-wrap th,.mined-table-wrap td{white-space:nowrap;padding:6px 8px}
+.mined-line-dependent{color:var(--ink2)}
+@media(max-width:820px){.mined-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:560px){
+  html,body{max-width:100%;overflow-x:hidden}
+  .modal-bg{padding:18px 8px}
+  .mined-modal .modal-b{padding:10px}
+  .mined-card{padding:11px}
+  .mined-card-head{flex-wrap:wrap}
+  .mined-table-wrap table{min-width:620px}
+}
 /* projects / shopping-list modal */
 .proj{border:1px solid var(--line);border-radius:7px;background:linear-gradient(180deg,var(--bg2),var(--surface2));margin-bottom:10px;overflow:hidden}
 .proj-h{display:grid;grid-template-columns:14px 18px 1fr auto;gap:9px;align-items:center;padding:9px 11px}

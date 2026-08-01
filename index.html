@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Stencil+Display:wght@700;800;900&family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/styles.css?v=20260801-mined-resources-v2">
 </head>
 <body>
 <div class="wrap">
@@ -28,6 +28,7 @@
       <button class="btn ghost" id="btnReset">Reset</button>
       <button class="btn primary" id="btnPrices">Sell prices</button>
       <button class="btn primary" id="btnForgie">Lil' Forgie</button>
+      <button class="btn primary" id="btnMined">Mined resources</button>
       <button class="btn primary" id="btnProjects">Shopping list</button>
       <button class="btn ghost" id="btnRecipes">Crafting data</button>
       <button class="btn ghost" id="btnSettings">Settings</button>
@@ -46,18 +47,6 @@
           </div>
           <div id="lines"></div>
           <button class="btn ghost" id="btnAddLine" style="width:100%;justify-content:center;margin-top:4px">+ Add line</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <button class="head gel-head" id="gelToggle" aria-expanded="false">
-          <h2><span class="gchev">▸</span> Gel lines</h2><span class="sub" id="gelSummary"></span>
-        </button>
-        <div class="body" id="gelBody" hidden>
-          <p class="help" style="margin:0 0 10px">Gel is forged from mined ore — so the limit isn't crafter inputs, it's your <b>vespium</b>. Enter your vespium/minute income and the planner works out the most Gel/hr it can sustain, auto-picks the best compression per line (lower compression squeezes more Gel from each vespium, higher compression packs more onto a single line), and feeds that Gel into whichever mode you're using.</p>
-          <button class="btn ghost" id="btnGelCost" style="margin:0 0 12px;width:100%;justify-content:center">Ore cost by compression</button>
-          <label class="fl"><span>vespium / minute income <i class="tip" tabindex="0" data-tip="You'll have to experiment with this number a little bit to get it accurate. Vesp rigs mined/min number is a good place to start, but Duo Affinity 9 materially affects how much Vesp you actually produce — sometimes giving 20% or more vesp than expected. If you're profiting vesp crafting these lines, start increasing income until you start draining.">?</i></span><input type="text" inputmode="decimal" id="gelVesp" placeholder="e.g. 500t" autocomplete="off" aria-label="Vespium per minute income"></label>
-          <div id="gelLoadout"></div>
         </div>
       </div>
 
@@ -159,15 +148,37 @@
   </div>
 </div>
 
-<!-- GEL ORE COST MODAL -->
-<div class="modal-bg" id="gelCostModal" hidden>
-  <div class="modal" style="max-width:640px">
-    <div class="modal-h"><h3>Gel ore cost by compression</h3><button class="iconbtn" id="gelCostClose" title="Close">×</button></div>
+<!-- MINED RESOURCES MODAL -->
+<div class="modal-bg" id="minedModal" hidden>
+  <div class="modal mined-modal" role="dialog" aria-modal="true" aria-labelledby="minedTitle">
+    <div class="modal-h"><h3 id="minedTitle">Mined resources</h3><button class="iconbtn" id="minedClose" title="Close" aria-label="Close mined resources">×</button></div>
     <div class="modal-b">
-      <p class="help" style="margin-bottom:10px">Gel is forged from mined ore. One craft at <b>1×</b> costs <b>100sx</b> rocks and <b>500t</b> vespium; each compression level triples the cost — the same scaling as every other craft. <b>Per-minute</b> figures use your fastest Gel-capable line at each compression (a "—" means no current line reaches that level).</p>
-      <div id="gelCostRows"></div>
+      <p class="help mined-intro">Enter each mined income independently. Rates accept game notation such as <b>500t</b>, <b>7.25qu</b>, or <b>3b</b>. Per-minute cost figures use your fastest current line that reaches each compression; an em dash means no current line reaches it.</p>
+      <div class="mined-grid">
+        <section class="mined-card" aria-labelledby="minedVespiumTitle">
+          <div class="mined-card-head">
+            <div><h4 id="minedVespiumTitle">Vespium → Gel</h4><p>Set the mined Vespium budget that Gel-producing lines can spend.</p></div>
+            <span class="mined-badge">Gel supply</span>
+          </div>
+          <label class="fl mined-income"><span>Vespium / minute income <i class="tip" tabindex="0" data-tip="You'll have to experiment with this number a little bit to get it accurate. Vesp rigs mined/min is a good place to start, but Duo Affinity 9 can materially change actual production.">?</i></span><input type="text" inputmode="decimal" id="minedVespium" data-mined-income="Vespium" placeholder="e.g. 500t" autocomplete="off" aria-label="Vespium per minute income"></label>
+          <div class="mined-capacity" id="minedVespiumSummary"></div>
+          <div id="minedGelLoadout"></div>
+          <h5 class="mined-table-title">Vespium and Rocks cost by compression</h5>
+          <div class="mined-table-wrap" id="minedVespiumCosts"></div>
+        </section>
+        <section class="mined-card" aria-labelledby="minedHydraciteTitle">
+          <div class="mined-card-head">
+            <div><h4 id="minedHydraciteTitle">Hydracite → Batteries</h4><p>Set the mined Hydracite budget used while crafting Batteries.</p></div>
+            <span class="mined-badge">Battery input</span>
+          </div>
+          <label class="fl mined-income"><span>Hydracite / minute income</span><input type="text" inputmode="decimal" id="minedHydracite" data-mined-income="Hydracite" placeholder="e.g. 3b" autocomplete="off" aria-label="Hydracite per minute income"></label>
+          <div class="notice info mined-summary"><b>Full pipeline required.</b> Hydracite is only one Battery input; actual Batteries production also requires <b>Wire and Gel</b>. This table shows Hydracite consumption, not a standalone Battery production ceiling.</div>
+          <h5 class="mined-table-title">Hydracite cost by compression</h5>
+          <div class="mined-table-wrap" id="minedHydraciteCosts"></div>
+        </section>
+      </div>
     </div>
-    <div class="modal-f"><button class="btn primary" id="gelCostDone">Done</button></div>
+    <div class="modal-f"><button class="btn primary" id="minedDone">Done</button></div>
   </div>
 </div>
 
@@ -177,13 +188,13 @@
     <div class="modal-h"><h3>Settings</h3><button class="iconbtn" id="settingsClose" title="Close">×</button></div>
     <div class="modal-b">
       <label class="fl" style="display:block">
-        <span>Max solve time <i class="tip" tabindex="0" data-tip="How long the optimizer may search before returning its best plan. The solve runs in the background (no freeze) with a progress spinner. More time = better plans on big factories (many lines, Gel chains); less time = snappier. Easy setups finish early regardless.">?</i></span>
+        <span>Max solve time <i class="tip" tabindex="0" data-tip="How long the optimizer may search before returning its best plan. The solve runs in the background (no freeze) with a progress spinner. More time = better plans on big factories (many lines, mined-resource chains); less time = snappier. Easy setups finish early regardless.">?</i></span>
         <div style="display:flex;align-items:center;gap:12px;margin-top:6px">
           <input type="range" id="solveBudget" min="0.2" max="15" step="0.1" style="flex:1">
           <span class="mono" id="solveBudgetVal" style="min-width:64px;text-align:right"></span>
         </div>
       </label>
-      <p class="help" style="margin-top:10px">The plan is computed in a background thread, so a longer budget won't freeze the page. Bigger factories (7+ lines, Gel chains) benefit most from extra time; simple setups return as soon as they're solved.</p>
+      <p class="help" style="margin-top:10px">The plan is computed in a background thread, so a longer budget won't freeze the page. Bigger factories (7+ lines, mined-resource chains) benefit most from extra time; simple setups return as soon as they're solved.</p>
     </div>
     <div class="modal-f"><button class="btn primary" id="settingsDone">Done</button></div>
   </div>

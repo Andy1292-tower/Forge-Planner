@@ -9,7 +9,7 @@ function manualResult(){
   const produced=resources.map(()=>0), consumed=resources.map(()=>0);
   const forgie={};resources.forEach(r=>{forgie[r]=forgieHr(r);produced[resIndex[r]]+=forgie[r];});
   const plan=[]; const issueSet=new Set();
-  let vespCons=0;   // vespium/hr burned by hand-assigned Gel lines (budgeted against the income)
+  const minedCons={};
   S.lines.forEach((ln,i)=>{
     const m=S.manual[i]||{job:"Idle",lvl:ln.max};
     const sp=lineSpeed(ln), dp=dupeMult();
@@ -19,11 +19,14 @@ function manualResult(){
     }else{
       const item=m.job, L=Math.min(LEVELS.includes(m.lvl)?m.lvl:ln.max,ln.max), ct=craftTime(item,L);
       const eff=effSpeed(sp,ct), rate=ct>0?L/ct:0, cons=[];
-      if(item===GEL){vespCons+=gelVespHr(ln,L);}
-      else if(!RAWS.includes(item)){
+      if(!RAWS.includes(item)){
         RECIPE[item].inputs.forEach(k=>{const c=S.prodCost[item][k][L];
-          if(c==null||isNaN(c)){issueSet.add("No material cost entered for "+item+" @"+L+"×.");}
+          if(c==null||isNaN(c)){issueSet.add("No material cost entered for "+item+" @"+compressionLabel(L)+".");}
           else{cons.push([resIndex[k],c/ct]);consumed[resIndex[k]]+=(c/ct)*eff*3600;}});
+        const cfg=MINED_CRAFTS[item];
+        if(cfg){const c=minedCost(item,L)[cfg.resource];
+          if(c==null||isNaN(c)){issueSet.add("No mined cost entered for "+item+" @"+compressionLabel(L)+".");}
+          else minedCons[cfg.resource]=(minedCons[cfg.resource]||0)+(c/ct)*eff*3600;}
       }
       produced[resIndex[item]]+=rate*eff*dp*3600;
       job={kind:(RAWS.includes(item)||item===GEL)?"produce":"craft",res:item,lvl:L,ct,prod:[[resIndex[item],rate]],cons};
@@ -42,8 +45,10 @@ function manualResult(){
   [...sold].forEach(it=>{const surplus=Math.max(0,out[it]),price=num(S.sellPrice&&S.sellPrice[it])||0,credits=surplus*price;
     if(price<=0&&surplus>1e-6)missingPrice=true;totalCredits+=credits;creditRows.push({item:it,surplus,price,credits});});
   creditRows.sort((a,b)=>b.credits-a.credits);
-  const vespIncomeHr=Math.max(0,num(S.gelVesp)||0)*60;
-  return {plan,balance,out,resIndex,issues:[...issueSet],lineProd,soldItems:[...sold],creditRows,totalCredits,missingPrice,vespCons,vespIncomeHr};
+  const minedBalances=MINED_RESOURCES.map(resource=>({
+    resource,incomeHr:minedBudgetHr(resource),consHr:minedCons[resource]||0
+  })).filter(row=>row.incomeHr>0||row.consHr>0);
+  return {plan,balance,minedBalances,out,resIndex,issues:[...issueSet],lineProd,soldItems:[...sold],creditRows,totalCredits,missingPrice};
 }
 // Copy a solved Max item/hr or Max credits/hr plan into Manual mode as an editable starting
 // point (issue #85), instead of recreating it by hand. In credits mode the item the solver
@@ -118,17 +123,21 @@ function renderManual(el,stat){
     const resOpts=`<option value="Idle"${m.job==="Idle"?" selected":""}>— idle —</option>`+
       `<optgroup label="Raw materials">`+RAWS.map(it=>`<option value="${it}"${it===m.job?" selected":""}>${it}</option>`).join("")+`</optgroup>`+
       `<optgroup label="Crafted">`+PRODUCTS.map(it=>`<option value="${it}"${it===m.job?" selected":""}>${it}</option>`).join("")+`</optgroup>`;
-    const lvlOpts=LEVELS.filter(L=>L<=ln.max).map(L=>`<option value="${L}"${L===m.lvl?" selected":""}>${L}×</option>`).join("");
+    const lvlOpts=LEVELS.filter(L=>L<=ln.max).map(L=>`<option value="${L}"${L===m.lvl?" selected":""}>${compressionLabel(L)}</option>`).join("");
     let outv="—",cons="";
     if(j.kind!=="idle"){const eff=effSpeed(p.sp,j.ct);
       outv=disp(j.prod[0][1]*eff*p.dp*3600);
-      cons=j.res===GEL?gelOreConsumesHr(j.lvl,eff)
-          :j.cons.length?j.cons.map(c=>disp(c[1]*eff*3600)+" "+invName(res.resIndex,c[0])).join(", ")
-                        :'<span style="color:var(--ink3)">none</span>';}
+      const parts=j.cons.map(c=>disp(c[1]*eff*3600)+" "+invName(res.resIndex,c[0]));
+      const cfg=MINED_CRAFTS[j.res];
+      if(cfg)Object.entries(minedCost(j.res,j.lvl)).forEach(([resource,cost])=>{
+        const note=resource===cfg.resource?" (mined income)":" (informational)";
+        parts.push(disp((cost/j.ct)*eff*3600)+" "+resource+note);
+      });
+      cons=parts.length?parts.join(", "):'<span style="color:var(--ink3)">none</span>';}
     const tags=`<span style="color:var(--ink3);font-size:10.5px"> ×${fmt(p.sp,2)} spd</span>${p.dup>0?` <span style="color:var(--ink3);font-size:10.5px">+${fmt(p.dup,2)}% dup</span>`:""}`;
     const sellCell=j.kind==="idle"?'<span style="color:var(--ink3)">—</span>'
       :`<input type="checkbox" data-msell="${i}" ${m.sell?"checked":""} aria-label="Sell line ${p.line} surplus">`;
-    html+=`<tr><td class="mono">#${p.line}</td><td class="mono">${ln.max}×${tags}</td>
+    html+=`<tr><td class="mono">#${p.line}</td><td class="mono">${compressionLabel(ln.max)}${tags}</td>
       <td><select data-mres="${i}" aria-label="Line ${p.line} resource">${resOpts}</select></td>
       <td><select data-mlvl="${i}" aria-label="Line ${p.line} compression"${j.kind==="idle"?" disabled":""}>${lvlOpts}</select></td>
       <td class="num">${outv}</td><td style="color:var(--ink2);font-size:11.5px">${cons}</td>
@@ -157,24 +166,25 @@ function renderManual(el,stat){
     if(ex){ex.cons=(ex.cons||0)+ppBits;ex.preProd=true;}
     else bal.push({res:"Bits",prod:0,forgie:num(S.forgie&&S.forgie.Bits)||0,cons:ppBits,preProd:true});
   }
-  // Gel runs on vespium: show its burn against the income, flagging a deficit ("short") when over budget.
-  if(res.vespCons>1e-6)bal.push({res:"Vespium",prod:0,forgie:res.vespIncomeHr,cons:res.vespCons,vesp:true});
+  // Mined crafts keep independent income budgets; show each source and its own burn separately.
+  (res.minedBalances||[]).forEach(row=>bal.push({res:row.resource,prod:0,forgie:0,minedIncome:row.incomeHr,cons:row.consHr,mined:true}));
   if(!bal.length){
     html+=`<div class="notice info" style="font-size:11.5px">All lines are idle — pick a resource for at least one line above to see a balance.</div>`;
   }else{
-    const showForgie=bal.some(b=>(b.forgie||0)>1e-6);
+    const showForgie=bal.some(b=>(b.forgie||0)>1e-6),showMined=bal.some(b=>b.mined);
     html+=`<div class="subhead">Resource balance (per hour)</div>
-      <table><thead><tr><th>Resource</th><th class="num">Lines</th>${showForgie?'<th class="num">Passive</th>':''}<th class="num">Consumed</th>
+      <table><thead><tr><th>Resource</th><th class="num">Lines</th>${showForgie?'<th class="num">Passive</th>':''}${showMined?'<th class="num">Mined income</th>':''}<th class="num">Consumed</th>
         <th class="num">Surplus</th><th>Status</th></tr></thead><tbody>`;
     bal.forEach(b=>{
-      const f=b.forgie||0, surplus=b.prod+f-b.cons, ratio=b.cons>0?surplus/b.cons:1;
+      const f=b.forgie||0,mine=b.minedIncome||0,surplus=b.prod+f+mine-b.cons,ratio=b.cons>0?surplus/b.cons:1;
       let cls="bal-ok",lbl="healthy";
       if(b.preProd){cls=surplus<-1e-6?"bal-tight":"bal-ok";lbl=surplus<-1e-6?"pre-produce":"covered";}
       else if(surplus<-1e-6){cls="bal-tight";lbl="short";}
       else if(b.cons>0&&ratio<0.05){cls="bal-tight";lbl="tight";}
       const fCell=showForgie?`<td class="num" style="color:${f>1e-6?'var(--teal)':'var(--ink3)'}">${f>1e-6?disp(f):"—"}</td>`:"";
-      const linesCell=b.vesp?'<span style="color:var(--ink3)">income →</span>':(b.preProd&&b.prod<=1e-6)?'<span style="color:var(--ink3)">pre-prod</span>':disp(b.prod);
-      html+=`<tr${b.preProd?' style="background:rgba(210,129,58,.05)"':b.vesp?' style="background:rgba(63,182,160,.05)"':''}><td>${b.res}</td><td class="num">${linesCell}</td>${fCell}
+      const minedCell=showMined?`<td class="num" style="color:${mine>1e-6?'var(--teal)':'var(--ink3)'}">${mine>1e-6?disp(mine):"—"}</td>`:"";
+      const linesCell=(b.preProd&&b.prod<=1e-6)?'<span style="color:var(--ink3)">pre-prod</span>':b.mined?'—':disp(b.prod);
+      html+=`<tr${b.preProd?' style="background:rgba(210,129,58,.05)"':b.mined?' style="background:rgba(63,182,160,.05)"':''}><td>${b.res}</td><td class="num">${linesCell}</td>${fCell}${minedCell}
         <td class="num">${disp(b.cons)}</td>
         <td class="num ${surplus<-1e-6?'bal-tight':''}">${disp(surplus)}</td>
         <td class="${cls}" style="font-weight:600;font-size:11.5px">${lbl}</td></tr>`;
@@ -195,4 +205,3 @@ function renderManual(el,stat){
   el.innerHTML=html;
   stat.textContent="manual setup";
 }
-

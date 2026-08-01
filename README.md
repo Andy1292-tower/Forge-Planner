@@ -7,8 +7,9 @@ Everything runs client-side.
 ## What it does
 
 - **Inputs:** Ingots, Bits, Concrete (raw producers — time only)
-- **Crafts:** Glass (←Bits), Bricks (←Concrete), Plates (←Ingots), Rods (←Ingots), Frames (←Plates + Rods; Bits pre-produced)
-- **Per-line caps:** each crafter line has its own max compression, 1×–1024×
+- **Crafts:** Glass (←Bits), Bricks (←Concrete), Plates (←Ingots), Rods (←Ingots), Frames (←Plates + Rods; Bits pre-produced), Gel (←Vespium), Wire (←Gel + Rods), Reinforced Concrete (←Bricks + Concrete + Frames), Batteries (←Wire + Gel, plus Hydracite)
+- **Mined income:** enter Vespium and Hydracite income separately; the planner budgets each resource independently for Gel and Batteries
+- **Per-line caps:** each crafter line has its own max compression, 1×–16.4k×
 - **Multi-output:** select several outputs at once; the priority slider sets the *ratio* (higher = more of that one), and the solver maximizes the weighted floor so you always get a real mix
 - **Project plan + shopping list:** build named **projects** (each a list of levels, each level a set of item costs), enter your current inventory, and **Project plan** mode sums what's left to craft and lays out the fastest pipelined schedule — either all projects together or one at a time (cheapest first, with "do first" projects pinned ahead). Accepts game notation (`1.2m`, `3.4qa`), and a **step-by-step** view gives the exact per-phase line setup.
 - **Manual mode:** skip the solver and assign each line a resource and compression level by hand. A live resource-balance readout flags each input as healthy / tight / short, so you can build setups that aren't purely optimal but still sustain themselves.

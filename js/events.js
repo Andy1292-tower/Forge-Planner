@@ -179,38 +179,44 @@ document.getElementById("forgieRows").addEventListener("input",e=>{
   scheduleSolve();
 });
 
-/* ---------- Gel ore-cost reference modal ---------- */
-// Gel's mined-ore inputs are a read-only reference here (GEL_*_BASE / gelOreCost live in core.js).
-// Per-minute uses the fastest current line that reaches each compression level L.
-// Display-only ore burn for a running Gel line (not part of any balance/calculation):
-// crafts/sec = eff/ct, ore is per craft (dup doesn't change input cost).
-function gelOreConsumesHr(L,eff){
-  const ct=craftTime(GEL,L);if(!(ct>0)||!(eff>0))return "";
-  const {rocks,vesp}=gelOreCost(L),cps=eff/ct;
-  return `${disp(rocks*cps*3600)} rocks, ${disp(vesp*cps*3600)} vespium <span style="color:var(--ink3)">(free ore)</span>`;
+/* ---------- mined resources modal ---------- */
+const minedModal=document.getElementById("minedModal");
+const btnMined=document.getElementById("btnMined");
+let minedInvoker=null;
+function minedFocusable(){
+  return [...minedModal.querySelectorAll('button,input,select,textarea,a[href],[tabindex]:not([tabindex="-1"])')]
+    .filter(el=>!el.disabled&&!el.hidden&&el.tabIndex!==-1);
 }
-function fastestGelSpeed(L){let best=null;S.lines.forEach(ln=>{if((ln.max||0)>=L){const sp=lineSpeed(ln);if(best==null||sp>best)best=sp;}});return best;}
-function renderGelCost(){
-  let h=`<table><thead><tr><th>Comp</th><th class="num">Rocks /craft</th><th class="num">Vespium /craft</th>
-    <th class="num">~s/craft</th><th class="num">Rocks /min</th><th class="num">Vespium /min</th></tr></thead><tbody>`;
-  LEVELS.forEach(L=>{
-    const {rocks,vesp}=gelOreCost(L), ct=craftTime(GEL,L), sp=fastestGelSpeed(L);
-    let sCraft="—",rMin="—",vMin="—";
-    if(sp!=null&&ct>0){const secs=ct/effSpeed(sp,ct),cpm=60/secs;sCraft=fmt(secs,2);rMin=disp(rocks*cpm);vMin=disp(vesp*cpm);}
-    h+=`<tr><td class="mono">${L}×</td><td class="num">${disp(rocks)}</td><td class="num">${disp(vesp)}</td>
-      <td class="num mono" style="color:var(--ink2)">${sCraft}</td><td class="num">${rMin}</td><td class="num">${vMin}</td></tr>`;
-  });
-  h+=`</tbody></table>`;
-  document.getElementById("gelCostRows").innerHTML=h;
+function openMined(e){
+  minedInvoker=(e&&e.currentTarget)||document.activeElement||btnMined;
+  renderMinedResources();minedModal.hidden=false;
+  const focusables=minedFocusable();
+  const firstIncome=focusables.find(el=>el.dataset&&el.dataset.minedIncome);
+  (firstIncome||focusables[0]||minedModal).focus();
 }
-const gelCostModal=document.getElementById("gelCostModal");
-function openGelCost(){renderGelCost();gelCostModal.hidden=false;}
-function closeGelCost(){gelCostModal.hidden=true;}
-document.getElementById("btnGelCost").addEventListener("click",openGelCost);
-document.getElementById("gelCostClose").addEventListener("click",closeGelCost);
-document.getElementById("gelCostDone").addEventListener("click",closeGelCost);
-gelCostModal.addEventListener("click",e=>{if(e.target===gelCostModal)closeGelCost();});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!gelCostModal.hidden)closeGelCost();});
+function closeMined(){
+  minedModal.hidden=true;
+  const restore=minedInvoker||btnMined;minedInvoker=null;
+  if(restore&&typeof restore.focus==="function")restore.focus();
+}
+btnMined.addEventListener("click",openMined);
+document.getElementById("minedClose").addEventListener("click",closeMined);
+document.getElementById("minedDone").addEventListener("click",closeMined);
+minedModal.addEventListener("click",e=>{if(e.target===minedModal)closeMined();});
+minedModal.addEventListener("input",e=>{
+  const resource=e.target.dataset.minedIncome;if(!resource)return;
+  setMinedIncome(resource,e.target.value);
+  renderMinedResources();scheduleSolve();
+});
+document.addEventListener("keydown",e=>{
+  if(minedModal.hidden)return;
+  if(e.key==="Escape"){e.preventDefault();closeMined();return;}
+  if(e.key!=="Tab")return;
+  const focusables=minedFocusable();if(!focusables.length){e.preventDefault();return;}
+  const first=focusables[0],last=focusables[focusables.length-1],active=document.activeElement;
+  if(e.shiftKey&&(active===first||!focusables.includes(active))){e.preventDefault();last.focus();}
+  else if(!e.shiftKey&&(active===last||!focusables.includes(active))){e.preventDefault();first.focus();}
+});
 
 /* ---------- settings modal (max solve time) ---------- */
 const settingsModal=document.getElementById("settingsModal");
@@ -257,7 +263,7 @@ function initCalib(){
   const it=document.getElementById("cbItem"), cp=document.getElementById("cbComp");
   if(it.options.length===0){
     [...RAWS,...PRODUCTS].forEach(n=>it.add(new Option(n,n)));
-    LEVELS.forEach(L=>cp.add(new Option(L+"× (level "+Math.round(Math.log2(L))+")",L)));
+    LEVELS.forEach(L=>cp.add(new Option(compressionLabel(L)+" (level "+Math.round(Math.log2(L))+")",L)));
     it.value="Ingots"; cp.value="512";
   }
   const out=document.getElementById("cbOut"), apply=document.getElementById("cbApply");
@@ -274,7 +280,7 @@ function initCalib(){
       apply.disabled=false;
     }else{
       computed=null;apply.disabled=true;
-      out.innerHTML=spd>0?`current ${item} base (${fmt(cur,2)}s) predicts a <b>${fmt(predict,2)}s</b> craft at ${L}× / ×${fmt(spd,2)}. Enter the real craft seconds to compare.`:`Enter that unit's speed × and a craft time to compute or verify.`;
+      out.innerHTML=spd>0?`current ${item} base (${fmt(cur,2)}s) predicts a <b>${fmt(predict,2)}s</b> craft at ${compressionLabel(L)} / ×${fmt(spd,2)}. Enter the real craft seconds to compare.`:`Enter that unit's speed × and a craft time to compute or verify.`;
     }
   }
   ["cbItem","cbComp","cbSpeed","cbSec"].forEach(id=>document.getElementById(id).addEventListener("input",recalc));
@@ -286,7 +292,7 @@ function initCalib(){
 }
 function renderAll(){
   renderModeSwitch();
-  renderLines();renderTargets();renderGel();renderRecipes();renderResults();
+  renderLines();renderTargets();renderMinedResources();renderRecipes();renderResults();
   document.getElementById("margin").value=S.margin||0;
   document.getElementById("marginv").textContent=fmt(S.margin||0,1)+"%";
   document.getElementById("maxTurbo").value=S.maxTurbo||0;
@@ -568,7 +574,12 @@ document.getElementById("progResetAll").addEventListener("click",()=>{
 });
 
 /* ---------- Step-by-step plan modal ---------- */
-function itemTier(it){if(it===GEL||RAWS.includes(it))return 0;if(it==="Frames")return 2;if(it==="Wire")return 3;return 1;}
+function itemTier(it,seen){
+  if(RAWS.includes(it)||it===GEL)return 0;
+  seen=seen||new Set();if(seen.has(it))return 0;seen.add(it);
+  const deps=(RECIPE[it]&&RECIPE[it].inputs||[]).filter(k=>RAWS.includes(k)||PRODUCTS.includes(k));
+  return deps.length?1+Math.max(...deps.map(k=>itemTier(k,new Set(seen)))):1;
+}
 // Issue #69: let the user set a project complete or change its levels without leaving this page.
 // Reuses the same fields the Shopping list & Progress tracker edit (on / from / to / done), so all
 // three views stay in sync. Completion = every level in the from→to span checked off (done=span).
@@ -602,7 +613,7 @@ function stepPlanHtml(res){
       ?"Do these phases <b>in order</b>. Within a phase, a line listing two jobs splits its time — do the input job first so you don't stall. Reset the lines when you start the next phase."
       :res.waved
       ?"Do these waves <b>in order</b> — finish a wave before starting the next so the unlocks land first. Within a wave, a line listing two jobs splits its time; do the input job first."
-      :"Set every line as shown and let it run. A line listing two jobs splits its time across the run; do the input job first."} Total ≈ <b>${fmtDuration(res.eta)}</b>. <span style="color:var(--ink3)">Clock times count from the <b>plan start</b> above — edit it or tap “Now” to re-anchor.</span></p>`;
+      :"Set every line as shown and let it run. A line listing two jobs splits its time across the run; do the input job first."} ${res.partial?"Currently plannable work":res.feasible?"Total":"No finish time"} ${res.feasible||res.partial?`≈ <b>${fmtDuration(res.eta)}</b>.`:"— this plan is blocked."} ${res.partial?'<span style="color:var(--danger)">Blocked items are excluded; this does not finish every ticked project.</span> ':""}<span style="color:var(--ink3)">Clock times count from the <b>plan start</b> above — edit it or tap “Now” to re-anchor.</span></p>`;
   const _ps=(S.planStart!=null&&isFinite(S.planStart))?new Date(S.planStart):null;
   const now=(_ps&&!isNaN(_ps.getTime()))?_ps:new Date();
   const fmtClock=h=>{
@@ -617,16 +628,18 @@ function stepPlanHtml(res){
   res.phases.forEach((ph,i)=>{
     const pStart=phaseStart; phaseStart+=ph.eta||0;
     const lines=(ph.plan||[]).filter(p=>p.entries&&p.entries.length).map(p=>({
-      line:p.line,max:p.max,reserved:p.reserved,
+      line:p.line,max:p.max,
       segs:p.entries.slice().sort((a,b)=>itemTier(a.item)-itemTier(b.item)||b.frac-a.frac)
     }));
     h+=`<div class="step-phase">`;
+    const blocked=Object.entries(ph.blockedMined||{}),phaseTime=ph.partial?"partial plan":ph.feasible?"phase":"blocked";
     h+=res.sequenced
-      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>${escapeAttr(ph.name)}</b> ${ph.prio!=null?'<span class="pill craft" style="font-size:9px">#'+ph.prio+'</span>':""} <span class="proj-mini">· ~${fmtDuration(ph.eta)} · done by ${fmtDuration(ph.doneAt)} </span><span class="step-clock">(~${fmtClock(pStart+(ph.eta||0))})</span></div>`
+      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>${escapeAttr(ph.name)}</b> ${ph.prio!=null?'<span class="pill craft" style="font-size:9px">#'+ph.prio+'</span>':""} <span class="proj-mini">· ${phaseTime}${ph.eta>0?" ~"+fmtDuration(ph.eta):""}${ph.feasible?" · done by "+fmtDuration(ph.doneAt):ph.partial?" · plannable work by "+fmtDuration(ph.doneAt):""} </span>${ph.eta>0?'<span class="step-clock">(~'+fmtClock(pStart+(ph.eta||0))+')</span>':""}</div>`
       : res.waved
-      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>Wave ${i+1} — build together</b> ${ph.members&&ph.members.length?'<span class="proj-mini">'+escapeAttr(ph.members.join(" + "))+'</span>':""} <span class="proj-mini">· ~${fmtDuration(ph.eta)} · done by ${fmtDuration(ph.doneAt)} </span><span class="step-clock">(~${fmtClock(pStart+(ph.eta||0))})</span></div>`
-      : `<div class="step-h"><b>Set all lines like this and run</b> <span class="proj-mini">· ~${fmtDuration(ph.eta)} · finish by </span><span class="step-clock">~${fmtClock(pStart+(ph.eta||0))}</span></div>`;
-    if(!ph.feasible)h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">Can't fully produce this one with the current lines${ph.unsat&&ph.unsat.length?" — "+ph.unsat.join(", ")+" need Gel":""}.</div>`;
+      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>Wave ${i+1} — build together</b> ${ph.members&&ph.members.length?'<span class="proj-mini">'+escapeAttr(ph.members.join(" + "))+'</span>':""} <span class="proj-mini">· ${phaseTime}${ph.eta>0?" ~"+fmtDuration(ph.eta):""}${ph.feasible?" · done by "+fmtDuration(ph.doneAt):ph.partial?" · plannable work by "+fmtDuration(ph.doneAt):""} </span>${ph.eta>0?'<span class="step-clock">(~'+fmtClock(pStart+(ph.eta||0))+')</span>':""}</div>`
+      : `<div class="step-h"><b>${ph.partial?"Run this partial line plan":ph.feasible?"Set all lines like this and run":"This phase is blocked"}</b> <span class="proj-mini">· ${ph.partial?"currently plannable work ~"+fmtDuration(ph.eta)+" · plannable work by ":ph.feasible?"finish time ~"+fmtDuration(ph.eta)+" · finish by ":"no finish time"}</span>${ph.eta>0?'<span class="step-clock">~'+fmtClock(pStart+(ph.eta||0))+'</span>':""}</div>`;
+    if(!ph.feasible){const why=blocked.length?" — "+blocked.map(([item,resources])=>item+" needs "+resources.join(" + ")).join("; "):"";
+      h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">Can't fully produce this phase with the current lines and incomes${why}. ${ph.partial?"The line work below is only the currently plannable portion.":""}</div>`;}
     if(ph.atRisk&&ph.atRisk.length)h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">No line here is crafting ${ph.atRisk.join(", ")} — this plan is spending down your current stock of ${ph.atRisk.length>1?"them":"it"} instead. Once that stock is gone, this schedule stops working.</div>`;
     if(!lines.length){h+=`<div class="proj-mini" style="padding:2px 0">No line activity.</div></div>`;return;}
     // Projected on-hand stock of each item at a given point in the phase (issue #87 follow-up):
@@ -649,14 +662,14 @@ function stepPlanHtml(res){
         const at=fmtClock(pStart+elapsed);
         const tag=at?` <span class="proj-mini">· until </span><span class="step-clock">~${at}</span>`:"";
         const stock=at?` <span class="proj-mini">· ~<b>${disp(onHandAt(s.item,elapsed))}</b> on hand</span>`:"";
-        if(L.reserved)return `reserve for <b>Gel</b> @${s.lvl}× (whole phase)${tag}${stock}`;
         const verb=RAWS.includes(s.item)?"produce":"craft";
-        return `${verb} <b>${s.item}</b> @${s.lvl}×${s.frac>=0.999?" (whole phase)":` for ~${fmtDuration(s.frac*ph.eta)}`}${tag}${stock}`;
+        const cfg=MINED_CRAFTS[s.item],mined=cfg?` <span class="proj-mini">· uses ${cfg.resource} income</span>`:"";
+        return `${verb} <b>${s.item}</b> @${compressionLabel(s.lvl)}${s.frac>=0.999?" (whole phase)":` for ~${fmtDuration(s.frac*ph.eta)}`}${mined}${tag}${stock}`;
       });
       const segHtml=parts.map((p,idx)=>`<div class="step-seg">${idx===0?'<span class="step-then">→</span>':'<span class="step-then">then</span>'} ${p}</div>`).join('');
-      h+=`<li><span class="mono" style="color:var(--amber)">Line #${L.line}</span> <span class="proj-mini">(${L.max}× cap)</span>${segHtml}</li>`;
+      h+=`<li><span class="mono" style="color:var(--amber)">Line #${L.line}</span> <span class="proj-mini">(${compressionLabel(L.max)} cap)</span>${segHtml}</li>`;
     });
-    h+=`</ol></div>`;
+    h+=`</ol>${minedUsageNote(ph.minedUsage||[])}</div>`;
   });
   return h;
 }
@@ -723,4 +736,3 @@ document.getElementById("results").addEventListener("click",e=>{
   if(cl("#manualSaveNew")){const name=(prompt("Name this setup:","")||"").trim();if(name)saveManualPreset(name);return;}
   if(cl("#manualDelPreset")){const sel=document.getElementById("manualPreset");const id=(sel&&sel.value)||S.manualActiveId;if(id&&confirm("Delete this saved setup?"))deleteManualPreset(id);return;}
 });
-

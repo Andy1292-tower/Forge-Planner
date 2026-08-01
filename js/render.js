@@ -2,7 +2,7 @@
 /* ---------- RENDER: lines ---------- */
 const TIPS={
   line:"Crafter unit slot. The solver auto-sorts lines by max compression — this number only identifies which row you're editing.",
-  max:"Highest compression tier this crafter is upgraded to (1×–4096×). Each level doubles yield per craft but triples material cost per cycle — so the solver picks the most efficient level ≤ this cap.",
+  max:"Highest compression tier this crafter is upgraded to (1×–16.4k×). Each level doubles yield per craft but triples material cost per cycle — so the solver picks the most efficient level ≤ this cap.",
   spx:"The total speed × currently shown above the crafter unit in-game (e.g. ×49.38) — enter it exactly as displayed, with your current turbo stacks already baked in.",
   turbo:"How many turbo stacks this crafter has active right now (each stack = +1% speed). With the global max-turbo-stacks figure, the planner backs out your base speed and projects the speed you'll have at full turbo.",
   maxTurbo:"The most turbo stacks any crafter can reach — a global cap (each stack = +1% speed). The planner projects every line's current speed up to this many stacks, so the plan reflects your sustained speed at full turbo.",
@@ -12,7 +12,7 @@ const TIPS={
 function renderLines(){
   const box=document.getElementById("lines");box.innerHTML="";
   S.lines.forEach((ln,i)=>{
-    const opts=LEVELS.map(L=>`<option value="${L}" ${L===ln.max?"selected":""}>${L}×</option>`).join("");
+    const opts=LEVELS.map(L=>`<option value="${L}" ${L===ln.max?"selected":""}>${compressionLabel(L)}</option>`).join("");
     const row=document.createElement("div");row.className="line-row";
     const projected=(num(ln.turbo)||0)!==(num(S.maxTurbo)||0);
     const spNote=projected?`<div class="line-final mono">→ ×${fmt(lineSpeed(ln),2)} at ${fmt(num(S.maxTurbo)||0,0)} turbo stacks</div>`:"";
@@ -65,43 +65,53 @@ function renderTargets(){
   RAWS.forEach(r=>box.appendChild(targetRow(r)));
 }
 
-/* ---------- RENDER: Gel panel ---------- */
-function renderGel(){
-  const inp=document.getElementById("gelVesp");
-  if(document.activeElement!==inp)inp.value=S.gelVespText||"";
-  const vespHr=Math.max(0,num(S.gelVesp)||0)*60;
-  // Standalone calculator: the most Gel/hr the income supports across ALL lines, plus the loadout.
-  // (The active plan may reserve fewer lines — only as many as help your targets — see Results.)
+/* ---------- RENDER: mined resources ---------- */
+function renderMinedResources(){
+  MINED_RESOURCES.forEach(resource=>{
+    const inp=document.getElementById("mined"+resource);
+    if(inp&&document.activeElement!==inp)inp.value=S.minedIncomeText[resource]||"";
+  });
+  const vespHr=minedBudgetHr("Vespium");
+  // Preserve the established Gel capacity/loadout calculation across all current lines.
   const lo=gelLoadout(lineRows(),vespHr);
-  document.getElementById("gelSummary").textContent=vespHr>0?(disp(lo.gelHr)+" Gel/hr max"):"off";
-  renderGelLoadout(lo,vespHr);
+  const summary=document.getElementById("minedVespiumSummary");
+  if(summary)summary.textContent=vespHr>0?`Gel/hr capacity: ${disp(lo.gelHr)}`:"Gel/hr capacity: off";
+  renderMinedGelLoadout(lo,vespHr);
+  renderMinedCostRows("Gel","minedVespiumCosts");
+  renderMinedCostRows("Batteries","minedHydraciteCosts");
 }
-function renderGelLoadout(lo,vespHr){
-  const box=document.getElementById("gelLoadout");if(!box)return;
-  if(vespHr<=0){box.innerHTML=`<p class="help" style="margin:10px 0 0">No vespium income set — Gel is off, so Gel-consuming items (Wire) can't be planned until you enter your income.</p>`;return;}
-  if(!lo.perLine.length){box.innerHTML=`<div class="notice warn" style="font-size:11.5px;margin-top:10px">Your vespium income is too low to run Gel on any current line. Raise your income (or add a lower-cap line) to make Gel.</div>`;return;}
+function renderMinedGelLoadout(lo,vespHr){
+  const box=document.getElementById("minedGelLoadout");if(!box)return;
+  if(vespHr<=0){box.innerHTML=`<p class="help mined-help">No Vespium income set — Gel is off, so Gel-consuming items (Wire and Batteries) can't be planned until you enter your income.</p>`;return;}
+  if(!lo.perLine.length){box.innerHTML=`<div class="notice warn mined-summary">Your Vespium income is too low to run Gel on any current line. Raise your income (or add a lower-cap line) to make Gel.</div>`;return;}
   const head=lo.vespHr<vespHr-1e-6
-    ? `Each line runs one compression full-time; this loadout burns <b>${disp(lo.vespHr)}</b> of your <b>${disp(vespHr)}</b> vespium/hr (the rest is profit — raise a line's cap to spend it).`
-    : `Each line runs one compression full-time, burning <b>${disp(lo.vespHr)}</b> of your <b>${disp(vespHr)}</b> vespium/hr.`;
-  let h=`<div class="notice info" style="font-size:11.5px;margin-top:10px">With <b>${disp(num(S.gelVesp)||0)}</b> vespium/min you can sustain up to <b>${disp(lo.gelHr)}</b> Gel/hr. ${head} Best loadout if you put everything you can on Gel:</div>
-    <table style="margin-top:6px"><thead><tr><th>Line</th><th>Comp</th><th class="num">Gel /hr</th><th class="num">Vespium /hr</th></tr></thead><tbody>`;
+    ? `Each line runs one compression full-time; this loadout burns <b>${disp(lo.vespHr)}</b> of your <b>${disp(vespHr)}</b> Vespium/hr (the rest is profit — raise a line's cap to spend it).`
+    : `Each line runs one compression full-time, burning <b>${disp(lo.vespHr)}</b> of your <b>${disp(vespHr)}</b> Vespium/hr.`;
+  let h=`<div class="notice info mined-summary">With <b>${disp(num(S.minedIncome.Vespium)||0)}</b> Vespium/min you can sustain up to <b>${disp(lo.gelHr)}</b> Gel/hr. ${head} Best loadout if you put everything you can on Gel:</div>
+    <div class="mined-table-wrap"><table><thead><tr><th>Line</th><th>Compression</th><th class="num">Gel /hr</th><th class="num">Vespium /hr</th></tr></thead><tbody>`;
   lo.perLine.slice().sort((a,b)=>a.__i-b.__i).forEach(p=>{
-    h+=`<tr><td class="mono">#${p.__i+1}</td><td class="mono">${p.L}×</td>
+    h+=`<tr><td class="mono">#${p.__i+1}</td><td class="mono">${compressionLabel(p.L)}</td>
       <td class="num">${disp(p.gelHr)}</td><td class="num" style="color:var(--ink2)">${disp(p.vespHr)}</td></tr>`;
   });
-  h+=`</tbody></table>`;
+  h+=`</tbody></table></div>`;
   box.innerHTML=h;
 }
-document.getElementById("gelToggle").addEventListener("click",()=>{
-  const b=document.getElementById("gelBody"),t=document.getElementById("gelToggle");
-  b.hidden=!b.hidden;t.setAttribute("aria-expanded",b.hidden?"false":"true");
-});
-document.getElementById("gelBody").addEventListener("input",e=>{
-  if(e.target.id!=="gelVesp")return;
-  S.gelVespText=e.target.value;
-  S.gelVesp=parseGameNum(e.target.value);
-  renderGel();scheduleSolve();
-});
+function renderMinedCostRows(item,targetId){
+  const box=document.getElementById(targetId),cfg=MINED_CRAFTS[item];if(!box||!cfg)return;
+  const resources=Object.keys({...cfg.informationalCosts,...cfg.baseCosts});
+  let h=`<table><thead><tr><th>Compression</th>${resources.map(r=>`<th class="num">${r} /craft</th>`).join("")}
+    <th class="num">Real s/craft</th>${resources.map(r=>`<th class="num">${r} /min</th>`).join("")}</tr></thead><tbody>`;
+  LEVELS.forEach(L=>{
+    const costs=minedCost(item,L),ct=craftTime(item,L);
+    let best=null;
+    S.lines.forEach(ln=>{if((ln.max||0)>=L){const sp=lineSpeed(ln);if(best==null||sp>best)best=sp;}});
+    let seconds=null,cpm=null;
+    if(best!=null&&ct>0){seconds=ct/effSpeed(best,ct);cpm=60/seconds;}
+    h+=`<tr><td class="mono">${compressionLabel(L)}</td>${resources.map(r=>`<td class="num">${disp(costs[r])}</td>`).join("")}
+      <td class="num mono mined-line-dependent">${seconds==null?"—":fmt(seconds,2)}</td>${resources.map(r=>`<td class="num mined-line-dependent">${cpm==null?"—":disp(costs[r]*cpm)}</td>`).join("")}</tr>`;
+  });
+  box.innerHTML=h+`</tbody></table>`;
+}
 
 /* ---------- RENDER: recipe data ---------- */
 function renderRecipes(){
@@ -113,7 +123,7 @@ function baseTimeField(item){
   const v=S.baseTime[item]??12.85;
   return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 2px 8px">
     <span style="font-size:10.5px;color:var(--ink3)">base time @1× (s)</span>
-    <input type="number" min="0" step="any" style="width:70px" value="${v}" data-res="${item}" data-fld="baseT"></div>`;
+    <input type="number" min="0" step="any" class="base-time-input" value="${v}" data-res="${item}" data-fld="baseT"></div>`;
 }
 function rawCard(r){
   const c=document.createElement("div");c.className="rcard";
@@ -130,7 +140,7 @@ function prodCard(p){
   let head=`<th>Lvl</th>`+ins.map(k=>`<th style="text-align:right">${k} cost</th>`).join("");
   let rows="";
   [...LEVELS].reverse().forEach(L=>{
-    let cells=`<td class="lv">${L}×</td>`;
+    let cells=`<td class="lv">${compressionLabel(L)}</td>`;
     ins.forEach(k=>{
       const v=S.prodCost[p][k][L];
       cells+=`<td><input type="number" min="0" step="any" placeholder="–" value="${v??""}"
@@ -138,14 +148,13 @@ function prodCard(p){
     });
     rows+=`<tr>${cells}</tr>`;
   });
-  const subt=ins.length?ins.join(" + ")+" → "+p:"mined ore → "+p;
+  const subt=ins.length?ins.join(" + ")+" → "+p:"Vespium + Rocks → "+p;
   const body=ins.length
     ? `<table class="rtab"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`
-    : `<div style="font-size:10.5px;color:var(--ink3);margin:0 2px">Forged from mined ore (free, not crafted). Produced only on lines you reserve in the <b>Gel lines</b> panel.</div>`;
+    : `<div style="font-size:10.5px;color:var(--ink3);margin:0 2px">Gel is crafted on a crafter line. Each craft consumes <b>Vespium</b> from your mined-income budget and also has an informational <b>Rocks</b> cost. Review both in <b>Mined resources</b>.</div>`;
   c.innerHTML=`<div class="rh"><span class="nm">${p}</span><span class="ty ${tyCls}">${tyLbl}</span></div>
     <div class="rb"><div style="font-size:10.5px;color:var(--ink3);margin:0 2px 6px">${subt}</div>
     ${baseTimeField(p)}
     ${body}</div>`;
   return c;
 }
-

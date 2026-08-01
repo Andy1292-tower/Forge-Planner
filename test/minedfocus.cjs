@@ -1,0 +1,49 @@
+"use strict";
+/* Real mined-modal event handlers: focus entry, confinement, and restoration. */
+const fs=require("fs"),path=require("path");
+
+class Target{
+  constructor(id){this.id=id;this.hidden=false;this.dataset={};this.listeners={};this.disabled=false;this.tabIndex=0;}
+  addEventListener(type,fn){(this.listeners[type]||(this.listeners[type]=[])).push(fn);}
+  dispatch(type,props={}){const e=Object.assign({type,target:this,currentTarget:this,key:"",shiftKey:false,defaultPrevented:false,
+    preventDefault(){this.defaultPrevented=true;}},props);(this.listeners[type]||[]).forEach(fn=>fn(e));return e;}
+  focus(){document.activeElement=this;}
+  querySelector(){return null;}
+  querySelectorAll(){return [];}
+}
+const btn=new Target("btnMined"),close=new Target("minedClose"),done=new Target("minedDone");
+const vesp=new Target("minedVespium"),hydra=new Target("minedHydracite"),dialog=new Target("minedDialog");
+vesp.dataset.minedIncome="Vespium";hydra.dataset.minedIncome="Hydracite";
+const modal=new Target("minedModal");modal.hidden=true;
+const focusables=[close,vesp,hydra,done];
+modal.querySelector=sel=>sel.includes("[role=\"dialog\"]")||sel.includes("[role='dialog']")?dialog:null;
+modal.querySelectorAll=()=>focusables;
+const els={btnMined:btn,minedModal:modal,minedClose:close,minedDone:done,minedVespium:vesp,minedHydracite:hydra};
+const doc=new Target("document");doc.activeElement=null;doc.getElementById=id=>els[id]||new Target(id);
+globalThis.document=doc;
+globalThis.renderMinedResources=()=>{};
+globalThis.setMinedIncome=()=>{};
+globalThis.scheduleSolve=()=>{};
+
+const src=fs.readFileSync(path.join(__dirname,"..","js","events.js"),"utf8");
+const start=src.indexOf("/* ---------- mined resources modal ---------- */");
+const end=src.indexOf("/* ---------- settings modal",start);
+if(start<0||end<0)throw new Error("mined modal event block not found");
+eval(src.slice(start,end));
+
+let fail=0;const check=(name,ok,detail)=>{console.log((ok?"ok   ":"FAIL ")+name+" ["+detail+"]");if(!ok)fail++;};
+function open(){btn.focus();btn.dispatch("click");}
+function expectRestore(name,closeAction){open();closeAction();check(name,modal.hidden&&document.activeElement===btn,"hidden="+modal.hidden+", focus="+(document.activeElement&&document.activeElement.id));}
+
+open();
+check("opening Mined resources focuses the first income",document.activeElement===vesp,"focus="+(document.activeElement&&document.activeElement.id));
+done.focus();let ev=doc.dispatch("keydown",{key:"Tab"});
+check("Tab wraps within Mined resources",ev.defaultPrevented&&document.activeElement===close,"focus="+(document.activeElement&&document.activeElement.id));
+close.focus();ev=doc.dispatch("keydown",{key:"Tab",shiftKey:true});
+check("Shift+Tab wraps within Mined resources",ev.defaultPrevented&&document.activeElement===done,"focus="+(document.activeElement&&document.activeElement.id));
+
+expectRestore("Close restores focus to the invoker",()=>{close.focus();close.dispatch("click");});
+expectRestore("Done restores focus to the invoker",()=>{done.focus();done.dispatch("click");});
+expectRestore("backdrop restores focus to the invoker",()=>{vesp.focus();modal.dispatch("click",{target:modal});});
+expectRestore("Escape restores focus to the invoker",()=>{hydra.focus();doc.dispatch("keydown",{key:"Escape"});});
+if(fail)process.exitCode=1;
