@@ -124,7 +124,7 @@ const solveService=(()=>{
     }
 
     try{
-      if(!worker){worker=new Worker("js/solver.worker.js");bindWorker(worker);}
+      if(!worker){worker=new Worker("js/solver.worker.v2.js");bindWorker(worker);}
       workerBusy=true;
       const stabilitySnapshot=(typeof getLineStability==="function")?JSON.parse(JSON.stringify(getLineStability()||{})):{};
       worker.postMessage({

@@ -6,12 +6,37 @@ if (process.env.PLAYWRIGHT_CHROME_PATH) {
   test.use({ launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROME_PATH } });
 }
 
+test("the retired Worker URL raises Worker.onerror for legacy tabs", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const message = await page.evaluate(() => new Promise((resolve, reject) => {
+    const worker = new Worker("/js/solver.worker.js");
+    const timeout = setTimeout(() => {
+      worker.terminate();
+      reject(new Error("retired Worker did not fail"));
+    }, 3_000);
+    worker.onmessage = event => {
+      clearTimeout(timeout);
+      worker.terminate();
+      reject(new Error(`retired Worker posted a caught response: ${JSON.stringify(event.data)}`));
+    };
+    worker.onerror = event => {
+      clearTimeout(timeout);
+      event.preventDefault();
+      worker.terminate();
+      resolve(event.message);
+    };
+    worker.postMessage({ reqId: 1, state: { mode: "items" }, budget: 200, stab: {} });
+  }));
+
+  expect(message).toContain("Refresh to restore background solving");
+});
+
 test("the planner serves, solves in its Worker, and opens every planning mode", async ({ page }) => {
   const consoleErrors = [];
   const pageErrors = [];
   const failedResponses = [];
   const workerPromise = page.waitForEvent("worker", worker =>
-    new URL(worker.url()).pathname.endsWith("/js/solver.worker.js")
+    new URL(worker.url()).pathname.endsWith("/js/solver.worker.v2.js")
   );
 
   await page.addInitScript(() => {

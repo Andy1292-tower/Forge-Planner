@@ -264,6 +264,8 @@ test("a completed idle Worker is reused with the current stability snapshot", ()
   const painted = [];
   harness.callRequest(request("items", 1, "A"), result => painted.push(result.marker));
   const worker = harness.workers[0];
+  assert.equal(worker.url, "js/solver.worker.v2.js",
+    "current tabs must not use the permanently retired legacy Worker URL");
   worker.emitMessage(workerResponse(worker, { res: { mode: "items", marker: "A" } }));
 
   harness.setStability({ remembered: ["line-2"] });

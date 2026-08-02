@@ -11,6 +11,7 @@ const tests = [
   "test/forgieproject.cjs",
   "test/gate.cjs",
   "test/inventory.cjs",
+  "test/legacy-worker-retirement.cjs",
   "test/minedfocus.cjs",
   "test/minedmodes.cjs",
   "test/minedrender.cjs",

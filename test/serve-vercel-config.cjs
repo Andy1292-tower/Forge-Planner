@@ -47,7 +47,7 @@ const server = http.createServer((request, response) => {
   }
 
   applyConfiguredHeaders(response, pathname);
-  response.setHeader("Cache-Control", "no-store");
+  if (!response.hasHeader("Cache-Control")) response.setHeader("Cache-Control", "no-store");
   const file = resolveRequestPath(pathname);
   if (!file) {
     response.writeHead(403).end("Forbidden");
