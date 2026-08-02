@@ -58,6 +58,15 @@ test("owns distinct numeric descriptors and the complete persisted ranges", () =
   }
   assert.notStrictEqual(schema.sellPrice, schema.forgie);
   assert.notStrictEqual(schema.inventory, schema.projectQuantity);
+  assert.equal(schema.baseTimeRev.defaultValue, 2, "save schema changes must not change the base-time revision");
+});
+
+test("fresh and reset state presents a 10-second solve budget", () => {
+  const index = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+  assert.equal(api("defaults().solveBudget"), 10000);
+  assert.equal(api("normalize(defaults()).solveBudget"), 10000);
+  assert.equal(api("FIELD_SCHEMA.solveBudget.defaultValue"), 10000);
+  assert.match(index, /id="solveBudget"[^>]*aria-valuetext="10 s"/);
 });
 
 test("parses required and optional blank drafts without fallback coercion", () => {
@@ -164,7 +173,7 @@ test("round-trips calibrated boundaries and accepts historical display text inde
   }
 
   const state = api("normalize(defaults())");
-  state.schemaVersion = 2;
+  state.schemaVersion = api("CURRENT_SCHEMA_VERSION");
   state.priceText.Frames = "historical text that never matched its numeric pair";
   state.sellPrice.Frames = 123;
   const result = api("validateAndMigrate")(state);
@@ -176,7 +185,7 @@ test("round-trips calibrated boundaries and accepts historical display text inde
 test("state value validation rejects every representative numeric boundary transactionally", () => {
   const make = () => {
     const state = api("normalize(defaults())");
-    state.schemaVersion = 2;
+    state.schemaVersion = api("CURRENT_SCHEMA_VERSION");
     return state;
   };
   const cases = [

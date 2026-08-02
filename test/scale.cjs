@@ -153,8 +153,8 @@ const runner = `
     if(!ok)scaleFail=true;
   });
   out.filter(x=>/^(items|credits)\./.test(x.name)).forEach(x=>{
-    const ok=!x.err&&x.ms<5000;
-    __emit((ok?'ok   ':'FAIL ')+x.N+' lines '+x.name+' completes inside the loose 5s wall bound ['+x.ms+'ms]');
+    const ok=!x.err&&x.ms<12000;
+    __emit((ok?'ok   ':'FAIL ')+x.N+' lines '+x.name+' completes inside the loose 12s wall bound ['+x.ms+'ms]');
     if(!ok)scaleFail=true;
   });
 

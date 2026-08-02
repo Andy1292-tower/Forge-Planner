@@ -407,7 +407,7 @@ function renderResults(){
   // of freezing. The service owns cancellation and only delivers the accepted mode/revision.
   const snapshot=solveStateSnapshot(S);
   const solveKey=solveStateKey(snapshot);
-  const budget=boundedPersistedField("solveBudget",snapshot.solveBudget,2000,200,60000,true);
+  const budget=boundedPersistedField("solveBudget",snapshot.solveBudget,10000,200,60000,true);
   solveService.request({mode:snapshot.mode,stateRevision,budget,stateSnapshot:snapshot,solveKey},(res,error)=>{
     if(error){solveError(error);return;}
     if(res)renderSolveResult(res,el,stat,solveKey);

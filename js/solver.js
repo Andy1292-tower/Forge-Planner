@@ -169,9 +169,31 @@ function makeSolveControl(timeBudget,options){
     if(now>=deadline){stopped=true;deadlineReached=true;reason="deadline";emit({type:"stopped",label:"result-finalize",reason,work,elapsed:now-startedAt});}
     return deadlineReached;
   };
-  return {__forgeSolveControl:true,startedAt,deadline,checkpoint,event,readNow,
+  return {__forgeSolveControl:true,startedAt,deadline,checkpoint,event,readNow,currentTime:()=>lastNow,
     elapsed:()=>Math.max(0,lastNow-startedAt),work:()=>work,
     isStopped:()=>stopped,deadlineReached:refreshDeadline,reason:()=>reason};
+}
+
+// A refinement slice may stop its own solve without stopping the shared Credits comparison.
+// The wrapper delegates all accounting to the root control, but reports only a true root stop via
+// isStopped(). solveCore can therefore return its last fully evaluated incumbent at a local cutoff,
+// while a real shared deadline/work-limit interruption still rolls the in-flight candidate back.
+function makeLocalDeadlineControl(root,localDeadline,onLimit){
+  let localStopped=false;
+  const stopLocal=label=>{
+    if(!localStopped){localStopped=true;if(onLimit)onLimit();root.event("local-time-limit",{label,localDeadline});}
+    return false;
+  };
+  const checkpoint=(label,cost)=>{
+    if(localStopped)return false;
+    if(root.currentTime()>=localDeadline)return stopLocal(label);
+    if(!root.checkpoint(label,cost))return false;
+    return root.currentTime()>=localDeadline?stopLocal(label):true;
+  };
+  return {__forgeSolveControl:true,startedAt:root.startedAt,deadline:root.deadline,checkpoint,
+    event:(type,data)=>root.event(type,data),readNow:()=>root.readNow(),currentTime:()=>root.currentTime(),
+    elapsed:()=>root.elapsed(),work:()=>root.work(),isStopped:()=>root.isStopped(),
+    deadlineReached:()=>root.deadlineReached(),reason:()=>root.reason()};
 }
 
 // Core solver: weighted max-min throughput for a set of product targets over their input
@@ -183,10 +205,15 @@ function makeSolveControl(timeBudget,options){
 // objective, so a deficit the targets can't use (free to close from surplus feeders) gets
 // closed instead of left on the margin as a phantom "may-work" plan.
 function solveCore(targets,w,relProds,relRaws,timeBudget,options){
-  const opts=options||{},control=opts.control&&opts.control.__forgeSolveControl?opts.control:makeSolveControl(timeBudget,opts);
+  const opts=options||{},rootControl=opts.control&&opts.control.__forgeSolveControl?opts.control:makeSolveControl(timeBudget,opts);
+  let localLimitReached=false;
+  const localDeadline=Number(opts.localDeadline);
+  const control=Number.isFinite(localDeadline)
+    ?makeLocalDeadlineControl(rootControl,localDeadline,()=>{localLimitReached=true;})
+    :rootControl;
   const solveStarted=control.readNow();
   const localWorkStart=control.work(),localWorkLimit=Number.isFinite(opts.localWorkLimit)?Math.max(0,Math.floor(opts.localWorkLimit)):Infinity;
-  let interrupted=false,localLimitReached=false;
+  let interrupted=false;
   const keepGoing=label=>{
     if(control.work()-localWorkStart>=localWorkLimit){
       interrupted=true;localLimitReached=true;control.event("local-work-limit",{label});return false;
@@ -626,16 +653,10 @@ function solveRaw(Rw,control){
 }
 
 function optimizeInner(timeBudget,testOptions){
-  // Budgets are an anytime CAP, not a fixed wait: solveCore returns the moment its branch-and-
-  // bound completes, so an easy plan finishes in tens of ms and never hits this. The cap only
-  // bounds the worst case for a genuinely hard factory — and it must leave a slow phone enough
-  // room, since it does far less search per ms than a desktop. The old 250ms let mobile cap out
-  // on a suboptimal, device-dependent plan (issue #34: a profile that proves out in ~250ms on
-  // desktop capped at a worse plan on a phone). 600ms ~doubles a slow device's search while
-  // keeping the worst-case freeze well under half a second (and it's one-shot, post-debounce).
-  // User-set max solve time (ms); the budget is an anytime cap, so easy factories still finish early.
-  // Runs off the main thread (Web Worker), so a larger default doesn't freeze the UI.
-  const userBudget=boundedPersistedField("solveBudget",S.solveBudget,2000,200,60000,true);
+  // User-set max solve time (ms). It is an anytime cap, so easy factories still finish early; a
+  // larger default gives slower devices and deep Credits chains room to improve. Solves run off the
+  // main thread in the generated Worker, so the 10-second default does not freeze the interface.
+  const userBudget=boundedPersistedField("solveBudget",S.solveBudget,10000,200,60000,true);
   const itemsBudget=timeBudget||userBudget, credBudget=timeBudget||userBudget;
   const mode=S.mode==="credits"?"credits":"items";
   if(mode==="items"){
@@ -700,26 +721,49 @@ function optimizeInner(timeBudget,testOptions){
     cand.push(candidate);control.event("baseline-complete",{item});
   }
 
-  // Refine only after the complete baseline pass. A refinement interrupted by the root deadline is
-  // discarded; the already-complete baseline remains selectable and later candidates stay intact.
+  const order=new Map(ALLITEMS.map((item,index)=>[item,index]));
+  const refinementOrder=()=>cand.filter(candidate=>candidate.kind==="product"&&candidate.evaluated&&candidate.capped)
+    .sort((a,b)=>a.credits===b.credits?order.get(a.item)-order.get(b.item):(a.credits>b.credits?-1:1));
+  const refineCandidate=(prior,round,localDeadline)=>{
+    if(!control.checkpoint("credits-refinement-candidate"))return false;
+    control.event("refinement-start",{item:prior.item,round});const start=control.readNow();
+    const rc=relevantChain([prior.item]);
+    const options={control,initialPlan:prior.plan};
+    if(Number.isFinite(localDeadline))options.localDeadline=localDeadline;
+    const sr=solveCore([prior.item],[1],rc.prods,rc.raws,credBudget,options);
+    addIssues(sr.issues);
+    const spent=Math.max(0,control.readNow()-start);
+    if(sr.interrupted){prior.ms+=spent;return false;}
+    const refined=fromCore(prior.item,sr,prior.ms+spent,null);
+    if(creditsRefinementIsNondecreasing(prior,refined))Object.assign(prior,refined);
+    else prior.ms+=spent;
+    control.event("refinement-complete",{item:prior.item,round});
+    return !control.isStopped();
+  };
+  // Refine only after the complete baseline pass. Every capped product gets a reserved fraction of
+  // the wall-clock time that remains before a small finalization guard: available / candidates left.
+  // Fast candidates return their unused time to the pool, so the fraction is recomputed each time.
+  // A local cutoff keeps that candidate's last safe incumbent and does not poison the shared root.
+  // Only after the entire fair pass may an adaptive round spend leftover time in newly demonstrated
+  // Credits order. Catalog order breaks exact ties; candidate objects keep identity for future
+  // per-item solve reuse without coupling the candidate searches to each other.
   if(!baselineBroken&&!control.isStopped()){
-    for(let pi=0;pi<cand.length;pi++){
-      const prior=cand[pi];if(prior.kind!=="product"||!prior.evaluated||!prior.capped)continue;
-      if(!control.checkpoint("credits-refinement-candidate"))break;
-      control.event("refinement-start",{item:prior.item});const start=control.readNow();
-      const rc=relevantChain([prior.item]);
-      const sr=solveCore([prior.item],[1],rc.prods,rc.raws,credBudget,{control,initialPlan:prior.plan});
-      addIssues(sr.issues);
-      const spent=Math.max(0,control.readNow()-start);
-      if(sr.interrupted){prior.ms+=spent;break;}
-      const refined=fromCore(prior.item,sr,prior.ms+spent,null);
-      if(creditsRefinementIsNondecreasing(prior,refined))Object.assign(prior,refined);
-      else prior.ms+=spent;
-      control.event("refinement-complete",{item:prior.item});
-      if(control.isStopped())break;
+    const bounded=refinementOrder();let boundedComplete=true;
+    const finalizationGuard=Math.min(25,Math.max(1,credBudget*0.005));
+    const refinementDeadline=control.deadline-finalizationGuard;
+    for(let pi=0;pi<bounded.length;pi++){
+      const now=control.readNow(),remaining=bounded.length-pi,available=refinementDeadline-now;
+      if(available<=0){boundedComplete=false;break;}
+      const localDeadline=now+available/remaining;
+      if(!refineCandidate(bounded[pi],"bounded",localDeadline)){boundedComplete=false;break;}
+    }
+    if(boundedComplete&&!control.isStopped()){
+      const deep=refinementOrder();
+      for(let pi=0;pi<deep.length;pi++){
+        if(control.readNow()>=refinementDeadline||!refineCandidate(deep[pi],"deep",refinementDeadline))break;
+      }
     }
   }
-  const order=new Map(ALLITEMS.map((item,index)=>[item,index]));
   cand.sort((a,b)=>{const evaluated=Number(b.evaluated)-Number(a.evaluated);if(evaluated)return evaluated;
     if(a.credits!==b.credits)return a.credits>b.credits?-1:1;
     return order.get(a.item)-order.get(b.item);});
@@ -1079,7 +1123,7 @@ function projectSchedule(net,targets,avail,opts){
 function staticSchedule(net,targets,control,maxCompression){
   const rc=relevantChain(targets),D0=Math.max(1,...targets.map(item=>net[item]||0));
   const weights=targets.map(item=>Math.max(1e-12,(net[item]||0)/D0));
-  const budget=boundedPersistedField("solveBudget",S.solveBudget,2000,200,60000,true);
+  const budget=boundedPersistedField("solveBudget",S.solveBudget,10000,200,60000,true);
   const solved=solveCore(targets,weights,rc.prods,rc.raws,budget,{tolOverride:0,control,maxCompression});
   const rate={};
   solved.resources.forEach((resource,index)=>{
@@ -1553,7 +1597,7 @@ function optimizeProjectTop(testOptions){
   if(perProject.length===0)return {empty:true,mode:"project",projLineMode:S.projLineMode==="static"?"static":"split",plan:[],phases:[],gross,net,perProject,projectStability,stabilityComparison:null,ms:performance.now()-t0};
   const seq=S.projectSeq!==false&&perProject.length>1,cacheSnapshot=cloneLineStability(_lineStability);
   const staticControl=S.projLineMode==="static"
-    ?makeSolveControl(boundedPersistedField("solveBudget",S.solveBudget,2000,200,60000,true),testOptions)
+    ?makeSolveControl(boundedPersistedField("solveBudget",S.solveBudget,10000,200,60000,true),testOptions)
     :null;
   const runOptions={staticControl};
   const selectedPolicy={readStability:projectStability==="prefer-current",rememberStability:true,stabilityCache:cacheSnapshot};

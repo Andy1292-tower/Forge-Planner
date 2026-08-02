@@ -222,7 +222,7 @@ const runner = `
   let fallbackClock=0,fallbackStages=0;const fallbackEvents=[];
   const interruptedFallback=framesAndBitsAtCap(4,{now:()=>fallbackClock,onCheckpoint:event=>{
     fallbackEvents.push(event);
-    if(event.type==="checkpoint"&&event.label==="margin-stage"&&++fallbackStages===3)fallbackClock=2000;
+    if(event.type==="checkpoint"&&event.label==="margin-stage"&&++fallbackStages===3)fallbackClock=10000;
   }});
   const fallbackStops=fallbackEvents.filter(event=>event.type==="stopped");
   record("static compression deadline: failed fallback cannot erase the certified primary-cycle plan",

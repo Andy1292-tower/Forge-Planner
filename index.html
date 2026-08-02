@@ -210,7 +210,7 @@
       <div class="fl" style="display:block">
         <span><label for="solveBudget">Max solve time</label> <button type="button" class="tip" aria-label="Help for max solve time" aria-describedby="solveBudgetHelp">?<span class="tip-text" id="solveBudgetHelp" role="tooltip">How long the optimizer may search before returning its best plan. The solve runs in the background (no freeze) with a progress spinner. More time can improve plans on big factories; simple setups finish early regardless.</span></button></span>
         <div style="display:flex;align-items:center;gap:12px;margin-top:6px">
-          <input type="range" id="solveBudget" min="0" max="12" step="1" style="flex:1" aria-valuetext="2 s">
+          <input type="range" id="solveBudget" min="0" max="12" step="1" style="flex:1" aria-valuetext="10 s">
           <span class="mono" id="solveBudgetVal" style="min-width:64px;text-align:right"></span>
         </div>
       </div>

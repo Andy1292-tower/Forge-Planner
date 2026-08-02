@@ -103,7 +103,7 @@ function defaults(){
       {max:32,spx:42.87,turbo:0}
     ],
     maxTurbo:0,dupe:12.40,
-    prodCost,baseTime,margin:0,mode:"items",solveBudget:2000,
+    prodCost,baseTime,margin:0,mode:"items",solveBudget:10000,
     sellPrice:nulls(),priceText:{},
     forgie:nulls(),forgieText:{},
     minedIncome:{Vespium:null,Hydracite:null},minedIncomeText:{Vespium:"",Hydracite:""},
@@ -145,7 +145,7 @@ function normalize(st){
   }
   delete st.attrDupe;delete st.trio4;
   if(st.margin==null||isNaN(st.margin))st.margin=0;
-  const _budgetRule=typeof FIELD_SCHEMA!=="undefined"?FIELD_SCHEMA.solveBudget:{min:200,max:60000,defaultValue:2000};
+  const _budgetRule=typeof FIELD_SCHEMA!=="undefined"?FIELD_SCHEMA.solveBudget:{min:200,max:60000,defaultValue:10000};
   const _budgetValue=Number(st.solveBudget);
   if(!Number.isInteger(_budgetValue)||_budgetValue<_budgetRule.min||_budgetValue>_budgetRule.max)st.solveBudget=_budgetRule.defaultValue;
   else st.solveBudget=_budgetValue;

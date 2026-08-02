@@ -3,7 +3,8 @@
 /* Persisted-field rules are the one numeric authority for imports, live controls, the page-side
  * dispatch boundary, and the generated Blob Worker. Collection limits remain deliberately
  * generous security ceilings, not recommendations for ordinary planner builds. */
-const CURRENT_SCHEMA_VERSION=2;
+const CURRENT_SCHEMA_VERSION=3;
+const CURRENT_BASE_TIME_REVISION=2;
 const STATE_LIMITS=Object.freeze({
   maxBytes:2*1024*1024,
   maxDepth:10,
@@ -35,7 +36,7 @@ const FIELD_SCHEMA=Object.freeze({
   margin:_field("number",_FIELD_DEFAULTS.margin,{min:0,max:20,allowBlank:false,notation:"decimal",inputMode:"decimal",label:"May-work margin"}),
   solveBudget:_field("integer",_FIELD_DEFAULTS.solveBudget,{min:200,max:60000,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"solve time in milliseconds"}),
   baseTime:_field("number",null,{min:1e-6,max:1e15,allowBlank:false,notation:"decimal",inputMode:"decimal",label:"base craft time"}),
-  baseTimeRev:_field("integer",CURRENT_SCHEMA_VERSION,{min:0,max:CURRENT_SCHEMA_VERSION+10,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"base-time revision"}),
+  baseTimeRev:_field("integer",CURRENT_BASE_TIME_REVISION,{min:0,max:CURRENT_BASE_TIME_REVISION+10,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"base-time revision"}),
   recipeCost:_field("number",null,{min:0,max:1e100,allowBlank:true,notation:"decimal",inputMode:"decimal",label:"recipe cost"}),
   sellPrice:_amountField("sell price",true),
   forgie:_amountField("Lil' Forgie rate",true),

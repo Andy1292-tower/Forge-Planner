@@ -119,13 +119,13 @@ function validateAndMigrate(candidate){
       _pushError(errors,"schemaVersion","was written by a newer version of Forge Planner");
       return {ok:false,errors,sourceVersion};
     }
-    if(sourceVersion!==1&&sourceVersion!==CURRENT_SCHEMA_VERSION)return {ok:false,errors:["schemaVersion is not supported"],sourceVersion};
+    if(sourceVersion!==1&&sourceVersion!==2&&sourceVersion!==CURRENT_SCHEMA_VERSION)return {ok:false,errors:["schemaVersion is not supported"],sourceVersion};
   }else{
     const legacyShape=Array.isArray(candidate.lines)&&_plainObject(candidate.prodCost)&&_plainObject(candidate.targets);
     if(!legacyShape)return {ok:false,errors:["unversioned save does not match a known Forge Planner shape"],sourceVersion:0};
   }
 
-  const current=sourceVersion===CURRENT_SCHEMA_VERSION;
+  const strictProjectState=sourceVersion>=2;
   const versioned=sourceVersion>=1;
   if(versioned){
     ["lines","maxTurbo","dupe","prodCost","baseTime","baseTimeRev","margin","mode","solveBudget",
@@ -133,7 +133,7 @@ function validateAndMigrate(candidate){
       "projects","inventory","inventoryText","projectSeq","projectGate","planStart","manual","manualSaved",
       "manualActiveId"].forEach(key=>_required(candidate,key,errors));
   }
-  if(current)_required(candidate,"projectStability",errors);
+  if(strictProjectState)_required(candidate,"projectStability",errors);
   const out=defaults();
   out.schemaVersion=CURRENT_SCHEMA_VERSION;
 
@@ -170,7 +170,11 @@ function validateAndMigrate(candidate){
   }
   if(_own(candidate,"margin"))out.margin=_number(_readData(candidate,"margin","margin",errors),FIELD_SCHEMA.margin,"margin",errors);
   if(_own(candidate,"mode"))out.mode=_enum(_readData(candidate,"mode","mode",errors),FIELD_SCHEMA.mode,"mode",errors);
-  if(_own(candidate,"solveBudget"))out.solveBudget=_number(_readData(candidate,"solveBudget","solveBudget",errors),FIELD_SCHEMA.solveBudget,"solveBudget",errors);
+  const parsedSolveBudget=_own(candidate,"solveBudget")
+    ?_number(_readData(candidate,"solveBudget","solveBudget",errors),FIELD_SCHEMA.solveBudget,"solveBudget",errors)
+    :undefined;
+  if(sourceVersion<CURRENT_SCHEMA_VERSION)out.solveBudget=defaults().solveBudget;
+  else if(parsedSolveBudget!==undefined)out.solveBudget=parsedSolveBudget;
 
   const rawBase=_readData(candidate,"baseTime","baseTime",errors),base=_object(rawBase,"baseTime",errors);
   if(base){
@@ -279,7 +283,7 @@ function validateAndMigrate(candidate){
       const count=copiedLevels.length||1;
       let id=_own(project,"id")?_string(_readData(project,"id",path+".id",errors),FIELD_SCHEMA.id,path+".id",errors):"legacy-project-"+(index+1);
       if(id!==undefined&&usedProjectIds.has(id)){
-        if(current)_pushError(errors,path+".id","must be unique across projects");
+        if(strictProjectState)_pushError(errors,path+".id","must be unique across projects");
         else id=migratedProjectId(index);
       }else if(id!==undefined&&!_own(project,"id")&&reservedProjectIds.has(id))id=migratedProjectId(index);
       if(id!==undefined)usedProjectIds.add(id);
@@ -307,7 +311,7 @@ function validateAndMigrate(candidate){
 
   if(_own(candidate,"projectSeq"))out.projectSeq=_boolean(_readData(candidate,"projectSeq","projectSeq",errors),"projectSeq",errors);
   if(_own(candidate,"projectGate"))out.projectGate=_boolean(_readData(candidate,"projectGate","projectGate",errors),"projectGate",errors);
-  if(current)out.projectStability=_enum(_readData(candidate,"projectStability","projectStability",errors),FIELD_SCHEMA.projectStability,"projectStability",errors);
+  if(strictProjectState)out.projectStability=_enum(_readData(candidate,"projectStability","projectStability",errors),FIELD_SCHEMA.projectStability,"projectStability",errors);
   if(_own(candidate,"projLineMode"))out.projLineMode=_enum(_readData(candidate,"projLineMode","projLineMode",errors),FIELD_SCHEMA.projLineMode,"projLineMode",errors);
   if(_own(candidate,"planStart"))out.planStart=_number(_readData(candidate,"planStart","planStart",errors),FIELD_SCHEMA.timestamp,"planStart",errors);
 

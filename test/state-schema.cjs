@@ -56,7 +56,7 @@ const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
 
 test("exports a current schema and pure field descriptors", () => {
-  assert.equal(api("CURRENT_SCHEMA_VERSION"), 2);
+  assert.equal(api("CURRENT_SCHEMA_VERSION"), 3);
   const schema = api("FIELD_SCHEMA");
   assert.equal(schema.dupe.type, "number");
   assert.equal(schema.dupe.min, 0);
@@ -69,7 +69,7 @@ test("exports a current schema and pure field descriptors", () => {
   assert.deepEqual(Array.from(schema.projectStability.values), ["prefer-current", "reoptimize"]);
 });
 
-test("v2 requires an exact Project line-job policy", () => {
+test("the current schema requires an exact Project line-job policy", () => {
   const missing = currentState();
   delete missing.projectStability;
   let result = api("validateAndMigrate")(missing);
@@ -96,13 +96,66 @@ test("strict v1 migration defaults Project line jobs without weakening old requi
   let result = api("validateAndMigrate")(v1);
   assert.equal(result.ok, true, JSON.stringify(result.errors));
   assert.equal(result.sourceVersion, 1);
-  assert.equal(result.state.schemaVersion, 2);
+  assert.equal(result.state.schemaVersion, 3);
   assert.equal(result.state.projectStability, "prefer-current");
 
   delete v1.targets;
   result = api("validateAndMigrate")(v1);
   assert.equal(result.ok, false);
   assert.match(result.errors.join(" "), /targets.*required/i);
+});
+
+test("older schemas migrate once to 10 seconds while current user choices remain exact", () => {
+  for (const sourceVersion of [1, 2]) {
+    const candidate = currentState();
+    candidate.schemaVersion = sourceVersion;
+    candidate.solveBudget = sourceVersion === 1 ? 2000 : 2345;
+    if (sourceVersion === 1) delete candidate.projectStability;
+    const result = api("validateAndMigrate")(candidate);
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    assert.equal(result.sourceVersion, sourceVersion);
+    assert.equal(result.state.schemaVersion, 3);
+    assert.equal(result.state.solveBudget, 10000);
+  }
+
+  const current = currentState();
+  current.solveBudget = 2000;
+  let result = api("validateAndMigrate")(current);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.state.solveBudget, 2000);
+  result = api("parseStoredState")(JSON.stringify(result.state));
+  assert.equal(result.recovery, null);
+  assert.equal(result.state.schemaVersion, 3);
+  assert.equal(result.state.solveBudget, 2000);
+});
+
+test("older schema solve budgets are validated before the one-time replacement", () => {
+  for (const sourceVersion of [1, 2]) for (const solveBudget of [199, 60001, 2345.5, "2000"]) {
+    const candidate = currentState();
+    candidate.schemaVersion = sourceVersion;
+    candidate.solveBudget = solveBudget;
+    if (sourceVersion === 1) delete candidate.projectStability;
+    const result = api("validateAndMigrate")(candidate);
+    assert.equal(result.ok, false, `schema ${sourceVersion} accepted ${JSON.stringify(solveBudget)}`);
+    assert.match(result.errors.join(" "), /solveBudget/i);
+  }
+});
+
+test("schema v2 retains its former current-state project strictness", () => {
+  const candidate = currentState();
+  candidate.schemaVersion = 2;
+  delete candidate.projectStability;
+  let result = api("validateAndMigrate")(candidate);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /projectStability.*required/i);
+
+  const project = { id: "repeat", name: "Same", on: true, prio: null, from: 1, to: 1, done: 0,
+    levels: [{ costs: [] }] };
+  candidate.projectStability = "prefer-current";
+  candidate.projects = [project, { ...project, levels: [{ costs: [] }] }];
+  result = api("validateAndMigrate")(candidate);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /projects\[1\]\.id.*unique/i);
 });
 
 test("legacy duplicate project IDs migrate deterministically while v2 duplicates are rejected", () => {
@@ -157,7 +210,7 @@ test("accepts a complete current state into a fresh object", () => {
   candidate.unknownRoot = "discard me";
   const result = api("validateAndMigrate")(candidate);
   assert.equal(result.ok, true, JSON.stringify(result.errors));
-  assert.equal(result.sourceVersion, 2);
+  assert.equal(result.sourceVersion, api("CURRENT_SCHEMA_VERSION"));
   assert.equal(result.state.lines[0].spx, 77.7);
   assert.equal(Object.hasOwn(result.state, "unknownRoot"), false);
   assert.notStrictEqual(result.state, candidate);
@@ -366,7 +419,7 @@ test("migrates calculated duplication fixture", () => {
   assert.equal(Object.hasOwn(result.state, "trio4"), false);
 });
 
-test("preserves the established 60000 ms solve budget when migrating a pre-schema save", () => {
+test("pre-schema saves receive the one-time 10-second solve budget migration", () => {
   const candidate = currentState();
   delete candidate.schemaVersion;
   candidate.solveBudget = 60000;
@@ -374,7 +427,7 @@ test("preserves the established 60000 ms solve budget when migrating a pre-schem
   const result = api("validateAndMigrate")(candidate);
 
   assert.equal(result.ok, true, JSON.stringify(result.errors));
-  assert.equal(result.state.solveBudget, 60000);
+  assert.equal(result.state.solveBudget, 10000);
 });
 
 test("migrates old base-time defaults but preserves custom calibration", () => {
@@ -492,7 +545,8 @@ test("successful boot upgrades the existing key and retains the exact previous-g
   assert.equal(result.recovery, null);
   assert.equal(storage.value("forgePlannerState_v3_previous_good"), legacyRaw);
   const upgraded = JSON.parse(storage.value("forgePlannerState_v3"));
-  assert.equal(upgraded.schemaVersion, 2);
+  assert.equal(upgraded.schemaVersion, 3);
+  assert.equal(upgraded.solveBudget, 10000);
   assert.equal(upgraded.dupe, 17.25);
 });
 

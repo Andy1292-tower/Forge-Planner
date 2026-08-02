@@ -73,6 +73,106 @@ const runner=`
     state.forgie.Gel=0;state.forgie.Wire=0;
     normalize(state);syncManual(state);return state;
   }
+  function creditsSaveRegressionState(){
+    const state=defaults();state.schemaVersion=3;state.mode="credits";state.solveBudget=2000;
+    state.lines=[
+      {max:4096,spx:1477.94,turbo:19},{max:4096,spx:956.02,turbo:13},
+      {max:2048,spx:986.62,turbo:14},{max:1024,spx:1207.59,turbo:30},
+      {max:1024,spx:1266.24,turbo:30},{max:256,spx:731.34,turbo:30},
+      {max:128,spx:682.47,turbo:30}
+    ];
+    state.maxTurbo=30;state.dupe=28.39;state.margin=0;
+    Object.assign(state.baseTime,{Ingots:10.008152415790276,Bits:6.178815895950821,Concrete:9.273471564294061,
+      Glass:92.68223843926229,Bricks:108.28296141848294,Plates:30.8940794797541,Rods:46.34486759132246,
+      Frames:308.940794797541,Gel:3201,Wire:5400.8,"Reinforced Concrete":355531.88,Batteries:1034274.56});
+    Object.assign(state.sellPrice,{Ingots:8.87e56,Bits:1.82e56,Concrete:2.18e56,Glass:3.79e58,Bricks:8.23e58,
+      Plates:4.79e57,Rods:6.39e57,Frames:8.36e59,Gel:2.22e60,Wire:3.53e68});
+    Object.assign(state.forgie,{Ingots:44840000,Bits:51150000,Concrete:47680000,Glass:87943.76,Bricks:76157.11,
+      Plates:251430,Rods:194740,Frames:19318.22,Gel:50914.82,Wire:4054.05});
+    state.minedIncome.Vespium=5.0000000000000005e28;state.minedIncome.Hydracite=300000000000;
+    normalize(state);syncManual(state);return state;
+  }
+  S=creditsSaveRegressionState();S.solveBudget=10000;
+  let completedBaselines=0,expireAfterBaselines=false;
+  const baselineOnly=optimizeInner(10000,{now:()=>expireAfterBaselines?10001:0,workLimit:1_000_000_000,
+    onCheckpoint:event=>{if(event.type==="baseline-complete"&&++completedBaselines===10)expireAfterBaselines=true;}});
+  const highestBaseline=baselineOnly.ranking.find(candidate=>candidate.evaluated);
+  S=creditsSaveRegressionState();S.solveBudget=10000;
+  let savedFirstRefinement=null,firstRefinementActive=false,firstRefinementComplete=false,refinementNow=0;
+  const savedCreditsRun=optimizeInner(10000,{now:()=>firstRefinementComplete?10001:(firstRefinementActive?(refinementNow+=0.001):0),workLimit:1_000_000_000,
+    onCheckpoint:event=>{
+      if(event.type==="refinement-start"&&savedFirstRefinement===null){savedFirstRefinement=event.item;firstRefinementActive=true;}
+      if(event.type==="refinement-complete"&&event.item===savedFirstRefinement)firstRefinementComplete=true;
+    }});
+  const savedWire=savedCreditsRun.ranking.find(candidate=>candidate.item==="Wire");
+  check("save-derived Credits refines the highest demonstrated baseline first",
+    highestBaseline&&highestBaseline.item==="Wire"&&savedFirstRefinement==="Wire",
+    "baseline="+(highestBaseline&&highestBaseline.item)+", first="+savedFirstRefinement);
+  check("save-derived migrated 10-second Credits result beats the already-feasible saved Wire setup",
+    firstRefinementComplete&&savedCreditsRun.bestItem==="Wire"&&savedWire&&savedWire.out>=18147.589538806016,
+    "complete="+firstRefinementComplete+", best="+savedCreditsRun.bestItem+", wire="+(savedWire&&savedWire.out));
+  // Fixed references were produced by separate one-priced-item solves from this same immutable-save
+  // factory. The combined comparison must find their true winner without letting an earlier chain
+  // consume the shared deadline before every product gets a meaningful refinement.
+  const adversarialPrices={
+    Ingots:0.0000022882408714146587,Bits:0.0000020871215409567806,Concrete:0.0000021792266410571516,
+    Glass:0.000089698395235427984,Bricks:0.00010412181071723304,Plates:0.000063752899301578622,
+    Rods:0.000068795833566571448,Frames:0.0016603062582106654,Gel:0.00074709183844945122,
+    Wire:0.013197689890849474,"Reinforced Concrete":3.6325464461141621,Batteries:68.855378851460642
+  };
+  const independentReferenceCredits={
+    Ingots:230,Bits:229,Concrete:228,Glass:231.39153103304082,Bricks:202.1831749948749,
+    Plates:204.61719991163173,Rods:208.17071181343945,Frames:246.9462158190911,Gel:220,
+    Wire:243.15293154917111,"Reinforced Concrete":248.08412092636604,Batteries:225.03758406962947
+  };
+  const referenceWinner=Object.entries(independentReferenceCredits)
+    .sort((a,b)=>b[1]-a[1]||ALLITEMS.indexOf(a[0])-ALLITEMS.indexOf(b[0]))[0];
+  S=creditsSaveRegressionState();Object.assign(S.sellPrice,adversarialPrices);
+  let comparisonNow=-0.0018;const refinementEvents=[];
+  const deepWinnerComparison=optimizeInner(10000,{now:()=>comparisonNow+=0.0018,workLimit:1_000_000_000,
+    onCheckpoint:event=>{if(event.type==="refinement-start"||event.type==="refinement-complete")refinementEvents.push(event);}});
+  const deepWinnerRc=deepWinnerComparison.ranking.find(candidate=>candidate.item==="Reinforced Concrete");
+  const boundedComplete=PRODUCTS.map(item=>refinementEvents.findIndex(event=>
+    event.type==="refinement-complete"&&event.round==="bounded"&&event.item===item));
+  const firstDeep=refinementEvents.findIndex(event=>event.type==="refinement-start"&&event.round==="deep");
+  check("independent per-product references make Reinforced Concrete the deep winner",
+    referenceWinner[0]==="Reinforced Concrete"&&referenceWinner[1]===248.08412092636604,
+    referenceWinner[0]+":"+referenceWinner[1]);
+  check("10-second all-priced comparison matches the independent deep winner",
+    deepWinnerComparison.bestItem===referenceWinner[0]&&deepWinnerRc&&
+      deepWinnerRc.credits>=referenceWinner[1]-1e-9*Math.max(1,referenceWinner[1]),
+    "all="+deepWinnerComparison.bestItem+":"+(deepWinnerRc&&deepWinnerRc.credits)+", ref="+referenceWinner[0]+":"+referenceWinner[1]);
+  check("every product finishes its first refinement before any adaptive deep work",
+    boundedComplete.every(index=>index>=0)&&(firstDeep<0||firstDeep>Math.max(...boundedComplete)),
+    "bounded="+boundedComplete.join(",")+", firstDeep="+firstDeep);
+  S=creditsSaveRegressionState();Object.assign(S.sellPrice,adversarialPrices);
+  let lowBudgetNow=-0.0018;const lowBudgetEvents=[];
+  const lowBudgetComparison=optimizeInner(2000,{now:()=>lowBudgetNow+=0.0018,workLimit:1_000_000_000,
+    onCheckpoint:event=>{if(event.type==="refinement-start"||event.type==="refinement-complete")lowBudgetEvents.push(event);}});
+  const lowBounded=PRODUCTS.map(item=>lowBudgetEvents.findIndex(event=>
+    event.type==="refinement-complete"&&event.round==="bounded"&&event.item===item));
+  const lowDeep=lowBudgetEvents.findIndex(event=>event.type==="refinement-start"&&event.round==="deep");
+  check("a lower user budget remains safe and never starts deep work ahead of the fair pass",
+    lowBudgetComparison.allCandidatesEvaluated&&lowBudgetComparison.objective>=230&&
+      (lowDeep<0||(lowBounded.every(index=>index>=0)&&lowDeep>Math.max(...lowBounded))),
+    "best="+lowBudgetComparison.bestItem+":"+lowBudgetComparison.objective+
+      ", bounded="+lowBounded.join(",")+", firstDeep="+lowDeep);
+  // A second all-catalog fixture selects a different deep-chain winner. This is a guard against
+  // accidentally encoding the RC counterexample itself as item priority.
+  const batteriesWinnerPrices={
+    Ingots:1.0346828288135849e-6,Bits:9.3874899003732933e-7,Concrete:9.7491718152556779e-7,
+    Glass:4.1399259339428304e-5,Bricks:5.4837486977742735e-5,Plates:3.3293180746379948e-5,
+    Rods:3.5162314934025405e-5,Frames:7.0686306042632287e-4,Gel:3.5656655925996538e-4,
+    Wire:0.005738126039499772,"Reinforced Concrete":1.5256695073679483,Batteries:32.788275643552687
+  };
+  S=creditsSaveRegressionState();Object.assign(S.sellPrice,batteriesWinnerPrices);
+  let batteriesNow=-0.0018;
+  const batteriesComparison=optimizeInner(10000,{now:()=>batteriesNow+=0.0018,workLimit:1_000_000_000});
+  const batteriesCandidate=batteriesComparison.ranking.find(candidate=>candidate.item==="Batteries");
+  check("fair refinement remains catalog-generic when Batteries is the true winner",
+    batteriesComparison.bestItem==="Batteries"&&batteriesCandidate&&
+      batteriesCandidate.credits>=107.16075431887117-1e-9*107.16075431887117,
+    "best="+batteriesComparison.bestItem+", credits="+(batteriesCandidate&&batteriesCandidate.credits));
   let baselineFinished=false;
   S=stateFor(["Bits"]);
   const boundaryResult=optimizeInner(200,{now:()=>baselineFinished?201:0,workLimit:1_000_000,

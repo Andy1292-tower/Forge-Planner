@@ -4,7 +4,7 @@ This document describes the build data that Forge Planner accepts, stores, impor
 
 ## Current format
 
-- Current schema version: `2`
+- Current schema version: `3`
 - Primary browser-storage key: `forgePlannerState_v3`
 - Previous-good backup key: `forgePlannerState_v3_previous_good`
 - Rejected payload key: `forgePlannerState_v3_rejected`
@@ -17,7 +17,7 @@ Despite the historical storage-key suffix, `schemaVersion` inside the JSON is th
 
 | Field | Meaning |
 | --- | --- |
-| `schemaVersion` | Integer format version. Current exports write `2`. |
+| `schemaVersion` | Integer format version. Current exports write `3`. |
 | `lines[]` | Crafter lines: supported compression cap (`max`), displayed speed (`spx`), and current turbo stacks (`turbo`). |
 | `maxTurbo`, `dupe` | Global maximum turbo stacks and duplication percentage. |
 | `prodCost`, `baseTime`, `baseTimeRev` | Ordinary recipe costs at each supported compression, per-item base craft times, and their migration revision. Mined costs remain code-defined mechanics. |
@@ -63,7 +63,7 @@ Compression values must be one of the levels declared in `LEVELS`. Item names mu
 
 ## Import, migration, and recovery
 
-The accepted inputs are current schema `2`, schema `1`, and the recognized unversioned legacy shape containing `lines`, `prodCost`, and `targets`. Unknown/future versions and truncated lookalikes are rejected instead of guessed.
+The accepted inputs are current schema `3`, schemas `1` and `2`, and the recognized unversioned legacy shape containing `lines`, `prodCost`, and `targets`. Schema 3 raises the fresh/reset solve-time default to 10 seconds. Older accepted saves receive that 10-second value once during migration; after the save is written as schema 3, any exact user-selected value in the supported 200–60,000ms range is preserved. Schema 2 retains its original strict project-stability and unique-project-ID validation. Unknown/future versions and truncated lookalikes are rejected instead of guessed.
 
 Import is transactional:
 
@@ -74,7 +74,7 @@ Import is transactional:
 
 At startup, an invalid stored build does not brick the GUI. Forge Planner starts from safe defaults, preserves the rejected text and reason, and offers **Download rejected save** and **Try another import**. A valid previous state is retained separately as the previous-good backup.
 
-When adding schema `3` or later, update defaults and `FIELD_SCHEMA`, add an explicit migration in `validateAndMigrate`, retain transactional rollback, and add current/legacy/future-version fixtures before changing `CURRENT_SCHEMA_VERSION`.
+When adding schema `4` or later, update defaults and `FIELD_SCHEMA`, add an explicit migration in `validateAndMigrate`, retain transactional rollback, and add current/legacy/future-version fixtures before changing `CURRENT_SCHEMA_VERSION`.
 
 ## Not persisted in the build
 

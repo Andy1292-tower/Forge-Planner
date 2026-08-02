@@ -355,7 +355,7 @@ test("the generated current Blob Worker accepts numeric boundaries and rejects a
     });
     const accepted = defaults();
     accepted.schemaVersion = CURRENT_SCHEMA_VERSION;
-    accepted.baseTimeRev = CURRENT_SCHEMA_VERSION;
+    accepted.baseTimeRev = 2;
     accepted.mode = "items";
     accepted.lines[0] = { max: 16384, spx: 1e-6, turbo: 1e6 };
     accepted.maxTurbo = 1e6;accepted.dupe = 100;accepted.margin = 20;accepted.solveBudget = 200;
