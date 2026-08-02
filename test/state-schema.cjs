@@ -424,6 +424,34 @@ test("importState is a pure validation boundary", () => {
   assert.strictEqual(api("S"), beforeGlobal);
 });
 
+test("reoptimize survives import, persisted reload, and reset returns prefer-current", () => {
+  const storage = storageWith();
+  context.localStorage = storage;
+  api("commitState")(api("validateAndMigrate")(currentState()).state);
+
+  const candidate = currentState();
+  candidate.projectStability = "reoptimize";
+  const imported = api("applyImportedState")(candidate, () => {});
+  assert.equal(imported.ok, true, JSON.stringify(imported.errors));
+  assert.equal(api("S.projectStability"), "reoptimize");
+  assert.equal(JSON.parse(storage.value("forgePlannerState_v3")).projectStability, "reoptimize");
+
+  api("commitState")(api("defaults")());
+  const reloaded = api("initializeState")(() => {});
+  assert.equal(reloaded.recovery, null);
+  assert.equal(api("S.projectStability"), "reoptimize");
+
+  api("commitState")(api("defaults")());
+  assert.equal(api("S.projectStability"), "prefer-current");
+  assert.equal(api("save")(), true);
+  assert.equal(JSON.parse(storage.value("forgePlannerState_v3")).projectStability, "prefer-current");
+
+  api("commitState")({});
+  const resetReloaded = api("initializeState")(() => {});
+  assert.equal(resetReloaded.recovery, null);
+  assert.equal(api("S.projectStability"), "prefer-current");
+});
+
 test("validates Worker snapshots through the same boundary", () => {
   const candidate = currentState();
   candidate.lines[0].max = 3;

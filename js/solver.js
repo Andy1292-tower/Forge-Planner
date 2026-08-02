@@ -1360,11 +1360,11 @@ function stabilityComparisonSummary(selected,alternative){
   const alternativeMinusSelectedTotalEta=difference(alternativeTotalEta,selectedTotalEta);
   const alternativeMinusSelectedWorkEta=difference(alternativeWorkEta,selectedWorkEta);
   const alternativeMinusSelectedWarmupEta=difference(alternativeWarmupEta,selectedWarmupEta);
-  const stabilized=(selected.phases||[]).filter(ph=>ph.stabilized===true),alternativeByKey={};
-  (alternative.phases||[]).forEach(ph=>{const key=ph.phaseKey;(alternativeByKey[key]||(alternativeByKey[key]=[])).push(ph);});
+  const stabilized=(selected.phases||[]).filter(ph=>ph.stabilized===true),alternativeByKey=new Map();
+  (alternative.phases||[]).forEach(ph=>{const key=ph.phaseKey,matches=alternativeByKey.get(key)||[];matches.push(ph);alternativeByKey.set(key,matches);});
   let comparable=selectedExecutable&&alternativeExecutable&&stabilized.length>0&&uniquePhaseKeys(selected.phases)&&uniquePhaseKeys(alternative.phases);
   const phases=stabilized.map(selectedPhase=>{
-    const matches=alternativeByKey[selectedPhase.phaseKey]||[],alternativePhase=matches.length===1?matches[0]:null;
+    const matches=alternativeByKey.get(selectedPhase.phaseKey)||[],alternativePhase=matches.length===1?matches[0]:null;
     const selectedThroughput=Number.isFinite(selectedPhase.z)?selectedPhase.z:null;
     const alternativeThroughput=alternativePhase&&Number.isFinite(alternativePhase.z)?alternativePhase.z:null;
     const selectedEta=finiteMetric(selectedPhase.eta),alternativeEta=alternativePhase?finiteMetric(alternativePhase.eta):null;

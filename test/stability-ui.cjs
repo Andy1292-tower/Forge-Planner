@@ -21,12 +21,12 @@ const runner = `
     {max:512,spx:50.0,turbo:0},{max:512,spx:49.5,turbo:0},
     {max:256,spx:48.0,turbo:0},{max:256,spx:47.0,turbo:0},{max:128,spx:46.0,turbo:0}
   ];
-  function state(frames,policy){const s=defaults();s.dupe=0;s.margin=0;s.mode="project";s.projectSeq=false;s.projectGate=false;
+  function state(frames,policy,projectId){const s=defaults();s.dupe=0;s.margin=0;s.mode="project";s.projectSeq=false;s.projectGate=false;
     s.projectStability=policy||"prefer-current";s.lines=JSON.parse(JSON.stringify(LINES));
-    s.projects=[{id:"frames-project",name:"Frames plan",catId:"",on:true,from:1,to:1,done:0,prio:null,
+    s.projects=[{id:projectId||"frames-project",name:"Frames plan",catId:"",on:true,from:1,to:1,done:0,prio:null,
       levels:[{costs:[{item:"Frames",qty:frames},{item:"Bricks",qty:5000},{item:"Glass",qty:4000},{item:"Rods",qty:3000}]}]}];
     normalize(s);syncManual(s);return s;}
-  function solve(frames,policy){S=state(frames,policy);return optimizeProjectTop();}
+  function solve(frames,policy,projectId){S=state(frames,policy,projectId);return optimizeProjectTop();}
   function close(actual,expected,tolerance,label){assert.ok(Math.abs(actual-expected)<=tolerance,label+" actual="+actual+" expected="+expected);}
 
   check("projectSchedule is pure and proposes rather than commits a record",()=>{
@@ -82,6 +82,21 @@ const runner = `
     held.scheduleValidation.boundaries.forEach(boundary=>{const values=Object.values(boundary.inventory||{}),scale=Math.max(1,...values.map(Math.abs));
       const tolerance=1e-8+Number.EPSILON*32*scale;
       values.forEach(value=>assert.ok(value>=-tolerance,"inventory below replay tolerance: "+value+" < "+(-tolerance)));});
+  });
+
+  check("prototype-like Project IDs keep the 200-to-420 held comparison exact and executable",()=>{
+    for(const projectId of ["constructor","toString"]){
+      resetLineStability();solve(200,"prefer-current",projectId);
+      const prototypeHeld=solve(420,"prefer-current",projectId),comparison=prototypeHeld.stabilityComparison;
+      assert.equal(prototypeHeld.phases[0].stabilized,true,projectId+" did not hold its selected jobs");
+      assert.ok(comparison,projectId+" did not receive a hidden comparison");
+      assert.equal(comparison.comparable,true,projectId+" comparison was not comparable");
+      assert.equal(comparison.selectedExecutable,true,projectId+" selected run was not executable");
+      assert.equal(comparison.alternativeExecutable,true,projectId+" alternative run was not executable");
+      assert.deepEqual(comparison.selectedPhaseOrder,[projectId]);
+      assert.deepEqual(comparison.alternativePhaseOrder,[projectId]);
+      assert.deepEqual(comparison.phases.map(phase=>phase.phaseKey),[projectId]);
+    }
   });
 
   check("reoptimize ignores pins, skips a hidden comparison, and remembers its selected jobs",()=>{

@@ -50,12 +50,12 @@ Regression-first tests initially exposed the missing contracts:
 
 `test/stability-ui.cjs` covers the frozen 420 acceptance case, the established 500 release case, pure proposal helpers, selected-only atomic writes, hidden-run isolation, repeat-held stability, reoptimization memorylessness plus selected recording, failed/partial-run cache retention, semantic sequence/wave keys, duplicate display names, exact comparison signs/percentages, truthful shorter/longer/zero/mixed/noncomparable actions, malicious-name escaping, accessible selector/static copy, and validated policy event side effects.
 
-The extended state suite covers v1/unversioned migration, v2 strictness, deterministic legacy duplicate-ID repair, v2 duplicate rejection, persistence, and schema recovery. Project transient coverage injects and exercises the new renderer helper. CI browser specs now cover selector labeling/help, policy switching, schema-v2 recovery, and the ordinary current Blob Worker with a 200-line baseline snapshot, the full 420 prefer-current held comparison plus selected cache writes/sentinel preservation, the same 420 reoptimized request with no stabilization/hidden comparison plus free selected writes, Blob transport, and zero permanent Worker/dependency requests.
+The extended state suite covers v1/unversioned migration, v2 strictness, deterministic legacy duplicate-ID repair, v2 duplicate rejection, persistence, and schema recovery. Project transient coverage injects and exercises the new renderer helper. CI browser specs now cover selector labeling/help, policy switching, schema-v2 recovery, and the ordinary current Blob Worker with a 200-Frames baseline snapshot, the full 420 prefer-current held comparison plus selected cache writes/sentinel preservation, the same 420 reoptimized request with no stabilization/hidden comparison plus free selected writes, Blob transport, and zero permanent Worker/dependency requests.
 
 ## Verification
 
-- `node test/stability-ui.cjs` — pass: eight core checks plus UI contracts.
-- `node test/state-schema.cjs` — pass: 42 assertions.
+- `node test/stability-ui.cjs` — pass: nine core checks plus UI contracts.
+- `node test/state-schema.cjs` — pass: 43 assertions.
 - `node test/stability.cjs` — pass: 12 of 12.
 - `node test/project-transients.cjs` — pass.
 - `npm test` — exit 0: 23 ordered test scripts passed; parity reported `16 ok, 0 improved, 0 failed`; browser specifications were syntax-checked only.
@@ -84,3 +84,15 @@ Current behavior remains bundled from current page modules into the generated Bl
 ## Remaining boundary
 
 No known Node-side blocker remains. Actual rendering, accessibility automation, and generated Blob Worker execution remain CI-only because this task explicitly prohibited all local browser launches.
+
+## Formal review fix round 1 — prototype-safe keys and persistence proof
+
+Formal range review found that the hidden alternative index used a normal object even though schema-valid Project IDs include names inherited from `Object.prototype`. A held 200-to-420 comparison for ID `constructor` therefore reached the inherited function and threw instead of producing a comparison. The regression was added first and exited 1 with:
+
+`FAIL prototype-like Project IDs keep the 200-to-420 held comparison exact and executable [(alternativeByKey[key] || alternativeByKey[key]).push is not a function]`
+
+The alternative phase index now uses a `Map`, so `constructor` and `toString` remain exact semantic keys. The real frozen held flow is exercised independently for both IDs and proves selected/alternative executability, comparability, exact phase order, and exact comparison keys. The focused stability contract then passed all nine core checks.
+
+Review also requested explicit end-to-end state acceptance proof beyond enum validation. A Node state-boundary contract now imports `reoptimize`, verifies its committed local-storage bytes, recreates in-memory state through `initializeState()`, and confirms the policy remains `reoptimize`; it then follows the production reset sequence (`defaults()` plus `save()`), reloads again, and confirms `prefer-current`. This behavior was already correct and the new acceptance test passed on first execution. The state suite now passes all 43 assertions.
+
+The report's incorrect “200-line baseline” description was corrected to “200-Frames baseline.” Fresh fix-round gates passed the focused nine-check stability contract, all 43 state assertions, all 23 ordered Node scripts, deterministic build, eight static-release assertions, parity `16 ok, 0 improved, 0 failed`, changed-source/browser-spec syntax checks, immutable endpoint hashes, and diff hygiene. No browser was launched, and no frozen compatibility or permanent Worker path changed in the fix round.
