@@ -6,6 +6,7 @@ const { spawnSync } = require("child_process");
 // Keep this list explicit: test/check.cjs is a comparator helper and needs arguments,
 // while test/parity.cjs is exercised through run-parity.cjs with its golden snapshot.
 const tests = [
+  "test/catalog-validation.cjs",
   "test/check-classifier.cjs",
   "test/craftdata.cjs",
   "test/credits-contract.cjs",

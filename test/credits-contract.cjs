@@ -20,6 +20,11 @@ const runner=`
       indexHtml.includes('<div class="head results-head"><h2>Planner results</h2>')&&
       !indexHtml.includes("get the optimal crafter setup")&&!indexHtml.includes("<h2>Optimal setup</h2>"),
     "oldTagline="+indexHtml.includes("get the optimal crafter setup")+", oldHeading="+indexHtml.includes("<h2>Optimal setup</h2>"));
+  check("Project modal qualifies schedule guidance when replay can be blocked",
+    indexHtml.includes("Executable results are replay-checked")&&
+      !indexHtml.includes("lays out a complete pipelined craft schedule"),
+    "qualified="+indexHtml.includes("Executable results are replay-checked")+
+      ", absolute="+indexHtml.includes("lays out a complete pipelined craft schedule"));
 
   S=defaults();S.mode="credits";S.margin=20;
   [...RAWS,...PRODUCTS].forEach(item=>S.sellPrice[item]=null);

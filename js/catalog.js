@@ -1,8 +1,8 @@
 "use strict";
 /* ============================================================================
- * PROJECT_CATALOG — static, read-only catalog of in-game projects.
+ * PROJECT_CATALOG — static, read-only project-planning catalog.
  *
- * Each entry is universal game data: { catId, name, description, levels }.
+ * Each entry has the shape { catId, name, description, levels }.
  * Per-plan choices (on / from / to / first) are NOT stored here — they are set
  * when a user adds the project to their Shopping list (see addCatalogProject).
  *
@@ -17,6 +17,16 @@
  * ...then paste the result as the PROJECT_CATALOG value below. Add new projects
  * by appending entries to the array.
  * ========================================================================== */
+const PROJECT_CATALOG_METADATA=Object.freeze({
+  schemaVersion:1,
+  status:"unverified",
+  sourceType:"unknown",
+  gameVersion:null,
+  exportedAt:null,
+  sourceSha256:null,
+  updatedAt:null,
+  verified:false
+});
 const PROJECT_CATALOG=[
   {
     "catId": "lunar-leisure-pavilion-mk3",

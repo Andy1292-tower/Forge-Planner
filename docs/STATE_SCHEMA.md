@@ -1,0 +1,83 @@
+# Forge Planner State Schema
+
+This document describes the build data that Forge Planner accepts, stores, imports, and exports. The executable sources of truth are `js/fields.js` and `js/state.js`; update this document with them.
+
+## Current format
+
+- Current schema version: `2`
+- Primary browser-storage key: `forgePlannerState_v3`
+- Previous-good backup key: `forgePlannerState_v3_previous_good`
+- Rejected payload key: `forgePlannerState_v3_rejected`
+- Rejection-reason key: `forgePlannerState_v3_rejected_reason`
+- Export filename: `forge-build.json`
+
+Despite the historical storage-key suffix, `schemaVersion` inside the JSON is the authoritative format version. Export writes the complete accepted planner build, not only crafting-data fields.
+
+## What an export contains
+
+| Field | Meaning |
+| --- | --- |
+| `schemaVersion` | Integer format version. Current exports write `2`. |
+| `lines[]` | Crafter lines: supported compression cap (`max`), displayed speed (`spx`), and current turbo stacks (`turbo`). |
+| `maxTurbo`, `dupe` | Global maximum turbo stacks and duplication percentage. |
+| `prodCost`, `baseTime`, `baseTimeRev` | Ordinary recipe costs at each supported compression, per-item base craft times, and their migration revision. Mined costs remain code-defined mechanics. |
+| `margin`, `mode`, `solveBudget` | May-work margin, selected mode, and bounded solve-time setting. |
+| `sellPrice`, `priceText` | Accepted sell prices plus the user's display drafts. |
+| `forgie`, `forgieText` | Accepted Lil' Forgie rates plus display drafts. |
+| `minedIncome`, `minedIncomeText` | Independent Vespium and Hydracite income values plus display drafts. |
+| `targets` | Per-item enabled state and priority weight. |
+| `projects[]` | Catalog or custom projects, level costs, active range, completion count, numeric order, and the `_open` card-disclosure state. |
+| `inventory`, `inventoryText` | Current ordinary-item stock plus display drafts. |
+| `projectSeq`, `projectGate` | Project ordering and one-phase choices. |
+| `projectStability`, `projLineMode` | Prefer-current versus re-optimize policy, and line-switching versus set-and-forget scheduling. |
+| `planStart` | Optional epoch-millisecond display anchor for Project clock times. It does not change elapsed solve durations. |
+| `manual[]` | Current Manual-mode job, compression, and sell flag for each line. |
+| `manualSaved[]`, `manualActiveId` | Named Manual presets and the selected preset ID. |
+
+Catalog-backed projects retain their `catId`, user range, completion, activation, and order. On normalization, their name, description, and level costs are refreshed from the current shipped catalog. Custom projects retain their exported level data.
+
+## Validation boundaries
+
+Imports are data, not executable configuration. The validator requires ordinary JSON data properties, rejects accessors/non-plain objects, and builds a fresh defaults-based state rather than trusting or mutating the imported object.
+
+Important limits include:
+
+| Boundary | Accepted range |
+| --- | --- |
+| Import file | At most 2 MiB |
+| Object depth | At most 10 |
+| Crafter lines | 1–64 |
+| Projects | At most 128 |
+| Levels per project | At most 256 |
+| Costs per level | At most 64 |
+| Total project levels / costs | At most 4,096 / 32,768 |
+| Manual presets | At most 128 |
+| Display drafts | At most 128 characters |
+| IDs | 1–64 characters; a letter first, then letters, digits, `_`, or `-` |
+| General amounts | Finite, `0` through `1e100`; blank only where the field permits it |
+| Solve time | Integer milliseconds from `200` through `60000` |
+| May-work margin | `0` through `20` percent |
+| Duplication | `0` through `100` percent |
+
+Compression values must be one of the levels declared in `LEVELS`. Item names must resolve through `ALLITEMS`. Current-version project ranges and Manual compression choices are rejected when inconsistent; they are not silently rewritten.
+
+## Import, migration, and recovery
+
+The accepted inputs are current schema `2`, schema `1`, and the recognized unversioned legacy shape containing `lines`, `prodCost`, and `targets`. Unknown/future versions and truncated lookalikes are rejected instead of guessed.
+
+Import is transactional:
+
+1. Parse and validate into a new state.
+2. Render the candidate state.
+3. Persist it while retaining the previous accepted state as a backup.
+4. If validation, rendering, or persistence fails, restore the prior state and storage pair.
+
+At startup, an invalid stored build does not brick the GUI. Forge Planner starts from safe defaults, preserves the rejected text and reason, and offers **Download rejected save** and **Try another import**. A valid previous state is retained separately as the previous-good backup.
+
+When adding schema `3` or later, update defaults and `FIELD_SCHEMA`, add an explicit migration in `validateAndMigrate`, retain transactional rollback, and add current/legacy/future-version fixtures before changing `CURRENT_SCHEMA_VERSION`.
+
+## Not persisted in the build
+
+Solver results, active Worker requests, generation tokens, solve overlays, active dialog/focus state, and the internal line-job stability cache are runtime-only. Project card `_open` is intentionally persisted, but it is display-only and omitted from solve equivalence/Worker snapshots. The chosen stability policy is persisted; the cached prior assignment is not.
+
+Planner state is local-first. The shipped app has no planner backend or analytics payload. It still loads a font stylesheet and font files from Google Fonts, so a browser makes ordinary third-party font requests; planner state is not placed in those request URLs or bodies.
