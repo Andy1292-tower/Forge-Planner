@@ -601,11 +601,9 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
   border:1px solid var(--line2);border-radius:4px;background:var(--bg2);color:var(--ink3);font-size:10.5px;font-weight:600}
 .table-scroll-help{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 
-/* P1 mobile geometry overrides live after their desktop declarations so the narrow cascade wins. */
-@media(max-width:560px){
-  .brand h1{font-size:34px;letter-spacing:1.2px}
-  .tools{width:100%}
-  button.btn{padding:8px 10px;font-size:11.5px}
+/* Project controls need two rows before the rest of the page reaches its phone breakpoint. The
+   one-row tools track otherwise collapses catalog and custom project names below roughly 721px. */
+@media(max-width:720px){
   .proj-h{
     grid-template-columns:var(--compact-target) 24px minmax(140px,1fr);
     grid-template-areas:"chevron include identity" "tools tools tools";
@@ -615,6 +613,12 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
   .proj-h>input[type=checkbox]{grid-area:include}
   .proj-h>.pname,.proj-h>.pname-static{grid-area:identity;min-width:140px}
   .proj-h>.proj-tools{grid-area:tools;width:100%;justify-content:flex-start;padding-top:var(--space-sm);border-top:1px solid var(--line)}
+}
+/* P1 mobile geometry overrides live after their desktop declarations so the narrow cascade wins. */
+@media(max-width:560px){
+  .brand h1{font-size:34px;letter-spacing:1.2px}
+  .tools{width:100%}
+  button.btn{padding:8px 10px;font-size:11.5px}
 }
 @media(max-width:430px){
   .price-row{grid-template-columns:minmax(0,1fr);gap:var(--space-sm)}

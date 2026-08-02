@@ -526,18 +526,30 @@ test("the wrapped page toolbar fills its available row at 430 and 560px", async 
   }
 });
 
-test("mobile project cards preserve a named identity row and put tools below it", async ({ page }) => {
+test("project cards preserve readable identity through the stacked-to-desktop handoff", async ({ page }) => {
   // Break caught: the auto-sized tools column collapses catalog project identity text to nearly zero width.
-  for (const width of [375, 390]) {
+  for (const width of [375, 390, 560, 561, 640, 700, 720, 721, 768]) {
     await loadPlanner(page, { width, height: 844 });
     await seedCatalogProject(page);
-    const card = page.locator("#projList .cat-card");
-    const nameBox = await rect(card.locator(".pname-static"));
-    const toolsBox = await rect(card.locator(".proj-tools"));
-    const cardBox = await rect(card);
-    expect(nameBox.width, `${width}px project identity width`).toBeGreaterThanOrEqual(140);
-    expect(toolsBox.top, `${width}px project tools must start below the identity row`).toBeGreaterThanOrEqual(nameBox.bottom - PX_TOLERANCE);
-    expectInside(toolsBox, cardBox, `${width}px project tools must stay in the project card`);
+    const customCard = page.locator("#projList .proj:not(.cat-card)").first();
+    if (await customCard.count() === 0) await page.locator("#projAdd").click();
+    await expect(customCard).toBeVisible();
+    const cards = [
+      { label: "catalog", card: page.locator("#projList .cat-card"), name: ".pname-static" },
+      { label: "custom", card: customCard, name: ".pname" },
+    ];
+    for (const entry of cards) {
+      const nameBox = await rect(entry.card.locator(entry.name));
+      const toolsBox = await rect(entry.card.locator(".proj-tools"));
+      const cardBox = await rect(entry.card);
+      expect(nameBox.width, `${width}px ${entry.label} project identity width`).toBeGreaterThanOrEqual(140 - PX_TOLERANCE);
+      expectInside(nameBox, cardBox, `${width}px ${entry.label} project identity must stay in its card`);
+      expectInside(toolsBox, cardBox, `${width}px ${entry.label} project tools must stay in its card`);
+      if (width <= 720) {
+        expect(toolsBox.top, `${width}px ${entry.label} project tools must start below the identity row`)
+          .toBeGreaterThanOrEqual(nameBox.bottom - PX_TOLERANCE);
+      }
+    }
   }
 });
 
@@ -719,7 +731,7 @@ test.describe("Task 16 release viewport matrix", () => {
         await expectReleaseMatrixState(page, stateLabel, { scope: dialog.root });
         await expectDialogActionsReachable(page, dialog, viewport, stateLabel);
         if (dialog.name === "Shopping list") await expectProjectIdentityNotCollapsed(page, stateLabel);
-        if (viewport.width === 390 && dialog.name === "Shopping list") {
+        if ((viewport.width === 390 || viewport.width === 640) && dialog.name === "Shopping list") {
           await attachReleaseMatrixScreenshot(page, testInfo, `${viewportLabel}-shopping-dialog`);
         }
         await page.locator(dialog.close).click();
