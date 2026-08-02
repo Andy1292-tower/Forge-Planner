@@ -43,6 +43,23 @@ function findOne(directory, pattern) {
   return matches[0];
 }
 
+function generatedApp(directory) {
+  const appName = findOne(directory, /^app\.[0-9a-f]{16}\.js$/);
+  return fs.readFileSync(path.join(directory, "static", appName), "utf8");
+}
+
+function generatedWorkerLifecycleSource(app) {
+  const catalogBoundary = app.indexOf(`\n;\n${fs.readFileSync(path.join(root, "js", "catalog.js"), "utf8")}`);
+  assert.ok(catalogBoundary > 0, "generated app must retain the registered page-script boundary");
+  const serviceAnchor = app.indexOf("const solveService=(()=>{");
+  assert.ok(serviceAnchor > catalogBoundary, "generated app must include solveService");
+  const serviceStart = app.lastIndexOf('"use strict";', serviceAnchor);
+  const serviceEnd = app.indexOf("\n;\n", serviceAnchor);
+  assert.ok(serviceStart > catalogBoundary && serviceEnd > serviceStart,
+    "generated app must retain the solveService module boundary");
+  return `${app.slice(0, catalogBoundary)}\n;\n${app.slice(serviceStart, serviceEnd)}`;
+}
+
 function copyBuildInputs(destination) {
   fs.mkdirSync(destination, { recursive: true });
   for (const entry of ["assets", "compat", "css", "js"]) {
@@ -123,6 +140,16 @@ test("the generated page has a closed hashed asset graph and an in-memory Worker
   assert.match(app, new RegExp(`/static/${speedName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
 
   assertLegacyFence(path.join(temporary, "js", "solver.worker.js"));
+  assert.deepEqual(
+    fs.readFileSync(path.join(temporary, "js", "solver.worker.js")),
+    fs.readFileSync(path.join(root, "js", "solver.worker.js")),
+    "the generated oldest-tab fence must preserve its source bytes"
+  );
+  assert.equal(
+    crypto.createHash("sha256").update(fs.readFileSync(path.join(temporary, "js", "solver.worker.js"))).digest("hex"),
+    "4608f23266bc227cfa5b79afb37bbcbebd8bc5a121ddfc68447c68e01cca1188",
+    "the oldest-tab fence must never silently change"
+  );
   const legacyV2 = fs.readFileSync(path.join(temporary, "js", "solver.worker.v2.js"), "utf8");
   assert.equal(
     crypto.createHash("sha256").update(legacyV2).digest("hex"),
@@ -137,6 +164,67 @@ test("the generated page has a closed hashed asset graph and an in-memory Worker
   assert.match(legacyV2, /const res = optimize\(\)/);
   assert.doesNotMatch(legacyV2, /importScripts\s*\(/,
     "the frozen v2 compatibility Worker must be self-contained");
+});
+
+test("early generated Blob Worker termination releases its URL and backstop immediately", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "forge-static-worker-release-"));
+  buildStaticSite({ sourceRoot: root, outputRoot: temporary });
+  const app = generatedApp(temporary);
+  const workers = [];
+  const revoked = [];
+  const timers = new Map();
+  let nextTimer = 1;
+
+  class GeneratedWorker {
+    constructor(url) {
+      this.url = String(url);
+      this.listeners = { message: [], error: [] };
+      this.terminated = false;
+      workers.push(this);
+    }
+    addEventListener(type, listener) { this.listeners[type].push(listener); }
+    postMessage() {}
+    terminate() { this.terminated = true; }
+    emit(type) { this.listeners[type].forEach(listener => listener({ type })); }
+  }
+
+  const context = {
+    console,
+    Blob: class GeneratedBlob {},
+    URL: {
+      createObjectURL() { return `blob:forge-worker-${workers.length + 1}`; },
+      revokeObjectURL(url) { revoked.push(String(url)); },
+    },
+    Worker: GeneratedWorker,
+    document: { getElementById() { return null; } },
+    S: { mode: "items" },
+    stateRevision: 7,
+    getLineStability() { return {}; },
+    optimize() { return {}; },
+    setTimeout(callback) { const id = nextTimer++; timers.set(id, callback); return id; },
+    clearTimeout(id) { timers.delete(id); },
+  };
+  vm.createContext(context);
+  vm.runInContext(generatedWorkerLifecycleSource(app), context, { filename: "generated-app-worker-lifecycle.js" });
+  context.request = {
+    mode: "items",
+    stateRevision: 7,
+    budget: 200,
+    stateSnapshot: { mode: "items" },
+  };
+  context.done = () => {};
+  vm.runInContext("solveService.request(request, done)", context);
+
+  assert.equal(workers.length, 1);
+  assert.deepEqual(revoked, []);
+  assert.equal(timers.size, 1);
+  vm.runInContext('solveService.cancel("page teardown")', context);
+
+  assert.equal(workers[0].terminated, true);
+  assert.deepEqual(revoked, ["blob:forge-worker-1"]);
+  assert.equal(timers.size, 0, "release must not retain the Blob URL through its backstop timer");
+  workers[0].emit("error");
+  assert.deepEqual(revoked, ["blob:forge-worker-1"], "release must be idempotent after a late event");
 });
 
 test("a Worker dependency change automatically rotates the app URL", () => {

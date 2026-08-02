@@ -1,7 +1,13 @@
 "use strict";
 
 const { randomUUID } = require("crypto");
+const fs = require("fs");
+const path = require("path");
 const { test, expect } = require("@playwright/test");
+
+const frozenV2 = JSON.parse(fs.readFileSync(
+  path.join(__dirname, "..", "fixtures", "solver-worker-v2-request.json"), "utf8"
+));
 
 if (process.env.PLAYWRIGHT_CHROME_PATH) {
   test.use({ launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROME_PATH } });
@@ -13,6 +19,27 @@ async function isolateRequestCounts(page) {
     value: randomUUID(),
     url: "http://127.0.0.1:4173/",
   }]);
+}
+
+function responseContract(message) {
+  return {
+    reqId: message.reqId,
+    generation: message.generation,
+    mode: message.mode,
+    stateRevision: message.stateRevision,
+    res: {
+      empty: message.res.empty,
+      mode: message.res.mode,
+      issues: message.res.issues,
+      targets: message.res.targets,
+      feasible: message.res.feasible,
+      plan: message.res.plan.map(line => ({
+        line: line.line,
+        max: line.max,
+        job: { label: line.job.label, kind: line.job.kind },
+      })),
+    },
+  };
 }
 
 test("the retired original Worker URL errors once and stays in the browser cache", async ({ page }) => {
@@ -60,14 +87,12 @@ test("the retired original Worker URL errors once and stays in the browser cache
 test("the frozen v2 Worker keeps current legacy tabs solving without dependency requests", async ({ page }) => {
   await isolateRequestCounts(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await expect(page.locator("#results")).toContainText("Line assignment");
   const requestCounts = () => page.evaluate(async () => {
     const response = await fetch("/__test/request-counts", { cache: "no-store" });
     return response.json();
   });
-  const solveWithV2 = () => page.evaluate(() => new Promise((resolve, reject) => {
+  const solveWithV2 = () => page.evaluate(request => new Promise((resolve, reject) => {
     const worker = new Worker("/js/solver.worker.v2.js");
-    const state = JSON.parse(JSON.stringify(S));
     const timeout = setTimeout(() => {
       worker.terminate();
       reject(new Error("v2 compatibility Worker timed out"));
@@ -83,23 +108,14 @@ test("the frozen v2 Worker keeps current legacy tabs solving without dependency 
       worker.terminate();
       reject(new Error(event.message || "v2 compatibility Worker failed"));
     };
-    worker.postMessage({
-      reqId: 93,
-      generation: 93,
-      mode: state.mode,
-      stateRevision: eval("stateRevision"),
-      state,
-      budget: state.solveBudget,
-      stab: {},
-    });
-  }));
+    worker.postMessage(request);
+  }), frozenV2.request);
 
   const first = await solveWithV2();
-  expect(first).toMatchObject({ reqId: 93, generation: 93, mode: "items" });
-  expect(first.res).toBeTruthy();
+  expect(responseContract(first)).toEqual(frozenV2.response);
   const afterFirstSolve = await requestCounts();
   const second = await solveWithV2();
-  expect(second.res).toBeTruthy();
+  expect(responseContract(second)).toEqual(frozenV2.response);
   const afterSecondSolve = await requestCounts();
   expect(afterFirstSolve["/js/solver.worker.v2.js"] || 0).toBeGreaterThan(0);
   expect(afterSecondSolve["/js/solver.worker.v2.js"], "v2 reuse must stay in the browser cache")

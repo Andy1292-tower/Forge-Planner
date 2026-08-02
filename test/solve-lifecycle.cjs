@@ -36,10 +36,12 @@ function lifecycleHarness() {
       this.url = url;
       this.messages = [];
       this.terminated = false;
+      this.releaseCalls = 0;
       workers.push(this);
     }
     postMessage(message) { this.messages.push(message); }
     terminate() { this.terminated = true; }
+    __forgeRelease() { this.releaseCalls += 1; }
     emitMessage(data) { if (this.onmessage) this.onmessage({ data }); }
     emitError(message = "worker failed") {
       if (this.onerror) this.onerror({ message, preventDefault() {} });
@@ -169,6 +171,7 @@ test("a superseded Worker's late error cannot take over the newer request", () =
   const workerA = harness.workers[0];
   harness.callRequest(request("items", 2, "B"), result => painted.push(result.marker || result.mode));
   const workerB = harness.workers[1];
+  assert.equal(workerA.releaseCalls, 1);
 
   workerA.emitError("late A failure");
   harness.flushTimers();
@@ -191,6 +194,7 @@ test("cancel invalidates the callback, clears fallback work, and terminates only
   harness.flushTimers();
 
   assert.equal(worker.terminated, true);
+  assert.equal(worker.releaseCalls, 1);
   assert.deepEqual(painted, []);
   assert.equal(cancelled.generation, 2);
   assert.equal(cancelled.active, false);
@@ -225,6 +229,7 @@ test("an owned Worker failure preserves the generation and callback through sync
 
   worker.emitError("load failed");
   const failed = harness.status();
+  assert.equal(worker.releaseCalls, 1);
   assert.equal(failed.generation, generation);
   assert.equal(failed.active, true);
   assert.equal(failed.fallbackActive, true);
@@ -280,6 +285,26 @@ test("a completed idle Worker is reused with the current stability snapshot", ()
   assert.equal(harness.elements.solveOverlay.hidden, false);
   worker.emitMessage(workerResponse(worker, { res: { mode: "items", marker: "B" } }, 1));
   assert.deepEqual(painted, ["A", "B"]);
+});
+
+test("a completed idle Worker's late error cannot create a failure or fallback", () => {
+  const harness = lifecycleHarness();
+  const painted = [];
+  harness.callRequest(request("items", 1, "A"), result => painted.push(result.marker));
+  const worker = harness.workers[0];
+  worker.emitMessage(workerResponse(worker, { res: { mode: "items", marker: "A" } }));
+
+  assert.deepEqual(painted, ["A"]);
+  assert.equal(harness.status().active, false);
+  assert.equal(harness.status().workerBusy, false);
+  worker.emitError("late failure after delivery");
+
+  const afterError = harness.status();
+  assert.equal(afterError.workerOwned, true);
+  assert.equal(afterError.workerFailures, 0);
+  assert.equal(afterError.fallbackActive, false);
+  assert.equal(worker.terminated, false);
+  assert.equal(harness.elements.solveFallback.hidden, true);
 });
 
 test("a response whose echoed mode or revision disagrees cannot paint the current request", () => {

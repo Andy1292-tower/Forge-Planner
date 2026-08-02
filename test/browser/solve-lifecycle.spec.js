@@ -9,13 +9,21 @@ if (process.env.PLAYWRIGHT_CHROME_PATH) {
 async function installControllableWorker(page) {
   await page.addInitScript(() => {
     window.__controlledWorkers = [];
+    window.__revokedWorkerUrls = [];
+    const revokeObjectURL = URL.revokeObjectURL.bind(URL);
+    URL.revokeObjectURL = url => {
+      window.__revokedWorkerUrls.push(String(url));
+      return revokeObjectURL(url);
+    };
     window.Worker = class ControlledWorker {
       constructor(url) {
         this.url = String(url);
         this.messages = [];
         this.terminated = false;
+        this.listeners = { message: [], error: [] };
         window.__controlledWorkers.push(this);
       }
+      addEventListener(type, listener) { this.listeners[type].push(listener); }
       postMessage(message) { this.messages.push(structuredClone(message)); }
       terminate() { this.terminated = true; }
     };
@@ -30,20 +38,24 @@ async function emitWorkerMessage(page, workerIndex, messageIndex, body) {
   await page.evaluate(({ workerIndex, messageIndex, body }) => {
     const worker = window.__controlledWorkers[workerIndex];
     const sent = worker.messages[messageIndex];
-    worker.onmessage({ data: {
+    const event = { data: {
       reqId: sent.reqId,
       generation: sent.generation,
       mode: sent.mode,
       stateRevision: sent.stateRevision,
       ...body,
-    } });
+    } };
+    worker.listeners.message.forEach(listener => listener(event));
+    worker.onmessage(event);
   }, { workerIndex, messageIndex, body });
 }
 
 async function emitWorkerError(page, workerIndex, message = "controlled Worker failure") {
   await page.evaluate(({ workerIndex, message }) => {
     const worker = window.__controlledWorkers[workerIndex];
-    worker.onerror({ message, preventDefault() {} });
+    const event = { message, preventDefault() {} };
+    worker.listeners.error.forEach(listener => listener(event));
+    worker.onerror(event);
   }, { workerIndex, message });
 }
 
@@ -201,6 +213,28 @@ test("Worker failure falls back accessibly, then a later request retries and rec
   expect(await page.evaluate(() => solveService.status().workerFailures)).toBe(0);
 });
 
+test("a completed idle Worker's late error does not expose fallback or start cooldown", async ({ page }) => {
+  await installControllableWorker(page);
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await waitForWorkers(page, 1);
+
+  await emitWorkerMessage(page, 0, 0, { error: "controlled completed request" });
+  await expect(page.locator("#solveOverlay")).toHaveJSProperty("hidden", true);
+  expect(await page.evaluate(() => solveService.status().active)).toBe(false);
+
+  await emitWorkerError(page, 0, "late failure after delivery");
+
+  expect(await page.evaluate(() => solveService.status())).toMatchObject({
+    active: false,
+    workerOwned: true,
+    workerBusy: false,
+    workerFailures: 0,
+    fallbackActive: false,
+  });
+  expect(await page.evaluate(() => window.__controlledWorkers[0].terminated)).toBe(false);
+  await expect(page.locator("#solveFallback")).toBeHidden();
+});
+
 test("entering Manual after fallback clears the inactive fallback notice", async ({ page }) => {
   await installControllableWorker(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
@@ -227,6 +261,8 @@ test("page teardown fully cancels the owned Worker and overlay", async ({ page }
   await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide")));
 
   expect(await page.evaluate(() => window.__controlledWorkers[0].terminated)).toBe(true);
+  expect(await page.evaluate(() => window.__revokedWorkerUrls))
+    .toEqual([await page.evaluate(() => window.__controlledWorkers[0].url)]);
   expect(await page.evaluate(() => solveService.status().active)).toBe(false);
   await expect(page.locator("#solveOverlay")).toHaveJSProperty("hidden", true);
 });

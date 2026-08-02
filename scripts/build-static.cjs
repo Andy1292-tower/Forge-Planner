@@ -96,12 +96,19 @@ function __forgeCreateSolverWorker(){
   try{
     const created=new Worker(objectUrl);
     let released=false;
-    const release=()=>{if(!released){released=true;URL.revokeObjectURL(objectUrl);}};
+    let releaseTimer=null;
+    const release=()=>{
+      if(released)return;
+      released=true;
+      if(releaseTimer!==null){clearTimeout(releaseTimer);releaseTimer=null;}
+      URL.revokeObjectURL(objectUrl);
+    };
+    created.__forgeRelease=release;
     if(typeof created.addEventListener==="function"){
       created.addEventListener("message",release,{once:true});
       created.addEventListener("error",release,{once:true});
-      setTimeout(release,60000);
-    }else setTimeout(release,0);
+      releaseTimer=setTimeout(release,60000);
+    }else releaseTimer=setTimeout(release,0);
     return created;
   }catch(error){URL.revokeObjectURL(objectUrl);throw error;}
 }

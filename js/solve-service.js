@@ -31,7 +31,10 @@ const solveService=(()=>{
   }
   function terminateOwned(){
     const owned=worker;worker=null;workerBusy=false;
-    if(owned)try{owned.terminate();}catch(error){}
+    if(owned){
+      try{owned.terminate();}catch(error){}
+      try{if(typeof owned.__forgeRelease==="function")owned.__forgeRelease();}catch(error){}
+    }
   }
   function clearFallbackTimer(){
     if(fallbackTimer!==null){clearTimeout(fallbackTimer);fallbackTimer=null;}
@@ -97,6 +100,7 @@ const solveService=(()=>{
     owned.onerror=event=>{
       if(owned!==worker)return;
       if(event&&typeof event.preventDefault==="function")event.preventDefault();
+      if(!workerBusy||callback===null||!isCurrent(generation))return;
       workerFailed(owned,generation,(event&&event.message)||"Worker failed");
     };
   }
