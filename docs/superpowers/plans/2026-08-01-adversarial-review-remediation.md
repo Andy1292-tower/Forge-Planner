@@ -47,7 +47,7 @@ Use a fresh `codex/` worktree branch for each merge unit. Parallel research and 
 | 1 | Task 1, then Tasks 2–3 | Merge the state boundary first; security and solve-lifecycle work may then run in parallel worktrees with serialized integration |
 | 2 | Task 3F, then Tasks 4–7 | Land the Worker/release follow-up first. Solver corrections can be independent if each owns separate functions/tests; one integration review after all four |
 | 3 | Tasks 8–10 | Field, dialog, and accessibility foundations; serialize shared markup/events changes |
-| 4 | Task 11A; approval; Tasks 11B–11D; then Task 12 | Land P1 geometry first, then approved system composition, then onboarding/IA; one UI integration agent |
+| 4 | Task 11A checkpoint only | The owner accepted and released the checkpoint as the final UI scope for this pass. Do not implement Tasks 11B–11D or Task 12 without a new explicit request. |
 | 5 | Tasks 13–14, then Task 15, then Task 16 | Resilience and release engineering may run in parallel where safe; documentation follows Task 14 and settled behavior, then final verification runs after integration |
 
 Each task follows this handoff:
@@ -64,11 +64,11 @@ The checkpoint minors remain assigned and must not disappear merely because thei
 
 | Deferred minor | Owning task |
 | --- | --- |
-| Recovery dismissal restores Import focus rather than the exact invoker | Task 12 dialog/import-flow integration; recheck in Task 16 |
+| Recovery dismissal restores Import focus rather than the exact invoker | Task 16 targeted regression; no UI redesign |
 | An owned but idle reused Worker can report an error as an active failure | Task 3F |
-| Dialog cleanup can overwrite a pre-existing `inert` state | Task 11C dense-dialog integration; recheck in Task 16 |
-| Skip-link destination suppresses a visible focus indicator | Task 11B visual/focus composition; recheck in Task 16 |
-| Visual CI step is unnamed and `test:browser` duplicates `visual-layout` | Task 11D deterministic visual gate |
+| Dialog cleanup can overwrite a pre-existing `inert` state | Task 16 targeted regression; no dialog redesign |
+| Skip-link destination suppresses a visible focus indicator | Task 16 targeted regression; preserve the checkpoint composition |
+| Visual CI step is unnamed and `test:browser` duplicates `visual-layout` | Task 14 CI/release wiring |
 
 ## Standard Verification Gate
 
@@ -529,6 +529,8 @@ The three `alternativeMinusSelected*` fields are `alternative - selected`; a neg
 
 ## Task 11: Repair Visual Regressions and Establish the Visual System
 
+> **Owner scope correction (2026-08-02):** Merge unit 11A was reviewed, approved, released on `main`, and is the final UI checkpoint for this remediation pass. Merge units 11B–11D below are retained only as historical review notes and must not be implemented unless the owner makes a new explicit request. Preserve the checkpoint's design and continue with code, resilience, release, documentation, and audit work.
+
 **Priority:** P1 responsive regressions / P2 visual system
 
 **Overall dependencies:** Task 0 and Task 9. Merge unit 11A may begin after Task 9 and must serialize overlaps with Task 10; units 11B–11D also depend on Tasks 8–10 and the visual approval gate.
@@ -609,6 +611,8 @@ The three `alternativeMinusSelected*` fields are `alternative - selected`; a neg
 
 ## Task 12: Redesign First-Run and Mobile Task Flow Without Hiding Power
 
+> **Owner scope correction (2026-08-02):** Deferred outside this remediation pass. The approved UI checkpoint is complete; do not reopen onboarding, navigation, header, dialog, or visual composition work without a new explicit request.
+
 **Priority:** P2 UX
 
 **Depends on:** Tasks 8–10 and completion of Task 11A–11D
@@ -640,20 +644,26 @@ The three `alternativeMinusSelected*` fields are `alternative - selected`; a neg
 
 **Priority:** P3 resilience/performance
 
-**Depends on:** Tasks 1 and 3
+**Depends on:** Tasks 1, 3, 3F, and 8 on the emergency-resynced current-build baseline
 
 **Files:**
 
 - Create: `test/browser/persistence.spec.js`
+- Modify: `test/solve-lifecycle.cjs`
+- Modify: `test/browser/solve-lifecycle.spec.js`
 - Modify: `js/events.js`
 - Modify: `js/results.js`
 - Modify: `js/solve-service.js`
+- Modify: `scripts/build-static.cjs` and `test/static-asset-build.cjs` only if the exact production Worker-constructor replacement seam changes
 
-- [ ] RED: edit a target/price/margin and reload within 500ms; current value is lost.
-- [ ] Add a cheap persistence debounce independent of the solve debounce; flush pending persistence on `pagehide` and when visibility becomes hidden.
-- [ ] Do not launch an expensive solve merely to persist.
-- [ ] Remove synchronous `optimizeProjectTop()` from `renderProgress()`. Consume a current cached project result or request it through the solve service.
-- [ ] Add a deliberately slow fake solve through the explicit current-solver factory/test hook established in Task 3F and assert Progress remains responsive. Do not replace the global `Worker`, bypass `solveService`, or couple persistence tests to the permanent v2 compatibility endpoint.
+- [ ] RED: toggle a Shopping-list Project disclosure and tear down/reload before any unrelated save; `_open` is accepted schema-v2 state but is currently lost because the handler mutates without persistence. Also prove a dedicated persistence timer can write accepted state without calling `doSolve()`, `renderResults()`, or `solveService.request()`. Preserve Task 8's immediate-save behavior for price, margin, and other numeric drafts with explicit non-regression coverage.
+- [ ] Add one owned 100ms persistence debounce (`schedulePersist` / `persistNow` / `flushPersist`) independent of the 500ms solve debounce. Audit accepted GUI mutations: each must save immediately, schedule persistence, or be explicitly documented as non-persisted transient UI. The disclosure path must schedule persistence. Existing solve-scheduling handlers must no longer depend on a future solve for durability; avoid duplicate delayed writes when `doSolve()` or an immediate save already persisted the same revision.
+- [ ] Lifecycle ordering is exact: `pagehide` flushes pending persistence, clears `renderT` so delayed `doSolve()` cannot restart work, then cancels `solveService`; `visibilitychange` while hidden flushes persistence only and does not otherwise cancel, reschedule, or manufacture a solve. Do not launch an expensive solve merely to persist.
+- [ ] Remove synchronous `optimizeProjectTop()` from `renderProgress()`. Cache a Project result with a solve-equivalence key derived from the exact dispatched state snapshot after removing only documented display-only `planStart` and each Project's `_open`; do not use raw global `stateRevision`, because those display mutations legitimately advance it without changing solver output. Any other state change invalidates the cache. Use that same solve-equivalence key at `solveService`'s in-flight currentness boundary (or an exactly equivalent solve-relevant revision): display-only `_open`/`planStart` mutations during a slow solve must not discard an otherwise authoritative result, while every solver-relevant mutation must still reject or supersede it.
+- [ ] Opening Progress with a current key consumes the cache immediately. A Progress completion mutation schedules the existing normal debounced Project render/solve before repainting its counts, shows a truthful pending ETA while the key is stale, and refreshes an open Progress dialog when that one authoritative result returns. Opening an already-stale Project result after an explicit-Resimulate crafter-line edit must show out-of-date ETA and must not silently solve. Never start a second Progress request that supersedes the authoritative main Project request.
+- [ ] Add the missing explicit current-solver factory/test hook inside `solveService`. Its default factory must retain the exact source constructor seam consumed by `scripts/build-static.cjs`, or the builder and static graph tests must be updated in the same task. Changing the factory must cancel/release any owned Worker before replacement.
+- [ ] Add a deliberately slow fake solve through that factory hook and assert Progress opens and accepts completion controls without main-thread optimization or global `Worker` replacement; when the controlled result returns, both the main Project result and still-open Progress summary become current. Cover both sides of in-flight currentness explicitly: `_open` and `planStart` changes during the slow solve still accept its result, while a solver-relevant mutation rejects/supersedes it. Do not bypass `solveService` or couple persistence tests to either permanent compatibility endpoint.
+- [ ] Preserve the explicit-Resimulate policy for crafter-line edits: persistence may flush independently, but this task must not turn those edits back into automatic expensive solves.
 
 ## Task 14: Finish Release Upgrade Coverage and Subpath Safety on the Hashed Build
 
@@ -690,7 +700,7 @@ The three `alternativeMinusSelected*` fields are `alternative - selected`; a neg
 - [ ] Extend `test/serve-built.cjs`/release smoke so the identical generated bytes are served and exercised at both roots, including the generated Blob Worker and CSP.
 - [ ] On one origin, warm release A, swap to an intentionally incompatible release B, reload without clearing cache, and assert HTML revalidation selects only B assets, the Worker solves, and no console/network error occurs. Exercise explicit `Cache-Control`, ETag, and Last-Modified behavior; use a fresh origin only as a control.
 - [ ] Assert old permanent Worker endpoints retain their exact bytes/cache behavior across the A→B swap while current page/Worker changes rotate only content-addressed assets.
-- [ ] Verify CSS/font graph changes independently rotate their affected hashes after Task 11D extends the builder.
+- [ ] Verify current CSS/image graph changes independently rotate their affected hashes. If the existing externally hosted fonts are self-hosted solely for deterministic release/privacy, preserve the checkpoint's exact font families and appearance, register them here, and do not treat that plumbing as authorization for visual redesign.
 - [ ] Document the exact GUI-friendly local preview plus cold-cache and warm-upgrade release verification steps. Do not replace the existing build architecture while filling these gaps.
 
 ## Task 15: Align Remaining Product Trust Copy and Operator Documentation
@@ -714,7 +724,7 @@ The three `alternativeMinusSelected*` fields are `alternative - selected`; a neg
 - [ ] Replace “almost certainly optimal” with “best found within this time budget; not proven optimal.”
 - [ ] Remove the absolute sustainability guarantee when May-work margin is active.
 - [ ] Explain dedicated-item Credits, visible stability tradeoff, project warm-up/buffer semantics, and mined-resource hard caps.
-- [ ] Document Task 11’s self-hosted font assets/licenses. Keep the existing no-backend/local-first privacy scope precise; if any analytics remains after Task 14, document it visibly and verify planner state never enters requests.
+- [ ] Document any Task 14 self-hosted copies of the checkpoint's existing font assets and their licenses. Keep the existing no-backend/local-first privacy scope precise; if any analytics remains after Task 14, document it visibly and verify planner state never enters requests.
 - [ ] Clarify only the still-missing README/operator facts: export scope, solve-time behavior, browser support, persistence/recovery, schema version, and the final Task 14 preview/release commands. Reference the existing hashed-build and permanent Worker compatibility contract rather than redesigning or duplicating it.
 - [ ] Document catalog source/version/update procedure, add structural/semantic validation to the explicit `test/run-all.cjs` list, and prove `npm test` executes it.
 - [ ] Document supported mechanics and intentional non-findings so future agents do not “correct” pre-produced Bits, independent mined budgets, or explicit Resimulate.
@@ -737,7 +747,7 @@ The three `alternativeMinusSelected*` fields are `alternative - selected`; a neg
 - [ ] Run exhaustive-oracle small solver cases, parity, scale through 12 lines, catalog validation, and all legacy migration fixtures.
 - [ ] Run the frozen v2-era compatibility request/response fixture and byte/checksum assertions for both permanent Worker endpoints; confirm current features execute only in the generated Blob Worker.
 - [ ] Browser-test every mode/dialog at 1440×900, 1024×768, 900×760, 881×900, 880×900, 768×1024, 640×900, 561×900, 560×900, 430×932, 390×844, 375×812, and 320×568; capture representative screenshots.
-- [ ] Keyboard-test the complete first-run → data entry → solve → project → progress → export path.
+- [ ] Keyboard-test the existing checkpoint flow from fresh load → data entry → solve → project → progress → export; no new onboarding or navigation design is implied.
 - [ ] Inspect console, failed requests, CSP violations, storage mutations, Worker lifecycle, and outbound request payloads.
 - [ ] Instrument current Blob Worker creation/termination and prove every early termination immediately revokes its object URL, an idle late error cannot activate fallback, and repeated solves add no Worker/dependency HTTP requests.
 - [ ] Confirm no body-level horizontal overflow, zero-inset result state, title/tab/status collision, project-name collapse, label/input overlap, offscreen dialog action, or stretched sparse recipe card; intentional tables must identify and contain horizontal scrolling.
@@ -757,7 +767,7 @@ The three `alternativeMinusSelected*` fields are `alternative - selected`; a neg
 - Gel “best,” Credits warnings, Credits timing, and Project stability copy match the actual algorithms.
 - All primary workflows are keyboard-operable, named, focus-safe, contrast-compliant, and usable at 320px.
 - Every primary surface has approved spacing/hierarchy at the breakpoint matrix; the document never hides horizontal overflow, and wide components own visible, operable scrolling.
-- Visual tokens and semantic component classes own layout; new arbitrary inline presentation is blocked outside the documented dynamic allowlist.
+- The released Task 11A geometry remains intact across the viewport matrix; no post-checkpoint visual redesign or new visual-system requirement is implied.
 - One command runs the deterministic suite; CI, browser/Worker, accessibility, and release-upgrade gates are green.
 - Existing saves and intentional mechanics are preserved.
 - Final documentation describes observed behavior without stronger guarantees than the code can support.
