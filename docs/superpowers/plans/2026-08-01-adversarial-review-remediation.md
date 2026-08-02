@@ -707,7 +707,7 @@ The three `alternativeMinusSelected*` fields are `alternative - selected`; a neg
 
 **Priority:** P2/P3 trust
 
-**Depends on:** behavior decisions from Tasks 4–7 and 14
+**Depends on:** settled behavior from Tasks 4–7, 13, and 14
 
 **Files:**
 
@@ -719,14 +719,15 @@ The three `alternativeMinusSelected*` fields are `alternative - selected`; a neg
 - Modify: `test/run-all.cjs`
 - Modify: `README.md`
 - Modify: `index.html`
-- Modify: `js/results.js`
+- Modify: `js/catalog.js` only to add truthful machine-readable provenance/update metadata; do not invent a source version or date
+- Modify: `js/results.js` only if a focused regression proves a remaining inaccurate runtime claim
 
-- [ ] Replace “almost certainly optimal” with “best found within this time budget; not proven optimal.”
-- [ ] Remove the absolute sustainability guarantee when May-work margin is active.
-- [ ] Explain dedicated-item Credits, visible stability tradeoff, project warm-up/buffer semantics, and mined-resource hard caps.
+- [ ] Preserve the already-correct bounded-result, May-work, dedicated Credits, stability, warm-up/buffer, and mined-resource runtime copy. Do not churn released UI copy or layout unless a focused regression proves a remaining false claim. The live trust-copy corrections are currently limited to the stale absolute guarantee/privacy language in `index.html` and the unqualified solver/export/speed claims in `README.md`.
+- [ ] Replace any remaining unqualified “optimal” claim with “best found within this time budget; not proven optimal,” and remove any absolute sustainability guarantee when May-work margin is active.
+- [ ] Explain dedicated-item Credits, visible stability tradeoff, project warm-up/buffer semantics, and mined-resource hard caps in the operator/contract documentation without duplicating already-correct runtime copy.
 - [ ] Document any Task 14 self-hosted copies of the checkpoint's existing font assets and their licenses. Keep the existing no-backend/local-first privacy scope precise; if any analytics remains after Task 14, document it visibly and verify planner state never enters requests.
 - [ ] Clarify only the still-missing README/operator facts: export scope, solve-time behavior, browser support, persistence/recovery, schema version, and the final Task 14 preview/release commands. Reference the existing hashed-build and permanent Worker compatibility contract rather than redesigning or duplicating it.
-- [ ] Document catalog source/version/update procedure, add structural/semantic validation to the explicit `test/run-all.cjs` list, and prove `npm test` executes it.
+- [ ] Document catalog source/version/update procedure and provenance. If no trusted game export/version/date/hash is available, record it explicitly as unknown/unverified rather than inventing provenance. Add structural/semantic validation to the explicit `test/run-all.cjs` list and prove `npm test` executes it: category IDs are unique and descriptor-valid; names and levels are nonempty and well-formed; item references are known; quantities are finite, nonnegative, and within the supported range; duplicate cost items within a level are rejected where that is the catalog contract; and every `PROJECT_PREREQS` key/target resolves to a catalog entry. Do not encode unverified game-value assertions.
 - [ ] Document supported mechanics and intentional non-findings so future agents do not “correct” pre-produced Bits, independent mined budgets, or explicit Resimulate.
 - [ ] Keep release documentation bounded to operator behavior: clean build, GUI-friendly preview, cold/warm verification, immutable asset expectations, and rollback. The deterministic builder and cache headers remain executable truth.
 
@@ -739,14 +740,21 @@ The three `alternativeMinusSelected*` fields are `alternative - selected`; a neg
 **Files:**
 
 - Create: `docs/reviews/YYYY-MM-DD-hardening-release-verification.md`
-- Update tests/docs only when the verification discovers a real gap
+- Modify: `js/events.js`
+- Modify: `js/dialogs.js`
+- Modify: `css/styles.css`
+- Modify: `test/browser/state-recovery.spec.js` (or the existing owned recovery spec)
+- Modify: `test/browser/dialogs.spec.js`
+- Modify: `test/browser/accessibility.spec.js`
+- Update other tests/docs only when verification discovers a real gap
 
 - [ ] Start from the current live application save or an exported copy supplied for release verification; never overwrite it during testing.
+- [ ] Before the broad audit, close the three owned checkpoint minors with targeted RED/GREEN regressions and no composition, navigation, dialog, or token redesign: recovery dismissal restores the connected exact invoker (or its replacement by stable ID), with a safe Import fallback only for boot-time recovery; nested-dialog cleanup snapshots and restores each body child's pre-existing `inert` state; and activating the skip link focuses `#plannerMain` with a visible non-`none` focus indicator in normal and forced-colors modes.
 - [ ] Run the Standard Verification Gate twice: cold cache and warm upgrade cache.
-- [ ] Replay every review counterexample: project transient, Worker/Manual race, import attack corpus, corrupt storage, Gel packing, Credits warnings/deadline, stability disclosure, invalid notation, empty Credits copy, stale price nudge, and stale dialog scroll.
+- [ ] Re-run and record the existing named counterexample coverage—including project transients, Worker/Manual lifecycle, import attack corpus, state schema/recovery, Gel exactness, Credits contracts, stability UI, numeric fields, compatibility/static build, dialogs, and visual layout—instead of duplicating it. Add new tests only for Task 13 persistence/Progress, Task 14 release upgrade/subpath, Task 15 catalog validation, the three targeted minors above, or a newly reproduced gap.
 - [ ] Run exhaustive-oracle small solver cases, parity, scale through 12 lines, catalog validation, and all legacy migration fixtures.
 - [ ] Run the frozen v2-era compatibility request/response fixture and byte/checksum assertions for both permanent Worker endpoints; confirm current features execute only in the generated Blob Worker.
-- [ ] Browser-test every mode/dialog at 1440×900, 1024×768, 900×760, 881×900, 880×900, 768×1024, 640×900, 561×900, 560×900, 430×932, 390×844, 375×812, and 320×568; capture representative screenshots.
+- [ ] Browser-test every mode/dialog at 1440×900, 1024×768, 900×760, 881×900, 880×900, 768×1024, 640×900, 561×900, 560×900, 430×932, 390×844, 375×812, and 320×568; capture representative screenshots. Current visual coverage samples only a subset of mode×viewport combinations, so the release matrix itself must be complete. Any repair is limited to a reproduced regression against the released checkpoint tokens/geometry and is not authorization for redesign.
 - [ ] Keyboard-test the existing checkpoint flow from fresh load → data entry → solve → project → progress → export; no new onboarding or navigation design is implied.
 - [ ] Inspect console, failed requests, CSP violations, storage mutations, Worker lifecycle, and outbound request payloads.
 - [ ] Instrument current Blob Worker creation/termination and prove every early termination immediately revokes its object URL, an idle late error cannot activate fallback, and repeated solves add no Worker/dependency HTTP requests.
