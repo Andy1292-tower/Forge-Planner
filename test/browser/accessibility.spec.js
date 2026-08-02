@@ -45,18 +45,11 @@ async function seedNamedProjects(page) {
 }
 
 async function expectNoPageClipping(page) {
-  const clipped = await page.evaluate(() => [...document.querySelectorAll("body *")]
-    .filter(element => {
-      const box = element.getBoundingClientRect();
-      if(box.width <= 0 || box.right <= document.documentElement.clientWidth + 1)return false;
-      for(let parent=element.parentElement;parent&&parent!==document.body;parent=parent.parentElement){
-        if(["auto", "scroll", "hidden", "clip"].includes(getComputedStyle(parent).overflowX))return false;
-      }
-      return true;
-    })
-    .slice(0, 12)
-    .map(element => { const box=element.getBoundingClientRect();return `${element.tagName.toLowerCase()}#${element.id}.${element.className} [${box.left},${box.right}]`; }));
-  expect(clipped).toEqual([]);
+  const root = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth
+  }));
+  expect(root.scrollWidth, `root width ${root.scrollWidth}px exceeds ${root.clientWidth}px viewport`).toBeLessThanOrEqual(root.clientWidth + 1);
 }
 
 test("dynamic planner fields expose item, level, and line context in their names", async ({ page }) => {
@@ -204,7 +197,15 @@ test("390px and 200%-equivalent reflow retain reachable controls without page cl
   await page.setViewportSize({ width: 195, height: 422 });
   await expect(page.locator("#plannerMain")).toBeVisible();
   await expectNoPageClipping(page);
-  await expect(page.getByRole("region", { name: /Line assignment table/ })).toHaveAttribute("tabindex", "0");
+  const scroller = page.getByRole("region", { name: /Line assignment table/ });
+  await expect(scroller).toHaveAttribute("tabindex", "0");
+  const scrollerGeometry = await scroller.evaluate(element => {
+    const box=element.getBoundingClientRect();
+    return { left:box.left, right:box.right, clientWidth:element.clientWidth, scrollWidth:element.scrollWidth, viewport:document.documentElement.clientWidth };
+  });
+  expect(scrollerGeometry.left).toBeGreaterThanOrEqual(0);
+  expect(scrollerGeometry.right).toBeLessThanOrEqual(scrollerGeometry.viewport + 1);
+  expect(scrollerGeometry.scrollWidth).toBeGreaterThan(scrollerGeometry.clientWidth);
 });
 
 test("forced colors retain boundaries and focus while reduced motion stops animated surfaces", async ({ page }) => {

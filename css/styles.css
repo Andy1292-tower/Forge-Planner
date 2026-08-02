@@ -561,7 +561,7 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 }
 @media(max-width:260px){
   .wrap{padding:12px 8px 40px}
-  .brand h1{font-size:28px}
+  .brand h1{font-size:25px;letter-spacing:.8px}
   .tools{grid-template-columns:minmax(0,1fr)}
   .card>.head{align-items:stretch;flex-direction:column}
   .globals,.line-fields{grid-template-columns:minmax(0,1fr)}
