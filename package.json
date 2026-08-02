@@ -10,8 +10,5 @@
     "test:parity": "node test/run-parity.cjs",
     "test": "npm run check:syntax && npm run test:node",
     "test:release": "npm run build && node scripts/release-smoke.cjs"
-  },
-  "devDependencies": {
-    "http-server": "14.1.1"
   }
 }
