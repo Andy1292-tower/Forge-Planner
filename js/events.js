@@ -26,119 +26,171 @@ document.getElementById("btnResim").addEventListener("click",resimulate);
 
 document.getElementById("lines").addEventListener("change",e=>{
   const li=e.target.dataset.line;
-  if(li!==undefined){S.lines[+li].max=+e.target.value;markStale();}
+  if(li!==undefined){mutateState(st=>{st.lines[+li].max=+e.target.value;});markStale();}
 });
 document.getElementById("lines").addEventListener("input",e=>{
   const si=e.target.dataset.spx, ti=e.target.dataset.turbo;
-  if(si!==undefined){S.lines[+si].spx=num(e.target.value)||1;refreshLineNotes();markStale();}
-  if(ti!==undefined){S.lines[+ti].turbo=Math.max(0,num(e.target.value)||0);refreshLineNotes();markStale();}
+  if(si!==undefined){mutateState(st=>{st.lines[+si].spx=num(e.target.value)||1;});refreshLineNotes();markStale();}
+  if(ti!==undefined){mutateState(st=>{st.lines[+ti].turbo=Math.max(0,num(e.target.value)||0);});refreshLineNotes();markStale();}
 });
 document.getElementById("lines").addEventListener("keydown",e=>{
   if(e.key==="Enter"){e.preventDefault();resimulate();}
 });
 document.getElementById("lines").addEventListener("click",e=>{
   const d=e.target.dataset.del;
-  if(d!==undefined){if(S.lines.length>1){S.lines.splice(+d,1);S.manual.splice(+d,1);syncManual(S);renderLines();markStale();}}
+  if(d!==undefined&&S.lines.length>1){mutateState(st=>{st.lines.splice(+d,1);st.manual.splice(+d,1);syncManual(st);});renderLines();markStale();}
 });
 document.getElementById("btnAddLine").addEventListener("click",()=>{
-  S.lines.push({max:512,spx:1,turbo:0});syncManual(S);renderLines();markStale();
+  mutateState(st=>{st.lines.push({max:512,spx:1,turbo:0});syncManual(st);});renderLines();markStale();
 });
 
 document.getElementById("margin").addEventListener("input",e=>{
-  S.margin=num(e.target.value)||0;
+  mutateState(st=>{st.margin=num(e.target.value)||0;});
   document.getElementById("marginv").textContent=fmt(S.margin,1)+"%";
   scheduleSolve();
 });
 
 document.getElementById("maxTurbo").addEventListener("input",e=>{
-  S.maxTurbo=Math.max(0,num(e.target.value)||0);
+  mutateState(st=>{st.maxTurbo=Math.max(0,num(e.target.value)||0);});
   refreshLineNotes();markStale();
 });
 document.getElementById("dupe").addEventListener("input",e=>{
-  S.dupe=Math.max(0,num(e.target.value)||0);
+  mutateState(st=>{st.dupe=Math.max(0,num(e.target.value)||0);});
   markStale();
 });
 
 document.getElementById("targets").addEventListener("change",e=>{
   const tg=e.target.dataset.tg;
-  if(tg){S.targets[tg].on=e.target.checked;renderTargets();scheduleSolve();}
+  if(tg){mutateState(st=>{st.targets[tg].on=e.target.checked;});renderTargets();scheduleSolve();}
 });
 document.getElementById("targets").addEventListener("input",e=>{
   const w=e.target.dataset.w;
-  if(w){S.targets[w].w=+e.target.value;e.target.parentElement.querySelector(".pv").textContent=e.target.value;scheduleSolve();}
+  if(w){mutateState(st=>{st.targets[w].w=+e.target.value;});e.target.parentElement.querySelector(".pv").textContent=e.target.value;scheduleSolve();}
 });
 
 document.getElementById("recipes").addEventListener("input",e=>{
   const d=e.target.dataset;if(!d.res)return;
   const v=num(e.target.value);
-  if(d.fld==="baseT")S.baseTime[d.res]=(v==null||v<=0)?1:v;
-  else if(d.fld==="cost")S.prodCost[d.res][d.in][+d.lv]=v;
+  mutateState(st=>{
+    if(d.fld==="baseT")st.baseTime[d.res]=(v==null||v<=0)?1:v;
+    else if(d.fld==="cost")st.prodCost[d.res][d.in][+d.lv]=v;
+  });
   scheduleSolve();
 });
 
 /* export / import / reset */
+const stateRecovery=document.getElementById("stateRecovery");
+const stateRecoveryReason=document.getElementById("stateRecoveryReason");
+const stateRecoveryDownload=document.getElementById("stateRecoveryDownload");
+let _recoveryDownload=null;
+function showStateRecovery(raw,reason,file){
+  if(typeof raw==="string")quarantineRejectedState(raw,reason);
+  _recoveryDownload=file||((typeof raw==="string")?new Blob([raw],{type:"application/json"}):null);
+  if(stateRecoveryDownload)stateRecoveryDownload.disabled=!_recoveryDownload;
+  if(stateRecoveryReason)stateRecoveryReason.textContent=String(reason||"The planner started with safe defaults. Your rejected save was kept unchanged.");
+  if(stateRecovery){stateRecovery.hidden=false;stateRecovery.focus();}
+}
+function dismissStateRecovery(restoreFocus=true){
+  if(stateRecovery)stateRecovery.hidden=true;
+  if(restoreFocus){const button=document.getElementById("btnImport");if(button)button.focus();}
+}
+stateRecoveryDownload.addEventListener("click",()=>{
+  if(!_recoveryDownload)return;
+  const url=URL.createObjectURL(_recoveryDownload),a=document.createElement("a");
+  a.href=url;a.download="forge-planner-rejected-save.json";a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),0);
+});
+document.getElementById("stateRecoveryImport").addEventListener("click",()=>document.getElementById("fileImport").click());
+document.getElementById("stateRecoveryDismiss").addEventListener("click",()=>dismissStateRecovery(true));
+
 document.getElementById("btnExport").addEventListener("click",()=>{
-  const blob=new Blob([JSON.stringify(S,null,2)],{type:"application/json"});
+  const result=validateAndMigrate(S);
+  if(!result.ok){showStateRecovery(null,"The current build contains a value that cannot be exported safely: "+result.errors.join("; "));return;}
+  const blob=new Blob([JSON.stringify(result.state,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);
   a.download="forge-build.json";a.click();URL.revokeObjectURL(a.href);
 });
 document.getElementById("btnImport").addEventListener("click",()=>document.getElementById("fileImport").click());
 document.getElementById("fileImport").addEventListener("change",e=>{
   const f=e.target.files[0];if(!f)return;
+  e.target.value="";
+  if(f.size>STATE_LIMITS.maxBytes){
+    showStateRecovery(null,"That import is too large to open safely. Your current build was not changed.",f);
+    return;
+  }
   const r=new FileReader();
-  r.onload=()=>{try{const d=JSON.parse(r.result);
-    if(d.lines&&d.prodCost&&d.targets){S=normalize(d);renderAll();save();}
-    else alert("That doesn't look like a Forge Planner build file.");
-  }catch(err){alert("Could not read that file.");}};
-  r.readAsText(f);e.target.value="";
+  r.onload=()=>{
+    const raw=String(r.result==null?"":r.result);let candidate;
+    try{candidate=JSON.parse(raw);}catch(error){showStateRecovery(raw,"Could not read that file because it is not valid JSON.",f);return;}
+    solveService.cancel("Import is replacing accepted state");
+    const result=applyImportedState(candidate,renderAll,()=>solveService.cancel("Import rollback is restoring accepted state"));
+    if(!result.ok){showStateRecovery(raw,result.errors.join("; "),f);return;}
+    dismissStateRecovery(false);flashSaved();
+  };
+  r.onerror=()=>showStateRecovery(null,"Could not read that file. Your current build was not changed.",f);
+  r.readAsText(f);
 });
 document.getElementById("btnReset").addEventListener("click",()=>{
   if(confirm("Reset everything to defaults? This clears your entered stats."))
-    {S=defaults();renderAll();save();}
+    {solveService.cancel("Reset is replacing accepted state");commitState(defaults());renderAll();save();dismissStateRecovery(false);}
 });
 
 /* ---------- mode switch ---------- */
 function renderModeSwitch(){
-  document.querySelectorAll("#modesw button").forEach(b=>b.classList.toggle("on",b.dataset.mode===(S.mode||"items")));
+  document.querySelectorAll("#modesw button").forEach(b=>{
+    const selected=b.dataset.mode===(S.mode||"items");
+    b.classList.toggle("on",selected);
+    b.setAttribute("aria-pressed",selected?"true":"false");
+  });
 }
 document.getElementById("modesw").addEventListener("click",e=>{
   const m=e.target.dataset.mode;if(!m||m===S.mode)return;
-  S.mode=m;renderModeSwitch();save();renderResults();
+  mutateState(st=>{st.mode=m;});renderModeSwitch();save();renderResults();
 });
 
 /* ---------- sell prices ---------- */
+function itemTypeTag(it){
+  const kind=KIND[it]==="raw"?["raw","raw"]:KIND[it]==="fin"?["fin","assembly"]:["pr","craft"];
+  return domElement("span","ty "+kind[0],kind[1]);
+}
+function renderItemValueRows(box,textMap,numberMap,dataName,placeholder,inputMode){
+  const nodes=[];
+  const addGroup=(label,items,first)=>{
+    nodes.push(domElement("div","price-grp"+(first?" first":""),label));
+    items.forEach(it=>{
+      const row=domElement("div","price-row");
+      const name=domElement("div","pnm");
+      name.append(itemTypeTag(it),document.createTextNode(it));
+      const value=numberMap[it];
+      const text=textMap[it]!=null?textMap[it]:(value!=null?formatGameNum(value,4):"");
+      const accessibleName=dataName==="price"?`${it} sell price per unit`
+        :dataName==="forgie"?`${it} Lil' Forgie production per hour`
+        :`${it} current inventory`;
+      row.append(name,domTextInput(dataName,it,text,{placeholder,inputMode,accessibleName}));
+      nodes.push(row);
+    });
+  };
+  addGroup("Finished & crafted",PRODUCTS,true);
+  addGroup("Raw materials",RAWS,false);
+  box.replaceChildren(...nodes);
+}
 function renderPrices(){
   const box=document.getElementById("priceRows");
-  const tag=it=>KIND[it]==="raw"?'<span class="ty raw">raw</span>':KIND[it]==="fin"?'<span class="ty fin">assembly</span>':'<span class="ty pr">craft</span>';
-  const rows=(items)=>items.map(it=>{
-    const v=S.sellPrice[it];
-    const txt=S.priceText[it]!=null?S.priceText[it]:(v!=null?formatGameNum(v,4):"");
-    return `<div class="price-row">
-      <div class="pnm">${tag(it)}${it}</div>
-      <input type="text" data-price="${it}" placeholder="—" value="${txt}">
-    </div>`;
-  }).join("");
-  box.innerHTML=`<div class="price-grp first">Finished &amp; crafted</div>${rows(PRODUCTS)}<div class="price-grp">Raw materials</div>${rows(RAWS)}`;
+  renderItemValueRows(box,S.priceText,S.sellPrice,"price","—","");
 }
-const priceModal=document.getElementById("priceModal");
-function openPrices(){renderPrices();priceModal.hidden=false;}
-function closePrices(){priceModal.hidden=true;}
-document.getElementById("btnPrices").addEventListener("click",openPrices);
-document.getElementById("priceClose").addEventListener("click",closePrices);
-document.getElementById("priceDone").addEventListener("click",closePrices);
-priceModal.addEventListener("click",e=>{if(e.target===priceModal)closePrices();});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!priceModal.hidden)closePrices();});
+const priceDialog=dialogController.register({root:document.getElementById("priceModal"),panel:document.querySelector("#priceModal .modal"),opener:document.getElementById("btnPrices"),initialFocus:()=>document.querySelector("#priceRows input"),onOpen:renderPrices});
+function openPrices(invoker){priceDialog.open(invoker);}
+function closePrices(){priceDialog.close();}
 document.getElementById("priceClear").addEventListener("click",()=>{
   if(!confirm("Clear all sell prices?"))return;
-  [...RAWS,...PRODUCTS].forEach(it=>{S.sellPrice[it]=null;S.priceText[it]="";});
+  mutateState(st=>{[...RAWS,...PRODUCTS].forEach(it=>{st.sellPrice[it]=null;st.priceText[it]="";});});
   renderPrices();scheduleSolve();
 });
 document.getElementById("priceRows").addEventListener("input",e=>{
   const it=e.target.dataset.price;if(!it)return;
   const raw=e.target.value;
-  S.priceText[it]=raw;
   const v=parseGameNum(raw);
-  S.sellPrice[it]=v;
+  mutateState(st=>{st.priceText[it]=raw;st.sellPrice[it]=v;});
   const prev=document.querySelector(`[data-prev="${it}"]`);
   if(prev)prev.textContent=v!=null?"= "+fmt(v):(raw.trim()?"unrecognized":"");
   scheduleSolve();
@@ -147,93 +199,45 @@ document.getElementById("priceRows").addEventListener("input",e=>{
 /* ---------- Lil' Forgie supply modal ---------- */
 function renderForgie(){
   const box=document.getElementById("forgieRows");
-  const tag=it=>KIND[it]==="raw"?'<span class="ty raw">raw</span>':KIND[it]==="fin"?'<span class="ty fin">assembly</span>':'<span class="ty pr">craft</span>';
-  const rows=(items)=>items.map(it=>{
-    const v=S.forgie[it];
-    const txt=S.forgieText[it]!=null?S.forgieText[it]:(v!=null?formatGameNum(v,4):"");
-    return `<div class="price-row">
-      <div class="pnm">${tag(it)}${it}</div>
-      <input type="text" inputmode="decimal" data-forgie="${it}" placeholder="—" value="${txt}">
-    </div>`;
-  }).join("");
-  box.innerHTML=`<div class="price-grp first">Finished &amp; crafted</div>${rows(PRODUCTS)}<div class="price-grp">Raw materials</div>${rows(RAWS)}`;
+  renderItemValueRows(box,S.forgieText,S.forgie,"forgie","—","decimal");
 }
-const forgieModal=document.getElementById("forgieModal");
-function openForgie(){renderForgie();forgieModal.hidden=false;}
-function closeForgie(){forgieModal.hidden=true;}
-document.getElementById("btnForgie").addEventListener("click",openForgie);
-document.getElementById("forgieClose").addEventListener("click",closeForgie);
-document.getElementById("forgieDone").addEventListener("click",closeForgie);
-forgieModal.addEventListener("click",e=>{if(e.target===forgieModal)closeForgie();});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!forgieModal.hidden)closeForgie();});
+const forgieDialog=dialogController.register({root:document.getElementById("forgieModal"),panel:document.querySelector("#forgieModal .modal"),opener:document.getElementById("btnForgie"),initialFocus:()=>document.querySelector("#forgieRows input"),onOpen:renderForgie});
+function openForgie(invoker){forgieDialog.open(invoker);}
+function closeForgie(){forgieDialog.close();}
 document.getElementById("forgieClear").addEventListener("click",()=>{
   if(!confirm("Clear all Lil' Forgie supply rates?"))return;
-  [...RAWS,...PRODUCTS].forEach(it=>{S.forgie[it]=null;S.forgieText[it]="";});
+  mutateState(st=>{[...RAWS,...PRODUCTS].forEach(it=>{st.forgie[it]=null;st.forgieText[it]="";});});
   renderForgie();scheduleSolve();
 });
 document.getElementById("forgieRows").addEventListener("input",e=>{
   const it=e.target.dataset.forgie;if(!it)return;
   const raw=e.target.value;
-  S.forgieText[it]=raw;
-  S.forgie[it]=parseGameNum(raw);
+  mutateState(st=>{st.forgieText[it]=raw;st.forgie[it]=parseGameNum(raw);});
   scheduleSolve();
 });
 
 /* ---------- mined resources modal ---------- */
-const minedModal=document.getElementById("minedModal");
 const btnMined=document.getElementById("btnMined");
-let minedInvoker=null;
-function minedFocusable(){
-  return [...minedModal.querySelectorAll('button,input,select,textarea,a[href],[tabindex]:not([tabindex="-1"])')]
-    .filter(el=>!el.disabled&&!el.hidden&&el.tabIndex!==-1);
-}
-function openMined(e){
-  minedInvoker=(e&&e.currentTarget)||document.activeElement||btnMined;
-  renderMinedResources();minedModal.hidden=false;
-  const focusables=minedFocusable();
-  const firstIncome=focusables.find(el=>el.dataset&&el.dataset.minedIncome);
-  (firstIncome||focusables[0]||minedModal).focus();
-}
-function closeMined(){
-  minedModal.hidden=true;
-  const restore=minedInvoker||btnMined;minedInvoker=null;
-  if(restore&&typeof restore.focus==="function")restore.focus();
-}
-btnMined.addEventListener("click",openMined);
-document.getElementById("minedClose").addEventListener("click",closeMined);
-document.getElementById("minedDone").addEventListener("click",closeMined);
-minedModal.addEventListener("click",e=>{if(e.target===minedModal)closeMined();});
-minedModal.addEventListener("input",e=>{
+const minedDialog=dialogController.register({root:document.getElementById("minedModal"),panel:document.querySelector("#minedModal .modal"),opener:btnMined,initialFocus:()=>document.getElementById("minedVespium"),onOpen:renderMinedResources});
+function openMined(invoker){minedDialog.open(invoker);}
+function closeMined(){minedDialog.close();}
+document.getElementById("minedModal").addEventListener("input",e=>{
   const resource=e.target.dataset.minedIncome;if(!resource)return;
-  setMinedIncome(resource,e.target.value);
+  mutateState(()=>{setMinedIncome(resource,e.target.value);});
   renderMinedResources();scheduleSolve();
-});
-document.addEventListener("keydown",e=>{
-  if(minedModal.hidden)return;
-  if(e.key==="Escape"){e.preventDefault();closeMined();return;}
-  if(e.key!=="Tab")return;
-  const focusables=minedFocusable();if(!focusables.length){e.preventDefault();return;}
-  const first=focusables[0],last=focusables[focusables.length-1],active=document.activeElement;
-  if(e.shiftKey&&(active===first||!focusables.includes(active))){e.preventDefault();last.focus();}
-  else if(!e.shiftKey&&(active===last||!focusables.includes(active))){e.preventDefault();first.focus();}
 });
 
 /* ---------- settings modal (max solve time) ---------- */
-const settingsModal=document.getElementById("settingsModal");
 const solveBudgetInput=document.getElementById("solveBudget");
 const solveBudgetVal=document.getElementById("solveBudgetVal");
 function fmtBudget(ms){return (ms/1000).toFixed(ms<1000?1:(ms%1000?1:0))+" s";}
 function syncBudgetUI(){const ms=Math.max(200,Math.min(60000,num(S.solveBudget)||2000));
   if(solveBudgetInput)solveBudgetInput.value=(ms/1000);if(solveBudgetVal)solveBudgetVal.textContent=fmtBudget(ms);}
-function openSettings(){syncBudgetUI();settingsModal.hidden=false;}
-function closeSettings(){settingsModal.hidden=true;}
-document.getElementById("btnSettings").addEventListener("click",openSettings);
-document.getElementById("settingsClose").addEventListener("click",closeSettings);
-document.getElementById("settingsDone").addEventListener("click",closeSettings);
-settingsModal.addEventListener("click",e=>{if(e.target===settingsModal)closeSettings();});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!settingsModal.hidden)closeSettings();});
+const settingsDialog=dialogController.register({root:document.getElementById("settingsModal"),panel:document.querySelector("#settingsModal .modal"),opener:document.getElementById("btnSettings"),initialFocus:solveBudgetInput,onOpen:syncBudgetUI});
+function openSettings(invoker){settingsDialog.open(invoker);}
+function closeSettings(){settingsDialog.close();}
 if(solveBudgetInput)solveBudgetInput.addEventListener("input",()=>{
-  S.solveBudget=Math.round(Math.max(0.2,Math.min(15,Number(solveBudgetInput.value)||2))*1000);
+  mutateState(st=>{st.solveBudget=Math.round(Math.max(0.2,Math.min(15,Number(solveBudgetInput.value)||2))*1000);});
   if(solveBudgetVal)solveBudgetVal.textContent=fmtBudget(S.solveBudget);save();});
 
 /* ---------- collapsible crafting-data panel ---------- */
@@ -276,7 +280,7 @@ function initCalib(){
       computed=sec*spd/mult;
       out.innerHTML=`base time = ${fmt(sec,2)} × ${fmt(spd,2)} ÷ ${fmt(mult,2)} = <b style="color:var(--amber)">${fmt(computed,2)}s</b><br>`+
         `currently set for ${item}: ${fmt(cur,2)}s &nbsp;·&nbsp; which predicts a ${fmt(predict,2)}s craft at these settings`+
-        (Math.abs(predict-sec)/sec>0.15?` <span style="color:#e0a">— off by ${fmt(Math.abs(predict-sec)/sec*100,0)}%, worth setting</span>`:` <span style="color:#6c9">— matches, base looks right</span>`);
+        (Math.abs(predict-sec)/sec>0.15?` <span class="calib-warning">— off by ${fmt(Math.abs(predict-sec)/sec*100,0)}%, worth setting</span>`:` <span style="color:#6c9">— matches, base looks right</span>`);
       apply.disabled=false;
     }else{
       computed=null;apply.disabled=true;
@@ -286,7 +290,7 @@ function initCalib(){
   ["cbItem","cbComp","cbSpeed","cbSec"].forEach(id=>document.getElementById(id).addEventListener("input",recalc));
   apply.addEventListener("click",()=>{
     if(computed==null)return;
-    S.baseTime[it.value]=computed; save(); renderRecipes(); renderResults(); recalc();
+    mutateState(st=>{st.baseTime[it.value]=computed;}); save(); renderRecipes(); renderResults(); recalc();
   });
   recalc();
 }
@@ -298,21 +302,23 @@ function renderAll(){
   document.getElementById("maxTurbo").value=S.maxTurbo||0;
   document.getElementById("dupe").value=S.dupe||0;
 }
-renderAll();
+const initialState=initializeState(renderAll);
 initCalib();
 document.getElementById("saveind").textContent="auto-saves locally";
+if(initialState.recovery)showStateRecovery(initialState.recovery.raw,initialState.recovery.reason);
 function costRow(pi,li,ci,c){
+  const projectName=(S.projects[pi]&&S.projects[pi].name)||`Project ${pi+1}`;
   const opts=ALLITEMS.map(it=>`<option value="${it}" ${it===c.item?"selected":""}>${it}</option>`).join("");
   const txt=(c.qty!=null&&isFinite(c.qty))?formatGameNum(c.qty,4):"";
   return `<div class="cost-row">
-    <select data-citem="${pi}_${li}_${ci}">${opts}</select>
-    <input type="text" placeholder="qty" value="${txt}" data-cqty="${pi}_${li}_${ci}">
-    <button class="iconbtn" data-cdel="${pi}_${li}_${ci}" title="Remove item">×</button>
+    <select data-citem="${pi}_${li}_${ci}" aria-label="${htmlAttribute(projectName)} level ${li+1} item ${ci+1}">${opts}</select>
+    <input type="text" placeholder="qty" value="${txt}" data-cqty="${pi}_${li}_${ci}" aria-label="${htmlAttribute(projectName)} level ${li+1} ${htmlAttribute(c.item)} quantity">
+    <button class="iconbtn" data-cdel="${pi}_${li}_${ci}" title="Remove item" aria-label="Remove ${htmlAttribute(c.item)} from ${htmlAttribute(projectName)} level ${li+1}">×</button>
   </div>`;
 }
 // Read-only cost lines for one level of a catalog project (non-zero costs only).
 function catLevelView(L){
-  const parts=(L.costs||[]).filter(c=>c.qty).map(c=>`${escapeAttr(c.item)} <b class="mono">${formatGameNum(c.qty,2)}</b>`);
+  const parts=(L.costs||[]).filter(c=>c.qty).map(c=>`${htmlText(c.item)} <b class="mono">${formatGameNum(c.qty,2)}</b>`);
   return parts.length?parts.join(' <span style="color:var(--ink3)">·</span> '):'<span style="color:var(--ink3)">free</span>';
 }
 // Compact +1/−1 level-completion stepper for a shopping-list card (issue #87 item 3). Uses the same
@@ -320,9 +326,9 @@ function catLevelView(L){
 function projStepper(p,pi){
   const {span}=projSpan(p),done=projDone(p);
   return `<span class="lvl-step" title="Levels completed — increment as you finish them">
-    <button class="iconbtn" data-psdec="${pi}" ${done<=0?"disabled":""} title="Mark one fewer level done">−</button>
+    <button class="iconbtn" data-psdec="${pi}" ${done<=0?"disabled":""} title="Mark one fewer level done" aria-label="Mark one fewer ${htmlAttribute(p.name)} level complete">−</button>
     <span class="mono proj-mini" title="levels completed">${done}/${span}</span>
-    <button class="iconbtn" data-psinc="${pi}" ${done>=span?"disabled":""} title="Mark one more level done">+</button>
+    <button class="iconbtn" data-psinc="${pi}" ${done>=span?"disabled":""} title="Mark one more level done" aria-label="Mark one more ${htmlAttribute(p.name)} level complete">+</button>
   </span>`;
 }
 // Compact card for a catalog-sourced project: name is a fixed label, costs are
@@ -331,24 +337,26 @@ function projStepper(p,pi){
 function compactProjCard(p,pi){
   const lv=p.levels||[];
   const view=lv.map((L,li)=>`<div class="cat-lvl"><span class="cat-lvl-n">Lv ${li+1}</span><span>${catLevelView(L)}</span></div>`).join("");
-  const desc=p.description?`<span class="cat-card-desc">${escapeAttr(p.description)}</span>`:"";
+  const desc=p.description?`<span class="cat-card-desc">${htmlText(p.description)}</span>`:"";
   const single=lv.length<=1;
   const range=single
     ? `<span class="proj-lvls one">1 level</span>`
-    : `<span class="proj-lvls">lv <input type="number" min="1" max="${lv.length}" step="1" data-pfrom="${pi}" value="${p.from||1}"> → <input type="number" min="1" max="${lv.length}" step="1" data-pto="${pi}" value="${p.to||lv.length}"></span>`;
+    : `<span class="proj-lvls">lv <input type="number" min="1" max="${lv.length}" step="1" data-pfrom="${pi}" value="${p.from||1}" aria-label="${htmlAttribute(p.name)} starting level"> → <input type="number" min="1" max="${lv.length}" step="1" data-pto="${pi}" value="${p.to||lv.length}" aria-label="${htmlAttribute(p.name)} ending level"></span>`;
+  const bodyId=`projectBody${pi}`;
+  const disclosureLabel=`${p._open?"Hide":"Show"} level costs for ${htmlAttribute(p.name)}`;
   return `<div class="proj cat-card ${p._open?"open":""}" data-pi="${pi}">
     <div class="proj-h">
-      <span class="pchev" data-ptoggle="${pi}" title="Show level costs">▸</span>
-      <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule">
-      <span class="pname-static">${escapeAttr(p.name)}${desc}</span>
+      <button type="button" class="pchev" data-ptoggle="${pi}" title="${disclosureLabel}" aria-label="${disclosureLabel}" aria-expanded="${p._open?"true":"false"}" aria-controls="${bodyId}">▸</button>
+      <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule" aria-label="Include ${htmlAttribute(p.name)} in schedule">
+      <span class="pname-static">${htmlText(p.name)}${desc}</span>
       <div class="proj-tools">
-        <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–">order</label>
+        <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–" aria-label="${htmlAttribute(p.name)} schedule order">order</label>
         ${range}
         ${projStepper(p,pi)}
-        <button class="iconbtn" data-pdel="${pi}" title="Remove from list">×</button>
+        <button class="iconbtn" data-pdel="${pi}" title="Remove from list" aria-label="Remove ${htmlAttribute(p.name)} from shopping list">×</button>
       </div>
     </div>
-    <div class="proj-b"><div class="cat-lvls">${view}</div></div>
+    <div class="proj-b" id="${bodyId}"><div class="cat-lvls">${view}</div></div>
   </div>`;
 }
 function projCard(p,pi){
@@ -357,42 +365,37 @@ function projCard(p,pi){
   const lvlHtml=lv.map((L,li)=>{
     const rows=(L.costs||[]).map((c,ci)=>costRow(pi,li,ci,c)).join("");
     return `<div class="lvl-card">
-      <div class="lvl-h"><span>Level ${li+1}</span><span class="lvl-del" data-pdellvl="${pi}" data-li="${li}" title="Delete level">✕ remove</span></div>
+      <div class="lvl-h"><span>Level ${li+1}</span><button type="button" class="lvl-del" data-pdellvl="${pi}" data-li="${li}" title="Delete level" aria-label="Delete ${htmlAttribute(p.name)} level ${li+1}">✕ remove</button></div>
       ${rows||'<div class="proj-mini" style="margin-bottom:5px">No items — add one.</div>'}
       <button class="btn ghost proj-add-lvl" data-paddcost="${pi}" data-li="${li}">+ item</button>
     </div>`;
   }).join("");
+  const bodyId=`projectBody${pi}`;
+  const disclosureLabel=`${p._open?"Hide":"Show"} level costs for ${htmlAttribute(p.name)}`;
   return `<div class="proj ${p._open?"open":""}" data-pi="${pi}">
     <div class="proj-h">
-      <span class="pchev" data-ptoggle="${pi}">▸</span>
-      <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule">
-      <input type="text" class="pname" data-pname="${pi}" value="${escapeAttr(p.name)}" placeholder="Project name">
+      <button type="button" class="pchev" data-ptoggle="${pi}" aria-label="${disclosureLabel}" aria-expanded="${p._open?"true":"false"}" aria-controls="${bodyId}">▸</button>
+      <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule" aria-label="Include ${htmlAttribute(p.name)} in schedule">
+      <input type="text" class="pname" data-pname="${pi}" value="${htmlAttribute(p.name)}" placeholder="Project name" aria-label="Project name">
       <div class="proj-tools">
-        <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–">order</label>
-        <span class="proj-lvls">lv <input type="number" min="1" step="1" data-pfrom="${pi}" value="${p.from||1}"> → <input type="number" min="1" step="1" data-pto="${pi}" value="${p.to||lv.length||1}"></span>
+        <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–" aria-label="${htmlAttribute(p.name)} schedule order">order</label>
+        <span class="proj-lvls">lv <input type="number" min="1" step="1" data-pfrom="${pi}" value="${p.from||1}" aria-label="${htmlAttribute(p.name)} starting level"> → <input type="number" min="1" step="1" data-pto="${pi}" value="${p.to||lv.length||1}" aria-label="${htmlAttribute(p.name)} ending level"></span>
         ${projStepper(p,pi)}
-        <button class="iconbtn" data-pdup="${pi}" title="Duplicate" style="font-size:13px">⧉</button>
-        <button class="iconbtn" data-pdel="${pi}" title="Delete project">×</button>
+        <button class="iconbtn" data-pdup="${pi}" title="Duplicate" aria-label="Duplicate ${htmlAttribute(p.name)}" style="font-size:13px">⧉</button>
+        <button class="iconbtn" data-pdel="${pi}" title="Delete project" aria-label="Delete ${htmlAttribute(p.name)}">×</button>
       </div>
     </div>
-    <div class="proj-b">
+    <div class="proj-b" id="${bodyId}">
       ${lvlHtml}
-      <button class="btn ghost proj-add-lvl" data-paddlvl="${pi}" style="margin-top:2px">+ level</button>
+      <button class="btn ghost proj-add-lvl" data-paddlvl="${pi}" style="margin-top:2px" aria-label="Add level to ${htmlAttribute(p.name)}">+ level</button>
     </div>
   </div>`;
 }
 function renderInv(){
   const box=document.getElementById("invRows");
-  const tag=it=>KIND[it]==="raw"?'<span class="ty raw">raw</span>':KIND[it]==="fin"?'<span class="ty fin">assembly</span>':'<span class="ty pr">craft</span>';
-  const rows=(items)=>items.map(it=>{
-    const v=S.inventory[it];
-    const txt=S.inventoryText[it]!=null?S.inventoryText[it]:(v!=null?formatGameNum(v,4):"");
-    return `<div class="price-row"><div class="pnm">${tag(it)}${it}</div><input type="text" data-inv="${it}" placeholder="0" value="${txt}"></div>`;
-  }).join("");
-  box.innerHTML=`<div class="price-grp first">Finished &amp; crafted</div>${rows(PRODUCTS)}<div class="price-grp">Raw materials</div>${rows(RAWS)}`;
+  renderItemValueRows(box,S.inventoryText,S.inventory,"inv","0","");
 }
 function renderProjects(){
-  if(!S.projects)S.projects=[];
   const box=document.getElementById("projList");
   box.innerHTML=S.projects.length?S.projects.map((p,pi)=>projCard(p,pi)).join("")
     :`<div class="proj-mini" style="padding:6px 2px">No projects yet — add one to start building a schedule.</div>`;
@@ -401,8 +404,8 @@ function renderProjects(){
   renderInv();
   if(typeof renderCatalog==="function")renderCatalog();
 }
-document.getElementById("projSeqToggle").addEventListener("change",e=>{S.projectSeq=e.target.checked;renderProjects();save();scheduleSolve();});
-document.getElementById("projGateToggle").addEventListener("change",e=>{S.projectGate=!e.target.checked;save();scheduleSolve();});
+document.getElementById("projSeqToggle").addEventListener("change",e=>{mutateState(st=>{st.projectSeq=e.target.checked;});renderProjects();save();scheduleSolve();});
+document.getElementById("projGateToggle").addEventListener("change",e=>{mutateState(st=>{st.projectGate=!e.target.checked;});save();scheduleSolve();});
 
 /* ---------- project catalog (static, read-only source list) ---------- */
 const CATALOG=(typeof PROJECT_CATALOG!=="undefined"&&Array.isArray(PROJECT_CATALOG))?PROJECT_CATALOG:[];
@@ -411,10 +414,11 @@ const projectHasCat=catId=>(S.projects||[]).some(p=>p.catId===catId);
 function addCatalogProject(catId){
   const src=CATALOG.find(c=>c.catId===catId);
   if(!src||projectHasCat(catId))return;
-  S.projects.push({
-    id:newId(),catId:src.catId,name:src.name,description:src.description||"",
-    on:true,prio:null,from:1,to:src.levels.length||1,
-    levels:JSON.parse(JSON.stringify(src.levels)),_open:false
+  mutateState(st=>{st.projects.push({
+      id:newId(),catId:src.catId,name:src.name,description:src.description||"",
+      on:true,prio:null,from:1,to:src.levels.length||1,done:0,
+      levels:JSON.parse(JSON.stringify(src.levels)),_open:false
+    });
   });
   renderProjects();renderCatalog();save();scheduleSolve();
 }
@@ -427,10 +431,10 @@ function renderCatalog(){
   list.innerHTML=items.length?items.map(c=>{
     const has=projectHasCat(c.catId);
     const lvls=c.levels.length;
-    const meta=`${lvls} level${lvls===1?"":"s"}${c.description?" · "+escapeAttr(c.description):""}`;
+    const meta=`${lvls} level${lvls===1?"":"s"}${c.description?" · "+htmlText(c.description):""}`;
     return `<div class="cat-row${has?" added":""}">
-      <div class="cat-row-info"><span class="cat-row-name">${escapeAttr(c.name)}</span><span class="cat-row-meta">${meta}</span></div>
-      <button class="btn ${has?"ghost":"primary"} cat-add" data-cat-add="${escapeAttr(c.catId)}" ${has?"disabled":""}>${has?"Added":"Add"}</button>
+      <div class="cat-row-info"><span class="cat-row-name">${htmlText(c.name)}</span><span class="cat-row-meta">${meta}</span></div>
+      <button class="btn ${has?"ghost":"primary"} cat-add" data-cat-add="${htmlAttribute(c.catId)}" aria-label="${has?"Added":"Add"} ${htmlAttribute(c.name)}${has?"":" to shopping list"}" ${has?"disabled":""}>${has?"Added":"Add"}</button>
     </div>`;
   }).join(""):`<div class="proj-mini" style="padding:6px 2px">No matching projects.</div>`;
 }
@@ -442,58 +446,58 @@ if(catListEl)catListEl.addEventListener("click",e=>{
 const catSearchEl=document.getElementById("catSearch");
 if(catSearchEl)catSearchEl.addEventListener("input",e=>{catQuery=e.target.value;renderCatalog();});
 
-const projModal=document.getElementById("projModal");
-function openProjects(){renderProjects();renderCatalog();projModal.hidden=false;}
-function closeProjects(){projModal.hidden=true;}
-document.getElementById("btnProjects").addEventListener("click",openProjects);
-document.getElementById("projClose").addEventListener("click",closeProjects);
-document.getElementById("projDone").addEventListener("click",closeProjects);
-projModal.addEventListener("click",e=>{if(e.target===projModal)closeProjects();});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!projModal.hidden)closeProjects();});
+const projectsDialog=dialogController.register({root:document.getElementById("projModal"),panel:document.querySelector("#projModal .modal"),opener:document.getElementById("btnProjects"),initialFocus:()=>document.getElementById("projSeqToggle"),onOpen:()=>{renderProjects();renderCatalog();}});
+function openProjects(invoker){projectsDialog.open(invoker);}
+function closeProjects(){projectsDialog.close();}
 document.getElementById("projAdd").addEventListener("click",()=>{
-  S.projects.push({id:newId(),name:"New project",on:true,from:1,to:1,levels:[{costs:[]}],_open:true});
+  mutateState(st=>{st.projects.push({id:newId(),name:"New project",on:true,prio:null,from:1,to:1,done:0,levels:[{costs:[]}],_open:true});});
   renderProjects();save();scheduleSolve();
 });
 document.getElementById("projClear").addEventListener("click",()=>{
   if(!(S.projects||[]).length)return;
   if(!confirm("Remove all projects from the shopping list? This clears every added catalog project and custom project."))return;
-  S.projects=[];
+  mutateState(st=>{st.projects=[];});
   renderProjects();save();scheduleSolve();
 });
 document.getElementById("projInvClear").addEventListener("click",()=>{
   if(!confirm("Clear all inventory amounts?"))return;
-  ALLITEMS.forEach(it=>{S.inventory[it]=null;S.inventoryText[it]="";});
+  mutateState(st=>{ALLITEMS.forEach(it=>{st.inventory[it]=null;st.inventoryText[it]="";});});
   renderInv();scheduleSolve();
 });
 document.getElementById("projList").addEventListener("click",e=>{
   const t=e.target,g=a=>t.getAttribute(a);
   let v;
-  if((v=g("data-ptoggle"))!=null){S.projects[+v]._open=!S.projects[+v]._open;renderProjects();return;}
-  if((v=g("data-pdel"))!=null){if(confirm("Delete this project?")){S.projects.splice(+v,1);renderProjects();save();scheduleSolve();}return;}
-  if((v=g("data-pdup"))!=null){const c=JSON.parse(JSON.stringify(S.projects[+v]));c.id=newId();c.name=(c.name||"Project")+" copy";c._open=true;S.projects.splice(+v+1,0,c);renderProjects();save();scheduleSolve();return;}
-  if((v=g("data-paddlvl"))!=null){const p=S.projects[+v];p.levels.push({costs:[]});p.to=p.levels.length;renderProjects();save();scheduleSolve();return;}
-  if((v=g("data-pdellvl"))!=null){const pi=+v,li=+g("data-li"),p=S.projects[pi];p.levels.splice(li,1);if(p.levels.length===0)p.levels.push({costs:[]});if(p.to>p.levels.length)p.to=p.levels.length;if(p.from>p.levels.length)p.from=p.levels.length;renderProjects();save();scheduleSolve();return;}
-  if((v=g("data-paddcost"))!=null){const pi=+v,li=+g("data-li");S.projects[pi].levels[li].costs.push({item:PRODUCTS[0],qty:null});renderProjects();save();scheduleSolve();return;}
-  if((v=g("data-cdel"))!=null){const[pi,li,ci]=v.split("_").map(Number);S.projects[pi].levels[li].costs.splice(ci,1);renderProjects();save();scheduleSolve();return;}
+  if((v=g("data-ptoggle"))!=null){mutateState(st=>{st.projects[+v]._open=!st.projects[+v]._open;});renderProjects();const disclosure=document.querySelector(`[data-ptoggle="${v}"]`);if(disclosure)disclosure.focus();return;}
+  if((v=g("data-pdel"))!=null){if(confirm("Delete this project?")){mutateState(st=>{st.projects.splice(+v,1);});renderProjects();save();scheduleSolve();}return;}
+  if((v=g("data-pdup"))!=null){mutateState(st=>{const c=JSON.parse(JSON.stringify(st.projects[+v]));c.id=newId();c.name=(c.name||"Project")+" copy";c._open=true;st.projects.splice(+v+1,0,c);});renderProjects();save();scheduleSolve();return;}
+  if((v=g("data-paddlvl"))!=null){mutateState(st=>{const p=st.projects[+v];p.levels.push({costs:[]});p.to=p.levels.length;});renderProjects();save();scheduleSolve();return;}
+  if((v=g("data-pdellvl"))!=null){const pi=+v,li=+g("data-li");mutateState(st=>{const p=st.projects[pi];p.levels.splice(li,1);if(p.levels.length===0)p.levels.push({costs:[]});if(p.to>p.levels.length)p.to=p.levels.length;if(p.from>p.levels.length)p.from=p.levels.length;});renderProjects();save();scheduleSolve();return;}
+  if((v=g("data-paddcost"))!=null){const pi=+v,li=+g("data-li");mutateState(st=>{st.projects[pi].levels[li].costs.push({item:PRODUCTS[0],qty:null});});renderProjects();save();scheduleSolve();return;}
+  if((v=g("data-cdel"))!=null){const[pi,li,ci]=v.split("_").map(Number);mutateState(st=>{st.projects[pi].levels[li].costs.splice(ci,1);});renderProjects();save();scheduleSolve();return;}
   // +1/−1 level completion on a shopping-list card (issue #87 item 3) — clamped to the from→to span.
-  if((v=g("data-psinc"))!=null||(v=g("data-psdec"))!=null){const inc=g("data-psinc")!=null,p=S.projects[+v];if(!p)return;const {span}=projSpan(p);p.done=Math.max(0,Math.min(span,projDone(p)+(inc?1:-1)));renderProjects();save();scheduleSolve();return;}
+  if((v=g("data-psinc"))!=null||(v=g("data-psdec"))!=null){const inc=g("data-psinc")!=null,p=S.projects[+v];if(!p)return;mutateState(()=>{const {span}=projSpan(p);p.done=Math.max(0,Math.min(span,projDone(p)+(inc?1:-1)));});renderProjects();save();scheduleSolve();return;}
 });
 document.getElementById("projList").addEventListener("input",e=>{
   const t=e.target,g=a=>t.getAttribute(a);let v;
-  if((v=g("data-pname"))!=null){S.projects[+v].name=t.value;save();scheduleSolve();return;}
-  if((v=g("data-pfrom"))!=null){S.projects[+v].from=Math.max(1,Math.floor(num(t.value)||1));save();scheduleSolve();return;}
-  if((v=g("data-pto"))!=null){S.projects[+v].to=Math.max(1,Math.floor(num(t.value)||1));save();scheduleSolve();return;}
-  if((v=g("data-pprio"))!=null){const n=Math.floor(num(t.value));S.projects[+v].prio=(n>=1)?n:null;save();scheduleSolve();return;}
-  if((v=g("data-cqty"))!=null){const[pi,li,ci]=v.split("_").map(Number);S.projects[pi].levels[li].costs[ci].qty=parseGameNum(t.value);save();scheduleSolve();return;}
+  if((v=g("data-pname"))!=null){
+    mutateState(st=>{st.projects[+v].name=t.value;});
+    const disclosure=t.closest(".proj").querySelector("[data-ptoggle]");
+    if(disclosure){const label=`${S.projects[+v]._open?"Hide":"Show"} level costs for ${t.value.trim()||"untitled project"}`;disclosure.setAttribute("aria-label",label);disclosure.title=label;}
+    save();scheduleSolve();return;
+  }
+  if((v=g("data-pfrom"))!=null){mutateState(st=>{st.projects[+v].from=Math.max(1,Math.floor(num(t.value)||1));});save();scheduleSolve();return;}
+  if((v=g("data-pto"))!=null){mutateState(st=>{st.projects[+v].to=Math.max(1,Math.floor(num(t.value)||1));});save();scheduleSolve();return;}
+  if((v=g("data-pprio"))!=null){const n=Math.floor(num(t.value));mutateState(st=>{st.projects[+v].prio=(n>=1)?n:null;});save();scheduleSolve();return;}
+  if((v=g("data-cqty"))!=null){const[pi,li,ci]=v.split("_").map(Number);mutateState(st=>{st.projects[pi].levels[li].costs[ci].qty=parseGameNum(t.value);});save();scheduleSolve();return;}
 });
 document.getElementById("projList").addEventListener("change",e=>{
   const t=e.target,g=a=>t.getAttribute(a);let v;
-  if((v=g("data-pon"))!=null){S.projects[+v].on=t.checked;save();scheduleSolve();return;}
-  if((v=g("data-citem"))!=null){const[pi,li,ci]=v.split("_").map(Number);S.projects[pi].levels[li].costs[ci].item=t.value;save();scheduleSolve();return;}
+  if((v=g("data-pon"))!=null){mutateState(st=>{st.projects[+v].on=t.checked;});save();scheduleSolve();return;}
+  if((v=g("data-citem"))!=null){const[pi,li,ci]=v.split("_").map(Number);mutateState(st=>{st.projects[pi].levels[li].costs[ci].item=t.value;});save();scheduleSolve();return;}
 });
 document.getElementById("invRows").addEventListener("input",e=>{
   const it=e.target.getAttribute("data-inv");if(!it)return;
-  S.inventoryText[it]=e.target.value;S.inventory[it]=parseGameNum(e.target.value);save();scheduleSolve();
+  mutateState(st=>{st.inventoryText[it]=e.target.value;st.inventory[it]=parseGameNum(e.target.value);});save();scheduleSolve();
 });
 
 /* ---------- Progress tracker modal ---------- */
@@ -530,13 +534,15 @@ function renderProgress(){
     const chips=[];
     for(let L=from;L<=to;L++){
       const idx=L-from, isDone=idx<done, isNext=idx===done;
-      chips.push(`<button class="prog-lvl${isDone?" done":""}${isNext?" next":""}" data-pid="${escapeAttr(p.id)}" data-lvl="${L}" title="${isDone?"Completed — click to undo":"Mark completed through level "+L}"><span class="pl-box"></span>Lv ${L}</button>`);
+      const projectName=p.name||"Project";
+      const chipLabel=isDone?`Undo ${projectName} level ${L} completion`:`Mark ${projectName} completed through level ${L}`;
+      chips.push(`<button class="prog-lvl${isDone?" done":""}${isNext?" next":""}" data-pid="${htmlAttribute(p.id)}" data-lvl="${L}" aria-label="${htmlAttribute(chipLabel)}" title="${htmlAttribute(chipLabel)}"><span class="pl-box"></span>Lv ${L}</button>`);
     }
-    const desc=p.description?`<span class="prog-desc">${escapeAttr(p.description)}</span>`:"";
+    const desc=p.description?`<span class="prog-desc">${htmlText(p.description)}</span>`:"";
     return `<div class="prog-proj${complete?" complete":""}">
       <div class="prog-proj-h">
-        <div class="prog-proj-name">${escapeAttr(p.name||"Project")}${complete?' <span class="pill craft" style="font-size:9px">done</span>':""}${desc}</div>
-        <div class="prog-proj-meta"><span class="mono">${done}/${span}</span>${done>0?`<button class="prog-reset" data-preset="${escapeAttr(p.id)}" title="Reset this project's progress">reset</button>`:""}</div>
+        <div class="prog-proj-name">${htmlText(p.name||"Project")}${complete?' <span class="pill craft" style="font-size:9px">done</span>':""}${desc}</div>
+        <div class="prog-proj-meta"><span class="mono">${done}/${span}</span>${done>0?`<button class="prog-reset" data-preset="${htmlAttribute(p.id)}" aria-label="Reset ${htmlAttribute(p.name||"Project")} progress" title="Reset ${htmlAttribute(p.name||"Project")} progress">reset</button>`:""}</div>
       </div>
       <div class="prog-lvls">${chips.join("")}</div>
     </div>`;
@@ -545,16 +551,12 @@ function renderProgress(){
 function setProjDone(pid,newDone){
   const p=(S.projects||[]).find(x=>x.id===pid);if(!p)return;
   const {span}=projSpan(p);
-  p.done=Math.max(0,Math.min(span,Math.floor(newDone)));
+  mutateState(()=>{p.done=Math.max(0,Math.min(span,Math.floor(newDone)));});
   save();renderProgress();scheduleSolve();
 }
-const progModal=document.getElementById("progModal");
-function openProgress(){renderProgress();progModal.hidden=false;}
-function closeProgress(){progModal.hidden=true;}
-document.getElementById("progClose").addEventListener("click",closeProgress);
-document.getElementById("progDone").addEventListener("click",closeProgress);
-progModal.addEventListener("click",e=>{if(e.target===progModal)closeProgress();});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!progModal.hidden)closeProgress();});
+const progressDialog=dialogController.register({root:document.getElementById("progModal"),panel:document.querySelector("#progModal .modal"),opener:null,initialFocus:()=>document.getElementById("progDone"),onOpen:renderProgress});
+function openProgress(invoker){progressDialog.open(invoker);}
+function closeProgress(){progressDialog.close();}
 document.getElementById("progList").addEventListener("click",e=>{
   const reset=e.target.closest("[data-preset]");
   if(reset){setProjDone(reset.getAttribute("data-preset"),0);return;}
@@ -569,7 +571,7 @@ document.getElementById("progList").addEventListener("click",e=>{
 document.getElementById("progResetAll").addEventListener("click",()=>{
   if(!(S.projects||[]).some(p=>projDone(p)>0))return;
   if(!confirm("Reset completed-level progress on all projects?"))return;
-  (S.projects||[]).forEach(p=>{p.done=0;});
+  mutateState(st=>{(st.projects||[]).forEach(p=>{p.done=0;});});
   save();renderProgress();scheduleSolve();
 });
 
@@ -588,17 +590,18 @@ function stepsProjControls(){
   if(!active.length)return "";
   const rows=active.map(p=>{
     const {from,to,span}=projSpan(p),done=projDone(p),complete=done>=span;
+    const name=p.name||"Project";
     const badge=complete?' <span class="pill craft" style="font-size:9px">done</span>':"";
     return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--line)">
-      <input type="checkbox" data-spon="${escapeAttr(p.id)}" ${p.on?"checked":""} title="Include in the plan">
-      <span style="flex:1 1 130px;min-width:110px;${complete?"color:var(--ink3)":""}">${escapeAttr(p.name||"Project")}${badge}</span>
-      <span class="proj-mini" style="white-space:nowrap">lv <input type="number" min="1" step="1" data-spfrom="${escapeAttr(p.id)}" value="${from}" style="width:46px"> → <input type="number" min="1" step="1" data-spto="${escapeAttr(p.id)}" value="${to}" style="width:46px"></span>
+      <input type="checkbox" data-spon="${htmlAttribute(p.id)}" ${p.on?"checked":""} aria-label="Include ${htmlAttribute(name)} in the plan" title="Include ${htmlAttribute(name)} in the plan">
+      <span style="flex:1 1 130px;min-width:110px;${complete?"color:var(--ink3)":""}">${htmlText(name)}${badge}</span>
+      <span class="proj-mini" style="white-space:nowrap">lv <input type="number" min="1" step="1" data-spfrom="${htmlAttribute(p.id)}" value="${from}" aria-label="${htmlAttribute(name)} starting level" style="width:46px"> → <input type="number" min="1" step="1" data-spto="${htmlAttribute(p.id)}" value="${to}" aria-label="${htmlAttribute(name)} ending level" style="width:46px"></span>
       <span class="lvl-step" title="Mark levels done one at a time">
-        <button class="iconbtn" data-spdec="${escapeAttr(p.id)}" ${done<=0?"disabled":""} title="Mark one fewer level done">−</button>
+        <button class="iconbtn" data-spdec="${htmlAttribute(p.id)}" ${done<=0?"disabled":""} aria-label="Mark one fewer ${htmlAttribute(name)} level done" title="Mark one fewer ${htmlAttribute(name)} level done">−</button>
         <span class="mono proj-mini" title="levels completed">${done}/${span}</span>
-        <button class="iconbtn" data-spinc="${escapeAttr(p.id)}" ${done>=span?"disabled":""} title="Mark one more level done">+</button>
+        <button class="iconbtn" data-spinc="${htmlAttribute(p.id)}" ${done>=span?"disabled":""} aria-label="Mark one more ${htmlAttribute(name)} level done" title="Mark one more ${htmlAttribute(name)} level done">+</button>
       </span>
-      <button class="btn ghost" style="padding:2px 9px;font-size:11px" data-spcomplete="${escapeAttr(p.id)}">${complete?"Reopen":"Mark complete"}</button>
+      <button class="btn ghost" style="padding:2px 9px;font-size:11px" data-spcomplete="${htmlAttribute(p.id)}" aria-label="${complete?"Reopen":"Mark"} ${htmlAttribute(name)} ${complete?"project":"complete"}">${complete?"Reopen":"Mark complete"}</button>
     </div>`;
   }).join("");
   // Rows only — the caller (renderProjectResults) wraps these in a collapsible <details> panel.
@@ -634,9 +637,9 @@ function stepPlanHtml(res){
     h+=`<div class="step-phase">`;
     const blocked=Object.entries(ph.blockedMined||{}),phaseTime=ph.partial?"partial plan":ph.feasible?"phase":"blocked";
     h+=res.sequenced
-      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>${escapeAttr(ph.name)}</b> ${ph.prio!=null?'<span class="pill craft" style="font-size:9px">#'+ph.prio+'</span>':""} <span class="proj-mini">· ${phaseTime}${ph.eta>0?" ~"+fmtDuration(ph.eta):""}${ph.feasible?" · done by "+fmtDuration(ph.doneAt):ph.partial?" · plannable work by "+fmtDuration(ph.doneAt):""} </span>${ph.eta>0?'<span class="step-clock">(~'+fmtClock(pStart+(ph.eta||0))+')</span>':""}</div>`
+      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>${htmlText(ph.name)}</b> ${ph.prio!=null?'<span class="pill craft" style="font-size:9px">#'+ph.prio+'</span>':""} <span class="proj-mini">· ${phaseTime}${ph.eta>0?" ~"+fmtDuration(ph.eta):""}${ph.feasible?" · done by "+fmtDuration(ph.doneAt):ph.partial?" · plannable work by "+fmtDuration(ph.doneAt):""} </span>${ph.eta>0?'<span class="step-clock">(~'+fmtClock(pStart+(ph.eta||0))+')</span>':""}</div>`
       : res.waved
-      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>Wave ${i+1} — build together</b> ${ph.members&&ph.members.length?'<span class="proj-mini">'+escapeAttr(ph.members.join(" + "))+'</span>':""} <span class="proj-mini">· ${phaseTime}${ph.eta>0?" ~"+fmtDuration(ph.eta):""}${ph.feasible?" · done by "+fmtDuration(ph.doneAt):ph.partial?" · plannable work by "+fmtDuration(ph.doneAt):""} </span>${ph.eta>0?'<span class="step-clock">(~'+fmtClock(pStart+(ph.eta||0))+')</span>':""}</div>`
+      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>Wave ${i+1} — build together</b> ${ph.members&&ph.members.length?'<span class="proj-mini">'+htmlText(ph.members.join(" + "))+'</span>':""} <span class="proj-mini">· ${phaseTime}${ph.eta>0?" ~"+fmtDuration(ph.eta):""}${ph.feasible?" · done by "+fmtDuration(ph.doneAt):ph.partial?" · plannable work by "+fmtDuration(ph.doneAt):""} </span>${ph.eta>0?'<span class="step-clock">(~'+fmtClock(pStart+(ph.eta||0))+')</span>':""}</div>`
       : `<div class="step-h"><b>${ph.partial?"Run this partial line plan":ph.feasible?"Set all lines like this and run":"This phase is blocked"}</b> <span class="proj-mini">· ${ph.partial?"currently plannable work ~"+fmtDuration(ph.eta)+" · plannable work by ":ph.feasible?"finish time ~"+fmtDuration(ph.eta)+" · finish by ":"no finish time"}</span>${ph.eta>0?'<span class="step-clock">~'+fmtClock(pStart+(ph.eta||0))+'</span>':""}</div>`;
     if(!ph.feasible){const why=blocked.length?" — "+blocked.map(([item,resources])=>item+" needs "+resources.join(" + ")).join("; "):"";
       h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">Can't fully produce this phase with the current lines and incomes${why}. ${ph.partial?"The line work below is only the currently plannable portion.":""}</div>`;}
@@ -693,31 +696,31 @@ document.getElementById("results").addEventListener("input",e=>{
   // commit (change). Editing `from` must never touch `to` mid-keystroke (issue #87 item 4) —
   // reconciliation happens on read via projSpan()/projectDemand(). Skip the write while transiently
   // empty so backspacing doesn't coerce to 1; the commit re-render restores it.
-  if((v=t.getAttribute("data-spfrom"))!=null){const p=stepsProj(v);if(p&&t.value.trim()!==""){p.from=Math.max(1,Math.floor(num(t.value)||1));save();}return;}
-  if((v=t.getAttribute("data-spto"))!=null){const p=stepsProj(v);if(p&&t.value.trim()!==""){p.to=Math.max(1,Math.floor(num(t.value)||1));save();}return;}
+  if((v=t.getAttribute("data-spfrom"))!=null){const p=stepsProj(v);if(p&&t.value.trim()!==""){mutateState(()=>{p.from=Math.max(1,Math.floor(num(t.value)||1));});save();}return;}
+  if((v=t.getAttribute("data-spto"))!=null){const p=stepsProj(v);if(p&&t.value.trim()!==""){mutateState(()=>{p.to=Math.max(1,Math.floor(num(t.value)||1));});save();}return;}
 });
 document.getElementById("results").addEventListener("change",e=>{
   const t=e.target;if(!t||!t.getAttribute)return;let v;
   // Plan-start anchor: display-only, so repaint from cache (no solve).
-  if(t.id==="spStart"){const val=t.value;if(!val)S.planStart=null;else{const ms=new Date(val).getTime();if(!isNaN(ms))S.planStart=ms;}save();repaintProject();return;}
+  if(t.id==="spStart"){const val=t.value,ms=val?new Date(val).getTime():null;if(!val||!isNaN(ms))mutateState(st=>{st.planStart=ms;});save();repaintProject();return;}
   // Inline project controls — same fields as Shopping list / Track progress, kept in sync. These change
   // demand, so re-solve; doSolve() rebuilds #results (and thus the plan) right away.
-  if((v=t.getAttribute("data-spon"))!=null){const p=stepsProj(v);if(p){p.on=t.checked;save();doSolve();}return;}
+  if((v=t.getAttribute("data-spon"))!=null){const p=stepsProj(v);if(p){mutateState(()=>{p.on=t.checked;});save();doSolve();}return;}
   if(t.getAttribute("data-spfrom")!=null||t.getAttribute("data-spto")!=null){doSolve();return;}   // commit level edit
   // Manual-mode dropdowns also live inside #results (re-rendered each change)
   if(t.id==="manualPreset"){if(t.value)loadManualPreset(t.value);return;}
   const ri=t.getAttribute("data-mres");
-  if(ri!=null){const i=+ri;if(S.manual[i]){S.manual[i].job=t.value;if(S.manual[i].lvl>S.lines[i].max)S.manual[i].lvl=S.lines[i].max;}save();renderResults();return;}
+  if(ri!=null){const i=+ri;if(S.manual[i])mutateState(st=>{st.manual[i].job=t.value;if(st.manual[i].lvl>st.lines[i].max)st.manual[i].lvl=st.lines[i].max;});save();renderResults();return;}
   const lv=t.getAttribute("data-mlvl");
-  if(lv!=null){const i=+lv;if(S.manual[i])S.manual[i].lvl=+t.value;save();renderResults();return;}
+  if(lv!=null){const i=+lv;if(S.manual[i])mutateState(st=>{st.manual[i].lvl=+t.value;});save();renderResults();return;}
   const sl=t.getAttribute("data-msell");
-  if(sl!=null){const i=+sl;if(S.manual[i])S.manual[i].sell=t.checked;save();renderResults();return;}
+  if(sl!=null){const i=+sl;if(S.manual[i])mutateState(st=>{st.manual[i].sell=t.checked;});save();renderResults();return;}
 });
 document.getElementById("results").addEventListener("click",e=>{
   const cl=sel=>e.target.closest&&e.target.closest(sel);
-  if(cl("#btnProgress")){openProgress();return;}
+  if(cl("#btnProgress")){openProgress(cl("#btnProgress"));return;}
   // Plan-start "Now" — re-anchor the clock to the current moment (display only).
-  if(cl("#spNow")){S.planStart=Date.now();save();repaintProject();return;}
+  if(cl("#spNow")){mutateState(st=>{st.planStart=Date.now();});save();repaintProject();return;}
   // Persist a disclosure's open state across the next re-render. The native <details> toggle still
   // fires; at click time .open is the pre-toggle state, so the new state is its inverse.
   const sm=cl("summary[data-paneltoggle]");
@@ -727,12 +730,14 @@ document.getElementById("results").addEventListener("click",e=>{
   // projSpan/projDone helpers the tracker and solver read, so every view stays in sync.
   const inc=cl("[data-spinc]"),dec=cl("[data-spdec]");
   if(inc||dec){const p=stepsProj((inc||dec).getAttribute(inc?"data-spinc":"data-spdec"));if(!p)return;
-    const {span}=projSpan(p);p.done=Math.max(0,Math.min(span,projDone(p)+(inc?1:-1)));save();doSolve();return;}
+    mutateState(()=>{const {span}=projSpan(p);p.done=Math.max(0,Math.min(span,projDone(p)+(inc?1:-1)));});save();doSolve();return;}
   const cbtn=cl("[data-spcomplete]");
   if(cbtn){const p=stepsProj(cbtn.getAttribute("data-spcomplete"));if(!p)return;
-    const {span}=projSpan(p);p.done=projDone(p)>=span?0:span;save();doSolve();return;}   // toggle done/reopen
+    mutateState(()=>{const {span}=projSpan(p);p.done=projDone(p)>=span?0:span;});save();doSolve();return;}   // toggle done/reopen
   if(cl("#btnCopyManual")){copyPlanToManual(_lastItemsCreditsRes);return;}
   if(cl("#manualUpdate")){if(S.manualActiveId)updateManualPreset(S.manualActiveId);return;}
   if(cl("#manualSaveNew")){const name=(prompt("Name this setup:","")||"").trim();if(name)saveManualPreset(name);return;}
   if(cl("#manualDelPreset")){const sel=document.getElementById("manualPreset");const id=(sel&&sel.value)||S.manualActiveId;if(id&&confirm("Delete this saved setup?"))deleteManualPreset(id);return;}
 });
+
+window.addEventListener("pagehide",()=>solveService.cancel("Page teardown"));

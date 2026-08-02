@@ -67,7 +67,6 @@ function lineSpeed(row){
 function dupeChance(){return Math.max(0,num(S.dupe)||0);}
 function dupeMult(){return 1+dupeChance()/100;}
 const newId=()=>"p"+Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36);
-const escapeAttr=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
 function fmtDuration(h){
   if(!isFinite(h)||h<=0)return "—";
   let s=Math.round(h*3600);
@@ -190,12 +189,8 @@ function normalize(st){
   syncManual(st);
   return st;
 }
-let S=normalize(load())||defaults();syncManual(S);
-
-function load(){try{const r=localStorage.getItem(LSKEY);return r?JSON.parse(r):null;}catch(e){return null;}}
-function save(){try{localStorage.setItem(LSKEY,JSON.stringify(S));flashSaved();}catch(e){document.getElementById("saveind").innerHTML="<b style='color:var(--ink3)'>local save unavailable here</b>";}}
-let savT;
-function flashSaved(){const el=document.getElementById("saveind");el.innerHTML="<b>saved</b>";clearTimeout(savT);savT=setTimeout(()=>el.textContent="auto-saves locally",1400);}
+let S=defaults();
+let stateRevision=0;
 
 const num=v=>{if(v===""||v===null||v===undefined)return null;const n=Number(v);return isFinite(n)?n:null;};
 const fmt=(n,d=0)=>n.toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:0});

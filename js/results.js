@@ -8,6 +8,28 @@ let _lastItemsCreditsRes=null;   // items/credits solve result, cached so "Copy 
 // by the delegated #results click handler in events.js.
 let _projAdjustOpen=false;   // "Adjust project levels & completion" disclosure
 let _breakdownOpen=false;    // "Full breakdown — demand, line assignment, resource balance" disclosure
+function resultsTableName(table){
+  const headings=Array.from(table.querySelectorAll("th")).map(th=>th.textContent.trim()).join(" ");
+  if(/Line/.test(headings)&&/Job/.test(headings))return "Line assignment table";
+  if(/Resource/.test(headings)&&/Surplus|Consumed/.test(headings))return "Resource balance table";
+  if(/Credits \/hr/.test(headings))return "Credits comparison table";
+  if(/Project/.test(headings)&&/Needs/.test(headings))return "Project schedule table";
+  return "Planner results table";
+}
+function enhanceResultTables(){
+  const container=document.getElementById("results");if(!container)return;
+  Array.from(container.querySelectorAll("table")).forEach(table=>{
+    if(table.parentElement&&table.parentElement.classList.contains("table-scroll"))return;
+    const wrapper=document.createElement("div");
+    table.before(wrapper);wrapper.appendChild(table);
+    markTableScroller(wrapper,resultsTableName(table));
+  });
+}
+if(typeof MutationObserver!=="undefined"){
+  const resultTableObserver=new MutationObserver(enhanceResultTables);
+  const observedResults=document.getElementById("results");
+  if(observedResults)resultTableObserver.observe(observedResults,{childList:true,subtree:true});
+}
 // Plan start → a datetime-local value (or "" for live "now"). Shared with the inline anchor renderer.
 function fmtDatetimeLocal(ms){
   const d=new Date(ms);if(isNaN(d.getTime()))return "";
@@ -27,53 +49,15 @@ function projPlanAnchorHtml(){
   </div>`;
 }
 
-/* ---------- async solve via Web Worker ----------
-   The solve runs off the main thread so a long budget shows a spinner instead of freezing. Each
-   request gets an id; results from superseded requests are dropped. A new request terminates the
-   in-flight worker (true cancellation) rather than queuing behind it. Falls back to a synchronous
-   solve if Workers are unavailable (e.g. opened over file://) or the worker fails to start. */
-let _solveWorker=null,_solveReq=0,_solvePending=null,_workerBroken=false;
-function _spawnSolveWorker(){
-  const w=new Worker("js/solver.worker.js");
-  w.onmessage=ev=>{const d=ev.data||{};
-    if(d.reqId!==_solveReq)return;            // a newer solve superseded this one
-    hideSolveSpinner();const cb=_solvePending;_solvePending=null;
-    if(d.error){solveError(d.error);return;}
-    // Copy the worker's updated line-stability cache back to the main thread (issue #87 item 5): the
-    // worker is discarded after each solve, so the main thread owns the cache across solves.
-    if(d.res&&d.res.__stab&&typeof setLineStability==="function"){setLineStability(d.res.__stab);delete d.res.__stab;}
-    if(cb)cb(d.res);};
-  w.onerror=()=>{_workerBroken=true;try{w.terminate();}catch(e){}_solveWorker=null;
-    if(_solvePending){const cb=_solvePending;_solveSync(cb,_solveReq);}};
-  return w;
-}
-function solveAsync(cb){
-  const reqId=++_solveReq;_solvePending=cb;
-  showSolveSpinner();
-  if(_workerBroken||typeof Worker==="undefined"){_solveSync(cb,reqId);return;}
-  try{
-    if(_solveWorker)_solveWorker.terminate();   // cancel any in-flight solve
-    _solveWorker=_spawnSolveWorker();
-    const stab=(typeof getLineStability==="function")?getLineStability():null;
-    _solveWorker.postMessage({reqId,state:JSON.parse(JSON.stringify(S)),budget:Math.max(200,Math.min(60000,num(S.solveBudget)||2000)),stab});
-  }catch(e){_workerBroken=true;_solveSync(cb,reqId);}
-}
-// Synchronous fallback. The 0ms defer lets the spinner paint before the (briefly blocking) solve.
-function _solveSync(cb,reqId){
-  setTimeout(()=>{
-    if(reqId!==_solveReq)return;               // superseded while waiting
-    let res=null;try{res=optimize();}catch(e){solveError((e&&e.stack)||String(e));return;}
-    hideSolveSpinner();_solvePending=null;if(cb)cb(res);
-  },0);
-}
 function solveError(msg){
-  hideSolveSpinner();
   const el=document.getElementById("results"),stat=document.getElementById("solveStat");
-  if(el)el.innerHTML=`<div class="notice warn"><b>Solver error.</b> ${String(msg).split("\n")[0]}</div>`;
-  if(stat)stat.textContent="";
+  if(el){
+    const notice=domElement("div","notice warn");
+    notice.append(domElement("b","","Solver error."),document.createTextNode(" "+String(msg).split("\n")[0]));
+    el.replaceChildren(notice);
+  }
+  if(stat)stat.textContent="Solve failed. Check the message below and try again.";
 }
-function showSolveSpinner(){const o=document.getElementById("solveOverlay");if(o)o.hidden=false;}
-function hideSolveSpinner(){const o=document.getElementById("solveOverlay");if(o)o.hidden=true;}
 function resultMinedUsage(res){
   if(res&&Array.isArray(res.minedUsage))return res.minedUsage;
   // Adapter for cached/legacy results that predate the generic minedUsage shape.
@@ -154,7 +138,7 @@ function renderProjectResults(res,el,stat){
   _lastProjectRes=res;
   // Seed the plan-start anchor once, the first time a real plan exists (issue #87 item 1) — moved here
   // from the old modal's open handler now that the step plan is always on screen. Display anchor only.
-  if(S.planStart==null&&res&&!res.empty&&res.phases&&res.phases.length){S.planStart=Date.now();save();}
+  if(S.planStart==null&&res&&!res.empty&&res.phases&&res.phases.length){mutateState(st=>{st.planStart=Date.now();});save();}
   if(res.empty){
     // Distinguish "everything's done" from "nothing configured" (issue #87 item 2). When active
     // projects exist but are fully checked off, keep the Track-progress opener so the user can still
@@ -167,10 +151,10 @@ function renderProjectResults(res,el,stat){
           <button class="btn primary" id="btnProgress">Track progress</button>
         </div></div>
         <div class="notice info"><b>All projects complete 🎉</b> Nothing left to craft. Open <b>Track progress</b> to review or reopen a level, or add a new project in the <b>Shopping list</b>.</div>`;
-      stat.textContent="";return;
+      stat.textContent="Plan updated. All selected projects are complete.";return;
     }
     el.innerHTML=`<div class="notice info">No project demand yet. Open <b>Shopping list</b>, add a project with item costs, tick it <b>on</b>, then come back. Enter your current <b>inventory</b> there too — it's subtracted from what you need to craft.</div>`;
-    stat.textContent="";return;
+    stat.textContent="Plan updated. No project demand selected.";return;
   }
   let html="";
   // Header: ordering note + Track-progress opener. The step plan below is the main event, so there's
@@ -216,7 +200,7 @@ function renderProjectResults(res,el,stat){
       const needs=items.slice(0,5).map(it=>disp(sub[it])+" "+it).join(", ")+(items.length>5?" …":"");
       const badge=(ph.prio!=null)?` <span class="pill craft" style="font-size:9px">#${ph.prio}</span>`:"";
       const warn=!ph.feasible?' <span style="color:var(--danger);font-size:10.5px">(blocked — see notes)</span>':"";
-      const nm=escapeAttr(ph.members&&ph.members.length>1?ph.members.join(" + "):ph.name);
+      const nm=htmlText(ph.members&&ph.members.length>1?ph.members.join(" + "):ph.name);
       bd+=`<tr><td class="mono">${i+1}</td><td>${nm}${badge}${warn}</td>
         <td style="color:var(--ink2);font-size:11.5px">${needs||"—"}</td>
         <td class="num mono">${ph.eta>0?fmtDuration(ph.eta):"—"}</td><td class="num mono" style="color:${ph.feasible?'var(--amber)':'var(--danger)'}">${ph.feasible?fmtDuration(ph.doneAt):ph.partial?fmtDuration(ph.doneAt)+" partial":"blocked"}</td></tr>`;
@@ -244,7 +228,7 @@ function renderProjectResults(res,el,stat){
       let pdone=0;items.forEach(it=>{const r=res.rate[it]||0;if(r>1e-12){const d=(res.net[it]||0)/r;if(d>pdone)pdone=d;}});
       const blocked=items.some(it=>res.blockedMined&&res.blockedMined[it]);
       const needs=items.slice(0,6).map(it=>disp(p.sub[it])+" "+it).join(", ")+(items.length>6?" …":"");
-      bd+=`<tr><td>${p.name||"Project"}</td><td class="mono" style="color:var(--ink2)">${p.from}–${p.to} / ${p.levels}</td>
+      bd+=`<tr><td>${htmlText(p.name||"Project")}</td><td class="mono" style="color:var(--ink2)">${p.from}–${p.to} / ${p.levels}</td>
         <td style="color:var(--ink2);font-size:11.5px">${needs||"—"}</td>
         <td class="num mono">${blocked?'<span style="color:var(--danger)">not fully finishable</span>':items.length?fmtDuration(pdone):"—"}</td></tr>`;
     });
@@ -275,25 +259,31 @@ function renderProjectResults(res,el,stat){
   if(minedNote)bd+=minedNote;
   html+=`<details class="cat-panel breakdown-panel" ${_breakdownOpen?"open":""}><summary data-paneltoggle="breakdown"><span class="cat-sum-lbl">Full breakdown — demand, line assignment, resource balance</span><span class="cat-sum-meta">the numbers</span></summary><div class="panel-pad">${bd}</div></details>`;
   el.innerHTML=html;
-  stat.textContent="solved in "+(res.ms||0).toFixed(1)+" ms";
+  stat.textContent="Plan updated. Solved in "+(res.ms||0).toFixed(1)+" ms";
 }
 
 
 function renderResults(){
   if(typeof clearStaleUI==="function")clearStaleUI();   // results are about to reflect current inputs
+  if(typeof setPricePoke==="function")setPricePoke(false); // Credits owns this nudge; clear it before every synchronous mode path.
   const el=document.getElementById("results");
   const stat=document.getElementById("solveStat");
-  if(S.mode==="manual"){renderManual(el,stat);return;}
+  if(S.mode==="manual"){solveService.cancel("Manual mode renders synchronously");renderManual(el,stat);return;}
   // Off the main thread: a long solve (the user's max-solve-time budget) shows a spinner instead
-  // of freezing. solveAsync ignores superseded solves, so only the latest request paints.
-  solveAsync(res=>{if(res)renderSolveResult(res,el,stat);});
+  // of freezing. The service owns cancellation and only delivers the accepted mode/revision.
+  const snapshot=JSON.parse(JSON.stringify(S));
+  const budget=Math.max(200,Math.min(60000,num(snapshot.solveBudget)||2000));
+  solveService.request({mode:snapshot.mode,stateRevision,budget,stateSnapshot:snapshot},(res,error)=>{
+    if(error){solveError(error);return;}
+    if(res)renderSolveResult(res,el,stat);
+  });
 }
 function renderSolveResult(res,el,stat){
   if(res.mode==="project"){renderProjectResults(res,el,stat);return;}
   _lastItemsCreditsRes=res;
   // nudge toward Sell prices when credits mode is selected but no prices exist yet
   if(typeof setPricePoke==="function")setPricePoke(res.mode==="credits"&&![...RAWS,...PRODUCTS].some(it=>(num(S.sellPrice[it])||0)>0));
-  if(res.empty){el.innerHTML=`<div class="notice info">Select one or more outputs on the left to optimize — or switch to <b>Max credits/hr</b> mode to auto-search the most profitable mix.</div>`;stat.textContent="";return;}
+  if(res.empty){el.innerHTML=`<div class="notice info">Select one or more outputs on the left to optimize — or switch to <b>Max credits/hr</b> mode to auto-search the most profitable mix.</div>`;stat.textContent="Plan updated. No outputs selected.";return;}
   let html="";
   if(res.mode==="credits"){
     html+=`<div class="notice info"><b>Credits mode.</b> Ignores the output checkboxes &amp; priorities. For each item with a <b>Sell price</b>, it works out the most your lines can produce per hour if the whole factory is dedicated to it, then picks the single highest-earning item.</div>`;
@@ -415,6 +405,6 @@ function renderSolveResult(res,el,stat){
     html+=`<div class="notice info" style="font-size:11.5px">${resource} income is set, but this plan puts <b>0</b> lines on <b>${crafts}</b>, so it uses none of that mined income.</div>`;
   });
   el.innerHTML=html;
-  stat.textContent="solved in "+res.ms.toFixed(1)+" ms";
+  stat.textContent="Plan updated. Solved in "+res.ms.toFixed(1)+" ms";
 }
 function invName(resIndex,idx){for(const k in resIndex)if(resIndex[k]===idx)return k;return "";}

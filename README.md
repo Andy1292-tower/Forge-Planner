@@ -4,6 +4,17 @@ A steady-state crafting-line optimizer for a power-law compression economy. Ente
 
 Everything runs client-side.
 
+## Verify changes
+
+Use Node 24 and install the committed dependencies with `npm ci`.
+
+```bash
+npm test
+npm run test:browser
+```
+
+`npm test` first checks JavaScript syntax, then runs the explicit fast Node-test list, including a fresh parity snapshot checked against `test/golden.json`. `npm run test:browser` serves the real static page, verifies its Worker result, exercises every planning mode, and fails on any console error or failed request.
+
 ## What it does
 
 - **Inputs:** Ingots, Bits, Concrete (raw producers — time only)

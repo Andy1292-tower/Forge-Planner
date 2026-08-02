@@ -1,0 +1,13 @@
+{
+  "lines": [
+    { "max": 1024, "spx": 55.5, "turbo": 0 }
+  ],
+  "dupe": 12.4,
+  "gelLines": 2,
+  "gelComp": 1024,
+  "prodCost": {},
+  "baseTime": {},
+  "targets": {
+    "Wire": { "on": true, "w": 4 }
+  }
+}
