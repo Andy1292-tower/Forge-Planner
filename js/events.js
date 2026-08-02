@@ -162,7 +162,12 @@ function dismissStateRecovery(restoreFocus=true){
   if(!restoreFocus)return;
   if(invoker&&invoker.isConnected){invoker.focus();return;}
   if(invokerId){const replacement=document.getElementById(invokerId);if(replacement&&typeof replacement.focus==="function"){replacement.focus();return;}}
-  if(importFallback){const button=document.getElementById("btnImport");if(button)button.focus();}
+  if(importFallback){const button=document.getElementById("btnSettings");if(button)button.focus();}
+}
+function showSettingsRecovery(raw,reason,file){
+  const settings=document.getElementById("settingsModal");
+  if(settings&&!settings.hidden)closeSettings();
+  showStateRecovery(raw,reason,file,document.getElementById("btnSettings"));
 }
 stateRecoveryDownload.addEventListener("click",()=>{
   if(!_recoveryDownload)return;
@@ -175,7 +180,7 @@ document.getElementById("stateRecoveryDismiss").addEventListener("click",()=>dis
 
 document.getElementById("btnExport").addEventListener("click",()=>{
   const result=validateAndMigrate(S);
-  if(!result.ok){showStateRecovery(null,"The current build contains a value that cannot be exported safely: "+result.errors.join("; "));return;}
+  if(!result.ok){showSettingsRecovery(null,"The current build contains a value that cannot be exported safely: "+result.errors.join("; "));return;}
   const blob=new Blob([JSON.stringify(result.state,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);
   a.download="forge-build.json";a.click();URL.revokeObjectURL(a.href);
@@ -185,19 +190,19 @@ document.getElementById("fileImport").addEventListener("change",e=>{
   const f=e.target.files[0];if(!f)return;
   e.target.value="";
   if(f.size>STATE_LIMITS.maxBytes){
-    showStateRecovery(null,"That import is too large to open safely. Your current build was not changed.",f);
+    showSettingsRecovery(null,"That import is too large to open safely. Your current build was not changed.",f);
     return;
   }
   const r=new FileReader();
   r.onload=()=>{
     const raw=String(r.result==null?"":r.result);let candidate;
-    try{candidate=JSON.parse(raw);}catch(error){showStateRecovery(raw,"Could not read that file because it is not valid JSON.",f);return;}
+    try{candidate=JSON.parse(raw);}catch(error){showSettingsRecovery(raw,"Could not read that file because it is not valid JSON.",f);return;}
     solveService.cancel("Import is replacing accepted state");
     const result=applyImportedState(candidate,renderAll,()=>solveService.cancel("Import rollback is restoring accepted state"));
-    if(!result.ok){showStateRecovery(raw,result.errors.join("; "),f);return;}
+    if(!result.ok){showSettingsRecovery(raw,result.errors.join("; "),f);return;}
     dismissStateRecovery(false);flashSaved();
   };
-  r.onerror=()=>showStateRecovery(null,"Could not read that file. Your current build was not changed.",f);
+  r.onerror=()=>showSettingsRecovery(null,"Could not read that file. Your current build was not changed.",f);
   r.readAsText(f);
 });
 document.getElementById("btnReset").addEventListener("click",()=>{
@@ -249,9 +254,65 @@ function renderPrices(){
   const box=document.getElementById("priceRows");
   renderItemValueRows(box,S.priceText,S.sellPrice,"price","—",FIELD_SCHEMA.sellPrice);
 }
-const priceDialog=dialogController.register({root:document.getElementById("priceModal"),panel:document.querySelector("#priceModal .modal"),opener:document.getElementById("btnPrices"),initialFocus:()=>document.querySelector("#priceRows input"),onOpen:renderPrices});
-function openPrices(invoker){priceDialog.open(invoker);}
-function closePrices(){priceDialog.close();}
+const INPUT_TABS=Object.freeze({
+  inventory:{tab:"inputsInventoryTab",panel:"inputsInventoryPanel",clear:"projInvClear",initial:()=>document.querySelector("#invRows input")},
+  projects:{tab:"inputsProjectsTab",panel:"inputsProjectsPanel",clear:"projClear",initial:()=>document.getElementById("projSeqToggle")},
+  prices:{tab:"inputsPricesTab",panel:"inputsPricesPanel",clear:"priceClear",initial:()=>document.querySelector("#priceRows input")},
+});
+let activeInputsTab="inventory";
+let renderedInputsTab="inventory";
+let pendingInputsOpen=null;
+function selectInputsTab(name,{focus=false,remember=true}={}){
+  const selected=INPUT_TABS[name]?name:"inventory";
+  renderedInputsTab=selected;
+  if(remember)activeInputsTab=selected;
+  Object.entries(INPUT_TABS).forEach(([key,meta])=>{
+    const on=key===selected,tab=document.getElementById(meta.tab);
+    tab.setAttribute("aria-selected",on?"true":"false");
+    tab.tabIndex=on?0:-1;
+    document.getElementById(meta.panel).hidden=!on;
+    document.getElementById(meta.clear).hidden=!on;
+  });
+  if(focus)document.getElementById(INPUT_TABS[selected].tab).focus();
+}
+const inputsDialog=dialogController.register({
+  root:document.getElementById("inputsModal"),
+  panel:document.querySelector("#inputsModal .modal"),
+  opener:null,
+  initialFocus:()=>INPUT_TABS[renderedInputsTab].initial()||document.getElementById(INPUT_TABS[renderedInputsTab].tab),
+  onOpen:()=>{
+    renderInv();renderProjects();renderCatalog();renderPrices();
+    const requested=pendingInputsOpen||{name:activeInputsTab,remember:true};
+    pendingInputsOpen=null;
+    selectInputsTab(requested.name,{remember:requested.remember});
+  },
+});
+function openInputs(invoker,requestedTab,{remember=true}={}){
+  pendingInputsOpen={name:INPUT_TABS[requestedTab]?requestedTab:activeInputsTab,remember};
+  inputsDialog.open(invoker);
+}
+function closeInputs(){inputsDialog.close();}
+function openPrices(invoker){openInputs(invoker,"prices");}
+function closePrices(){closeInputs();}
+function openProjects(invoker){openInputs(invoker,"projects");}
+function closeProjects(){closeInputs();}
+const inputsTabs=document.querySelector(".inputs-tabs");
+inputsTabs.addEventListener("click",event=>{
+  const tab=event.target.closest('[role="tab"]');if(!tab)return;
+  const selected=Object.keys(INPUT_TABS).find(name=>INPUT_TABS[name].tab===tab.id);
+  if(selected)selectInputsTab(selected,{focus:true});
+});
+inputsTabs.addEventListener("keydown",event=>{
+  const tab=event.target.closest('[role="tab"]');if(!tab)return;
+  const names=Object.keys(INPUT_TABS),current=names.findIndex(name=>INPUT_TABS[name].tab===tab.id);if(current<0)return;
+  let next=null;
+  if(event.key==="ArrowRight")next=names[(current+1)%names.length];
+  else if(event.key==="ArrowLeft")next=names[(current-1+names.length)%names.length];
+  else if(event.key==="Home")next=names[0];
+  else if(event.key==="End")next=names[names.length-1];
+  if(!next)return;
+  event.preventDefault();selectInputsTab(next,{focus:true});
+});
 document.getElementById("priceClear").addEventListener("click",()=>{
   if(!confirm("Clear all sell prices?"))return;
   mutateState(st=>{[...RAWS,...PRODUCTS].forEach(it=>{st.sellPrice[it]=null;st.priceText[it]="";});});
@@ -328,21 +389,25 @@ function setRecipesOpen(open){
   document.getElementById("recipeToggle").setAttribute("aria-expanded",open?"true":"false");
 }
 document.getElementById("recipeToggle").addEventListener("click",()=>setRecipesOpen(document.getElementById("recipeBody").hidden));
-document.getElementById("btnRecipes").addEventListener("click",()=>{setRecipesOpen(true);document.querySelector(".rsec").scrollIntoView({behavior:"smooth",block:"start"});});
 
 /* ---------- "add sell prices" attention nudge ---------- */
 const pricePoke=document.createElement("div");
 pricePoke.className="poke";pricePoke.hidden=true;pricePoke.textContent="↑ Enter your sell prices";
 document.querySelector(".tools").appendChild(pricePoke);
+let pricePokeActive=false;
 function positionPoke(){
-  const b=document.getElementById("btnPrices");
+  const b=document.getElementById("btnInputs");
   pricePoke.style.left=(b.offsetLeft+b.offsetWidth/2)+"px";
   pricePoke.style.top=(b.offsetTop+b.offsetHeight+9)+"px";
 }
 function setPricePoke(on){
-  document.getElementById("btnPrices").classList.toggle("poke-on",on);
-  if(on){positionPoke();pricePoke.hidden=false;}else pricePoke.hidden=true;
+  pricePokeActive=!!on;
+  document.getElementById("btnInputs").classList.toggle("poke-on",pricePokeActive);
+  if(pricePokeActive){positionPoke();pricePoke.hidden=false;}else pricePoke.hidden=true;
 }
+document.getElementById("btnInputs").addEventListener("click",event=>{
+  openInputs(event.currentTarget,pricePokeActive?"prices":undefined,{remember:!pricePokeActive});
+});
 window.addEventListener("resize",()=>{if(!pricePoke.hidden)positionPoke();});
 
 function initCalib(){
@@ -492,7 +557,7 @@ function compactProjCard(p,pi){
         ${projPrioField(p,pi,ids.priority)}
         ${range}
         ${projStepper(p,pi)}
-        <button class="iconbtn" data-pdel="${pi}" title="Remove from list" aria-label="Remove ${htmlAttribute(p.name)} from shopping list">×</button>
+        <button class="iconbtn" data-pdel="${pi}" title="Remove from Projects" aria-label="Remove ${htmlAttribute(p.name)} from Projects">×</button>
         <div class="proj-field-errors">${single?"":`<div class="field-error" id="${ids.from}" aria-live="polite" aria-atomic="true"></div><div class="field-error" id="${ids.to}" aria-live="polite" aria-atomic="true"></div>`}<div class="field-error" id="${ids.priority}" aria-live="polite" aria-atomic="true"></div></div>
       </div>
     </div>
@@ -587,7 +652,7 @@ function renderCatalog(){
     const meta=`${lvls} level${lvls===1?"":"s"}${c.description?" · "+htmlText(c.description):""}`;
     return `<div class="cat-row${has?" added":""}">
       <div class="cat-row-info"><span class="cat-row-name">${htmlText(c.name)}</span><span class="cat-row-meta">${meta}</span></div>
-      <button class="btn ${has?"ghost":"primary"} cat-add" data-cat-add="${htmlAttribute(c.catId)}" aria-label="${has?"Added":"Add"} ${htmlAttribute(c.name)}${has?"":" to shopping list"}" ${has?"disabled":""}>${has?"Added":"Add"}</button>
+      <button class="btn ${has?"ghost":"primary"} cat-add" data-cat-add="${htmlAttribute(c.catId)}" aria-label="${has?"Added":"Add"} ${htmlAttribute(c.name)}${has?"":" to Projects"}" ${has?"disabled":""}>${has?"Added":"Add"}</button>
     </div>`;
   }).join(""):`<div class="proj-mini" style="padding:6px 2px">No matching projects.</div>`;
 }
@@ -599,16 +664,13 @@ if(catListEl)catListEl.addEventListener("click",e=>{
 const catSearchEl=document.getElementById("catSearch");
 if(catSearchEl)catSearchEl.addEventListener("input",e=>{catQuery=e.target.value;renderCatalog();});
 
-const projectsDialog=dialogController.register({root:document.getElementById("projModal"),panel:document.querySelector("#projModal .modal"),opener:document.getElementById("btnProjects"),initialFocus:()=>document.getElementById("projSeqToggle"),onOpen:()=>{renderProjects();renderCatalog();}});
-function openProjects(invoker){projectsDialog.open(invoker);}
-function closeProjects(){projectsDialog.close();}
 document.getElementById("projAdd").addEventListener("click",()=>{
   mutateState(st=>{st.projects.push({id:newId(),name:"New project",on:true,prio:null,from:1,to:1,done:0,levels:[{costs:[]}],_open:true});});
   renderProjects();save();scheduleSolve();
 });
 document.getElementById("projClear").addEventListener("click",()=>{
   if(!(S.projects||[]).length)return;
-  if(!confirm("Remove all projects from the shopping list? This clears every added catalog project and custom project."))return;
+  if(!confirm("Remove all projects? This clears every added catalog project and custom project."))return;
   mutateState(st=>{st.projects=[];});
   renderProjects();save();scheduleSolve();
 });
@@ -693,7 +755,7 @@ function renderProgress(){
   const active=(S.projects||[]).filter(p=>p.on&&(p.levels||[]).length);
   if(!active.length){
     sum.innerHTML="";
-    list.innerHTML=`<div class="notice info">No active projects. Open <b>Shopping list</b>, add or tick on a project, then track its level progress here.</div>`;
+    list.innerHTML=`<div class="notice info">No active projects. Open <b>Projects+Prices</b>, choose <b>Projects</b>, then add or tick on a project before tracking progress here.</div>`;
     return;
   }
   renderProgressSummary(active);
@@ -757,7 +819,7 @@ function itemTier(it,seen){
   return deps.length?1+Math.max(...deps.map(k=>itemTier(k,new Set(seen)))):1;
 }
 // Issue #69: let the user set a project complete or change its levels without leaving this page.
-// Reuses the same fields the Shopping list & Progress tracker edit (on / from / to / done), so all
+// Reuses the same fields the Projects tab and Progress tracker edit (on / from / to / done), so all
 // three views stay in sync. Completion = every level in the from→to span checked off (done=span).
 function stepsProjControls(){
   const active=(S.projects||[]).filter(p=>(p.levels||[]).length);
@@ -873,7 +935,7 @@ document.getElementById("results").addEventListener("change",e=>{
   const t=e.target;if(!t||!t.getAttribute)return;let v;
   // Plan-start anchor: display-only, so repaint from cache (no solve).
   if(t.id==="spStart"){const val=t.value,ms=val?new Date(val).getTime():null;if(!val||!isNaN(ms))mutateState(st=>{st.planStart=ms;});save();repaintProject();return;}
-  // Inline project controls — same fields as Shopping list / Track progress, kept in sync. These change
+  // Inline project controls — same fields as Projects / Track progress, kept in sync. These change
   // demand, so re-solve; doSolve() rebuilds #results (and thus the plan) right away.
   if((v=t.getAttribute("data-spon"))!=null){const p=stepsProj(v);if(p){mutateState(()=>{p.on=t.checked;});save();doSolve();}return;}
   if((v=t.getAttribute("data-spfrom"))!=null||(v=t.getAttribute("data-spto"))!=null){

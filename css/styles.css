@@ -43,7 +43,7 @@ body::before{
 @media(max-width:560px){
   .wrap{padding:18px 12px 48px}
   .brand h1{font-size:34px;letter-spacing:1.2px}
-  .tools{width:100%}
+  .tools{grid-template-columns:repeat(2,minmax(0,1fr));width:100%}
   button.btn{padding:8px 10px;font-size:11.5px}
 }
 header.top{display:flex;align-items:flex-start;justify-content:space-between;gap:18px 28px;flex-wrap:wrap;
@@ -69,8 +69,8 @@ header.top::after{
 }
 .brand p{color:var(--ink2);font-size:13px;margin-top:5px;letter-spacing:.3px;max-width:62ch}
 .brand p:first-of-type{color:var(--ink2);font-size:13.5px}
-.tools{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;position:relative;
-  flex:0 0 auto;width:392px;max-width:100%;align-content:start}
+.tools{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;position:relative;
+  flex:0 0 auto;width:536px;max-width:100%;align-content:start}
 .tools .saveind{grid-column:1/-1;text-align:right;margin-bottom:1px}
 .tools button.btn{width:100%;justify-content:center;text-align:center}
 button.btn{font-family:"Chakra Petch",sans-serif;font-weight:600;font-size:12px;letter-spacing:.6px;
@@ -87,7 +87,7 @@ button.btn.primary{
 button.btn.primary:hover{filter:brightness(1.08);color:#15110a;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.22), 0 7px 18px rgba(210,129,58,.32), 0 0 0 1px rgba(242,169,78,.28);}
 button.btn.ghost{background:transparent}
-/* attention nudge: pulse the Sell prices button + a bouncing arrow when credits mode has no prices */
+/* attention nudge: pulse Projects+Prices + a bouncing arrow when Credits needs sell prices */
 @keyframes pokePulse{0%,100%{box-shadow:0 0 0 0 rgba(242,169,78,.65)}50%{box-shadow:0 0 0 9px rgba(242,169,78,0)}}
 button.btn.poke-on{animation:pokePulse 1.15s ease-out infinite}
 .poke{position:absolute;white-space:nowrap;background:var(--amber);color:#15110a;font-family:"Chakra Petch",sans-serif;
@@ -394,6 +394,21 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
   position:sticky;top:0;z-index:2}
 .modal-h h3{font-size:14px;font-weight:600;letter-spacing:.6px;text-transform:uppercase}
 .modal-b{padding:16px;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.inputs-modal{max-width:700px}
+.inputs-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;margin-bottom:16px;
+  border:1px solid var(--line2);border-radius:6px;overflow:hidden;background:var(--surface2)}
+.inputs-tabs button{min-width:0;min-height:var(--target);padding:8px 6px;border:0;background:transparent;color:var(--ink2);
+  font-family:"Chakra Petch",sans-serif;font-size:10.5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;cursor:pointer}
+.inputs-tabs button+button{border-left:1px solid var(--line2)}
+.inputs-tabs button:hover{color:var(--amber);background:rgba(210,129,58,.06)}
+.inputs-tabs button[aria-selected="true"]{background:linear-gradient(180deg,var(--ember),var(--copper));color:#15110a;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 -1px 0 rgba(0,0,0,.15)}
+.inputs-modal [role="tabpanel"]{min-width:0}
+.modal-f [hidden]{display:none}
+.settings-section{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+.settings-section-title{margin-bottom:8px;font-size:10.5px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--ink3)}
+.settings-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.settings-actions .btn{width:100%;justify-content:center}
 /* Plan-start anchor — inline in the Project-mode panel (promoted from the old step-by-step modal). */
 .plan-anchor{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;margin-bottom:12px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg2)}
 .plan-anchor label{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink3);font-weight:600}
@@ -617,7 +632,8 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 /* P1 mobile geometry overrides live after their desktop declarations so the narrow cascade wins. */
 @media(max-width:560px){
   .brand h1{font-size:34px;letter-spacing:1.2px}
-  .tools{width:100%}
+  .tools{grid-template-columns:repeat(2,minmax(0,1fr));width:100%}
+  .settings-actions{grid-template-columns:minmax(0,1fr)}
   button.btn{padding:8px 10px;font-size:11.5px}
 }
 @media(max-width:430px){
@@ -639,7 +655,7 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
   .skip-link,.btn,.iconbtn,.tip,.pchev,input,select,.card,.proj,.table-scroll{forced-color-adjust:auto}
   .btn,.iconbtn,.tip,.pchev,input,select,.card,.proj,.table-scroll{border-style:solid}
   :focus-visible{outline:3px solid Highlight!important}
-  .modesw button[aria-pressed="true"]{border:2px solid Highlight;color:ButtonText;background:ButtonFace}
+  .modesw button[aria-pressed="true"],.inputs-tabs button[aria-selected="true"]{border:2px solid Highlight;color:ButtonText;background:ButtonFace}
   .spinner{border-color:CanvasText;border-top-color:Highlight}
 }
 @media(max-width:260px){

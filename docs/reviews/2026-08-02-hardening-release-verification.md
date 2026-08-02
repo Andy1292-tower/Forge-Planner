@@ -17,7 +17,7 @@ This document closes the implementation loop for the [adversarial project review
 - Delivery: feature branch and dedicated PR only; no direct push or merge to `main`
 - Attribution: use a normal merge for the final PR, not squash, so Allen Terwilliger's original commits and author metadata remain in repository history
 
-The already-released Task 11A checkpoint remains the UI composition for this pass. The only new presentation changes are the three owned safety repairs: visible skip-target focus, original inert-state restoration, and exact recovery focus restoration. Historical visual-system units 11B–11D and the Task 12 onboarding/navigation redesign remain deliberately deferred; this candidate does not reopen the rejected redesign.
+The already-released Task 11A checkpoint remains the visual language for this pass. The header now exposes four primary destinations, build management lives in Settings, and Inventory, Projects, and Sell prices share one accessible Projects+Prices dialog. The existing safety repairs remain: visible skip-target focus, original inert-state restoration, and exact recovery focus restoration. Historical visual-system units 11B–11D and the Task 12 onboarding/navigation redesign remain deliberately deferred; this candidate does not reopen the rejected redesign.
 
 ## Implemented risk controls
 
@@ -29,7 +29,7 @@ The already-released Task 11A checkpoint remains the UI composition for this pas
 | Optimizer trust | Exact Gel capacity through the supported exact UI boundary, bounded/estimated larger-factory copy, winner-owned Credits warnings, shared Credits deadlines, and visible full-run stability tradeoffs. |
 | PR #94 | Set & forget persists through schema validation and uses the current executable replay, inventory, mined-resource, stability, and shared-deadline contracts. Certified static incumbents survive interrupted recovery attempts. |
 | Persistence | Accepted edits have explicit immediate or 100 ms persistence ownership; page teardown flushes without manufacturing a solve; Progress uses the authoritative async Project result instead of main-thread optimization. |
-| Accessibility | Shared dialog lifecycle, named controls/statuses/scrollers, inert background, keyboard Project controls, contrast/motion/forced-color coverage, visible skip-target focus, and exact invoker restoration. |
+| Accessibility | Shared dialog lifecycle, an ARIA-tabbed Projects+Prices surface, named controls/statuses/scrollers, inert background, keyboard Project controls, contrast/motion/forced-color coverage, visible skip-target focus, and exact invoker restoration. |
 | Release | Deterministic content-addressed graph, embedded Blob Worker, frozen permanent Worker endpoints, root/subpath-safe relative URLs, strong validators, contained static serving, and incompatible same-origin A-to-B warm-upgrade coverage. |
 | Trust/docs | Qualified best-found/May-work/Project copy, complete state and solver contracts, precise local-first/Google Fonts disclosure, release runbook, and explicit unknown/unverified catalog provenance. |
 
@@ -66,14 +66,14 @@ Feature branches run this full suite through `pull_request` only; the `push` tri
 
 The second PR browser run passed 80 of 85 ordinary-browser cases and narrowed the remaining failures to one release-graph defect plus three stale test assumptions. Tooltip image custom properties now stay source-relative and build to stylesheet-relative `../static/<hash>` URLs, preventing the observed `/static/static/...` 404s at both supported mounts. The affected field-validation tests now expose the established Resimulate action through real crafter-line edits, and the import-security wave test distinguishes the two semantic project names from executable warm-up/prerequisite phases. Focused static coverage and the full 28-script local suite pass; the replacement PR browser run remains authoritative.
 
-Each viewport covers all four modes and all six registered semantic dialogs: 130 mode/dialog states plus 13 sparse Crafting-data states. Assertions cover document overflow, result inset, title/tab/status containment, persistent label/control collisions, named table scrollers, Project identity width, dialog action reachability/scroll ownership, and sparse-card width. CI must also retain four representative screenshots: 1440 Items, 880 Project, 390 Shopping list, and 320 Manual. Missing evidence fails the workflow.
+Each viewport covers all four modes and all five registered semantic dialogs. Inventory, Projects, and Sell prices are exercised separately within Projects+Prices, for 143 mode/dialog-tab states plus 13 sparse Crafting-data states. Assertions cover document overflow, result inset, title/tab/status containment, persistent label/control collisions, named table scrollers, Project identity width, dialog action reachability/scroll ownership, and sparse-card width. CI must also retain five representative screenshots: 1440 Items, 880 Project, 640 Projects+Prices, 390 Projects+Prices, and 320 Manual. Missing evidence fails the workflow.
 
 ## Pull-request CI and owner gates
 
 The candidate is not release-complete until all of these are satisfied on the exact PR head:
 
 1. Ordinary browser, accessibility/Axe, visual matrix, and cold/warm release-upgrade jobs pass in GitHub Actions.
-2. The four release-matrix screenshot artifacts are present and visually reviewed.
+2. The five release-matrix screenshot artifacts are present and visually reviewed.
 3. The Vercel preview for the exact commit is Ready and the owner approves the established UI at desktop and mobile widths.
 4. A copy of the current live save/export is imported without overwriting the original. Items, Credits, Project line-switching, Project Set & forget, Manual, Progress, export, and reload are smoke-tested.
 5. The final PR is merged normally rather than squashed if preserving PR #94's commit-level attribution is still required.
