@@ -452,5 +452,5 @@ function save(){
 }
 function flashSaved(){
   const el=typeof document!=="undefined"?document.getElementById("saveind"):null;if(!el)return;
-  el.innerHTML="<b>saved</b>";clearTimeout(savT);savT=setTimeout(()=>el.textContent="auto-saves locally",1400);
+  if(el.textContent!=="saved")el.innerHTML="<b>saved</b>";clearTimeout(savT);savT=setTimeout(()=>el.textContent="auto-saves locally",1400);
 }

@@ -209,13 +209,13 @@ select:focus,input:focus{border-color:var(--copper);
   font-size:11.5px;letter-spacing:.15px;line-height:1.5;text-align:left;text-transform:none;
   white-space:normal;
   width:max-content;max-width:230px;
-  pointer-events:none;opacity:0;visibility:hidden;
+  pointer-events:none;opacity:0;visibility:hidden;display:none;
   transition:opacity .18s, transform .18s, visibility .18s;
   z-index:60;
   box-shadow:0 12px 28px rgba(0,0,0,.6), 0 0 0 1px rgba(242,169,78,.06), 0 0 40px rgba(210,129,58,.18);
 }
 .tip:hover .tip-text,.tip:focus-visible .tip-text{
-  opacity:1;visibility:visible;transform:translateX(-50%) translateY(0);
+  opacity:1;visibility:visible;display:block;transform:translateX(-50%) translateY(0);
 }
 .tip.tip-right .tip-text{left:-4px;right:auto;transform:translateX(0) translateY(3px)}
 .tip.tip-right:hover .tip-text,.tip.tip-right:focus-visible .tip-text{transform:translateX(0) translateY(0)}
@@ -230,6 +230,12 @@ select:focus,input:focus{border-color:var(--copper);
 }
 /* not enough horizontal room → stack the icon on top, text below */
 @media(max-width:560px){
+  .tip .tip-text,.tip.tip-right .tip-text{
+    position:fixed;left:12px;right:12px;top:12px;bottom:auto;width:auto;max-width:none;
+    transform:none
+  }
+  .tip:hover .tip-text,.tip:focus-visible .tip-text,
+  .tip.tip-right:hover .tip-text,.tip.tip-right:focus-visible .tip-text{transform:none}
   .tip.tip-ic .tip-text{
     background-position:top 10px center;
     background-size:auto 46px;
@@ -323,6 +329,7 @@ tr:last-child td{border-bottom:none}
 .calib-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 @media(max-width:640px){.calib-row{grid-template-columns:repeat(2,1fr)}}
 .calib-out{margin-top:10px;font-size:12px;color:var(--ink2);font-family:'JetBrains Mono',monospace;line-height:1.6}
+.calib-warning{color:var(--danger)}
 footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:var(--ink3);font-size:11.5px;line-height:1.6}
 .saveind{font-size:11px;color:var(--ink3);letter-spacing:.3px}
 .saveind b{color:var(--teal);font-weight:600}
@@ -547,7 +554,21 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 }
 @media (forced-colors:active){
   .skip-link,.btn,.iconbtn,.tip,.pchev,input,select,.card,.proj,.table-scroll{forced-color-adjust:auto}
+  .btn,.iconbtn,.tip,.pchev,input,select,.card,.proj,.table-scroll{border-style:solid}
   :focus-visible{outline:3px solid Highlight!important}
   .modesw button[aria-pressed="true"]{border:2px solid Highlight;color:ButtonText;background:ButtonFace}
   .spinner{border-color:CanvasText;border-top-color:Highlight}
+}
+@media(max-width:260px){
+  .wrap{padding:12px 8px 40px}
+  .brand h1{font-size:28px}
+  .tools{grid-template-columns:minmax(0,1fr)}
+  .card>.head{align-items:stretch;flex-direction:column}
+  .globals,.line-fields{grid-template-columns:minmax(0,1fr)}
+  .line-row{gap:4px;padding-left:5px;padding-right:5px}
+  .margin-row{align-items:stretch!important;flex-direction:column}
+  .margin-row>div:last-child{justify-content:space-between}
+  .modesw{grid-template-columns:minmax(0,1fr)}
+  .modesw button:nth-child(even){border-left:0}
+  .modesw button:nth-child(n+2){border-top:1px solid var(--line2)}
 }

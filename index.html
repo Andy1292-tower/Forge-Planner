@@ -71,7 +71,7 @@
         <div class="head"><h2>Outputs &amp; priority</h2><span class="sub">higher = make more</span></div>
         <div class="body">
           <div class="tg" id="targets"></div>
-          <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <div class="margin-row" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px;display:flex;align-items:center;justify-content:space-between;gap:10px">
             <div><label for="margin" style="font-size:12.5px;font-weight:600">"May-work" margin</label>
               <div id="marginHelp" style="font-size:10.5px;color:var(--ink3)">Allow a small input shortfall; higher values can produce a plan that is not strictly sustainable.</div></div>
             <div style="display:flex;align-items:center;gap:8px">
@@ -102,7 +102,7 @@
       <div class="notice warn" id="solveFallback" role="status" aria-live="polite" hidden></div>
       <div class="results-wrap">
         <div class="body" id="results"></div>
-        <div class="solve-overlay" id="solveOverlay" role="status" aria-live="polite" aria-atomic="true" hidden>
+        <div class="solve-overlay" id="solveOverlay" aria-hidden="true" hidden>
           <span class="spinner" aria-hidden="true"></span>
           <span class="solve-overlay-txt">Solving…</span>
         </div>
