@@ -8,6 +8,28 @@ let _lastItemsCreditsRes=null;   // items/credits solve result, cached so "Copy 
 // by the delegated #results click handler in events.js.
 let _projAdjustOpen=false;   // "Adjust project levels & completion" disclosure
 let _breakdownOpen=false;    // "Full breakdown — demand, line assignment, resource balance" disclosure
+function resultsTableName(table){
+  const headings=Array.from(table.querySelectorAll("th")).map(th=>th.textContent.trim()).join(" ");
+  if(/Line/.test(headings)&&/Job/.test(headings))return "Line assignment table";
+  if(/Resource/.test(headings)&&/Surplus|Consumed/.test(headings))return "Resource balance table";
+  if(/Credits \/hr/.test(headings))return "Credits comparison table";
+  if(/Project/.test(headings)&&/Needs/.test(headings))return "Project schedule table";
+  return "Planner results table";
+}
+function enhanceResultTables(){
+  const container=document.getElementById("results");if(!container)return;
+  Array.from(container.querySelectorAll("table")).forEach(table=>{
+    if(table.parentElement&&table.parentElement.classList.contains("table-scroll"))return;
+    const wrapper=document.createElement("div");
+    table.before(wrapper);wrapper.appendChild(table);
+    markTableScroller(wrapper,resultsTableName(table));
+  });
+}
+if(typeof MutationObserver!=="undefined"){
+  const resultTableObserver=new MutationObserver(enhanceResultTables);
+  const observedResults=document.getElementById("results");
+  if(observedResults)resultTableObserver.observe(observedResults,{childList:true,subtree:true});
+}
 // Plan start → a datetime-local value (or "" for live "now"). Shared with the inline anchor renderer.
 function fmtDatetimeLocal(ms){
   const d=new Date(ms);if(isNaN(d.getTime()))return "";
@@ -34,7 +56,7 @@ function solveError(msg){
     notice.append(domElement("b","","Solver error."),document.createTextNode(" "+String(msg).split("\n")[0]));
     el.replaceChildren(notice);
   }
-  if(stat)stat.textContent="";
+  if(stat)stat.textContent="Solve failed. Check the message below and try again.";
 }
 function resultMinedUsage(res){
   if(res&&Array.isArray(res.minedUsage))return res.minedUsage;
@@ -129,10 +151,10 @@ function renderProjectResults(res,el,stat){
           <button class="btn primary" id="btnProgress">Track progress</button>
         </div></div>
         <div class="notice info"><b>All projects complete 🎉</b> Nothing left to craft. Open <b>Track progress</b> to review or reopen a level, or add a new project in the <b>Shopping list</b>.</div>`;
-      stat.textContent="";return;
+      stat.textContent="Plan updated. All selected projects are complete.";return;
     }
     el.innerHTML=`<div class="notice info">No project demand yet. Open <b>Shopping list</b>, add a project with item costs, tick it <b>on</b>, then come back. Enter your current <b>inventory</b> there too — it's subtracted from what you need to craft.</div>`;
-    stat.textContent="";return;
+    stat.textContent="Plan updated. No project demand selected.";return;
   }
   let html="";
   // Header: ordering note + Track-progress opener. The step plan below is the main event, so there's
@@ -237,7 +259,7 @@ function renderProjectResults(res,el,stat){
   if(minedNote)bd+=minedNote;
   html+=`<details class="cat-panel breakdown-panel" ${_breakdownOpen?"open":""}><summary data-paneltoggle="breakdown"><span class="cat-sum-lbl">Full breakdown — demand, line assignment, resource balance</span><span class="cat-sum-meta">the numbers</span></summary><div class="panel-pad">${bd}</div></details>`;
   el.innerHTML=html;
-  stat.textContent="solved in "+(res.ms||0).toFixed(1)+" ms";
+  stat.textContent="Plan updated. Solved in "+(res.ms||0).toFixed(1)+" ms";
 }
 
 
@@ -260,7 +282,7 @@ function renderSolveResult(res,el,stat){
   _lastItemsCreditsRes=res;
   // nudge toward Sell prices when credits mode is selected but no prices exist yet
   if(typeof setPricePoke==="function")setPricePoke(res.mode==="credits"&&![...RAWS,...PRODUCTS].some(it=>(num(S.sellPrice[it])||0)>0));
-  if(res.empty){el.innerHTML=`<div class="notice info">Select one or more outputs on the left to optimize — or switch to <b>Max credits/hr</b> mode to auto-search the most profitable mix.</div>`;stat.textContent="";return;}
+  if(res.empty){el.innerHTML=`<div class="notice info">Select one or more outputs on the left to optimize — or switch to <b>Max credits/hr</b> mode to auto-search the most profitable mix.</div>`;stat.textContent="Plan updated. No outputs selected.";return;}
   let html="";
   if(res.mode==="credits"){
     html+=`<div class="notice info"><b>Credits mode.</b> Ignores the output checkboxes &amp; priorities. For each item with a <b>Sell price</b>, it works out the most your lines can produce per hour if the whole factory is dedicated to it, then picks the single highest-earning item.</div>`;
@@ -382,6 +404,6 @@ function renderSolveResult(res,el,stat){
     html+=`<div class="notice info" style="font-size:11.5px">${resource} income is set, but this plan puts <b>0</b> lines on <b>${crafts}</b>, so it uses none of that mined income.</div>`;
   });
   el.innerHTML=html;
-  stat.textContent="solved in "+res.ms.toFixed(1)+" ms";
+  stat.textContent="Plan updated. Solved in "+res.ms.toFixed(1)+" ms";
 }
 function invName(resIndex,idx){for(const k in resIndex)if(resIndex[k]===idx)return k;return "";}

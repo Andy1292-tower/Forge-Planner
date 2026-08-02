@@ -7,9 +7,11 @@
     "test:node": "node test/run-all.cjs",
     "test:parity": "node test/run-parity.cjs",
     "test": "npm run check:syntax && npm run test:node",
-    "test:browser": "NO_COLOR= FORCE_COLOR=0 playwright test"
+    "test:a11y": "NO_COLOR= FORCE_COLOR=0 playwright test test/browser/accessibility.spec.js --workers=1",
+    "test:browser": "NO_COLOR= FORCE_COLOR=0 SKIP_A11Y=1 playwright test"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.12.1",
     "@playwright/test": "1.62.1",
     "http-server": "14.1.1"
   }

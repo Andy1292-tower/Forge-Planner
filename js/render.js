@@ -9,6 +9,9 @@ const TIPS={
   dup:"Duplication chance — average % of crafts that drop a free duplicate. Adds output without spending extra material. Global to every crafter; leave 0 if you don't have dupe bonuses.",
   del:"Remove this crafter line"
 };
+function tipHtml(id,label,text,className="",style=""){
+  return `<button type="button" class="tip${className?" "+className:""}"${style?` style="${style}"`:""} aria-label="Help for ${label}" aria-describedby="${id}">?<span class="tip-text" id="${id}" role="tooltip">${text}</span></button>`;
+}
 function renderLines(){
   const box=document.getElementById("lines");box.innerHTML="";
   S.lines.forEach((ln,i)=>{
@@ -17,13 +20,13 @@ function renderLines(){
     const projected=(num(ln.turbo)||0)!==(num(S.maxTurbo)||0);
     const spNote=projected?`<div class="line-final mono">→ ×${fmt(lineSpeed(ln),2)} at ${fmt(num(S.maxTurbo)||0,0)} turbo stacks</div>`:"";
     row.innerHTML=`<div class="tag mono">#${i+1}</div>
-      <div><div class="lname">Line ${i+1}<i class="tip" tabindex="0" data-tip="${TIPS.line}">?</i></div>
+      <div><div class="lname">Line ${i+1}${tipHtml(`line${i+1}Help`,`Line ${i+1}`,TIPS.line)}</div>
         <div class="line-fields">
-          <label class="fl"><span>max compression</span><select data-line="${i}" aria-label="Max compression">${opts}</select></label>
-          <label class="fl"><span>speed × <i class="tip tip-right tip-ic" tabindex="0" style="--tip-img:url('/assets/speed.jpg')" data-tip="${TIPS.spx}">?</i></span><input type="number" min="0" step="any" placeholder="1" value="${ln.spx??1}" data-spx="${i}" aria-label="Currently displayed speed multiplier"></label>
-          <label class="fl"><span>turbo stacks <i class="tip tip-right" tabindex="0" data-tip="${TIPS.turbo}">?</i></span><input type="number" min="0" step="any" placeholder="0" value="${ln.turbo??0}" data-turbo="${i}" aria-label="Current turbo stacks"></label>
+          <div class="fl"><span>max compression</span><select data-line="${i}" aria-label="Line ${i+1} max compression">${opts}</select></div>
+          <div class="fl"><span>speed × ${tipHtml(`line${i+1}SpeedHelp`,`Line ${i+1} speed`,TIPS.spx,"tip-right tip-ic","--tip-img:url('/assets/speed.jpg')")}</span><input type="number" min="0" step="any" placeholder="1" value="${ln.spx??1}" data-spx="${i}" aria-label="Line ${i+1} currently displayed speed multiplier"></div>
+          <div class="fl"><span>turbo stacks ${tipHtml(`line${i+1}TurboHelp`,`Line ${i+1} turbo stacks`,TIPS.turbo,"tip-right")}</span><input type="number" min="0" step="any" placeholder="0" value="${ln.turbo??0}" data-turbo="${i}" aria-label="Line ${i+1} current turbo stacks"></div>
         </div>${spNote}</div>
-      <button class="iconbtn" data-del="${i}" title="${TIPS.del}" aria-label="${TIPS.del}">×</button>`;
+      <button class="iconbtn" data-del="${i}" title="${TIPS.del}" aria-label="Remove crafter line ${i+1}">×</button>`;
     box.appendChild(row);
   });
   document.getElementById("lineCount").textContent=S.lines.length+" line"+(S.lines.length>1?"s":"");
@@ -50,7 +53,7 @@ function targetRow(it){
   row.innerHTML=`<label><input type="checkbox" data-tg="${it}" ${t.on?"checked":""}> ${it}</label>
     <div class="prio" style="${t.on?"":"visibility:hidden"}">
       <span>PRIORITY</span>
-      <input type="range" min="1" max="9" step="1" value="${t.w}" data-w="${it}">
+      <input type="range" min="1" max="9" step="1" value="${t.w}" data-w="${it}" aria-label="${it} priority">
       <span class="pv mono">${t.w}</span></div>`;
   return row;
 }
@@ -95,6 +98,7 @@ function renderMinedGelLoadout(lo,vespHr){
   });
   h+=`</tbody></table></div>`;
   box.innerHTML=h;
+  if(typeof markTableScroller==="function")markTableScroller(box.querySelector(".mined-table-wrap"),"Gel production by crafter line table");
 }
 function renderMinedCostRows(item,targetId){
   const box=document.getElementById(targetId),cfg=MINED_CRAFTS[item];if(!box||!cfg)return;
@@ -111,6 +115,7 @@ function renderMinedCostRows(item,targetId){
       <td class="num mono mined-line-dependent">${seconds==null?"—":fmt(seconds,2)}</td>${resources.map(r=>`<td class="num mined-line-dependent">${cpm==null?"—":disp(costs[r]*cpm)}</td>`).join("")}</tr>`;
   });
   box.innerHTML=h+`</tbody></table>`;
+  if(typeof markTableScroller==="function")markTableScroller(box,`${item} mined-resource costs by compression table`);
 }
 
 /* ---------- RENDER: recipe data ---------- */
@@ -123,7 +128,7 @@ function baseTimeField(item){
   const v=S.baseTime[item]??12.85;
   return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 2px 8px">
     <span style="font-size:10.5px;color:var(--ink3)">base time @1× (s)</span>
-    <input type="number" min="0" step="any" class="base-time-input" value="${v}" data-res="${item}" data-fld="baseT"></div>`;
+    <input type="number" min="0" step="any" class="base-time-input" value="${v}" data-res="${item}" data-fld="baseT" aria-label="${item} base time at 1x in seconds"></div>`;
 }
 function rawCard(r){
   const c=document.createElement("div");c.className="rcard";
@@ -144,7 +149,7 @@ function prodCard(p){
     ins.forEach(k=>{
       const v=S.prodCost[p][k][L];
       cells+=`<td><input type="number" min="0" step="any" placeholder="–" value="${v??""}"
-        data-res="${p}" data-fld="cost" data-in="${k}" data-lv="${L}"></td>`;
+        data-res="${p}" data-fld="cost" data-in="${k}" data-lv="${L}" aria-label="${p} recipe ${k} cost at compression ${L}x"></td>`;
     });
     rows+=`<tr>${cells}</tr>`;
   });
@@ -156,5 +161,7 @@ function prodCard(p){
     <div class="rb"><div style="font-size:10.5px;color:var(--ink3);margin:0 2px 6px">${subt}</div>
     ${baseTimeField(p)}
     ${body}</div>`;
+  const recipeTable=c.querySelector("table");
+  if(recipeTable&&typeof markTableScroller==="function")markTableScroller(recipeTable.parentElement,`${p} recipe costs by compression table`);
   return c;
 }

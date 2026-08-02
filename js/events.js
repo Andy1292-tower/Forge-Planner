@@ -137,7 +137,11 @@ document.getElementById("btnReset").addEventListener("click",()=>{
 
 /* ---------- mode switch ---------- */
 function renderModeSwitch(){
-  document.querySelectorAll("#modesw button").forEach(b=>b.classList.toggle("on",b.dataset.mode===(S.mode||"items")));
+  document.querySelectorAll("#modesw button").forEach(b=>{
+    const selected=b.dataset.mode===(S.mode||"items");
+    b.classList.toggle("on",selected);
+    b.setAttribute("aria-pressed",selected?"true":"false");
+  });
 }
 document.getElementById("modesw").addEventListener("click",e=>{
   const m=e.target.dataset.mode;if(!m||m===S.mode)return;
@@ -159,7 +163,10 @@ function renderItemValueRows(box,textMap,numberMap,dataName,placeholder,inputMod
       name.append(itemTypeTag(it),document.createTextNode(it));
       const value=numberMap[it];
       const text=textMap[it]!=null?textMap[it]:(value!=null?formatGameNum(value,4):"");
-      row.append(name,domTextInput(dataName,it,text,{placeholder,inputMode}));
+      const accessibleName=dataName==="price"?`${it} sell price per unit`
+        :dataName==="forgie"?`${it} Lil' Forgie production per hour`
+        :`${it} current inventory`;
+      row.append(name,domTextInput(dataName,it,text,{placeholder,inputMode,accessibleName}));
       nodes.push(row);
     });
   };
@@ -300,12 +307,13 @@ initCalib();
 document.getElementById("saveind").textContent="auto-saves locally";
 if(initialState.recovery)showStateRecovery(initialState.recovery.raw,initialState.recovery.reason);
 function costRow(pi,li,ci,c){
+  const projectName=(S.projects[pi]&&S.projects[pi].name)||`Project ${pi+1}`;
   const opts=ALLITEMS.map(it=>`<option value="${it}" ${it===c.item?"selected":""}>${it}</option>`).join("");
   const txt=(c.qty!=null&&isFinite(c.qty))?formatGameNum(c.qty,4):"";
   return `<div class="cost-row">
-    <select data-citem="${pi}_${li}_${ci}">${opts}</select>
-    <input type="text" placeholder="qty" value="${txt}" data-cqty="${pi}_${li}_${ci}">
-    <button class="iconbtn" data-cdel="${pi}_${li}_${ci}" title="Remove item">×</button>
+    <select data-citem="${pi}_${li}_${ci}" aria-label="${htmlAttribute(projectName)} level ${li+1} item ${ci+1}">${opts}</select>
+    <input type="text" placeholder="qty" value="${txt}" data-cqty="${pi}_${li}_${ci}" aria-label="${htmlAttribute(projectName)} level ${li+1} ${htmlAttribute(c.item)} quantity">
+    <button class="iconbtn" data-cdel="${pi}_${li}_${ci}" title="Remove item" aria-label="Remove ${htmlAttribute(c.item)} from ${htmlAttribute(projectName)} level ${li+1}">×</button>
   </div>`;
 }
 // Read-only cost lines for one level of a catalog project (non-zero costs only).
@@ -318,9 +326,9 @@ function catLevelView(L){
 function projStepper(p,pi){
   const {span}=projSpan(p),done=projDone(p);
   return `<span class="lvl-step" title="Levels completed — increment as you finish them">
-    <button class="iconbtn" data-psdec="${pi}" ${done<=0?"disabled":""} title="Mark one fewer level done">−</button>
+    <button class="iconbtn" data-psdec="${pi}" ${done<=0?"disabled":""} title="Mark one fewer level done" aria-label="Mark one fewer ${htmlAttribute(p.name)} level complete">−</button>
     <span class="mono proj-mini" title="levels completed">${done}/${span}</span>
-    <button class="iconbtn" data-psinc="${pi}" ${done>=span?"disabled":""} title="Mark one more level done">+</button>
+    <button class="iconbtn" data-psinc="${pi}" ${done>=span?"disabled":""} title="Mark one more level done" aria-label="Mark one more ${htmlAttribute(p.name)} level complete">+</button>
   </span>`;
 }
 // Compact card for a catalog-sourced project: name is a fixed label, costs are
@@ -333,20 +341,22 @@ function compactProjCard(p,pi){
   const single=lv.length<=1;
   const range=single
     ? `<span class="proj-lvls one">1 level</span>`
-    : `<span class="proj-lvls">lv <input type="number" min="1" max="${lv.length}" step="1" data-pfrom="${pi}" value="${p.from||1}"> → <input type="number" min="1" max="${lv.length}" step="1" data-pto="${pi}" value="${p.to||lv.length}"></span>`;
+    : `<span class="proj-lvls">lv <input type="number" min="1" max="${lv.length}" step="1" data-pfrom="${pi}" value="${p.from||1}" aria-label="${htmlAttribute(p.name)} starting level"> → <input type="number" min="1" max="${lv.length}" step="1" data-pto="${pi}" value="${p.to||lv.length}" aria-label="${htmlAttribute(p.name)} ending level"></span>`;
+  const bodyId=`projectBody${pi}`;
+  const disclosureLabel=`${p._open?"Hide":"Show"} level costs for ${htmlAttribute(p.name)}`;
   return `<div class="proj cat-card ${p._open?"open":""}" data-pi="${pi}">
     <div class="proj-h">
-      <span class="pchev" data-ptoggle="${pi}" title="Show level costs">▸</span>
-      <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule">
+      <button type="button" class="pchev" data-ptoggle="${pi}" title="${disclosureLabel}" aria-label="${disclosureLabel}" aria-expanded="${p._open?"true":"false"}" aria-controls="${bodyId}">▸</button>
+      <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule" aria-label="Include ${htmlAttribute(p.name)} in schedule">
       <span class="pname-static">${htmlText(p.name)}${desc}</span>
       <div class="proj-tools">
-        <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–">order</label>
+        <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–" aria-label="${htmlAttribute(p.name)} schedule order">order</label>
         ${range}
         ${projStepper(p,pi)}
-        <button class="iconbtn" data-pdel="${pi}" title="Remove from list">×</button>
+        <button class="iconbtn" data-pdel="${pi}" title="Remove from list" aria-label="Remove ${htmlAttribute(p.name)} from shopping list">×</button>
       </div>
     </div>
-    <div class="proj-b"><div class="cat-lvls">${view}</div></div>
+    <div class="proj-b" id="${bodyId}"><div class="cat-lvls">${view}</div></div>
   </div>`;
 }
 function projCard(p,pi){
@@ -355,27 +365,29 @@ function projCard(p,pi){
   const lvlHtml=lv.map((L,li)=>{
     const rows=(L.costs||[]).map((c,ci)=>costRow(pi,li,ci,c)).join("");
     return `<div class="lvl-card">
-      <div class="lvl-h"><span>Level ${li+1}</span><span class="lvl-del" data-pdellvl="${pi}" data-li="${li}" title="Delete level">✕ remove</span></div>
+      <div class="lvl-h"><span>Level ${li+1}</span><button type="button" class="lvl-del" data-pdellvl="${pi}" data-li="${li}" title="Delete level" aria-label="Delete ${htmlAttribute(p.name)} level ${li+1}">✕ remove</button></div>
       ${rows||'<div class="proj-mini" style="margin-bottom:5px">No items — add one.</div>'}
       <button class="btn ghost proj-add-lvl" data-paddcost="${pi}" data-li="${li}">+ item</button>
     </div>`;
   }).join("");
+  const bodyId=`projectBody${pi}`;
+  const disclosureLabel=`${p._open?"Hide":"Show"} level costs for ${htmlAttribute(p.name)}`;
   return `<div class="proj ${p._open?"open":""}" data-pi="${pi}">
     <div class="proj-h">
-      <span class="pchev" data-ptoggle="${pi}">▸</span>
-      <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule">
-      <input type="text" class="pname" data-pname="${pi}" value="${htmlAttribute(p.name)}" placeholder="Project name">
+      <button type="button" class="pchev" data-ptoggle="${pi}" aria-label="${disclosureLabel}" aria-expanded="${p._open?"true":"false"}" aria-controls="${bodyId}">▸</button>
+      <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule" aria-label="Include ${htmlAttribute(p.name)} in schedule">
+      <input type="text" class="pname" data-pname="${pi}" value="${htmlAttribute(p.name)}" placeholder="Project name" aria-label="Project name">
       <div class="proj-tools">
-        <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–">order</label>
-        <span class="proj-lvls">lv <input type="number" min="1" step="1" data-pfrom="${pi}" value="${p.from||1}"> → <input type="number" min="1" step="1" data-pto="${pi}" value="${p.to||lv.length||1}"></span>
+        <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–" aria-label="${htmlAttribute(p.name)} schedule order">order</label>
+        <span class="proj-lvls">lv <input type="number" min="1" step="1" data-pfrom="${pi}" value="${p.from||1}" aria-label="${htmlAttribute(p.name)} starting level"> → <input type="number" min="1" step="1" data-pto="${pi}" value="${p.to||lv.length||1}" aria-label="${htmlAttribute(p.name)} ending level"></span>
         ${projStepper(p,pi)}
-        <button class="iconbtn" data-pdup="${pi}" title="Duplicate" style="font-size:13px">⧉</button>
-        <button class="iconbtn" data-pdel="${pi}" title="Delete project">×</button>
+        <button class="iconbtn" data-pdup="${pi}" title="Duplicate" aria-label="Duplicate ${htmlAttribute(p.name)}" style="font-size:13px">⧉</button>
+        <button class="iconbtn" data-pdel="${pi}" title="Delete project" aria-label="Delete ${htmlAttribute(p.name)}">×</button>
       </div>
     </div>
-    <div class="proj-b">
+    <div class="proj-b" id="${bodyId}">
       ${lvlHtml}
-      <button class="btn ghost proj-add-lvl" data-paddlvl="${pi}" style="margin-top:2px">+ level</button>
+      <button class="btn ghost proj-add-lvl" data-paddlvl="${pi}" style="margin-top:2px" aria-label="Add level to ${htmlAttribute(p.name)}">+ level</button>
     </div>
   </div>`;
 }
@@ -422,7 +434,7 @@ function renderCatalog(){
     const meta=`${lvls} level${lvls===1?"":"s"}${c.description?" · "+htmlText(c.description):""}`;
     return `<div class="cat-row${has?" added":""}">
       <div class="cat-row-info"><span class="cat-row-name">${htmlText(c.name)}</span><span class="cat-row-meta">${meta}</span></div>
-      <button class="btn ${has?"ghost":"primary"} cat-add" data-cat-add="${htmlAttribute(c.catId)}" ${has?"disabled":""}>${has?"Added":"Add"}</button>
+      <button class="btn ${has?"ghost":"primary"} cat-add" data-cat-add="${htmlAttribute(c.catId)}" aria-label="${has?"Added":"Add"} ${htmlAttribute(c.name)}${has?"":" to shopping list"}" ${has?"disabled":""}>${has?"Added":"Add"}</button>
     </div>`;
   }).join(""):`<div class="proj-mini" style="padding:6px 2px">No matching projects.</div>`;
 }
@@ -467,7 +479,12 @@ document.getElementById("projList").addEventListener("click",e=>{
 });
 document.getElementById("projList").addEventListener("input",e=>{
   const t=e.target,g=a=>t.getAttribute(a);let v;
-  if((v=g("data-pname"))!=null){mutateState(st=>{st.projects[+v].name=t.value;});save();scheduleSolve();return;}
+  if((v=g("data-pname"))!=null){
+    mutateState(st=>{st.projects[+v].name=t.value;});
+    const disclosure=t.closest(".proj").querySelector("[data-ptoggle]");
+    if(disclosure){const label=`${S.projects[+v]._open?"Hide":"Show"} level costs for ${t.value.trim()||"untitled project"}`;disclosure.setAttribute("aria-label",label);disclosure.title=label;}
+    save();scheduleSolve();return;
+  }
   if((v=g("data-pfrom"))!=null){mutateState(st=>{st.projects[+v].from=Math.max(1,Math.floor(num(t.value)||1));});save();scheduleSolve();return;}
   if((v=g("data-pto"))!=null){mutateState(st=>{st.projects[+v].to=Math.max(1,Math.floor(num(t.value)||1));});save();scheduleSolve();return;}
   if((v=g("data-pprio"))!=null){const n=Math.floor(num(t.value));mutateState(st=>{st.projects[+v].prio=(n>=1)?n:null;});save();scheduleSolve();return;}

@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="css/styles.css?v=20260801-mined-resources-v2">
 </head>
 <body>
+<a class="skip-link" href="#plannerMain">Skip to planner results</a>
 <div class="wrap">
   <header class="top">
     <div class="brand">
@@ -22,7 +23,7 @@
       <p>Got a project that needs to be added to the project catalog that I haven't gotten to yet? Please either submit it and its costs by level as a github issue/feature request at the link above or add it to your personal projects and export your save and submit that</p>
     </div>
     <div class="tools">
-      <span class="saveind" id="saveind"></span>
+      <span class="saveind" id="saveind" role="status" aria-live="polite" aria-atomic="true"></span>
       <button class="btn ghost" id="btnExport">Export build</button>
       <button class="btn ghost" id="btnImport">Import</button>
       <input type="file" id="fileImport" accept="application/json" class="hidden-file">
@@ -36,6 +37,7 @@
     </div>
   </header>
 
+  <main id="plannerMain" tabindex="-1">
   <section id="stateRecovery" class="notice warn" role="alert" aria-live="assertive" tabindex="-1" hidden style="margin:0 0 16px">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
       <div style="flex:1;min-width:240px">
@@ -57,8 +59,8 @@
         <div class="head"><h2>Crafter lines</h2><span class="sub" id="lineCount"></span></div>
         <div class="body">
           <div class="globals">
-            <label class="fl"><span>max turbo stacks <i class="tip" tabindex="0" data-tip="The most turbo stacks any crafter can reach — a global cap (each stack = +1% speed). The planner projects every line's current speed up to this many stacks, so the plan reflects your sustained speed at full turbo.">?</i></span><input type="number" min="0" step="any" id="maxTurbo" placeholder="0"></label>
-            <label class="fl"><span>dupe % <i class="tip tip-ic" tabindex="0" style="--tip-img:url('/assets/dupe.jpg')" data-tip="Duplication chance — average % of crafts that drop a free duplicate. Adds output without spending extra material. Global to every crafter; leave 0 if you don't have dupe bonuses.">?</i></span><input type="number" min="0" max="100" step="any" id="dupe" placeholder="0"></label>
+            <div class="fl"><span><label for="maxTurbo">max turbo stacks</label> <button type="button" class="tip" aria-label="Help for max turbo stacks" aria-describedby="maxTurboHelp">?<span class="tip-text" id="maxTurboHelp" role="tooltip">The most turbo stacks any crafter can reach — a global cap (each stack = +1% speed). The planner projects every line's current speed up to this many stacks, so the plan reflects your sustained speed at full turbo.</span></button></span><input type="number" min="0" step="any" id="maxTurbo" placeholder="0"></div>
+            <div class="fl"><span><label for="dupe">dupe %</label> <button type="button" class="tip tip-ic" style="--tip-img:url('/assets/dupe.jpg')" aria-label="Help for duplication chance" aria-describedby="dupeHelp">?<span class="tip-text" id="dupeHelp" role="tooltip">Duplication chance — average % of crafts that drop a free duplicate. Adds output without spending extra material. Global to every crafter; leave 0 if you don't have dupe bonuses.</span></button></span><input type="number" min="0" max="100" step="any" id="dupe" placeholder="0"></div>
           </div>
           <div id="lines"></div>
           <button class="btn ghost" id="btnAddLine" style="width:100%;justify-content:center;margin-top:4px">+ Add line</button>
@@ -70,11 +72,11 @@
         <div class="body">
           <div class="tg" id="targets"></div>
           <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px;display:flex;align-items:center;justify-content:space-between;gap:10px">
-            <div><div style="font-size:12.5px;font-weight:600">"May-work" margin</div>
-              <div style="font-size:10.5px;color:var(--ink3)">allow a small input shortfall</div></div>
+            <div><label for="margin" style="font-size:12.5px;font-weight:600">"May-work" margin</label>
+              <div id="marginHelp" style="font-size:10.5px;color:var(--ink3)">Allow a small input shortfall; higher values can produce a plan that is not strictly sustainable.</div></div>
             <div style="display:flex;align-items:center;gap:8px">
-              <input type="range" id="margin" min="0" max="20" step="0.5" value="0" style="width:90px;accent-color:var(--copper)">
-              <span class="mono" id="marginv" style="color:var(--amber);font-size:12px;width:38px;text-align:right">0%</span>
+              <input type="range" id="margin" min="0" max="20" step="0.5" value="0" aria-label="May-work margin" aria-describedby="marginHelp" style="width:90px;accent-color:var(--copper)">
+              <span class="mono" id="marginv" aria-hidden="true" style="color:var(--amber);font-size:12px;width:38px;text-align:right">0%</span>
             </div>
           </div>
         </div>
@@ -85,22 +87,22 @@
     <div class="card">
       <div class="head"><h2>Optimal setup</h2>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <div class="modesw" id="modesw">
-            <button data-mode="items" class="on">Max items/hr</button>
-            <button data-mode="credits">Max credits/hr</button>
-            <button data-mode="project">Project plan</button>
-            <button data-mode="manual">Manual</button>
+          <div class="modesw" id="modesw" aria-label="Planning mode">
+            <button data-mode="items" class="on" aria-pressed="true">Max items/hr</button>
+            <button data-mode="credits" aria-pressed="false">Max credits/hr</button>
+            <button data-mode="project" aria-pressed="false">Project plan</button>
+            <button data-mode="manual" aria-pressed="false">Manual</button>
           </div>
-          <span class="sub" id="solveStat"></span>
+          <span class="sub" id="solveStat" role="status" aria-live="polite" aria-atomic="true"></span>
         </div></div>
-      <div class="stale-bar" id="staleBar" hidden>
-        <span class="stale-msg">Crafter line inputs changed — press Resimulate to update the plan below.</span>
+      <div class="stale-bar" id="staleBar" role="status" aria-live="polite" aria-atomic="true" hidden>
+        <span class="stale-msg">Plan out of date — crafter line inputs changed. Press Resimulate to update it.</span>
         <button class="btn primary" id="btnResim">Resimulate</button>
       </div>
       <div class="notice warn" id="solveFallback" role="status" aria-live="polite" hidden></div>
       <div class="results-wrap">
         <div class="body" id="results"></div>
-        <div class="solve-overlay" id="solveOverlay" hidden>
+        <div class="solve-overlay" id="solveOverlay" role="status" aria-live="polite" aria-atomic="true" hidden>
           <span class="spinner" aria-hidden="true"></span>
           <span class="solve-overlay-txt">Solving…</span>
         </div>
@@ -134,6 +136,8 @@
     <div class="rgrid" id="recipes"></div>
     </div>
   </div>
+  <p class="table-scroll-help" id="tableScrollHelp">Scrollable table. Use Shift plus mouse wheel, a trackpad, or the horizontal scrollbar to see additional columns.</p>
+  </main>
 
   <footer>
     Steady-state model: the plan guarantees every input is produced at least as fast as it's consumed, so it runs forever without re-shuffling. Seed a small starting stockpile to smooth the batch timing. Frames assume Bits are pre-produced. All math runs locally in your browser — nothing is uploaded.
@@ -176,7 +180,7 @@
             <div><h4 id="minedVespiumTitle">Vespium → Gel</h4><p>Set the mined Vespium budget that Gel-producing lines can spend.</p></div>
             <span class="mined-badge">Gel supply</span>
           </div>
-          <label class="fl mined-income"><span>Vespium / minute income <i class="tip" tabindex="0" data-tip="You'll have to experiment with this number a little bit to get it accurate. Vesp rigs mined/min is a good place to start, but Duo Affinity 9 can materially change actual production.">?</i></span><input type="text" inputmode="decimal" id="minedVespium" data-mined-income="Vespium" placeholder="e.g. 500t" autocomplete="off" aria-label="Vespium per minute income"></label>
+          <div class="fl mined-income"><span><label for="minedVespium">Vespium / minute income</label> <button type="button" class="tip" aria-label="Help for Vespium income" aria-describedby="vespiumHelp">?<span class="tip-text" id="vespiumHelp" role="tooltip">You'll have to experiment with this number a little bit to get it accurate. Vesp rigs mined/min is a good place to start, but Duo Affinity 9 can materially change actual production.</span></button></span><input type="text" inputmode="decimal" id="minedVespium" data-mined-income="Vespium" placeholder="e.g. 500t" autocomplete="off" aria-label="Vespium per minute income"></div>
           <div class="mined-capacity" id="minedVespiumSummary"></div>
           <div id="minedGelLoadout"></div>
           <h5 class="mined-table-title">Vespium and Rocks cost by compression</h5>
@@ -203,13 +207,13 @@
   <div class="modal" style="max-width:520px" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
     <div class="modal-h"><h3 id="settingsTitle">Settings</h3><button class="iconbtn" id="settingsClose" title="Close" aria-label="Close settings" data-dialog-close>×</button></div>
     <div class="modal-b" data-dialog-body>
-      <label class="fl" style="display:block">
-        <span>Max solve time <i class="tip" tabindex="0" data-tip="How long the optimizer may search before returning its best plan. The solve runs in the background (no freeze) with a progress spinner. More time = better plans on big factories (many lines, mined-resource chains); less time = snappier. Easy setups finish early regardless.">?</i></span>
+      <div class="fl" style="display:block">
+        <span><label for="solveBudget">Max solve time</label> <button type="button" class="tip" aria-label="Help for max solve time" aria-describedby="solveBudgetHelp">?<span class="tip-text" id="solveBudgetHelp" role="tooltip">How long the optimizer may search before returning its best plan. The solve runs in the background (no freeze) with a progress spinner. More time can improve plans on big factories; simple setups finish early regardless.</span></button></span>
         <div style="display:flex;align-items:center;gap:12px;margin-top:6px">
           <input type="range" id="solveBudget" min="0.2" max="15" step="0.1" style="flex:1">
           <span class="mono" id="solveBudgetVal" style="min-width:64px;text-align:right"></span>
         </div>
-      </label>
+      </div>
       <p class="help" style="margin-top:10px">The plan is computed in a background thread, so a longer budget won't freeze the page. Bigger factories (7+ lines, mined-resource chains) benefit most from extra time; simple setups return as soon as they're solved.</p>
     </div>
     <div class="modal-f"><button class="btn primary" id="settingsDone" aria-label="Done editing settings" data-dialog-close>Done</button></div>

@@ -214,5 +214,5 @@ function renderManual(el,stat){
   }
   el.innerHTML=html;
   renderManualPresetBar(document.getElementById("manualPresetBar"),saved,active);
-  stat.textContent="manual setup";
+  stat.textContent="Manual setup ready.";
 }

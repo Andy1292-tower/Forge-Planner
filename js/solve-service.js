@@ -18,7 +18,10 @@ const solveService=(()=>{
   let fallbackActive=false;
   let lastReason="";
 
-  function overlay(show){const el=document.getElementById("solveOverlay");if(el)el.hidden=!show;}
+  function overlay(show){
+    const el=document.getElementById("solveOverlay");if(el)el.hidden=!show;
+    if(show){const stat=document.getElementById("solveStat");if(stat)stat.textContent="Solving plan…";}
+  }
   function fallbackNotice(show,reason){
     fallbackActive=show;
     if(reason)lastReason=String(reason);

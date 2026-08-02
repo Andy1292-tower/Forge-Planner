@@ -13,8 +13,23 @@ function domTextInput(dataName,dataValue,value,options={}){
   input.dataset[dataName]=String(dataValue);
   input.placeholder=options.placeholder||"";
   if(options.inputMode)input.inputMode=options.inputMode;
+  if(options.accessibleName)input.setAttribute("aria-label",options.accessibleName);
   input.value=String(value==null?"":value);
   return input;
+}
+
+function markTableScroller(element,label){
+  if(!element)return;
+  element.classList.add("table-scroll");
+  element.setAttribute("role","region");
+  element.setAttribute("aria-label",label);
+  element.setAttribute("aria-describedby","tableScrollHelp");
+  element.tabIndex=0;
+  if(!element.querySelector(":scope > .table-scroll-hint")){
+    const hint=domElement("div","table-scroll-hint","Scroll horizontally to see all columns →");
+    hint.setAttribute("aria-hidden","true");
+    element.prepend(hint);
+  }
 }
 
 function domOption(value,label,selected){
