@@ -781,7 +781,11 @@ function beginStaticBudget(totalMs,phaseCount,t0){
   _staticBudget={total:totalMs,t0:(t0!=null?t0:performance.now()),left:Math.max(1,phaseCount)};
   _staticPhaseGrants=[];
 }
-// The ms the NEXT static phase would get (0 = not budgeting, i.e. the caller uses the full budget).
+// The ms the NEXT static phase would get, or 0 when this call isn't budgeting at all. Note that a
+// budgeted-but-exhausted solve ALSO reads 0 here — the two are told apart by takeStaticPhaseBudget,
+// which returns null only in the not-budgeting case. Conflating them is a live foot-gun: "0" read as
+// "not budgeting" hands every phase past the cap the user's whole solve time again, which is exactly
+// the overrun this accounting exists to stop (a long list hits the floor and exhausts the total).
 function getStaticPhaseBudget(){
   if(!_staticBudget)return 0;
   const remaining=Math.max(0,_staticBudget.total-(performance.now()-_staticBudget.t0));
@@ -789,9 +793,14 @@ function getStaticPhaseBudget(){
   return Math.min(remaining,Math.max(STATIC_PHASE_MIN_MS,remaining/left));
 }
 function getStaticPhaseBudgets(){return _staticPhaseGrants.slice();}
+// null = not budgeting (the caller should use its full budget); a number = this phase's grant, which
+// may legitimately be 0 once the total is spent. solveCore treats 0 as "seed, don't refine", so a
+// list long enough to exhaust the cap degrades in plan quality rather than in wall-clock.
 function takeStaticPhaseBudget(){
+  if(!_staticBudget)return null;
   const ms=getStaticPhaseBudget();
-  if(_staticBudget){_staticBudget.left=Math.max(0,_staticBudget.left-1);_staticPhaseGrants.push(ms);}
+  _staticBudget.left=Math.max(0,_staticBudget.left-1);
+  _staticPhaseGrants.push(ms);
   return ms;
 }
 function staticSchedule(net,targets){
@@ -805,7 +814,7 @@ function staticSchedule(net,targets){
   // its incumbent stops improving.
   const full=Math.max(200,Math.min(60000,num(S.solveBudget)||2000));
   const share=takeStaticPhaseBudget();
-  const budget=share>0?Math.min(full,share):full;
+  const budget=(share==null)?full:Math.min(full,share);
   // tolOverride=0: strictly balanced, always — project phases never honor the "may-work" margin
   // slider (the splitting LP doesn't either), so the mode switch can't change the feasibility contract.
   const sr=solveCore(targets,w,rc.prods,rc.raws,budget,0);

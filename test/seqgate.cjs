@@ -37,6 +37,8 @@
 const fs = require("fs");
 const path = require("path");
 
+// Frozen by default (so the anytime solver runs to exhaustion and every assertion is deterministic).
+// One block at the end swaps in an advancing clock on purpose, to exercise budget exhaustion.
 globalThis.performance = { now: () => 0 };
 globalThis.localStorage = { getItem: () => null, setItem: () => {} };
 // Element registry, so a test can read back what a renderer wrote into #results.
@@ -378,6 +380,32 @@ const runner = `
     record("caption: static mode never claims the fastest total",
       el.innerHTML.indexOf("(fastest total)") < 0 && el.innerHTML.indexOf("set &amp; forget lines") >= 0,
       "hasFastestTotal=" + (el.innerHTML.indexOf("(fastest total)") >= 0));
+  }
+
+  /* ---- L1 follow-up: what happens once the budget is actually SPENT --------------------------
+   * Every grant is floored at STATIC_PHASE_MIN_MS, so a long enough list runs the total out before
+   * the last phases are solved. Those phases must be handed what's left — nothing — and not fall
+   * back to "no budget set, take the user's whole solve time", which would make a long list overrun
+   * the cap by the worst margin of all. Needs a clock that MOVES, so this block swaps the frozen one
+   * out and restores it afterwards; only the grants are asserted, not the (deliberately starved)
+   * plans they produce. */
+  {
+    const frozen = performance.now;
+    let clock = 0;
+    performance.now = () => (clock += 40);   // 40ms per read: exhausts a 2000ms cap within a few phases
+    let grants = [], phases = 0, threw = null;
+    try {
+      const many = Array.from({length:12}, (_,i) => P("q"+i, "Q"+i, [["Glass", 200 + i]], i+1));
+      const r = run(many, {projLineMode:"static", solveBudget:2000});
+      grants = getStaticPhaseBudgets(); phases = r.phases.length;
+    } catch (e) { threw = String(e && e.message || e); }
+    finally { performance.now = frozen; }
+    record("L1: an exhausted budget grants nothing, never the full solve time again",
+      threw === null && grants.length === 12 && grants.every(g => g <= 2000 + 1e-9) &&
+      grants[grants.length-1] === 0,
+      "threw=" + threw + " grants=" + JSON.stringify(grants.map(g => Math.round(g))));
+    record("L1: the plan still comes back complete when the budget runs out mid-list",
+      phases === 12, "phases=" + phases);
   }
 
   __emit(JSON.stringify(results));
