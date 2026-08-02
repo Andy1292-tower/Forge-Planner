@@ -22,6 +22,7 @@ const tests = [
   "test/seqgate.cjs",
   "test/solve-lifecycle.cjs",
   "test/state-schema.cjs",
+  "test/staticmode.cjs",
   "test/stability.cjs",
   "test/stockrisk.cjs",
   "test/run-parity.cjs",

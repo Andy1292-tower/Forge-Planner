@@ -8,17 +8,20 @@
  *       against Bits stock phase 1 had already spent.
  *   H2  a project fully covered by inventory reported "blocked" and, costing Infinity, sorted LAST.
  *   M1  a "set & forget" phase's overshoot was thrown away instead of carried to the next phase.
+ *   M2  static ranking used an LP that models stock drawdown the static phases never perform.
  *   M3  a phase blocked on a missing mined income reported feasible and ranked by its leftovers.
+ *   L1  a static multi-phase plan budgeted max-solve-time PER PHASE, so the whole solve ran N times
+ *       longer than the user asked for.
  *   M4  the mined-usage note was derived from phase 1's plan only — silent when a later phase
  *       forges the mined craft, and phase-1-scoped when it doesn't.
  *   M5  the order header claimed "all projects together" whenever only one project was left,
  *       regardless of what the Shopping-list toggle actually said.
  *   L2  unlockLayers tested unlock materials against direct costs only, missing Gel -> Wire.
  *
- * Static ("set & forget") line mode has its own suite in test/staticmode.cjs; the blocks here that
- * need it are the overshoot carry (M1) and the ranking/notice behaviour that only exists in that
- * mode. What is asserted here is the split-mode side of those: the overshoot credit must be a no-op
- * for the makespan LP, which is what keeps the parity golden byte-identical.
+ * Single-phase "set & forget" behaviour has its own suite in test/staticmode.cjs; what lives here is
+ * the multi-phase side of it — the overshoot carry, the ranking world, and the budget division. The
+ * split-mode counterparts are asserted alongside, because the overshoot credit must be a no-op for
+ * the makespan LP: that is what keeps the parity golden byte-identical.
  *
  * Bootstrap mirrors parity.cjs / staticmode.cjs: browser globals shimmed, performance.now() frozen
  * to 0 so the anytime solver runs to exhaustion (deterministic), small compression caps to keep that
@@ -148,16 +151,104 @@ const runner = `
       "order=" + r.phases.map(p=>p.name).join(" -> ") + " planFeasible=" + r.feasible);
   }
 
-  /* ---- M1 (split half): the overshoot credit must be a no-op for the splitting LP ----------
-   * The makespan LP lands every item on the makespan, so there is nothing left over to carry — the
-   * credit added to consumeInv must not invent stock here. This is what keeps the parity golden
-   * byte-identical; the static side of M1 lives in staticmode.cjs. */
+  /* ---- M1: "set & forget" overshoot is carried to the next phase ---------------------------
+   * A static phase runs until its slowest item is done, so the 50 Bricks it also owed finish long
+   * before the 2000 Glass and that line keeps making Bricks to the end. Those spare Bricks are real
+   * — the next project must start with them on hand and need correspondingly fewer. */
   {
+    const r = run([P("a","P1",[["Glass",2000],["Bricks",50]],1), P("b","P2",[["Bricks",2000]],2)],
+                  {projLineMode:"static"});
+    const p2 = r.phases[1];
+    const carried = (p2.invStart && p2.invStart.Bricks) || 0;
+    record("M1: static surplus is credited into the next phase's starting stock",
+      r.phases[0].name === "P1" && carried > 1e-6,
+      "carriedBricks=" + carried.toFixed(1) + " p2NetBricks=" + (p2.net.Bricks||0).toFixed(1));
+    record("M1: the carried surplus reduces what the next phase has to craft",
+      Math.abs((p2.net.Bricks||0) - Math.max(0, 2000 - carried)) <= 1e-6 * 2000,
+      "netBricks=" + (p2.net.Bricks||0).toFixed(1) + " expected=" + Math.max(0,2000-carried).toFixed(1));
+    // Split mode lands every item on the makespan, so there is no overshoot to carry — the credit
+    // must be a no-op there (this is what keeps the parity golden byte-identical).
     const sp = run([P("a","P1",[["Glass",2000],["Bricks",50]],1), P("b","P2",[["Bricks",2000]],2)], {});
     const spCarried = (sp.phases[1].invStart && sp.phases[1].invStart.Bricks) || 0;
     record("M1: split mode has ~no overshoot, so the credit changes nothing there",
       sp.phases.length === 2 && spCarried <= 1e-6 * 2000,
       "splitCarriedBricks=" + spCarried);
+  }
+
+  /* ---- M2: static ranking must model the no-stock world the static phases solve -------------
+   * 20k Plates against 400k Ingots held vs 7.5k Glass with no stock. The ranking LP is allowed to
+   * drain that Ingot stock, which makes Plates look nearly free and jumps it ahead — but a static
+   * phase never draws stock down, so it crafts every Ingot from scratch and is genuinely the more
+   * expensive of the two. Ranking with the stock omitted puts them back in the true order. */
+  {
+    const r = run([P("a","Plates",[["Plates",20000]]), P("b","Glass",[["Glass",7500]])],
+                  {projLineMode:"static", inventory:{Ingots:400000}});
+    record("M2: static ranks by the no-drawdown makespan (cheapest project really goes first)",
+      r.phases[0].name === "Glass",
+      "order=" + r.phases.map(p=>p.name+"("+p.eta.toFixed(2)+"h)").join(" -> "));
+    // Ground truth: solved on its own in static mode, Glass really is the shorter of the two.
+    const solo = (proj) => run([proj], {projLineMode:"static", inventory:{Ingots:400000}}).eta;
+    const gEta = solo(P("b","Glass",[["Glass",7500]])), pEta = solo(P("a","Plates",[["Plates",20000]]));
+    record("M2: ...and that order matches the projects' actual standalone static makespans",
+      gEta < pEta, "glassSolo=" + gEta.toFixed(2) + "h platesSolo=" + pEta.toFixed(2) + "h");
+  }
+
+  /* ---- L1: max-solve-time bounds the WHOLE static solve, not each phase --------------------
+   * Gel Refinery -> Wire Tower (needs Gel) -> a Wire consumer is three unlock layers, so the waves
+   * path runs three full solveCore calls. Budgeting per phase meant the user's setting bounded ONE
+   * wave and the plan took three times as long as they asked for. Each phase now gets a share of
+   * what REMAINS when it starts, so an early phase that proves out fast hands its time forward.
+   * (performance.now() is frozen here, so no time can elapse between grants — the wall-clock cap
+   * itself is measured for real outside the suite; what this pins is the division and the reset.) */
+  {
+    const waves = run([P("g","GelRef",[["Concrete",10]],null,"gel-refinery"),
+                       P("w","WireTower",[["Gel",10]],null,"wire-tower"),
+                       P("c","Consumer",[["Wire",10]])],
+                      {projLineMode:"static", projectSeq:false, projectGate:true,
+                       minedIncome:{Vespium:VESP_BUDGET}, solveBudget:3000});
+    const grants = getStaticPhaseBudgets();
+    record("L1: static + unlock waves splits the budget across the waves",
+      waves.phases.length === 3 && grants.length === 3 && Math.abs(grants[0] - 1000) < 1e-9,
+      "phases=" + waves.phases.length + " grants=" + JSON.stringify(grants) +
+      " (bug left the first at the full 3000)");
+    record("L1: no single phase is ever granted more than the whole budget",
+      grants.every(g => g <= 3000 + 1e-9), "grants=" + JSON.stringify(grants));
+    // Sequencing is unchanged: one phase per project.
+    run([P("a","A",[["Glass",100]]), P("b","B",[["Bricks",100]])],
+        {projLineMode:"static", solveBudget:3000});
+    const seqGrants = getStaticPhaseBudgets();
+    record("L1: sequencing still divides by the project count",
+      seqGrants.length === 2 && Math.abs(seqGrants[0] - 1500) < 1e-9, "grants=" + JSON.stringify(seqGrants));
+    // Split mode never pays the per-phase solveCore cost, so budgeting must stay off — and the
+    // previous solve's state must not leak into it (the solve worker is reused across solves).
+    run([P("a","A",[["Glass",100]]), P("b","B",[["Bricks",100]])], {solveBudget:3000});
+    record("L1: split mode leaves the per-phase budget unset and clears the previous solve's state",
+      getStaticPhaseBudget() === 0 && getStaticPhaseBudgets().length === 0,
+      "next=" + getStaticPhaseBudget() + " grants=" + JSON.stringify(getStaticPhaseBudgets()));
+  }
+
+  /* ---- R1 (review follow-up): surplus Frames must be charged their pre-produced Bits --------
+   * The M1 overshoot credit hands the next phase spare Frames a static line kept crafting after the
+   * quota was met — but every one of those Frames burned 8 pre-produced Bits, and the draw only
+   * charged the Bits for the DEMANDED units. Without the surplus debit, phase 2's invStart.Bits is
+   * overstated by 8 × (surplus Frames) and phase 2 under-crafts Bits — H1 reintroduced sideways. */
+  {
+    const INV_BITS = 1e6;
+    const r = run([P("f","Frames",[["Frames",60],["Concrete",50000]],1),
+                   P("g","Glass",[["Glass",200]],2)],
+                  {projLineMode:"static", inventory:{Bits:INV_BITS}});
+    const ph = r.phases[0];
+    const surplus = it => Math.max(0, ((ph.rate&&ph.rate[it])||0)*ph.eta - ((ph.net&&ph.net[it])||0));
+    const expected = Math.max(0, INV_BITS
+      - ((ph.demandSub&&ph.demandSub.Bits)||0)                                   // direct Bits cost (none here)
+      - preprodBitsOf(ph.net)                                                    // Bits for the demanded Frames
+      + surplus("Bits")                                                          // real spare Bits the lines crafted
+      - preprodBitsOf({Frames:surplus("Frames"), Wire:surplus("Wire")}));        // Bits the SURPLUS Frames burned
+    const got = (r.phases[1].invStart&&r.phases[1].invStart.Bits)||0;
+    record("R1: phase 2's Bits on hand charges the surplus Frames' pre-produced Bits",
+      Math.abs(got - expected) <= 1e-6*Math.max(1,expected) && surplus("Frames") > 1,
+      "got=" + got.toFixed(2) + " expected=" + expected.toFixed(2) +
+      " surplusFrames=" + surplus("Frames").toFixed(2));
   }
 
   /* ---- M4: the mined-usage note belongs to the phase that forges the mined craft ------------

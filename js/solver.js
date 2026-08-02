@@ -134,7 +134,10 @@ const forgieHr=r=>num(S.forgie&&S.forgie[r])||0;
 // Finally, a tie-break pass minimises total input shortfall among plans tied on the
 // objective, so a deficit the targets can't use (free to close from surplus feeders) gets
 // closed instead of left on the margin as a phantom "may-work" plan.
-function solveCore(targets,w,relProds,relRaws,timeBudget){
+// `tolOverride` (a FRACTION, not a percent) pins the feasibility tolerance regardless of the margin
+// slider. Project phases pass 0: they are strictly balanced in every line mode, so switching how the
+// lines are used must not quietly change the feasibility contract. Omit it for the slider's value.
+function solveCore(targets,w,relProds,relRaws,timeBudget,tolOverride){
   // Each mined resource joins only when its craft is in the chain and it has a positive budget.
   // Its produced>=consumed balance then enforces that resource's burn independently.
   const mined=activeMinedResources(relProds);
@@ -142,7 +145,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   const resIndex={};resources.forEach((r,i)=>resIndex[r]=i);
   const R=resources.length;
   const tIdx=targets.map(t=>resIndex[t]);
-  const tol=Math.max(0,Math.min(50,num(S.margin)||0))/100;
+  const tol=(tolOverride!=null)?Math.max(0,Math.min(0.5,tolOverride)):Math.max(0,Math.min(50,num(S.margin)||0))/100;
   // Active feasibility tolerance for the current search pass. The margin solve runs two passes
   // (strict tol=0, then the user's margin) so its result is monotone in margin — see the staged
   // search at the bottom of solveCore (issue #60).
@@ -732,6 +735,104 @@ function projectSchedule(net,targets,avail,opts){
   }
   return {rate,plan,items,z:(y[zCol]||0)/D0,stabilized,zFree:zFree/D0,zPin};
 }
+/* ---------- "set & forget" line mode ----------
+   The S.projLineMode==="static" alternative to projectSchedule, returning the SAME result shape so
+   everything downstream (eta, bottleneck, balance, mined readout, the step plan) is untouched. Each
+   line is pinned to exactly ONE job (item + compression) for the whole phase and never switches, so
+   there's nothing to babysit mid-run.
+
+   No new solver is needed: solveCore already solves precisely this problem. It assigns one discrete
+   job per line and maximises the weighted max-min of NET target output, with steady-state
+   feasibility for intermediates, Lil' Forgie's passive supply, the mined-income budgets, effective-
+   speed caps and duplication all handled. Set each weight to that item's net demand and the
+   objective "min_k netRate_k / w_k" becomes exactly 1/makespan: the optimum finishes the SLOWEST
+   item as early as it can. It does NOT penalise finishing an item early — an item with spare line
+   capacity simply keeps producing past its quota — so this is a shortest-worst-case schedule, not a
+   promise that everything lands together. The per-item "Finishes:" readout is the honest disclosure.
+
+   The weights are divided by the largest demand first. That's a single constant scale factor, so it
+   can't change which assignment wins, but it keeps the objective in the same numeric range as an
+   items-mode solve — solveCore compares improvements against an absolute EPS (1e-9), which a raw
+   demand of, say, 1e15 in the denominator would quietly flatten to nothing.
+
+   KNOWN, INTENTIONAL LIMITATION: unlike projectSchedule this does not model `avail` stock drawdown
+   (issue #73). A static plan always assigns real production for everything it needs — the safe
+   direction (it over-crafts rather than banking on stock running out), at the cost of not freeing a
+   line when inventory alone could have covered an intermediate. solvePhaseFor's atRisk warning keys
+   off "stock drawn down with prod==0", so it simply never fires for a static plan.
+
+   COST: this is a full solveCore per phase where projectSchedule is one cheap simplex, because
+   solveCore won't return until its incumbent has gone a full convergence window without improving.
+   A sequenced list of 8 projects would therefore sit on an 8× spinner at the default budget. The
+   remaining-budget accounting below is the answer: the user's max-solve-time bounds the WHOLE
+   project solve, as it does in items mode. */
+// Remaining-budget accounting for the static phases of ONE optimizeProjectTop call. `total` is the
+// user's max solve time and `t0` the moment the whole project solve started, so time already spent
+// (including the cheap ranking LPs) counts against it — the setting is a true overall cap, not a
+// per-phase one. Each phase gets an equal share of what is LEFT rather than a share latched up
+// front, so a phase that proves out early hands its unused time to the ones after it. Floored at
+// STATIC_PHASE_MIN_MS because quality does keep improving up to ~2s on a hard 3-target phase, but
+// never above what remains. null = not budgeting (split mode, or a single full-budget solve).
+const STATIC_PHASE_MIN_MS=200;
+let _staticBudget=null;
+let _staticPhaseGrants=[];   // what each phase was actually handed, for tests / diagnostics
+function resetStaticBudget(){_staticBudget=null;_staticPhaseGrants=[];}
+function beginStaticBudget(totalMs,phaseCount,t0){
+  _staticBudget={total:totalMs,t0:(t0!=null?t0:performance.now()),left:Math.max(1,phaseCount)};
+  _staticPhaseGrants=[];
+}
+// The ms the NEXT static phase would get (0 = not budgeting, i.e. the caller uses the full budget).
+function getStaticPhaseBudget(){
+  if(!_staticBudget)return 0;
+  const remaining=Math.max(0,_staticBudget.total-(performance.now()-_staticBudget.t0));
+  const left=Math.max(1,_staticBudget.left);
+  return Math.min(remaining,Math.max(STATIC_PHASE_MIN_MS,remaining/left));
+}
+function getStaticPhaseBudgets(){return _staticPhaseGrants.slice();}
+function takeStaticPhaseBudget(){
+  const ms=getStaticPhaseBudget();
+  if(_staticBudget){_staticBudget.left=Math.max(0,_staticBudget.left-1);_staticPhaseGrants.push(ms);}
+  return ms;
+}
+function staticSchedule(net,targets){
+  // relevantChain handles raw targets itself (they go straight into relR), so this covers the
+  // product chain and any raw the user's projects demand directly — same expansion optimizeInner does.
+  const rc=relevantChain(targets);
+  const D0=Math.max(1,...targets.map(it=>net[it]||0));
+  const w=targets.map(it=>Math.max(1e-12,(net[it]||0)/D0));
+  // Same clamp optimizeInner applies, then this phase's share of what's left. The budget is an
+  // anytime CAP, not a fixed wait: solveCore returns as soon as its branch-and-bound proves out or
+  // its incumbent stops improving.
+  const full=Math.max(200,Math.min(60000,num(S.solveBudget)||2000));
+  const share=takeStaticPhaseBudget();
+  const budget=share>0?Math.min(full,share):full;
+  // tolOverride=0: strictly balanced, always — project phases never honor the "may-work" margin
+  // slider (the splitting LP doesn't either), so the mode switch can't change the feasibility contract.
+  const sr=solveCore(targets,w,rc.prods,rc.raws,budget,0);
+  // Net per-hour rate of every resource in the solve. best.produced already includes the exogenous
+  // supply baseline (Lil' Forgie, and the mined-income budgets), and subtracting consumption is what
+  // makes an intermediate read as "what's left over for the target" — the same contract
+  // solvePhaseFor consumes from projectSchedule's `rate`.
+  const rate={};
+  sr.resources.forEach((r,i)=>{rate[r]=sr.feasible?(sr.best.produced[i]-sr.best.consumed[i])*3600:0;});
+  // One entry per line at frac 1 (whole phase), or no entries at all for an idle line. Rows are keyed
+  // by PHYSICAL line (sorted[i].orig+1) exactly like projectSchedule's.
+  const plan=sr.sorted.map((s,i)=>{
+    const row={line:s.orig+1,max:s.max,sp:s.sp,dp:s.dp,entries:[]};
+    const job=sr.feasible?sr.lineJobs[i][sr.best.choice[i]]:null;
+    if(job&&job.kind!=="idle"&&job.prod.length){
+      const es=effSpeed(s.sp,job.ct);   // a craft can't run under 1s, so speed is capped at the cycle time
+      row.entries.push({item:job.res,lvl:job.lvl,frac:1,outHr:job.prod[0][1]*es*s.dp*3600,
+        cons:job.cons.map(c=>({item:sr.resources[c[0]],hr:c[1]*es*3600}))});
+    }
+    return row;
+  });
+  plan.sort((a,b)=>a.line-b.line);
+  // z is only ever read downstream as a >1e-15 feasibility signal; the score doubles as it.
+  // stabilized/zFree/zPin are the projectSchedule hysteresis diagnostics — a static plan has no
+  // fractional re-solve to compare against, and pinning one job per line is already maximally stable.
+  return {rate,plan,items:sr.resources,z:sr.feasible?sr.best.score:0,stabilized:false,zFree:null,zPin:null};
+}
 // Solve one batch of demand (a single project, or all of them combined) into a pipelined phase.
 // `avail` (optional) is the stock the LP may draw down in place of producing an item (issue #73).
 // `stabilize` opts this phase into the Tier-2 line-stability pass (issue #87 item 5) — set for the
@@ -752,7 +853,20 @@ function solvePhaseFor(net,name,avail,stabilize,phaseKey){
   // the "Missing mined income" notice and the phase card's blocked badge tell the truth.
   if(targets.length===0)
     return {name,plan:[],balance:[],minedUsage:[],demandItems,net,rate:{},eta:0,bottleneck:null,infeasItems:[],unsat,blockedMined,atRisk:[],items:[],z:0,partial:false,feasible:demandItems.length===0};
-  const sch=projectSchedule(net,targets,avail,stabilize?{stabilize:true,phaseKey:(phaseKey!=null?phaseKey:name)}:null);
+  // "Set & forget" swaps the time-splitting makespan LP for a one-job-per-line assignment. Both
+  // return the same shape, so nothing below this line cares which one ran. (The stability pass is a
+  // projectSchedule concern only — a static plan can't churn its line assignment mid-phase.)
+  //
+  // `stabilize` doubles as "this is a real phase solve whose plan the user sees" (see the header
+  // comment), which is exactly the line static mode wants to draw: the ordering/cost-estimation pass
+  // only needs to RANK projects by makespan, and the LP is ~1000× cheaper. It is NOT a uniform
+  // proxy — a time-splitting LP always finishes at or before a one-job-per-line assignment, and by
+  // how much depends on how well the chain's job count divides into the line count. It's used because
+  // relative order is usually preserved and a full solveCore per project would double the wall-clock;
+  // buildProjectPhases hands it a no-stock world in static mode so at least the two agree on that.
+  const sch=(S.projLineMode==="static"&&stabilize)
+    ? staticSchedule(net,targets)
+    : projectSchedule(net,targets,avail,stabilize?{stabilize:true,phaseKey:(phaseKey!=null?phaseKey:name)}:null);
   const rate={};targets.forEach(it=>rate[it]=Math.max(0,sch.rate[it]||0));
   let eta=0,bottleneck=null;const infeasItems=[];
   targets.forEach(it=>{if(rate[it]<=1e-9)infeasItems.push(it);else{const t=net[it]/rate[it];if(t>eta){eta=t;bottleneck=it;}}});
@@ -900,9 +1014,20 @@ function buildProjectPhases(seq,net,perProject){
     }
     return phases;
   }
-  // sequenced: one project per phase, ordered by (unlock layer, manual priority, cheapest makespan)
+  // sequenced: one project per phase, ordered by (unlock layer, manual priority, cheapest makespan).
+  // Ranking cost is a makespan estimate, NOT the plan: it always runs the cheap splitting LP even in
+  // static mode (a full solveCore per project just to sort them would double the wall-clock for no
+  // change to the plan). Static mode does drop `avail` from the estimate though — see below.
   const invInit=invStart();
-  const cost=perProject.map(p=>{const ph=solvePhaseFor(projNetVec(p.sub,invInit),p.name,projAvailVec(p.sub,invInit));return ph.feasible?ph.eta:Infinity;});
+  // In "set & forget" the phases themselves never draw stock down (staticSchedule's documented
+  // limitation), so ranking them with an LP that DOES model drawdown scores a world the plan won't
+  // live in: a project sitting on a big stock of an intermediate reads nearly free and jumps the
+  // queue, while the phase that actually runs crafts every unit from scratch. Rank the same
+  // no-drawdown world the phases solve.
+  const rankModelsStock=S.projLineMode!=="static";
+  const cost=perProject.map(p=>{
+    const ph=solvePhaseFor(projNetVec(p.sub,invInit),p.name,rankModelsStock?projAvailVec(p.sub,invInit):null);
+    return ph.feasible?ph.eta:Infinity;});
   const order=perProject.map((p,i)=>({p,i})).sort((a,b)=>{
     if(layer[a.i]!==layer[b.i])return layer[a.i]-layer[b.i];   // unlock precedence (hard)
     const pa=a.p.prio,pb=b.p.prio;
@@ -957,6 +1082,18 @@ function optimizeProjectTop(){
   const t0=performance.now();
   if(perProject.length===0)return {empty:true,mode:"project",plan:[],phases:[],gross,net,perProject};
   const seq=S.projectSeq!==false&&perProject.length>1;
+  // Static mode costs a full solveCore per phase, so the user's max-solve-time has to bound the whole
+  // project solve rather than each phase — count the phases buildProjectPhases is about to produce
+  // (one per project when sequencing, one when gating is off, else one per distinct unlock layer)
+  // and hand each one a share of what's left when it starts. unlockLayers is cheap (a tiny DAG walk)
+  // and buildProjectPhases recomputes it anyway. Reset unconditionally and FIRST: the solve worker is
+  // reused across solves, so budget state from a previous solve must never leak into this one.
+  resetStaticBudget();
+  if(S.projLineMode==="static"){
+    const phaseCount=seq?Math.max(1,perProject.length)
+      :(S.projectGate===false?1:Math.max(1,new Set(unlockLayers(perProject)).size));
+    beginStaticBudget(Math.max(200,Math.min(60000,num(S.solveBudget)||2000)),phaseCount,t0);
+  }
   // Gel is forged natively by each phase's LP (vespium budget = a constrained resource), so there's
   // no line-reservation sweep — solve the phases directly.
   const phases=buildProjectPhases(seq,net,perProject);
