@@ -324,6 +324,96 @@ test("the generated current Blob Worker honors the shared Credits deadline", asy
   expect(requestCounts["/js/solver.worker.v2.js"] || 0).toBe(0);
 });
 
+test("the generated current Blob Worker keeps Project stability writes selected and exposes the full 420 tradeoff", async ({ page }) => {
+  await isolateRequestCounts(page);
+  const workerScriptRequests = [];
+  page.on("request", request => {
+    const url = new URL(request.url());
+    if ((url.protocol === "http:" || url.protocol === "https:") &&
+      url.origin === "http://127.0.0.1:4173" &&
+      (request.resourceType() === "worker" || /\/js\/solver\.worker(?:\.v2)?\.js$/.test(url.pathname))) {
+      workerScriptRequests.push(url.pathname);
+    }
+  });
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const probe = await page.evaluate(async () => {
+    const lines = [
+      { max: 512, spx: 50, turbo: 0 }, { max: 512, spx: 49.5, turbo: 0 },
+      { max: 256, spx: 48, turbo: 0 }, { max: 256, spx: 47, turbo: 0 },
+      { max: 128, spx: 46, turbo: 0 },
+    ];
+    const stateFor = (frames, policy) => {
+      const state = defaults();
+      state.schemaVersion = CURRENT_SCHEMA_VERSION;
+      state.mode = "project";state.dupe = 0;state.margin = 0;
+      state.projectSeq = false;state.projectGate = false;state.projectStability = policy;
+      state.lines = JSON.parse(JSON.stringify(lines));
+      state.projects = [{ id: "frames-project", name: "Frames plan", catId: "", on: true,
+        from: 1, to: 1, done: 0, prio: null, levels: [{ costs: [
+          { item: "Frames", qty: frames }, { item: "Bricks", qty: 5000 },
+          { item: "Glass", qty: 4000 }, { item: "Rods", qty: 3000 },
+        ] }] }];
+      normalize(state);syncManual(state);return state;
+    };
+    let requestId = 1200;
+    const solve = (state, stab) => new Promise((resolve, reject) => {
+      const worker = __forgeCreateSolverWorker();
+      const release = () => { if (typeof worker.__forgeRelease === "function") worker.__forgeRelease(); };
+      const id = ++requestId;
+      const timeout = setTimeout(() => { release();worker.terminate();reject(new Error("Project stability Worker timed out")); }, 10_000);
+      worker.onmessage = event => {
+        clearTimeout(timeout);release();worker.terminate();
+        if (event.data && event.data.error) reject(new Error(event.data.error));
+        else resolve(event.data.res);
+      };
+      worker.onerror = event => { clearTimeout(timeout);release();worker.terminate();reject(new Error(event.message || "Project stability Worker failed")); };
+      worker.postMessage({ reqId: id, generation: id, mode: "project", stateRevision: id,
+        state, budget: state.solveBudget, stab });
+    });
+
+    const sentinel = { sentinel: { 0: ["Bits@1"] } };
+    const baseline = await solve(stateFor(200, "prefer-current"), sentinel);
+    const baselineCache = JSON.parse(JSON.stringify(baseline.__stab));
+    const held = await solve(stateFor(420, "prefer-current"), baselineCache);
+    const heldUpdate = makeLineStabilityUpdate(held.phases[0].stabilityKey, held.phases[0].plan);
+    const reoptimized = await solve(stateFor(420, "reoptimize"), baselineCache);
+    const reoptimizedUpdate = makeLineStabilityUpdate(reoptimized.phases[0].stabilityKey, reoptimized.phases[0].plan);
+    return { baseline, baselineCache, held, heldUpdate, reoptimized, reoptimizedUpdate };
+  });
+  const requestCounts = await page.evaluate(async () => {
+    const response = await fetch("/__test/request-counts", { cache: "no-store" });
+    return response.json();
+  });
+
+  expect(probe.baseline.projectStability).toBe("prefer-current");
+  expect(probe.baselineCache.sentinel).toEqual({ 0: ["Bits@1"] });
+  expect(Object.keys(probe.baselineCache)).toHaveLength(2);
+  expect(probe.held.phases[0].stabilized).toBe(true);
+  expect(probe.held.stabilityComparison).toMatchObject({
+    comparable: true, selectedExecutable: true, alternativeExecutable: true, alternativeIsShorter: false,
+  });
+  expect(probe.held.stabilityComparison.phases[0].alternativeThroughput)
+    .toBeGreaterThan(probe.held.stabilityComparison.phases[0].selectedThroughput);
+  expect(probe.held.stabilityComparison.alternativeTotalEta)
+    .toBeGreaterThan(probe.held.stabilityComparison.selectedTotalEta);
+  expect(probe.held.stabilityComparison.selectedTotalEta).toBeCloseTo(0.6659750249, 8);
+  expect(probe.held.stabilityComparison.alternativeTotalEta).toBeCloseTo(0.6846583163, 8);
+  expect(probe.held.__stab.sentinel).toEqual({ 0: ["Bits@1"] });
+  expect(probe.held.__stab[probe.heldUpdate.key]).toEqual(probe.heldUpdate.record);
+  expect(Object.keys(probe.held.__stab)).toHaveLength(2);
+
+  expect(probe.reoptimized.projectStability).toBe("reoptimize");
+  expect(probe.reoptimized.phases[0].stabilized).toBe(false);
+  expect(probe.reoptimized.stabilityComparison).toBeNull();
+  expect(probe.reoptimized.__stab.sentinel).toEqual({ 0: ["Bits@1"] });
+  expect(probe.reoptimized.__stab[probe.reoptimizedUpdate.key]).toEqual(probe.reoptimizedUpdate.record);
+  expect(Object.keys(probe.reoptimized.__stab)).toHaveLength(2);
+  expect(workerScriptRequests, "Project stability must stay on ordinary generated Blob transport").toEqual([]);
+  expect(requestCounts["/js/solver.worker.js"] || 0).toBe(0);
+  expect(requestCounts["/js/solver.worker.v2.js"] || 0).toBe(0);
+});
+
 test("the planner serves, solves in its Worker, and opens every planning mode", async ({ page }) => {
   const consoleErrors = [];
   const pageErrors = [];
@@ -373,6 +463,7 @@ test("the planner serves, solves in its Worker, and opens every planning mode", 
   await expect(page.locator("#results")).toContainText("Line assignment");
   const projectWorkerResult = await page.evaluate(() => new Promise((resolve, reject) => {
     const state = defaults();
+    state.schemaVersion = CURRENT_SCHEMA_VERSION;
     state.mode = "project";
     state.dupe = 0;
     state.lines = [

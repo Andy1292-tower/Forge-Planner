@@ -395,17 +395,23 @@ function renderInv(){
   const box=document.getElementById("invRows");
   renderItemValueRows(box,S.inventoryText,S.inventory,"inv","0","");
 }
+function setProjectStabilityPolicy(value){
+  if(value!=="prefer-current"&&value!=="reoptimize")return false;
+  mutateState(st=>{st.projectStability=value;});save();doSolve();return true;
+}
 function renderProjects(){
   const box=document.getElementById("projList");
   box.innerHTML=S.projects.length?S.projects.map((p,pi)=>projCard(p,pi)).join("")
     :`<div class="proj-mini" style="padding:6px 2px">No projects yet — add one to start building a schedule.</div>`;
   const st=document.getElementById("projSeqToggle");if(st)st.checked=S.projectSeq!==false;
   const gt=document.getElementById("projGateToggle");if(gt){gt.checked=S.projectGate===false;gt.disabled=S.projectSeq!==false;gt.closest(".seq-toggle").classList.toggle("disabled",gt.disabled);}
+  const stability=document.getElementById("projectStability");if(stability)stability.value=S.projectStability==="reoptimize"?"reoptimize":"prefer-current";
   renderInv();
   if(typeof renderCatalog==="function")renderCatalog();
 }
 document.getElementById("projSeqToggle").addEventListener("change",e=>{mutateState(st=>{st.projectSeq=e.target.checked;});renderProjects();save();scheduleSolve();});
 document.getElementById("projGateToggle").addEventListener("change",e=>{mutateState(st=>{st.projectGate=!e.target.checked;});save();scheduleSolve();});
+document.getElementById("projectStability").addEventListener("change",e=>{setProjectStabilityPolicy(e.target.value);});
 
 /* ---------- project catalog (static, read-only source list) ---------- */
 const CATALOG=(typeof PROJECT_CATALOG!=="undefined"&&Array.isArray(PROJECT_CATALOG))?PROJECT_CATALOG:[];
@@ -710,6 +716,8 @@ document.getElementById("results").addEventListener("click",e=>{
   if(cl("#btnProgress")){openProgress(cl("#btnProgress"));return;}
   // Plan-start "Now" — re-anchor the clock to the current moment (display only).
   if(cl("#spNow")){mutateState(st=>{st.planStart=Date.now();});save();repaintProject();return;}
+  const stabilityAction=cl("[data-project-stability]");
+  if(stabilityAction){setProjectStabilityPolicy(stabilityAction.getAttribute("data-project-stability"));return;}
   // Persist a disclosure's open state across the next re-render. The native <details> toggle still
   // fires; at click time .open is the pre-toggle state, so the new state is its inverse.
   const sm=cl("summary[data-paneltoggle]");

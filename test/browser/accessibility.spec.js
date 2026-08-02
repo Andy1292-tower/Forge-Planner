@@ -25,6 +25,12 @@ async function expectNoWcagViolations(page) {
 
 async function seedNamedProjects(page) {
   await page.getByRole("button", { name: "Shopping list" }).click();
+  const lineJobPolicy = page.getByLabel("Line-job policy");
+  await expect(lineJobPolicy).toHaveAttribute("aria-describedby", "projectStabilityHelp");
+  await expect(page.locator("#projectStabilityHelp")).toContainText("within 5%");
+  await expect(page.locator("#projectStabilityHelp")).toContainText("warm-ups");
+  await lineJobPolicy.selectOption("reoptimize");
+  await expect.poll(async () => page.evaluate(() => S.projectStability)).toBe("reoptimize");
   await page.getByRole("button", { name: "New custom project" }).click();
   await page.getByRole("button", { name: "New custom project" }).click();
   await page.evaluate(() => {

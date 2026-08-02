@@ -30,6 +30,27 @@ let _lineStability={};
 function resetLineStability(){_lineStability={};}
 function getLineStability(){return _lineStability;}
 function setLineStability(o){_lineStability=(o&&typeof o==="object")?o:{};}
+function cloneLineStability(value){
+  if(Array.isArray(value))return value.map(cloneLineStability);
+  if(!value||typeof value!=="object")return value;
+  const out={};Object.keys(value).forEach(key=>{Object.defineProperty(out,key,{value:cloneLineStability(value[key]),enumerable:true,writable:true,configurable:true});});return out;
+}
+function makeLineStabilityUpdate(key,plan){
+  if(typeof key!=="string"||!key)return null;
+  const record={};(plan||[]).forEach(line=>{const jobs=[];(line.entries||[]).forEach(entry=>{
+    const job=entry.item+"@"+entry.lvl;if(jobs.indexOf(job)<0)jobs.push(job);
+  });record[line.line-1]=jobs;});
+  return {key,record};
+}
+function lineStabilityWithUpdates(cache,updates){
+  const next=cloneLineStability(cache&&typeof cache==="object"?cache:{});
+  (updates||[]).forEach(update=>{if(update&&typeof update.key==="string"&&update.key)next[update.key]=cloneLineStability(update.record||{});});
+  const keys=Object.keys(next);while(keys.length>256)delete next[keys.shift()];
+  return next;
+}
+function commitLineStabilityUpdates(updates,base){
+  const next=lineStabilityWithUpdates(base===undefined?_lineStability:base,updates);setLineStability(next);return next;
+}
 function relevantChain(targets){
   // A raw can now be a target itself (issue #78); only products have a recipe chain to expand,
   // so seed the product set from product targets and add any raw target straight into relR.
@@ -968,7 +989,9 @@ function buildScheduleLP(vars,lns,items,net,avail,D0){
 // e.g. Ingots held in inventory but never a direct project cost. Modelled as extra supply of
 // avail[it]/T units/hr (T=makespan), which linearises to a +avail[it]·z/D0 term on the supply side,
 // so a material fully covered by stock earns no crafting line at all (issue #73).
-// `opts.stabilize` (with opts.phaseKey) opts this solve into the Tier-2 line-stability pass.
+// Stability is explicit input/output: opts.readStability may consult the immutable cache snapshot,
+// while opts.rememberStability returns a proposed record for the controller to commit only after the
+// complete selected Project run succeeds. This low-level LP never mutates either cache.
 function projectSchedule(net,targets,avail,opts){
   const lns=sortedLines();
   const prodT=targets.filter(it=>PRODUCTS.includes(it));
@@ -1003,15 +1026,17 @@ function projectSchedule(net,targets,avail,opts){
   let y=lpMaximize(free.c,free.A,free.b).x||new Float64Array(n);
   const zFree=y[zCol]||0;
   // Tier-2 hysteresis (issue #87 item 5): keep last solve's per-line jobs unless the free solve beats
-  // a pinned re-solve by more than HYST_FRAC of throughput. Only real phase solves opt in
-  // (opts.stabilize); the ordering/cost passes stay free so project sequencing reflects true makespans.
+  // a pinned re-solve by more than HYST_FRAC of throughput. Only final visible semantic phases opt in;
+  // ordering, fixed-point preliminaries, warm-ups, and hidden comparisons remain free and memoryless.
   let stabilized=false, stabKey=null, zPin=null;   // zPin: pinned-solve throughput (diagnostic / band test)
-  if(opts&&opts.stabilize){
+  const stabilityRequested=!!(opts&&(opts.readStability||opts.rememberStability));
+  if(stabilityRequested){
     // Key by phase + physical-line set + demanded-item set (sorted, so it's invariant to speed-driven
     // line reordering). Structural changes — add/remove a line, change a cap or which items are
     // demanded — bust the key and re-solve freely; speed/quantity/price edits keep it and stay stable.
     stabKey=(opts.phaseKey||"")+"||L:"+lns.slice().sort((a,b)=>a.orig-b.orig).map(l=>l.orig+":"+l.max).join(",")+"||I:"+items.slice().sort().join(",");
-    const prior=_lineStability[stabKey];
+    const cache=opts.stabilityCache&&typeof opts.stabilityCache==="object"?opts.stabilityCache:{};
+    const prior=opts.readStability?cache[stabKey]:null;
     if(prior&&zFree>1e-15){
       // Restrict each physical line to the (item@lvl) jobs it ran last time (by orig, so speed-driven
       // sort reordering doesn't matter); a line with no prior record stays unpinned. Solve the reduced
@@ -1040,20 +1065,16 @@ function projectSchedule(net,targets,avail,opts){
   vars.forEach((v,vi)=>{const yi=y[vi]||0;if(yi<=LP_ASSIGN_EPS)return;plan[v.li].entries.push({item:v.item,lvl:v.lvl,frac:yi,outHr:v.rate*yi,cons:v.cons.map(c=>({item:c.item,hr:c.perHr*yi}))});});
   plan.forEach(p=>p.entries.sort((a,b)=>b.frac-a.frac));
   plan.sort((a,b)=>a.line-b.line);
-  if(stabKey){   // remember this solve's per-line jobs (keyed by physical orig = plan.line-1) for next time
-    const rec={};plan.forEach(p=>{const jobs=[];p.entries.forEach(e=>{const k=e.item+"@"+e.lvl;if(jobs.indexOf(k)<0)jobs.push(k);});rec[p.line-1]=jobs;});
-    _lineStability[stabKey]=rec;
-    const keys=Object.keys(_lineStability);if(keys.length>256)delete _lineStability[keys[0]];
-  }
-  return {rate,plan,items,z:(y[zCol]||0)/D0,stabilized,zFree:zFree/D0,zPin};
+  const stabilityUpdate=stabKey&&opts.rememberStability?makeLineStabilityUpdate(stabKey,plan):null;
+  return {rate,plan,items,z:(y[zCol]||0)/D0,stabilized,zFree:zFree/D0,zPin,stabilityKey:stabKey,stabilityUpdate};
 }
 // Solve one batch of demand (a single project, or all of them combined) into a pipelined phase.
 // `avail` (optional) is the stock the LP may draw down in place of producing an item (issue #73).
-// `stabilize` opts this phase into the Tier-2 line-stability pass (issue #87 item 5) — set for the
-// real phase solves whose plan the user sees, left off for the ordering/cost-estimation passes.
+// `stabilityPolicy` opts a final visible phase into the Tier-2 line-stability pass (issue #87 item 5);
+// ordering/cost estimates, preliminary fixed points, warm-ups, and hidden alternatives omit it.
 // `phaseKey` is the cache discriminator: a STABLE unique id (project id / member-id set), NOT the
 // display name, so two projects sharing a name don't collide on one cache slot. Falls back to name.
-function solvePhaseFor(net,name,avail,stabilize,phaseKey){
+function solvePhaseFor(net,name,avail,stabilityPolicy,phaseKey){
   const demandItems=ALLITEMS.filter(it=>net[it]>1e-9);
   const blockedMined={};
   demandItems.forEach(it=>{const blockers=chainMinedBlockers(it);if(blockers.length)blockedMined[it]=blockers;});
@@ -1061,7 +1082,10 @@ function solvePhaseFor(net,name,avail,stabilize,phaseKey){
   const targets=demandItems.filter(it=>!blockedMined[it]);
   if(targets.length===0)
     return {name,plan:[],balance:[],minedUsage:[],demandItems,net,rate:{},eta:0,bottleneck:null,infeasItems:[],unsat,blockedMined,atRisk:[],items:[],z:0,partial:false,feasible:false};
-  const sch=projectSchedule(net,targets,avail,stabilize?{stabilize:true,phaseKey:(phaseKey!=null?phaseKey:name)}:null);
+  let scheduleOptions=null;
+  if(stabilityPolicy&&typeof stabilityPolicy==="object")scheduleOptions={...stabilityPolicy,phaseKey:(phaseKey!=null?phaseKey:name)};
+  else if(stabilityPolicy===true)scheduleOptions={readStability:true,rememberStability:true,stabilityCache:cloneLineStability(_lineStability),phaseKey:(phaseKey!=null?phaseKey:name)};
+  const sch=projectSchedule(net,targets,avail,scheduleOptions);
   const rate={};targets.forEach(it=>rate[it]=Math.max(0,sch.rate[it]||0));
   let eta=0,bottleneck=null;const infeasItems=[];
   targets.forEach(it=>{if(rate[it]<=1e-9)infeasItems.push(it);else{const t=net[it]/rate[it];if(t>eta){eta=t;bottleneck=it;}}});
@@ -1086,7 +1110,7 @@ function solvePhaseFor(net,name,avail,stabilize,phaseKey){
     const used=b.stock*eta;   // total units of this item's stock the phase draws down
     return used>=STOCK_SAFETY_FRAC*av*0.98;
   }).map(b=>b.res);
-  return {name,plan:sch.plan,balance,minedUsage,demandItems,net,rate,eta,bottleneck,infeasItems,unsat,blockedMined,atRisk,items:sch.items,z:sch.z,partial:!feasible&&hasThroughput,feasible,stabilized:!!sch.stabilized,zFree:sch.zFree,zPin:sch.zPin};
+  return {name,phaseKey:(phaseKey!=null?phaseKey:name),plan:sch.plan,balance,minedUsage,demandItems,net,rate,eta,bottleneck,infeasItems,unsat,blockedMined,atRisk,items:sch.items,z:sch.z,partial:!feasible&&hasThroughput,feasible,stabilized:!!sch.stabilized,zFree:sch.zFree,zPin:sch.zPin,stabilityKey:sch.stabilityKey,stabilityUpdate:sch.stabilityUpdate};
 }
 // Frames/Wire Bits are an external, pre-produced prerequisite. Reserve them before ordinary direct
 // Bits demand; they never become a Project LP target and never earn a synthetic Bits line.
@@ -1155,20 +1179,20 @@ function plannedPreProducedDemand(ph){
   const rounded=Math.round(bits);if(Math.abs(bits-rounded)<=1e-8+Number.EPSILON*32*Math.max(1,Math.abs(bits)))bits=rounded;
   return bits>0?{Bits:bits}:{};
 }
-function solveExecutableProjectPhase(sub,name,inv,stabilize,phaseKey){
+function solveExecutableProjectPhase(sub,name,inv,stabilityPolicy,phaseKey){
   let pre=phasePreProducedDemand(sub,inv),ph=null,solvedWith={},converged=false;
-  const fixedPoint=useStability=>{
+  const fixedPoint=policy=>{
     for(let pass=0;pass<8;pass++){
       solvedWith=Object.assign({},pre);
-      ph=solvePhaseFor(projNetVec(sub,inv,solvedWith),name,projAvailVec(sub,inv,solvedWith),useStability,phaseKey);
+      ph=solvePhaseFor(projNetVec(sub,inv,solvedWith),name,projAvailVec(sub,inv,solvedWith),policy,phaseKey);
       const next=plannedPreProducedDemand(ph),a=solvedWith.Bits||0,b=next.Bits||0;
       pre=next;
       if(Math.abs(a-b)<=1e-8+Number.EPSILON*32*Math.max(1,Math.abs(a),Math.abs(b)))return true;
     }
     return false;
   };
-  converged=fixedPoint(false);
-  if(converged&&stabilize)converged=fixedPoint(true);
+  converged=fixedPoint(null);
+  if(converged&&stabilityPolicy&&(stabilityPolicy.readStability||stabilityPolicy.rememberStability))converged=fixedPoint(stabilityPolicy);
   ph.preProducedDemand=Object.assign({},pre);
   ph.preProducedSolveDemand=Object.assign({},solvedWith);
   ph.preProducedConverged=converged;
@@ -1176,7 +1200,7 @@ function solveExecutableProjectPhase(sub,name,inv,stabilize,phaseKey){
     message:"Pre-produced Bits obligation did not converge with the final stabilized Project plan"};
   return ph;
 }
-function buildProjectPhases(seq,net,perProject){
+function buildProjectPhases(seq,net,perProject,stabilityPolicy){
   const layer=unlockLayers(perProject);
   const maxL=perProject.length?Math.max.apply(null,layer):0;
   const invStart=()=>{const o={};ALLITEMS.forEach(it=>o[it]=num(S.inventory&&S.inventory[it])||0);return o;};
@@ -1197,7 +1221,7 @@ function buildProjectPhases(seq,net,perProject){
       const sumSub={};ALLITEMS.forEach(it=>sumSub[it]=perProject.reduce((s,p)=>s+(p.sub[it]||0),0));
       const inv0=invStart();
       const combKey=perProject.length>1?perProject.map(p=>p.id).sort().join("+"):perProject[0].id;
-      const ph=solveExecutableProjectPhase(sumSub,perProject.length>1?"All projects":perProject[0].name,inv0,true,combKey);
+      const ph=solveExecutableProjectPhase(sumSub,perProject.length>1?"All projects":perProject[0].name,inv0,stabilityPolicy,combKey);
       ph.semanticIndex=0;ph.demandSub=sumSub;ph.invStart=inv0;
       ph.doneAt=ph.eta;executePhase(ph);return {phases:[ph],executionPhases,finalInventory:exactInventory,scheduleBlocked};
     }
@@ -1209,7 +1233,7 @@ function buildProjectPhases(seq,net,perProject){
       if(!members.length)continue;
       const sumSub={};ALLITEMS.forEach(it=>sumSub[it]=members.reduce((s,p)=>s+(p.sub[it]||0),0));
       const inv0=Object.assign({},exactInventory);
-      const ph=solveExecutableProjectPhase(sumSub,members.map(m=>m.name).join(" + "),exactInventory,true,members.map(m=>m.id).sort().join("+"));
+      const ph=solveExecutableProjectPhase(sumSub,members.map(m=>m.name).join(" + "),exactInventory,stabilityPolicy,members.map(m=>m.id).sort().join("+"));
       ph.semanticIndex=phases.length;ph.members=members.map(m=>m.name);ph.demandSub=sumSub;ph.wave=phases.length+1;ph.invStart=inv0;
       executePhase(ph);
       cum+=ph.eta;ph.doneAt=cum;phases.push(ph);
@@ -1230,7 +1254,7 @@ function buildProjectPhases(seq,net,perProject){
   let cum=0;const phases=[];
   order.forEach(({p})=>{
     const inv0=Object.assign({},exactInventory);
-    const ph=solveExecutableProjectPhase(p.sub,p.name,exactInventory,true,p.id);
+    const ph=solveExecutableProjectPhase(p.sub,p.name,exactInventory,stabilityPolicy,p.id);
     ph.semanticIndex=phases.length;ph.prio=(p.prio!=null?p.prio:null);ph.demandSub=p.sub;ph.invStart=inv0;
     executePhase(ph);
     cum+=ph.eta;ph.doneAt=cum;phases.push(ph);
@@ -1276,16 +1300,17 @@ function projectScheduleContext(){
     compressionInputScale,
     assignmentEpsilon:LP_ASSIGN_EPS,stockTolerance:{absolute:1e-8,relative:Number.EPSILON*32}};
 }
-// Top of project mode: builds one combined phase, or a sequence of per-project phases
-// (forced-"do first" projects ahead, then cheapest-makespan first), with inventory carried across.
-function optimizeProjectTop(){
-  const {gross,net,perProject}=projectDemand();
-  const t0=performance.now();
-  if(perProject.length===0)return {empty:true,mode:"project",plan:[],phases:[],gross,net,perProject};
-  const seq=S.projectSeq!==false&&perProject.length>1;
-  // Gel is forged natively by each phase's LP (vespium budget = a constrained resource), so there's
-  // no line-reservation sweep — solve the phases directly.
-  const builtPhases=buildProjectPhases(seq,net,perProject),phases=builtPhases.phases;
+function finiteNonnegative(value){return Number.isFinite(value)&&value>=0;}
+function projectRunExecutable(run){
+  return !!(run&&run.feasible===true&&run.lpFeasible===true&&run.partial!==true&&run.scheduleValidation&&
+    run.scheduleValidation.ok===true&&!run.scheduleValidation.firstFailure&&finiteNonnegative(run.eta)&&
+    finiteNonnegative(run.workEta)&&finiteNonnegative(run.warmupEta));
+}
+// One complete Project execution path. The same function owns selected and hidden runs so the
+// comparison includes sequencing/waves, recursive warm-ups, ordering, carried inventory, replay,
+// prerequisites, and finish clocks rather than comparing isolated LP phases.
+function solveProjectRun(seq,net,perProject,stabilityPolicy){
+  const builtPhases=buildProjectPhases(seq,net,perProject,stabilityPolicy),phases=builtPhases.phases;
   const waved=!seq&&phases.length>1;   // all-at-once split into unlock-ordered waves
   const single=!seq&&S.projectGate===false&&perProject.length>1;   // gating off — one combined phase
   phases.forEach((ph,i)=>{ph.semanticIndex=i;ph.kind="project";});
@@ -1298,6 +1323,7 @@ function optimizeProjectTop(){
   const executable={phases:executionPhases,eta:executionPhases.reduce((sum,p)=>sum+(p.eta||0),0),validation};
   let elapsed=0;executable.phases.forEach(ph=>{elapsed+=ph.eta||0;ph.doneAt=elapsed;if(ph.kind==="project"&&ph.semanticIndex!=null&&phases[ph.semanticIndex])phases[ph.semanticIndex].doneAt=elapsed;});
   const eta=executable.eta;
+  const warmupEta=executionPhases.filter(ph=>ph.kind==="warmup").reduce((sum,ph)=>sum+(ph.eta||0),0);
   const feasible=lpFeasible&&executable.validation.ok;
   const unsat=[...new Set([].concat(...phases.map(ph=>ph.unsat||[])))];
   const blockedMined={};phases.forEach(ph=>Object.entries(ph.blockedMined||{}).forEach(([it,resources])=>{
@@ -1307,14 +1333,74 @@ function optimizeProjectTop(){
   const infeasItems=[...new Set([].concat(...phases.map(ph=>ph.infeasItems||[])))];
   const atRiskItems=[...new Set([].concat(...phases.map(ph=>ph.atRisk||[])))];
   const main=phases[0]||{plan:[],balance:[],rate:{},demandItems:[],bottleneck:null};
-  return {empty:false,mode:"project",sequenced:seq,waved,single,phases,executionPhases:executable.phases,perProject,gross,net,
+  const stabilityUpdates=phases.filter(ph=>ph.feasible&&ph.preProducedConverged!==false&&ph.stabilityUpdate).map(ph=>ph.stabilityUpdate);
+  return {empty:false,mode:"project",sequenced:seq,waved,single,phases,executionPhases:executable.phases,perProject,net,
     plan:main.plan,balance:main.balance,
     demandItems:(seq||waved)?ALLITEMS.filter(it=>net[it]>1e-9):main.demandItems,
-    rate:main.rate,bottleneck:main.bottleneck,eta,workEta,lpFeasible,scheduleValidation:executable.validation,
+    rate:main.rate,bottleneck:main.bottleneck,eta,workEta,warmupEta,lpFeasible,scheduleValidation:executable.validation,
     unsat,blockedMined,infeasItems,atRiskItems,partial,feasible,
     minedUsage:main.minedUsage||[],
     gelReserved:gelReservedFromPlan(main.plan),
-    objective:feasible&&eta>0?1/eta:0,ms:performance.now()-t0};
+    objective:feasible&&eta>0?1/eta:0,_stabilityUpdates:stabilityUpdates};
+}
+function uniquePhaseKeys(phases){
+  const keys=(phases||[]).map(ph=>ph&&ph.phaseKey);return keys.every(key=>typeof key==="string"&&key.length>0)&&new Set(keys).size===keys.length;
+}
+function etaCompareEpsilon(a,b){return Math.max(1e-9,Number.EPSILON*64*Math.max(1,Math.abs(a||0),Math.abs(b||0)));}
+function throughputCompareEpsilon(a,b){return Math.max(LP_ASSIGN_EPS,Number.EPSILON*64*Math.max(1,Math.abs(a||0),Math.abs(b||0)));}
+function stabilityComparisonSummary(selected,alternative){
+  const selectedExecutable=projectRunExecutable(selected),alternativeExecutable=projectRunExecutable(alternative);
+  const selectedPhaseOrder=(selected.phases||[]).map(ph=>ph.phaseKey),alternativePhaseOrder=(alternative.phases||[]).map(ph=>ph.phaseKey);
+  const orderChanged=selectedPhaseOrder.length!==alternativePhaseOrder.length||selectedPhaseOrder.some((key,index)=>key!==alternativePhaseOrder[index]);
+  const finiteMetric=value=>finiteNonnegative(value)?value:null;
+  const selectedTotalEta=finiteMetric(selected.eta),alternativeTotalEta=finiteMetric(alternative.eta);
+  const selectedWorkEta=finiteMetric(selected.workEta),alternativeWorkEta=finiteMetric(alternative.workEta);
+  const selectedWarmupEta=finiteMetric(selected.warmupEta),alternativeWarmupEta=finiteMetric(alternative.warmupEta);
+  const difference=(a,b)=>a!==null&&b!==null?a-b:null;
+  const alternativeMinusSelectedTotalEta=difference(alternativeTotalEta,selectedTotalEta);
+  const alternativeMinusSelectedWorkEta=difference(alternativeWorkEta,selectedWorkEta);
+  const alternativeMinusSelectedWarmupEta=difference(alternativeWarmupEta,selectedWarmupEta);
+  const stabilized=(selected.phases||[]).filter(ph=>ph.stabilized===true),alternativeByKey={};
+  (alternative.phases||[]).forEach(ph=>{const key=ph.phaseKey;(alternativeByKey[key]||(alternativeByKey[key]=[])).push(ph);});
+  let comparable=selectedExecutable&&alternativeExecutable&&stabilized.length>0&&uniquePhaseKeys(selected.phases)&&uniquePhaseKeys(alternative.phases);
+  const phases=stabilized.map(selectedPhase=>{
+    const matches=alternativeByKey[selectedPhase.phaseKey]||[],alternativePhase=matches.length===1?matches[0]:null;
+    const selectedThroughput=Number.isFinite(selectedPhase.z)?selectedPhase.z:null;
+    const alternativeThroughput=alternativePhase&&Number.isFinite(alternativePhase.z)?alternativePhase.z:null;
+    const selectedEta=finiteMetric(selectedPhase.eta),alternativeEta=alternativePhase?finiteMetric(alternativePhase.eta):null;
+    if(matches.length!==1||selectedThroughput===null||selectedThroughput<=0||alternativeThroughput===null||alternativeThroughput<=0||
+      selectedEta===null||alternativeEta===null||alternativeEta<=0)comparable=false;
+    const selectedThroughputLossPct=alternativeThroughput>0&&selectedThroughput!==null
+      ?100*(alternativeThroughput-selectedThroughput)/alternativeThroughput:null;
+    const selectedEtaPenaltyPct=alternativeEta>0&&selectedEta!==null?100*(selectedEta-alternativeEta)/alternativeEta:null;
+    return {phaseKey:selectedPhase.phaseKey,name:selectedPhase.name,selectedThroughput,alternativeThroughput,
+      selectedEta,alternativeEta,selectedThroughputLossPct,selectedEtaPenaltyPct};
+  });
+  const alternativeIsShorter=!!(comparable&&alternativeMinusSelectedTotalEta!==null&&
+    alternativeMinusSelectedTotalEta < -etaCompareEpsilon(selectedTotalEta,alternativeTotalEta));
+  return {comparable,selectedExecutable,alternativeExecutable,selectedPhaseOrder,alternativePhaseOrder,orderChanged,
+    selectedTotalEta,alternativeTotalEta,alternativeMinusSelectedTotalEta,
+    selectedWorkEta,alternativeWorkEta,alternativeMinusSelectedWorkEta,
+    selectedWarmupEta,alternativeWarmupEta,alternativeMinusSelectedWarmupEta,alternativeIsShorter,phases};
+}
+// Top of project mode: compute the selected full run and any eligible hidden comparison before
+// atomically committing only the successful visible run's proposed stability records.
+function optimizeProjectTop(){
+  const {gross,net,perProject}=projectDemand(),t0=performance.now();
+  const projectStability=S.projectStability==="reoptimize"?"reoptimize":"prefer-current";
+  if(perProject.length===0)return {empty:true,mode:"project",plan:[],phases:[],gross,net,perProject,projectStability,stabilityComparison:null,ms:performance.now()-t0};
+  const seq=S.projectSeq!==false&&perProject.length>1,cacheSnapshot=cloneLineStability(_lineStability);
+  const selectedPolicy={readStability:projectStability==="prefer-current",rememberStability:true,stabilityCache:cacheSnapshot};
+  const selected=solveProjectRun(seq,net,perProject,selectedPolicy);selected.gross=gross;
+  let stabilityComparison=null;
+  if(projectStability==="prefer-current"&&selected.phases.some(ph=>ph.stabilized===true)){
+    const alternative=solveProjectRun(seq,net,perProject,{readStability:false,rememberStability:false,stabilityCache:{}});
+    stabilityComparison=stabilityComparisonSummary(selected,alternative);
+  }
+  if(projectRunExecutable(selected))commitLineStabilityUpdates(selected._stabilityUpdates,cacheSnapshot);
+  delete selected._stabilityUpdates;
+  selected.projectStability=projectStability;selected.stabilityComparison=stabilityComparison;selected.ms=performance.now()-t0;
+  return selected;
 }
 
 

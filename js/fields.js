@@ -3,7 +3,7 @@
 /* Authoritative persisted-field rules. Task 8 may bind these descriptors to controls, but
  * validation and migrations own the rules now. Collection limits are deliberately generous
  * security ceilings, not recommendations for ordinary planner builds. */
-const CURRENT_SCHEMA_VERSION=1;
+const CURRENT_SCHEMA_VERSION=2;
 const STATE_LIMITS=Object.freeze({
   maxBytes:2*1024*1024,
   maxDepth:10,
@@ -37,6 +37,7 @@ const FIELD_SCHEMA=Object.freeze({
   targetEnabled:_field("boolean",false,{allowBlank:false}),
   targetWeight:_field("integer",1,{min:1,max:9,allowBlank:false}),
   mode:_field("enum",_FIELD_DEFAULTS.mode,{values:Object.freeze(["items","credits","project","manual"]),allowBlank:false}),
+  projectStability:_field("enum",_FIELD_DEFAULTS.projectStability,{values:Object.freeze(["prefer-current","reoptimize"]),allowBlank:false}),
   flag:_field("boolean",false,{allowBlank:false}),
   displayText:_field("string","",{maxLength:128,allowBlank:true}),
   id:_field("string","",{maxLength:64,allowBlank:false,pattern:/^[A-Za-z][A-Za-z0-9_-]{0,63}$/}),

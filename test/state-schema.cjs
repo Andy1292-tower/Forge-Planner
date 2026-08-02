@@ -56,7 +56,7 @@ const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
 
 test("exports a current schema and pure field descriptors", () => {
-  assert.equal(api("CURRENT_SCHEMA_VERSION"), 1);
+  assert.equal(api("CURRENT_SCHEMA_VERSION"), 2);
   const schema = api("FIELD_SCHEMA");
   assert.equal(schema.dupe.type, "number");
   assert.equal(schema.dupe.min, 0);
@@ -66,6 +66,69 @@ test("exports a current schema and pure field descriptors", () => {
   assert.equal(schema.id.maxLength, 64);
   assert.equal(schema.timestamp.type, "number");
   assert.equal(schema.timestamp.allowBlank, true);
+  assert.deepEqual(Array.from(schema.projectStability.values), ["prefer-current", "reoptimize"]);
+});
+
+test("v2 requires an exact Project line-job policy", () => {
+  const missing = currentState();
+  delete missing.projectStability;
+  let result = api("validateAndMigrate")(missing);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /projectStability.*required/i);
+
+  const invalid = currentState();
+  invalid.projectStability = "fastest";
+  result = api("validateAndMigrate")(invalid);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /projectStability.*supported values/i);
+
+  const valid = currentState();
+  valid.projectStability = "reoptimize";
+  result = api("validateAndMigrate")(valid);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.state.projectStability, "reoptimize");
+});
+
+test("strict v1 migration defaults Project line jobs without weakening old required fields", () => {
+  const v1 = currentState();
+  v1.schemaVersion = 1;
+  delete v1.projectStability;
+  let result = api("validateAndMigrate")(v1);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.sourceVersion, 1);
+  assert.equal(result.state.schemaVersion, 2);
+  assert.equal(result.state.projectStability, "prefer-current");
+
+  delete v1.targets;
+  result = api("validateAndMigrate")(v1);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /targets.*required/i);
+});
+
+test("legacy duplicate project IDs migrate deterministically while v2 duplicates are rejected", () => {
+  const project = id => ({
+    id, name: "Same name", on: true, prio: null, from: 1, to: 1, done: 0,
+    levels: [{ costs: [] }],
+  });
+  const legacy = currentState();
+  legacy.schemaVersion = 1;
+  delete legacy.projectStability;
+  legacy.projects = [project("repeat"), project("repeat"), project("legacy-project-2")];
+  const first = api("validateAndMigrate")(legacy);
+  const second = api("validateAndMigrate")(legacy);
+  assert.equal(first.ok, true, JSON.stringify(first.errors));
+  assert.equal(second.ok, true, JSON.stringify(second.errors));
+  const ids = first.state.projects.map(entry => entry.id);
+  assert.equal(ids[0], "repeat");
+  assert.equal(new Set(ids).size, ids.length);
+  assert.deepEqual(ids, second.state.projects.map(entry => entry.id));
+
+  const current = currentState();
+  current.projectStability = "prefer-current";
+  current.projects = [project("repeat"), project("repeat")];
+  const rejected = api("validateAndMigrate")(current);
+  assert.equal(rejected.ok, false);
+  assert.match(rejected.errors.join(" "), /projects\[1\]\.id.*unique/i);
 });
 
 test("rejects unsafe imported IDs and a non-numeric plan start", () => {
@@ -94,7 +157,7 @@ test("accepts a complete current state into a fresh object", () => {
   candidate.unknownRoot = "discard me";
   const result = api("validateAndMigrate")(candidate);
   assert.equal(result.ok, true, JSON.stringify(result.errors));
-  assert.equal(result.sourceVersion, 1);
+  assert.equal(result.sourceVersion, 2);
   assert.equal(result.state.lines[0].spx, 77.7);
   assert.equal(Object.hasOwn(result.state, "unknownRoot"), false);
   assert.notStrictEqual(result.state, candidate);
@@ -212,7 +275,7 @@ test("rejects future versions without guessing", () => {
   candidate.schemaVersion = api("CURRENT_SCHEMA_VERSION") + 1;
   const result = api("validateAndMigrate")(candidate);
   assert.equal(result.ok, false);
-  assert.equal(result.sourceVersion, 2);
+  assert.equal(result.sourceVersion, api("CURRENT_SCHEMA_VERSION") + 1);
   assert.match(result.errors.join(" "), /newer version/i);
 });
 
@@ -377,7 +440,7 @@ test("successful boot upgrades the existing key and retains the exact previous-g
   assert.equal(result.recovery, null);
   assert.equal(storage.value("forgePlannerState_v3_previous_good"), legacyRaw);
   const upgraded = JSON.parse(storage.value("forgePlannerState_v3"));
-  assert.equal(upgraded.schemaVersion, 1);
+  assert.equal(upgraded.schemaVersion, 2);
   assert.equal(upgraded.dupe, 17.25);
 });
 

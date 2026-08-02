@@ -134,6 +134,65 @@ function projectForgieNote(res){
   const parts=made.map(it=>`<b>${disp(num(S.forgie[it])||0)}</b>/hr ${it}`).join(", ");
   return `<div class="notice info" style="font-size:11.5px"><b>Lil' Forgie</b> is passively supplying ${parts} — already credited toward these projects, so it's crafting you don't have to do.</div>`;
 }
+function projectStabilityHtml(res){
+  const policy=res&&res.projectStability==="reoptimize"?"reoptimize":"prefer-current";
+  if(policy==="reoptimize")return `<section class="notice info project-stability-summary" aria-label="Line-job policy">
+    <b>Re-optimized line jobs are active.</b> Project phases will choose fresh line jobs on each edit and remember the selected setup.
+    <div style="margin-top:9px"><button type="button" class="btn ghost" data-project-stability="prefer-current">Prefer current line jobs on future edits</button></div>
+  </section>`;
+  const comparison=res&&res.stabilityComparison;if(!comparison)return "";
+  const phaseRows=Array.isArray(comparison.phases)?comparison.phases:[];
+  const names=phaseRows.map(phase=>htmlText(phase&&phase.name||"Project phase")).join(", ");
+  if(!comparison.comparable){
+    const state=comparison.selectedExecutable?"The retained schedule is executable.":"The retained schedule is not fully executable.";
+    const alternative=comparison.alternativeExecutable?"The re-optimized schedule is executable.":"The re-optimized schedule is not fully executable.";
+    return `<section class="notice warn project-stability-summary" aria-label="Line-job policy comparison">
+      <b>Current line jobs retained.</b> A safe full comparison is unavailable, so no speed or throughput switch is recommended here. ${state} ${alternative}
+      ${names?`<div style="margin-top:7px"><b>Affected phase${phaseRows.length===1?"":"s"}:</b> ${names}</div>`:""}
+      <div style="margin-top:7px">Use the always-available <b>Line-job policy</b> selector in Shopping list only if you deliberately want to override this.</div>
+    </section>`;
+  }
+  const fmtPct=value=>Number.isFinite(value)?Number(value).toFixed(2)+"%":"—";
+  const rows=phaseRows.map(phase=>`<tr>
+    <td>${htmlText(phase.name||"Project phase")}</td>
+    <td class="num">${disp(phase.selectedThroughput)}</td><td class="num">${disp(phase.alternativeThroughput)}</td>
+    <td class="num">${fmtPct(phase.selectedThroughputLossPct)}</td>
+    <td class="num">${fmtDuration(phase.selectedEta)}</td><td class="num">${fmtDuration(phase.alternativeEta)}</td>
+    <td class="num">${fmtPct(phase.selectedEtaPenaltyPct)}</td>
+  </tr>`).join("");
+  const allAlternativeAtLeast=phaseRows.length>0&&phaseRows.every(phase=>{
+    const a=phase.alternativeThroughput,b=phase.selectedThroughput;
+    const eps=throughputCompareEpsilon(a,b);
+    return Number.isFinite(a)&&Number.isFinite(b)&&a>=b-eps;
+  });
+  const someAlternativeHigher=phaseRows.some(phase=>{
+    const a=phase.alternativeThroughput,b=phase.selectedThroughput;
+    const eps=throughputCompareEpsilon(a,b);
+    return Number.isFinite(a)&&Number.isFinite(b)&&a>b+eps;
+  });
+  const action=comparison.alternativeIsShorter?"Use shorter re-optimized plan":
+    allAlternativeAtLeast&&someAlternativeHigher?"Use higher-throughput line jobs anyway":"Use re-optimized line jobs anyway";
+  const totalDiff=comparison.alternativeMinusSelectedTotalEta;
+  const totalNote=Number.isFinite(totalDiff)&&Math.abs(totalDiff)>etaCompareEpsilon(comparison.selectedTotalEta,comparison.alternativeTotalEta)
+    ?`The re-optimized complete run is <b>${fmtDuration(Math.abs(totalDiff))} ${totalDiff<0?"shorter":"longer"}</b>.`
+    :"The complete-run ETAs are effectively equal.";
+  const warmupDiff=comparison.alternativeMinusSelectedWarmupEta;
+  const warmupNote=Number.isFinite(warmupDiff)&&Math.abs(warmupDiff)>etaCompareEpsilon(comparison.selectedWarmupEta,comparison.alternativeWarmupEta)
+    ?`Re-optimized warm-ups are <b>${fmtDuration(Math.abs(warmupDiff))} ${warmupDiff<0?"shorter":"longer"}</b>.`
+    :"Warm-up time is effectively unchanged.";
+  const retainedReason=comparison.alternativeIsShorter
+    ?"The current jobs were retained because their phase throughput stayed within the 5% stability band; the complete re-optimized run is nevertheless shorter."
+    :"The current jobs were retained because they stayed within the 5% stability band and re-optimization does not shorten the complete schedule after warm-ups and ordering.";
+  return `<section class="notice info project-stability-summary" aria-label="Line-job policy comparison">
+    <div><b>Current line jobs retained.</b> Both complete schedules are executable and safely comparable. ${retainedReason}</div>
+    <div style="margin-top:7px"><b>Selected complete ETA:</b> ${fmtDuration(comparison.selectedTotalEta)} · <b>Re-optimized complete ETA:</b> ${fmtDuration(comparison.alternativeTotalEta)}. ${totalNote}</div>
+    <div style="margin-top:5px">${warmupNote} <b>Phase order:</b> ${comparison.orderChanged?"changes under re-optimization":"unchanged"}.</div>
+    <div class="table-scroll" role="region" aria-label="Affected Project phase comparison" aria-describedby="tableScrollHelp" tabindex="0" style="margin-top:9px"><table>
+      <thead><tr><th>Held phase</th><th class="num">Current throughput</th><th class="num">Re-optimized throughput</th><th class="num">Current loss</th><th class="num">Current ETA</th><th class="num">Re-optimized ETA</th><th class="num">Current ETA penalty</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <div style="margin-top:9px"><button type="button" class="btn ghost" data-project-stability="reoptimize">${action}</button></div>
+  </section>`;
+}
 function renderProjectResults(res,el,stat){
   _lastProjectRes=res;
   const scheduleExecutable=!!(res&&res.feasible&&res.lpFeasible&&res.scheduleValidation&&res.scheduleValidation.ok);
@@ -161,7 +220,7 @@ function renderProjectResults(res,el,stat){
   // Header: ordering note + Track-progress opener. The step plan below is the main event, so there's
   // no longer a "Step-by-step" button — this panel *is* it.
   html+=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-    <div class="proj-mini" style="font-size:11.5px">${scheduleExecutable?(res.sequenced?'Order: <b style="color:var(--ink2)">one project at a time</b> — unlocks first, then your order, then cheapest. Change in Shopping list.':res.waved?'Order: <b style="color:var(--ink2)">all together, in unlock waves</b> — material unlocks first, then the rest. Change in Shopping list.':res.single?'Order: <b style="color:var(--ink2)">all projects in one phase</b> — unlock ordering off. Change in Shopping list.':'Order: <b style="color:var(--ink2)">all projects together</b> (fastest total). Change in Shopping list.'):'Exact replay is blocked. Review the diagnostic and analytical breakdown below.'}</div>
+    <div class="proj-mini" style="font-size:11.5px">${scheduleExecutable?(res.sequenced?'Order: <b style="color:var(--ink2)">one project at a time</b> — unlocks first, then your order, then cheapest. Change in Shopping list.':res.waved?'Order: <b style="color:var(--ink2)">all together, in unlock waves</b> — material unlocks first, then the rest. Change in Shopping list.':res.single?'Order: <b style="color:var(--ink2)">all projects in one phase</b> — unlock ordering off. Change in Shopping list.':'Order: <b style="color:var(--ink2)">all projects together</b> in one shared schedule. Change in Shopping list.'):'Exact replay is blocked. Review the diagnostic and analytical breakdown below.'}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn primary" id="btnProgress">Track progress</button>
     </div></div>`;
@@ -170,6 +229,7 @@ function renderProjectResults(res,el,stat){
   // Key notices — the ones that change what you actually do. The old verbose "Project plan." explainer
   // is dropped; the step-plan intro below already tells you how to run it.
   html+=projectForgieNote(res);
+  html+=projectStabilityHtml(res);
   const prerequisites=(res.executionPhases||[]).filter(ph=>ph.kind==="prerequisite");
   const warmups=(res.executionPhases||[]).filter(ph=>ph.kind==="warmup");
   if(scheduleExecutable&&prerequisites.length){
@@ -179,7 +239,7 @@ function renderProjectResults(res,el,stat){
     html+=`<div class="notice info"><b>External pre-produced prerequisite:</b> ${needs} before the timed work begins. This is an explicit zero-time execution step and cannot be supplied by the same phase.</div>`;
   }
   if(scheduleExecutable&&warmups.length){const warmEta=warmups.reduce((sum,ph)=>sum+(ph.eta||0),0);
-    html+=`<div class="notice info"><b>Startup warm-up included:</b> ${fmtDuration(warmEta)} builds the ordinary input stock needed to keep every replay boundary nonnegative. The total and finish clocks include this time.</div>`;}
+    html+=`<div class="notice info"><b>Startup warm-up included:</b> ${fmtDuration(warmEta)} builds the ordinary input stock needed to avoid a material shortage beyond replay tolerance. The total and finish clocks include this time.</div>`;}
   if(res.scheduleValidation&&!res.scheduleValidation.ok){
     const f=res.scheduleValidation.firstFailure||{},when=isFinite(f.time)?` at ${fmtDuration(f.time)}`:"";
     const detail=f.kind==="mined-rate"

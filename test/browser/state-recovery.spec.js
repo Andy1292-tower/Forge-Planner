@@ -75,7 +75,7 @@ test("a rejected future import leaves prior state and persisted bytes unchanged"
   await page.locator("#fileImport").setInputFiles({
     name: "future.json",
     mimeType: "application/json",
-    buffer: Buffer.from(JSON.stringify({ schemaVersion: 2 })),
+    buffer: Buffer.from(JSON.stringify({ schemaVersion: 3 })),
   });
 
   await expect(page.getByRole("alert")).toContainText("newer version");
@@ -86,7 +86,7 @@ test("a rejected future import leaves prior state and persisted bytes unchanged"
 test("a normal-size rejected import downloads the original File bytes instead of re-encoded text", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   const originalBytes = Buffer.concat([
-    Buffer.from('{"schemaVersion":2,"note":"'),
+    Buffer.from('{"schemaVersion":3,"note":"'),
     Buffer.from([0x80]),
     Buffer.from('"}'),
   ]);
@@ -118,7 +118,7 @@ test("a valid import commits once and retains the exact previous-good bytes", as
 
   await expect(page.locator('[data-spx="0"]')).toHaveValue("88.25");
   const stored = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), STORAGE_KEY);
-  expect(stored.schemaVersion).toBe(1);
+  expect(stored.schemaVersion).toBe(2);
   expect(stored.lines[0].spx).toBe(88.25);
   expect(await page.evaluate(() => localStorage.getItem("forgePlannerState_v3_previous_good"))).toBe(beforeRaw);
 });

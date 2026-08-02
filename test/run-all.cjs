@@ -26,6 +26,7 @@ const tests = [
   "test/static-asset-build.cjs",
   "test/state-schema.cjs",
   "test/stability.cjs",
+  "test/stability-ui.cjs",
   "test/stockrisk.cjs",
   "test/run-parity.cjs",
 ];

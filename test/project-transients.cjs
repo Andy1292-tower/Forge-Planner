@@ -331,9 +331,9 @@ const renderStart = resultsSrc.indexOf("function renderProjectResults(res,el,sta
 const renderEnd = resultsSrc.indexOf("\n\n\nfunction renderResults", renderStart);
 assert.ok(renderStart >= 0 && renderEnd > renderStart, "Project result renderer remains extractable for blocked-copy coverage");
 const renderProjectResults = Function("S","mutateState","save","projectForgieNote","projPlanAnchorHtml","htmlText","disp","fmtDuration",
-  "stepsProjControls","stepPlanHtml","ALLITEMS","num","resultMinedUsage","minedUsageNote","lineAssignTableHtml","idleLinesNote",
+  "stepsProjControls","stepPlanHtml","ALLITEMS","num","resultMinedUsage","minedUsageNote","lineAssignTableHtml","idleLinesNote","projectStabilityHtml",
   `let _lastProjectRes=null,_breakdownOpen=false,_projAdjustOpen=false;${resultsSrc.slice(renderStart,renderEnd)};return renderProjectResults;`)(
-    {planStart:1,projects:[],inventory:{Bits:40000}},()=>{},()=>{},()=>"",()=>"",String,testDisp,()=>"1h",()=>"",()=>partialCopy,[],Number,()=>[],()=>"",()=>"",()=>"");
+    {planStart:1,projects:[],inventory:{Bits:40000}},()=>{},()=>{},()=>"",()=>"",String,testDisp,()=>"1h",()=>"",()=>partialCopy,[],Number,()=>[],()=>"",()=>"",()=>"",()=>"");
 const bitsEl={innerHTML:""},bitsStat={textContent:""};
 renderProjectResults({empty:false,sequenced:false,waved:false,single:true,feasible:true,lpFeasible:true,partial:false,
   eta:3,workEta:2,ms:1,perProject:[],phases:[{name:"Frames",eta:2,demandSub:{}}],executionPhases:[partialBitsPhase],
