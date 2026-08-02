@@ -332,7 +332,15 @@ test("Items cache misses projected input changes and expired records", () => {
   const projectedChanges = [
     ["line speed", state => ({ ...state, lines: [{ ...state.lines[0], spx: 2 }] })],
     ["line max", state => ({ ...state, lines: [{ ...state.lines[0], max: 128 }] })],
+    ["line turbo", state => ({ ...state, lines: [{ ...state.lines[0], turbo: 1 }] })],
+    ["max Turbo", state => ({ ...state, maxTurbo: 1 })],
+    ["duplication", state => ({ ...state, dupe: 25 })],
+    ["margin", state => ({ ...state, margin: 0.1 })],
+    ["exact solve budget", state => ({ ...state, solveBudget: 201 })],
+    ["target enabled state", state => ({ ...state, targets: { Frames: { on: false, w: 1 } } })],
     ["target weight", state => ({ ...state, targets: { Frames: { on: true, w: 2 } } })],
+    ["base time", state => ({ ...state, baseTime: { Frames: 309 } })],
+    ["production cost", state => ({ ...state, prodCost: { Frames: { Rods: { 1: 3 } } } })],
     ["Lil' Forgie production", state => ({ ...state, forgie: { Frames: 4 } })],
     ["mined-resource income", state => ({ ...state, minedIncome: { Vespium: 8, Hydracite: 11 } })],
   ];
@@ -351,14 +359,16 @@ test("Items cache misses projected input changes and expired records", () => {
   const state = maxItemsState();
   primeItemsCache(storage, state, 1_000);
   assert.ok(storage.size > 0, "expiry coverage requires a persisted cache record");
-  const expired = lifecycleHarness({ storage, now: 1_000 + 24 * 60 * 60 * 1_000 + 1 });
+  const expired = lifecycleHarness({ storage, now: 1_000 + 24 * 60 * 60 * 1_000 });
   expired.callRequest({ mode: "items", stateRevision: 2, budget: state.solveBudget, stateSnapshot: state }, () => {});
-  assert.equal(expired.workers.length, 1, "a record older than 24 hours must dispatch a Worker");
+  assert.equal(expired.workers.length, 1, "a record exactly 24 hours old must dispatch a Worker");
 });
 
 test("non-Items, forceFresh, and malformed daily-cache bytes fail open to a Worker", () => {
   for (const mode of ["credits", "project"]) {
     const storage = new Map();
+    primeItemsCache(storage);
+    assert.ok(storage.size > 0, `${mode} coverage requires a persisted Items cache record`);
     const state = maxItemsState({ mode });
     const harness = lifecycleHarness({ storage });
     harness.callRequest({ mode, stateRevision: 1, budget: state.solveBudget, stateSnapshot: state }, () => {});
@@ -369,9 +379,16 @@ test("non-Items, forceFresh, and malformed daily-cache bytes fail open to a Work
   const state = maxItemsState();
   primeItemsCache(freshStorage, state);
   assert.ok(freshStorage.size > 0, "forceFresh coverage requires a persisted cache record");
-  const forceFresh = lifecycleHarness({ storage: freshStorage });
+  const forceFresh = lifecycleHarness({ storage: freshStorage, now: 2_000 });
   forceFresh.callRequest({ mode: "items", stateRevision: 2, budget: state.solveBudget, stateSnapshot: state, forceFresh: true }, () => {});
   assert.equal(forceFresh.workers.length, 1, "forceFresh must bypass the daily cache once");
+  forceFresh.workers[0].emitMessage(workerResponse(forceFresh.workers[0], { res: cachedItemsResult("fresh") }));
+  const afterForceFresh = lifecycleHarness({ storage: freshStorage, now: 2_000 });
+  const refreshed = [];
+  afterForceFresh.callRequest({ mode: "items", stateRevision: 3, budget: state.solveBudget, stateSnapshot: state },
+    result => refreshed.push(result.marker));
+  assert.equal(afterForceFresh.workers.length, 0, "the forced fresh result must replace the existing cache record");
+  assert.deepEqual(refreshed, ["fresh"]);
 
   const malformedStorage = new Map();
   primeItemsCache(malformedStorage, state);
