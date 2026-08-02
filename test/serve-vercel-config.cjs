@@ -4,20 +4,33 @@ const fs = require("fs");
 const http = require("http");
 const path = require("path");
 
-const ROOT = path.resolve(__dirname, "..");
-const CONFIG = JSON.parse(fs.readFileSync(path.join(ROOT, "vercel.json"), "utf8"));
+const PROJECT_ROOT = path.resolve(__dirname, "..");
+const STATIC_ROOT = path.resolve(PROJECT_ROOT, process.env.STATIC_ROOT || ".");
+const CONFIG = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, "vercel.json"), "utf8"));
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.PORT || 4173);
 const MIME = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
   ".ico": "image/x-icon",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".png": "image/png",
   ".svg": "image/svg+xml",
   ".webp": "image/webp",
 };
+const REQUEST_COUNTS = Object.create(null);
+
+function requestCountScope(request) {
+  const cookies = String(request.headers.cookie || "").split(";");
+  for (const cookie of cookies) {
+    const [name, ...value] = cookie.trim().split("=");
+    if (name === "forge-test-session" && value.length) return value.join("=");
+  }
+  return "shared";
+}
 
 const HEADER_ROUTES = (CONFIG.headers || []).map(route => ({
   matcher: new RegExp(`^${route.source}$`),
@@ -33,8 +46,8 @@ function applyConfiguredHeaders(response, pathname) {
 
 function resolveRequestPath(pathname) {
   const relative = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
-  const absolute = path.resolve(ROOT, relative);
-  return absolute === ROOT || absolute.startsWith(ROOT + path.sep) ? absolute : null;
+  const absolute = path.resolve(STATIC_ROOT, relative);
+  return absolute === STATIC_ROOT || absolute.startsWith(STATIC_ROOT + path.sep) ? absolute : null;
 }
 
 const server = http.createServer((request, response) => {
@@ -45,6 +58,16 @@ const server = http.createServer((request, response) => {
     response.writeHead(400).end("Bad request");
     return;
   }
+
+  const countScope = requestCountScope(request);
+  const scopedCounts = REQUEST_COUNTS[countScope] || (REQUEST_COUNTS[countScope] = Object.create(null));
+  if (process.env.ENABLE_REQUEST_METRICS === "1" && pathname === "/__test/request-counts") {
+    response.setHeader("Cache-Control", "no-store");
+    response.setHeader("Content-Type", "application/json; charset=utf-8");
+    response.writeHead(200).end(JSON.stringify(scopedCounts));
+    return;
+  }
+  scopedCounts[pathname] = (scopedCounts[pathname] || 0) + 1;
 
   applyConfiguredHeaders(response, pathname);
   if (!response.hasHeader("Cache-Control")) response.setHeader("Cache-Control", "no-store");
@@ -70,7 +93,7 @@ const server = http.createServer((request, response) => {
 });
 
 server.listen(PORT, HOST, () => {
-  process.stdout.write(`Serving Forge Planner with vercel.json headers at http://${HOST}:${PORT}\n`);
+  process.stdout.write(`Serving Forge Planner from ${STATIC_ROOT} with vercel.json headers at http://${HOST}:${PORT}\n`);
 });
 
 function stop() {

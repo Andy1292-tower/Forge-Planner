@@ -15,9 +15,9 @@ module.exports = defineConfig({
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: "node test/serve-vercel-config.cjs",
+    command: "node test/serve-built.cjs",
     url: "http://127.0.0.1:4173",
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 30_000,
   },
 });

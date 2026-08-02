@@ -20,6 +20,7 @@ const tests = [
   "test/rawtargets.cjs",
   "test/scale.cjs",
   "test/solve-lifecycle.cjs",
+  "test/static-asset-build.cjs",
   "test/state-schema.cjs",
   "test/stability.cjs",
   "test/stockrisk.cjs",

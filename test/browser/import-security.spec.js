@@ -354,10 +354,14 @@ test.describe("static Content Security Policy", () => {
   test("the served deployment header and meta fallback enforce self-only scripts", async ({ page }) => {
     const response = await page.goto("/", { waitUntil: "domcontentloaded" });
     const header = response.headers()["content-security-policy"];
-    const assetResponse = await page.request.get("/js/core.js");
+    const appPath = await page.locator("script[src^='/static/app.']").getAttribute("src");
+    expect(appPath, "the generated page must expose its real hashed app asset").toBeTruthy();
+    const assetResponse = await page.request.get(appPath);
     const fallback = await page.locator("meta[http-equiv='Content-Security-Policy']").getAttribute("content");
     expect(header, "the browser navigation response must carry the deployment CSP header").toBeTruthy();
+    expect(assetResponse.status(), "the CSP assertion must run against a deployed asset, not a 404").toBe(200);
     expect(assetResponse.headers()["content-security-policy"]).toBe(header);
+    expect(assetResponse.headers()["cache-control"]).toContain("immutable");
     expect(response.headers()["x-content-type-options"]).toBe("nosniff");
     expect(fallback, "the static document must retain a CSP fallback").toBeTruthy();
     for (const policy of [header, fallback]) {
