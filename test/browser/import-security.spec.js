@@ -22,6 +22,22 @@ function presetIdPayload(label) {
   return `x\"></option></select><img data-import-attack=i src=${ATTACK_PATH}i onerror=X.push(1)><select><option value=\"x`;
 }
 
+function cspDirectives(policy) {
+  const directives = new Map();
+  String(policy || "").split(";").forEach(fragment => {
+    const tokens = fragment.trim().split(/\s+/).filter(Boolean);
+    if (!tokens.length) return;
+    const name = tokens[0].toLowerCase();
+    if (!directives.has(name)) directives.set(name, new Set());
+    tokens.slice(1).forEach(token => directives.get(name).add(token));
+  });
+  return directives;
+}
+
+function cspSources(directives, name) {
+  return [...(directives.get(name) || new Set())].sort();
+}
+
 async function startAttackPage(page) {
   const attackRequests = [];
   page.on("request", request => {
@@ -164,6 +180,87 @@ test.describe("imported markup stays inert with CSP bypassed", () => {
     await expectAttackInert(page, requests);
   });
 
+  test("sequenced imported project names remain exact and inert in phase and breakdown contexts", async ({ page }) => {
+    const requests = await startAttackPage(page);
+    const candidate = await currentCandidate(page);
+    const names = [textPayload("sequence-a"), textPayload("sequence-b")];
+    candidate.mode = "project";
+    candidate.projectSeq = true;
+    candidate.projectGate = true;
+    candidate.projects = names.map((name, index) => ({
+      id: `sequence-${index + 1}`,
+      name,
+      description: "",
+      on: true,
+      prio: null,
+      from: 1,
+      to: 1,
+      done: 0,
+      levels: [{ costs: [{ item: index ? "Bricks" : "Glass", qty: index ? 2 : 1 }] }],
+      _open: false,
+    }));
+
+    await importCandidate(page, candidate, "project-sequence-attack.json");
+
+    const stepNameNodes = page.locator("#results .step-phase .step-h b");
+    await expect(stepNameNodes).toHaveCount(2);
+    const stepNames = await stepNameNodes.evaluateAll(nodes =>
+      nodes.map(node => node.textContent).sort()
+    );
+    const breakdown = page.locator("#results .breakdown-panel");
+    await expect(breakdown).toContainText("Completion order");
+    const breakdownNames = await breakdown.evaluate(panel => {
+      const table = [...panel.querySelectorAll("table")].find(candidateTable =>
+        candidateTable.tHead && candidateTable.tHead.rows[0].cells[1].textContent.trim() === "Project"
+      );
+      return [...table.tBodies[0].rows].map(row => (row.cells[1].childNodes[0] && row.cells[1].childNodes[0].textContent) || "").sort();
+    });
+    expect(stepNames).toEqual(names.slice().sort());
+    expect(breakdownNames).toEqual(names.slice().sort());
+    await expectAttackInert(page, requests);
+  });
+
+  test("unlock-wave imported project names remain exact and inert in member and breakdown contexts", async ({ page }) => {
+    const requests = await startAttackPage(page);
+    const candidate = await currentCandidate(page);
+    const names = ["Frame Factory", textPayload("wave-dependent")];
+    candidate.mode = "project";
+    candidate.projectSeq = false;
+    candidate.projectGate = true;
+    candidate.projects = [
+      {
+        id: "wave-unlocker", catId: "frame-factory", name: names[0], description: "", on: true, prio: null,
+        from: 1, to: 1, done: 0, levels: [{ costs: [{ item: "Glass", qty: 1 }] }], _open: false,
+      },
+      {
+        id: "wave-consumer", name: names[1], description: "", on: true, prio: null,
+        from: 1, to: 1, done: 0, levels: [{ costs: [{ item: "Frames", qty: 1 }] }], _open: false,
+      },
+    ];
+
+    await importCandidate(page, candidate, "project-wave-attack.json");
+
+    const waveHeaders = page.locator("#results .step-phase .step-h");
+    await expect(waveHeaders).toHaveCount(2);
+    const memberNames = await waveHeaders.evaluateAll(nodes =>
+      nodes.map(node => {
+        const member = node.querySelector(".proj-mini");
+        return member ? member.textContent : "";
+      }).sort()
+    );
+    const breakdown = page.locator("#results .breakdown-panel");
+    await expect(breakdown).toContainText("Build order");
+    const breakdownNames = await breakdown.evaluate(panel => {
+      const table = [...panel.querySelectorAll("table")].find(candidateTable =>
+        candidateTable.tHead && candidateTable.tHead.rows[0].cells[1].textContent.trim() === "Wave"
+      );
+      return [...table.tBodies[0].rows].map(row => (row.cells[1].childNodes[0] && row.cells[1].childNodes[0].textContent) || "").sort();
+    });
+    expect(memberNames).toEqual(names.slice().sort());
+    expect(breakdownNames).toEqual(names.slice().sort());
+    await expectAttackInert(page, requests);
+  });
+
   test("an imported Manual preset ID cannot create markup", async ({ page }) => {
     const requests = await startAttackPage(page);
     const candidate = await currentCandidate(page);
@@ -256,21 +353,22 @@ test.describe("imported markup stays inert with CSP bypassed", () => {
 test.describe("static Content Security Policy", () => {
   test.use({ bypassCSP: false });
 
-  test("deployment headers and the meta fallback enforce the same script boundary", async ({ page }) => {
-    const config = JSON.parse(fs.readFileSync("vercel.json", "utf8"));
-    const route = config.headers.find(entry => entry.source === "/(.*)");
-    const header = route && route.headers.find(entry => entry.key === "Content-Security-Policy");
-    expect(header).toBeTruthy();
-
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+  test("the served deployment header and meta fallback enforce self-only scripts", async ({ page }) => {
+    const response = await page.goto("/", { waitUntil: "domcontentloaded" });
+    const header = response.headers()["content-security-policy"];
+    const assetResponse = await page.request.get("/js/core.js");
     const fallback = await page.locator("meta[http-equiv='Content-Security-Policy']").getAttribute("content");
-    for (const policy of [header.value, fallback]) {
-      expect(policy).toContain("default-src 'self'");
-      expect(policy).toContain("script-src 'self'");
-      expect(policy).toContain("object-src 'none'");
-      expect(policy).not.toContain("script-src 'self' 'unsafe-inline'");
+    expect(header, "the browser navigation response must carry the deployment CSP header").toBeTruthy();
+    expect(assetResponse.headers()["content-security-policy"]).toBe(header);
+    expect(response.headers()["x-content-type-options"]).toBe("nosniff");
+    expect(fallback, "the static document must retain a CSP fallback").toBeTruthy();
+    for (const policy of [header, fallback]) {
+      const directives = cspDirectives(policy);
+      expect(cspSources(directives, "default-src")).toEqual(["'self'"]);
+      expect(cspSources(directives, "script-src")).toEqual(["'self'"]);
+      expect(cspSources(directives, "object-src")).toEqual(["'none'"]);
     }
-    expect(header.value).toContain("frame-ancestors 'none'");
+    expect(cspSources(cspDirectives(header), "frame-ancestors")).toEqual(["'none'"]);
   });
 
   test("allows the current app while blocking inline script and analytics requests", async ({ page }) => {
@@ -291,6 +389,8 @@ test.describe("static Content Security Policy", () => {
 
     expect(inlineRan).toBe(false);
     expect(requests.some(url => url.includes("/_vercel/insights"))).toBe(false);
-    expect(consoleMessages.filter(message => /Content Security Policy/i.test(message))).toHaveLength(1);
+    const cspMessages = consoleMessages.filter(message => /Content Security Policy/i.test(message));
+    expect(cspMessages.length).toBeGreaterThan(0);
+    expect(consoleMessages).toEqual(cspMessages);
   });
 });
