@@ -201,6 +201,9 @@ function renderProjectResults(res,el,stat){
   // Seed the plan-start anchor once, the first time a real plan exists (issue #87 item 1) — moved here
   // from the old modal's open handler now that the step plan is always on screen. Display anchor only.
   if(S.planStart==null&&res&&!res.empty&&res.phases&&res.phases.length){mutateState(st=>{st.planStart=Date.now();});save();}
+  // The progress tracker reads this cached result instead of solving (see renderProgress), so a fresh
+  // solve has to tell it — otherwise one chip click leaves it reading "recalculating…" indefinitely.
+  if(typeof refreshProgressIfOpen==="function")refreshProgressIfOpen();
   if(res.empty){
     // Distinguish "everything's done" from "nothing configured" (issue #87 item 2). When active
     // projects exist but are fully checked off, keep the Track-progress opener so the user can still

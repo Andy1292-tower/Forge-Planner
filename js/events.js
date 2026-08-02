@@ -516,6 +516,35 @@ document.getElementById("invRows").addEventListener("input",e=>{
 // Levels completed for a project, clamped to its from→to span (non-destructive).
 function projSpan(p){const n=(p.levels||[]).length;const from=Math.max(1,Math.min(n||1,Math.floor(num(p.from)||1)));const to=Math.max(from,Math.min(n,Math.floor(num(p.to)||n)));return {from,to,span:to-from+1};}
 function projDone(p){const {span}=projSpan(p);return Math.max(0,Math.min(span,Math.floor(num(p.done)||0)));}
+// The summary block only — bar, level counts, remaining time. Split out from renderProgress because a
+// solve landing has to refresh the time WITHOUT rebuilding the level chips below it: those are
+// focusable, and replacing them would yank focus out from under whoever is tabbing through them.
+function renderProgressSummary(){
+  const sum=document.getElementById("progSummary");
+  if(!sum)return;
+  const active=(S.projects||[]).filter(p=>p.on&&(p.levels||[]).length);
+  if(!active.length){sum.innerHTML="";return;}
+  let totalLv=0,doneLv=0;
+  active.forEach(p=>{const {span}=projSpan(p);totalLv+=span;doneLv+=projDone(p);});
+  // Read the CACHED project solve rather than running one. This was the last synchronous optimize()
+  // in the app: it froze the main thread for the whole solve budget, and because every chip click
+  // also calls scheduleSolve(), each click solved the same plan twice — once blocking, once in the
+  // worker. `renderT` (a debounce is queued) or an active solve request means the cache no longer
+  // matches the state the user is looking at, so the time reads "recalculating…" until the solve
+  // lands and renderProjectResults calls back through refreshProgressIfOpen.
+  const solving=(renderT!=null)||solveService.status().active;
+  const res=(S.mode==="project"&&!solving)?_lastProjectRes:null;
+  const remLv=totalLv-doneLv;
+  const pct=totalLv?Math.round(doneLv/totalLv*100):0;
+  const etaTxt=remLv<=0?"all done 🎉":((res&&!res.empty)?fmtDuration(res.eta):"recalculating…");
+  sum.innerHTML=`
+    <div class="prog-bar-wrap"><div class="prog-bar" style="width:${pct}%"></div></div>
+    <div class="prog-metrics">
+      <div class="prog-metric"><div class="pm-v">${doneLv}/${totalLv}</div><div class="pm-l">levels done</div></div>
+      <div class="prog-metric"><div class="pm-v">${remLv}</div><div class="pm-l">levels left</div></div>
+      <div class="prog-metric"><div class="pm-v">${etaTxt}</div><div class="pm-l">time remaining</div></div>
+    </div>${(res&&!res.empty&&!res.feasible&&remLv>0)?`<div class="notice warn" style="margin:10px 0 0;font-size:11.5px">Plan isn't fully sustainable with current lines — see the main panel for blocked items.</div>`:""}`;
+}
 function renderProgress(){
   const list=document.getElementById("progList");
   const sum=document.getElementById("progSummary");
@@ -526,19 +555,7 @@ function renderProgress(){
     list.innerHTML=`<div class="notice info">No active projects. Open <b>Shopping list</b>, add or tick on a project, then track its level progress here.</div>`;
     return;
   }
-  let totalLv=0,doneLv=0;
-  active.forEach(p=>{const {span}=projSpan(p);totalLv+=span;doneLv+=projDone(p);});
-  const res=optimizeProjectTop();
-  const remLv=totalLv-doneLv;
-  const pct=totalLv?Math.round(doneLv/totalLv*100):0;
-  const etaTxt=(res&&!res.empty&&remLv>0)?fmtDuration(res.eta):(remLv>0?"—":"all done 🎉");
-  sum.innerHTML=`
-    <div class="prog-bar-wrap"><div class="prog-bar" style="width:${pct}%"></div></div>
-    <div class="prog-metrics">
-      <div class="prog-metric"><div class="pm-v">${doneLv}/${totalLv}</div><div class="pm-l">levels done</div></div>
-      <div class="prog-metric"><div class="pm-v">${remLv}</div><div class="pm-l">levels left</div></div>
-      <div class="prog-metric"><div class="pm-v">${etaTxt}</div><div class="pm-l">time remaining</div></div>
-    </div>${res&&!res.empty&&!res.feasible&&remLv>0?`<div class="notice warn" style="margin:10px 0 0;font-size:11.5px">Plan isn't fully sustainable with current lines — see the main panel for blocked items.</div>`:""}`;
+  renderProgressSummary();
   list.innerHTML=active.map(p=>{
     const {from,to,span}=projSpan(p);
     const done=projDone(p);
@@ -564,7 +581,15 @@ function setProjDone(pid,newDone){
   const p=(S.projects||[]).find(x=>x.id===pid);if(!p)return;
   const {span}=projSpan(p);
   mutateState(()=>{p.done=Math.max(0,Math.min(span,Math.floor(newDone)));});
-  save();renderProgress();scheduleSolve();
+  // scheduleSolve BEFORE renderProgress: the modal reads renderT to know its cached plan is stale.
+  save();scheduleSolve();renderProgress();
+}
+// Called by renderProjectResults when a solve lands: the tracker reads the cached plan, so it needs
+// telling that the cache is fresh again. Summary only — never the level chips, so a solve completing
+// in the background can't move the user's focus. No-op when the modal isn't on screen.
+function refreshProgressIfOpen(){
+  const modal=document.getElementById("progModal");
+  if(modal&&!modal.hidden)renderProgressSummary();
 }
 const progressDialog=dialogController.register({root:document.getElementById("progModal"),panel:document.querySelector("#progModal .modal"),opener:null,initialFocus:()=>document.getElementById("progDone"),onOpen:renderProgress});
 function openProgress(invoker){progressDialog.open(invoker);}
@@ -584,7 +609,8 @@ document.getElementById("progResetAll").addEventListener("click",()=>{
   if(!(S.projects||[]).some(p=>projDone(p)>0))return;
   if(!confirm("Reset completed-level progress on all projects?"))return;
   mutateState(st=>{(st.projects||[]).forEach(p=>{p.done=0;});});
-  save();renderProgress();scheduleSolve();
+  // scheduleSolve BEFORE renderProgress: the modal reads renderT to know its cached plan is stale.
+  save();scheduleSolve();renderProgress();
 });
 
 /* ---------- Step-by-step plan modal ---------- */
