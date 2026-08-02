@@ -75,7 +75,37 @@ async function collectHorizontalOverflow(page) {
       paintedCache.set(element, result);
       return result;
     };
+    const pseudoPaintsOutside = (element, side) => {
+      const style = getComputedStyle(element, side);
+      const content = style.content;
+      if (!content || content === "none" || content === "normal"
+        || style.display === "none"
+        || style.visibility === "hidden"
+        || Number(style.opacity) === 0
+        || style.clip !== "auto"
+        || style.clipPath !== "none") return false;
+
+      const length = property => {
+        const value = parseFloat(style[property]);
+        return Number.isFinite(value) ? value : 0;
+      };
+      let width = length("width");
+      if (style.boxSizing === "content-box") {
+        width += length("paddingLeft") + length("paddingRight")
+          + length("borderLeftWidth") + length("borderRightWidth");
+      }
+      width += length("marginLeft") + length("marginRight");
+
+      const positioned = ["absolute", "fixed"].includes(style.position);
+      const left = parseFloat(style.left);
+      const right = parseFloat(style.right);
+      if (positioned && Number.isFinite(left)
+        && (left < -tolerance || left + width > element.clientWidth + tolerance)) return true;
+      if (positioned && Number.isFinite(right) && right < -tolerance) return true;
+      return width > element.clientWidth + tolerance;
+    };
     const hasPaintedOverflow = element => {
+      if (pseudoPaintsOutside(element, "::before") || pseudoPaintsOutside(element, "::after")) return true;
       const box = element.getBoundingClientRect();
       const style = getComputedStyle(element);
       const left = box.left + parseFloat(style.borderLeftWidth || "0");
@@ -349,6 +379,37 @@ test("the overflow detector rejects and then releases a rogue non-table surface"
   expect(() => assertHorizontalOverflowContract(mutatedAudit, "rogue mutation")).toThrow(/#visual-overflow-mutation/);
   await page.locator("#visual-overflow-mutation").evaluate(element => element.remove());
   await expectHorizontalOverflowContract(page, "restored after rogue mutation");
+});
+
+test("the overflow detector rejects and then releases a visible pseudo-element surface", async ({ page }) => {
+  // Break caught: a gate that inspects only DOM descendants and text ranges cannot see generated overflow.
+  await loadPlanner(page, { width: 390, height: 844 });
+  await page.evaluate(() => {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(`#visual-pseudo-mutation::before {
+      content: "visible pseudo overflow";
+      display: block;
+      width: 240px;
+      height: 20px;
+      background: rgb(255, 0, 0);
+      color: rgb(255, 255, 255);
+      white-space: nowrap;
+    }`);
+    const rogue = document.createElement("div");
+    rogue.id = "visual-pseudo-mutation";
+    rogue.style.cssText = "width:120px;overflow:visible";
+    window.__visualPseudoMutationSheet = sheet;
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    document.querySelector("main").append(rogue);
+  });
+  const mutatedAudit = await collectHorizontalOverflow(page);
+  expect(() => assertHorizontalOverflowContract(mutatedAudit, "pseudo mutation")).toThrow(/#visual-pseudo-mutation/);
+  await page.evaluate(() => {
+    document.getElementById("visual-pseudo-mutation")?.remove();
+    document.adoptedStyleSheets = document.adoptedStyleSheets.filter(sheet => sheet !== window.__visualPseudoMutationSheet);
+    delete window.__visualPseudoMutationSheet;
+  });
+  await expectHorizontalOverflowContract(page, "restored after pseudo mutation");
 });
 
 test("long dialogs keep header and footer reachable while only the designated body scrolls", async ({ page }) => {
