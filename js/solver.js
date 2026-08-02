@@ -797,9 +797,19 @@ function unlockLayers(perProject){
   const unlockerOf={};   // material -> index of the in-list project that unlocks it
   const idxOfCat={};     // catId -> index
   perProject.forEach((p,i)=>{const m=UNLOCKS[p.catId];if(m)unlockerOf[m]=i;if(p.catId)idxOfCat[p.catId]=i;});
+  // A project's dependence on an unlock material is TRANSITIVE: Wire Tower costs no Gel directly, but
+  // Wire is crafted from Gel, so it still can't start before the Gel Refinery. Expand each project's
+  // direct costs through the recipe graph and test unlock materials against the whole chain, not just
+  // the cost list (which left such a project on layer 0, alongside its own prerequisite).
+  const chainOf=perProject.map(p=>{
+    const direct=ALLITEMS.filter(it=>(p.sub[it]||0)>0);
+    if(!direct.length)return new Set();
+    const rc=relevantChain(direct);
+    return new Set([...direct,...rc.prods,...rc.raws]);
+  });
   const preds=perProject.map((p,i)=>{
     const set={};
-    UNLOCK_MATERIALS.forEach(m=>{const u=unlockerOf[m];if(u!=null&&u!==i&&(p.sub[m]||0)>0)set[u]=1;});
+    UNLOCK_MATERIALS.forEach(m=>{const u=unlockerOf[m];if(u!=null&&u!==i&&chainOf[i].has(m))set[u]=1;});
     (PROJECT_PREREQS[p.catId]||[]).forEach(cat=>{const u=idxOfCat[cat];if(u!=null&&u!==i)set[u]=1;});
     return Object.keys(set).map(Number);
   });
