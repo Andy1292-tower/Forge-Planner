@@ -291,6 +291,9 @@ function validateAndMigrate(candidate){
 
   if(_own(candidate,"projectSeq"))out.projectSeq=_boolean(_readData(candidate,"projectSeq","projectSeq",errors),"projectSeq",errors);
   if(_own(candidate,"projectGate"))out.projectGate=_boolean(_readData(candidate,"projectGate","projectGate",errors),"projectGate",errors);
+  // Deliberately NOT in the required-key list above: a save written before "set & forget" existed is
+  // perfectly valid and simply defaults to "split" — requiring it would quarantine every one of them.
+  if(_own(candidate,"projLineMode"))out.projLineMode=_enum(_readData(candidate,"projLineMode","projLineMode",errors),FIELD_SCHEMA.projLineMode,"projLineMode",errors);
   if(_own(candidate,"planStart"))out.planStart=_number(_readData(candidate,"planStart","planStart",errors),FIELD_SCHEMA.timestamp,"planStart",errors);
 
   if(_own(candidate,"manual")){

@@ -37,6 +37,7 @@ const FIELD_SCHEMA=Object.freeze({
   targetEnabled:_field("boolean",false,{allowBlank:false}),
   targetWeight:_field("integer",1,{min:1,max:9,allowBlank:false}),
   mode:_field("enum",_FIELD_DEFAULTS.mode,{values:Object.freeze(["items","credits","project","manual"]),allowBlank:false}),
+  projLineMode:_field("enum",_FIELD_DEFAULTS.projLineMode,{values:Object.freeze(["split","static"]),allowBlank:false}),
   flag:_field("boolean",false,{allowBlank:false}),
   displayText:_field("string","",{maxLength:128,allowBlank:true}),
   id:_field("string","",{maxLength:64,allowBlank:false,pattern:/^[A-Za-z][A-Za-z0-9_-]{0,63}$/}),

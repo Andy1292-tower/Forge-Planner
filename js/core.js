@@ -109,6 +109,11 @@ function defaults(){
     minedIncome:{Vespium:null,Hydracite:null},minedIncomeText:{Vespium:"",Hydracite:""},
     targets:tg,
     projects:[],inventory:nulls(),inventoryText:{},projectSeq:true,projectGate:true,
+    // How a project phase uses each crafting line. "split" (default) = the makespan LP, where a line
+    // may divide its time between jobs ("Ingots for 35m, then Concrete for 7m") to finish the phase as
+    // fast as possible. "static" = set & forget: one job per line for the whole phase, chosen so the
+    // slowest demanded item finishes as early as it can. See staticSchedule() in solver.js.
+    projLineMode:"split",
     planStart:null,
     manual:[],manualSaved:[],manualActiveId:null
   };
@@ -182,6 +187,7 @@ function normalize(st){
   if(!st.inventoryText)st.inventoryText={};
   if(typeof st.projectSeq!=="boolean")st.projectSeq=true;
   if(typeof st.projectGate!=="boolean")st.projectGate=true;
+  if(st.projLineMode!=="static")st.projLineMode="split";
   if(!Array.isArray(st.manualSaved))st.manualSaved=[];
   st.manualSaved=st.manualSaved.filter(p=>p&&typeof p==="object"&&Array.isArray(p.config)).map(p=>({id:typeof p.id==="string"?p.id:("m"+Math.random().toString(36).slice(2,9)),name:typeof p.name==="string"?p.name:"Setup",config:p.config.map(c=>({job:(c&&ALLITEMS.includes(c.job))?c.job:"Idle",lvl:(c&&LEVELS.includes(c.lvl))?c.lvl:1,sell:!!(c&&c.sell)}))}));
   if(typeof st.manualActiveId!=="string")st.manualActiveId=null;
