@@ -6,11 +6,16 @@ if (process.env.PLAYWRIGHT_CHROME_PATH) {
   test.use({ launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROME_PATH } });
 }
 
-test("a Shopping-list disclosure survives immediate page teardown without launching a solve", async ({ page }) => {
+async function openInputsTab(page, name) {
+  await page.locator("#btnInputs").click();
+  await page.getByRole("tab", { name, exact: true }).click();
+}
+
+test("a Projects disclosure survives immediate page teardown without launching a solve", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.locator("#solveOverlay")).toHaveJSProperty("hidden", true, { timeout: 15_000 });
 
-  await page.getByRole("button", { name: "Shopping list", exact: true }).click();
+  await openInputsTab(page, "Projects");
   await page.getByRole("button", { name: "New custom project", exact: false }).click();
   const disclosure = page.locator("[data-ptoggle=\"0\"]");
   await expect(disclosure).toHaveAttribute("aria-expanded", "true");
@@ -25,14 +30,14 @@ test("a Shopping-list disclosure survives immediate page teardown without launch
   expect(await page.evaluate(() => solveService.status().generation)).toBe(generation + 1);
 
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Shopping list", exact: true }).click();
+  await openInputsTab(page, "Projects");
   await expect(page.locator("[data-ptoggle=\"0\"]")).toHaveAttribute("aria-expanded", "false");
 });
 
 test("the persistence debounce writes state without rendering or requesting a solve", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.locator("#solveOverlay")).toHaveJSProperty("hidden", true, { timeout: 15_000 });
-  await page.getByRole("button", { name: "Shopping list", exact: true }).click();
+  await openInputsTab(page, "Projects");
   await page.getByRole("button", { name: "New custom project", exact: false }).click();
 
   const before = await page.evaluate(() => ({
@@ -54,7 +59,7 @@ test("the persistence debounce writes state without rendering or requesting a so
 
 test("numeric drafts that Task 8 made immediate remain durable without waiting for a debounce", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Sell prices", exact: true }).click();
+  await openInputsTab(page, "Sell prices");
   await page.getByRole("textbox", { name: "Frames sell price per unit", exact: true }).fill("12.5m");
 
   const persisted = await page.evaluate(() => JSON.parse(localStorage.getItem("forgePlannerState_v3")));

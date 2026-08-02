@@ -27,6 +27,11 @@ async function loadPlanner(page) {
   await expect(page.locator("#solveOverlay")).toBeHidden();
 }
 
+async function openInputsTab(page, name) {
+  await page.locator("#btnInputs").click();
+  await page.getByRole("tab", { name, exact: true }).click();
+}
+
 async function workerPostCount(page) {
   return page.evaluate(() => (window.__fieldValidationWorkerPosts || []).length);
 }
@@ -156,7 +161,7 @@ test("game-notation amount families accept suffixes, reject DOM-only drafts, and
   await observeWorkers(page);
   await loadPlanner(page);
 
-  await page.getByRole("button", { name: "Sell prices" }).click();
+  await openInputsTab(page, "Sell prices");
   const price = page.getByRole("textbox", { name: "Frames sell price per unit" });
   await expect(price).toHaveAttribute("inputmode", "decimal");
   await expect(price).toHaveAttribute("maxlength", "128");
@@ -170,21 +175,21 @@ test("game-notation amount families accept suffixes, reject DOM-only drafts, and
   expect(await page.evaluate(() => S.priceText.Frames)).toBe("2.5QA");
 
   const postsBeforeHiddenDraft = await workerPostCount(page);
-  await page.getByRole("button", { name: "Done editing sell prices" }).click();
+  await page.locator("#inputsDone").click();
   const speed = page.getByRole("spinbutton", { name: "Line 1 currently displayed speed multiplier" });
   await speed.fill("2");
   await expect(page.getByRole("button", { name: "Resimulate" })).toBeVisible();
   await page.getByRole("button", { name: "Resimulate" }).click();
   await expect.poll(() => workerPostCount(page)).toBeGreaterThan(postsBeforeHiddenDraft);
 
-  await page.getByRole("button", { name: "Sell prices" }).click();
+  await openInputsTab(page, "Sell prices");
   const rebuiltPrice = page.getByRole("textbox", { name: "Frames sell price per unit" });
   await expect(rebuiltPrice).toHaveValue("2.5QA");
   await rebuiltPrice.fill("");
   checkpoint = await stored(page);
   expect(checkpoint.state.sellPrice.Frames).toBeNull();
   expect(checkpoint.state.priceText.Frames).toBe("");
-  await page.getByRole("button", { name: "Done editing sell prices" }).click();
+  await page.locator("#inputsDone").click();
 
   await page.getByRole("button", { name: "Lil' Forgie" }).click();
   const forgie = page.getByRole("textbox", { name: "Frames Lil' Forgie production per hour" });
@@ -213,7 +218,7 @@ test("game-notation amount families accept suffixes, reject DOM-only drafts, and
   expect((await stored(page)).state.minedIncome.Hydracite).toBe(4e9);
   await page.getByRole("button", { name: "Done editing mined resources" }).click();
 
-  await page.getByRole("button", { name: "Shopping list" }).click();
+  await openInputsTab(page, "Inventory");
   const inventory = page.getByRole("textbox", { name: "Frames current inventory" });
   await pasteDraft(inventory, "4e3");
   expect((await stored(page)).state.inventory.Frames).toBe(4000);
@@ -226,10 +231,10 @@ test("game-notation amount families accept suffixes, reject DOM-only drafts, and
   expect((await stored(page)).state.inventory.Frames).toBe(5000);
 });
 
-test("Shopping-list and inline Project endpoint pairs commit atomically in either correction order", async ({ page }) => {
+test("Projects-tab and inline Project endpoint pairs commit atomically in either correction order", async ({ page }) => {
   await observeWorkers(page);
   await loadPlanner(page);
-  await page.getByRole("button", { name: "Shopping list" }).click();
+  await openInputsTab(page, "Projects");
   await page.getByRole("button", { name: "New custom project" }).click();
   await page.getByRole("button", { name: "Add level to New project" }).click();
   await page.getByRole("button", { name: "+ item", exact: true }).first().click();
@@ -279,7 +284,7 @@ test("Shopping-list and inline Project endpoint pairs commit atomically in eithe
   await priority.fill("3");
 
   await to.fill("2");
-  await page.getByRole("button", { name: "Done editing shopping list" }).click();
+  await page.locator("#inputsDone").click();
   await page.getByRole("button", { name: "Project plan" }).click();
   await expect(page.getByText("Adjust project levels & completion")).toBeVisible();
   await page.getByText("Adjust project levels & completion").click();
@@ -299,10 +304,10 @@ test("Shopping-list and inline Project endpoint pairs commit atomically in eithe
   expect(await page.evaluate(() => [S.projects[0].from, S.projects[0].to])).toEqual([2, 2]);
 });
 
-test("case-distinct project IDs keep Shopping-list and inline feedback uniquely owned", async ({ page }) => {
+test("case-distinct project IDs keep Projects-tab and inline feedback uniquely owned", async ({ page }) => {
   await observeWorkers(page);
   await loadPlanner(page);
-  await page.getByRole("button", { name: "Shopping list" }).click();
+  await openInputsTab(page, "Projects");
   await page.evaluate(() => {
     const project = (id, name) => ({
       id, name, on: true, prio: null, from: 1, to: 2, done: 0, _open: false,
@@ -338,7 +343,7 @@ test("case-distinct project IDs keep Shopping-list and inline feedback uniquely 
   await upperFrom.fill("1");
   await lowerTo.fill("2");
   await lowerFrom.fill("1");
-  await page.getByRole("button", { name: "Done editing shopping list" }).click();
+  await page.locator("#inputsDone").click();
   await page.getByRole("button", { name: "Project plan" }).click();
   await expect(page.getByText("Adjust project levels & completion")).toBeVisible();
   await page.getByText("Adjust project levels & completion").click();

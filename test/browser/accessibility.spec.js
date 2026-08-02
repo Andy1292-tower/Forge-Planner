@@ -13,6 +13,11 @@ async function loadPlanner(page) {
   await expect(page.locator("#solveOverlay")).toBeHidden();
 }
 
+async function openInputsTab(page, name) {
+  await page.locator("#btnInputs").click();
+  await page.getByRole("tab", { name, exact: true }).click();
+}
+
 async function expectNoWcagViolations(page) {
   const result = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
@@ -24,7 +29,7 @@ async function expectNoWcagViolations(page) {
 }
 
 async function seedNamedProjects(page) {
-  await page.getByRole("button", { name: "Shopping list" }).click();
+  await openInputsTab(page, "Projects");
   const lineJobPolicy = page.getByLabel("Line-job policy");
   await expect(lineJobPolicy).toHaveAttribute("aria-describedby", "projectStabilityHelp");
   await expect(page.locator("#projectStabilityHelp")).toContainText("within 5%");
@@ -45,7 +50,7 @@ async function seedNamedProjects(page) {
     renderProjects();
     save();
   });
-  await page.getByRole("button", { name: "Done editing shopping list" }).click();
+  await page.locator("#inputsDone").click();
   await page.getByRole("button", { name: "Project plan" }).click();
   await expect(page.getByText("Adjust project levels & completion")).toBeVisible();
 }
@@ -77,23 +82,24 @@ test("dynamic planner fields expose item, level, and line context in their names
   await expect(help).toBeFocused();
   expect(await help.evaluate(element => getComputedStyle(element).outlineStyle)).not.toBe("none");
 
-  await page.getByRole("button", { name: "Sell prices" }).click();
+  await openInputsTab(page, "Sell prices");
   await expect(page.getByRole("textbox", { name: "Plates sell price per unit" })).toBeVisible();
-  await page.getByRole("button", { name: "Done editing sell prices" }).click();
+  await page.locator("#inputsDone").click();
 
   await page.getByRole("button", { name: "Lil' Forgie" }).click();
   await expect(page.getByRole("textbox", { name: "Plates Lil' Forgie production per hour" })).toBeVisible();
   await page.getByRole("button", { name: "Done editing Lil' Forgie supply" }).click();
 
-  await page.getByRole("button", { name: "Shopping list" }).click();
-  await expect(page.locator("#projModal")).toContainText("required material unlocks first");
-  await expect(page.locator("#projModal")).toContainText("numeric order");
-  await expect(page.locator("#projModal")).toContainText("estimated completion time");
-  await expect(page.locator("#projModal")).not.toContainText("cheapest first");
+  await openInputsTab(page, "Projects");
+  await expect(page.locator("#inputsProjectsPanel")).toContainText("required material unlocks first");
+  await expect(page.locator("#inputsProjectsPanel")).toContainText("numeric order");
+  await expect(page.locator("#inputsProjectsPanel")).toContainText("estimated completion time");
+  await expect(page.locator("#inputsProjectsPanel")).not.toContainText("cheapest first");
+  await page.getByRole("tab", { name: "Inventory", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Plates current inventory" })).toBeVisible();
-  await page.getByRole("button", { name: "Done editing shopping list" }).click();
+  await page.locator("#inputsDone").click();
 
-  await page.getByRole("button", { name: "Crafting data" }).click();
+  await page.locator("#recipeToggle").click();
   await expect(page.getByRole("spinbutton", { name: "Plates base time at 1x in seconds" })).toBeVisible();
   await expect(page.getByRole("spinbutton", { name: "Plates recipe Ingots cost at compression 16384x" })).toBeVisible();
 });
@@ -108,7 +114,7 @@ test("visible validation feedback is polite, preserves help descriptions, and pa
   await expect(page.locator(`#${speedErrorId}`)).toHaveAttribute("aria-live", "polite");
   await expect(page.locator(`#${speedErrorId}`)).toHaveAttribute("aria-atomic", "true");
 
-  await page.getByRole("button", { name: "Shopping list" }).click();
+  await openInputsTab(page, "Projects");
   await page.getByRole("button", { name: "New custom project" }).click();
   await page.getByRole("button", { name: "Add level to New project" }).click();
   const from = page.getByRole("spinbutton", { name: "New project starting level" });
@@ -187,7 +193,7 @@ test("skip route, project disclosures, and table scrollers work from the keyboar
   await expect(scroller).toHaveAttribute("tabindex", "0");
   await expect(scroller).toHaveAttribute("aria-describedby", "tableScrollHelp");
 
-  await page.getByRole("button", { name: "Shopping list" }).click();
+  await openInputsTab(page, "Projects");
   await page.getByRole("button", { name: "New custom project" }).click();
   const disclosure = page.getByRole("button", { name: "Hide level costs for New project" });
   await expect(disclosure).toHaveAttribute("aria-expanded", "true");
@@ -335,7 +341,7 @@ test("save feedback does not repeat for every keystroke and solving has one live
 
 test("calibration warning text meets normal-text contrast", async ({ page }) => {
   await loadPlanner(page);
-  await page.getByRole("button", { name: "Crafting data" }).click();
+  await page.locator("#recipeToggle").click();
   await page.getByRole("spinbutton", { name: "that unit's speed ×" }).fill("50");
   await page.getByRole("spinbutton", { name: "craft seconds" }).fill("999");
   const warning = page.locator(".calib-warning").first();
@@ -353,14 +359,21 @@ test("calibration warning text meets normal-text contrast", async ({ page }) => 
 });
 
 test("axe finds no WCAG violations on the planner and primary dialogs", async ({ page }) => {
+  // Break caught: the consolidated tab semantics or moved Settings actions introduce a WCAG violation in a state the base page scan cannot see.
   await loadPlanner(page);
   await expectNoWcagViolations(page);
 
+  await openInputsTab(page, "Inventory");
+  await expect(page.getByRole("dialog", { name: "Projects+Prices", exact: true })).toBeVisible();
+  for (const name of ["Inventory", "Projects", "Sell prices"]) {
+    await page.getByRole("tab", { name, exact: true }).click();
+    await expectNoWcagViolations(page);
+  }
+  await page.locator("#inputsDone").click();
+
   for (const [openName, dialogName, closeName] of [
-    ["Sell prices", "Sell prices", "Done editing sell prices"],
     ["Lil' Forgie", "Lil' Forgie supply", "Done editing Lil' Forgie supply"],
     ["Mined resources", "Mined resources", "Done editing mined resources"],
-    ["Shopping list", "Shopping list — projects", "Done editing shopping list"],
     ["Settings", "Settings", "Done editing settings"],
   ]) {
     await page.getByRole("button", { name: openName, exact: true }).click();

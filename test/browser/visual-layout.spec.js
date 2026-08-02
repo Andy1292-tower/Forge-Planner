@@ -32,11 +32,10 @@ const RELEASE_MODES = [
   { name: "Project plan", ready: "Track progress" },
 ];
 const RELEASE_DIALOGS = [
-  { name: "Sell prices", opener: "#btnPrices", root: "#priceModal", close: "#priceDone" },
+  { name: "Projects+Prices", opener: "#btnInputs", root: "#inputsModal", close: "#inputsDone", tabs: ["Inventory", "Projects", "Sell prices"] },
   { name: "Lil' Forgie", opener: "#btnForgie", root: "#forgieModal", close: "#forgieDone" },
   { name: "Mined resources", opener: "#btnMined", root: "#minedModal", close: "#minedDone" },
   { name: "Settings", opener: "#btnSettings", root: "#settingsModal", close: "#settingsDone" },
-  { name: "Shopping list", opener: "#btnProjects", root: "#projModal", close: "#projDone" },
   { name: "Track progress", opener: "#btnProgress", root: "#progModal", close: "#progDone" },
 ];
 
@@ -53,6 +52,11 @@ async function rect(locator) {
     const box = element.getBoundingClientRect();
     return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width, height: box.height };
   });
+}
+
+async function openInputsTab(page, name) {
+  await page.locator("#btnInputs").click();
+  await page.getByRole("tab", { name, exact: true }).click();
 }
 
 function expectInside(inner, outer, message) {
@@ -224,7 +228,7 @@ async function expectHorizontalOverflowContract(page, label) {
 }
 
 async function seedCatalogProject(page) {
-  await page.getByRole("button", { name: "Shopping list", exact: true }).click();
+  await openInputsTab(page, "Projects");
   await page.evaluate(() => addCatalogProject(CATALOG[0].catId));
   await expect(page.locator("#projList .cat-card")).toBeVisible();
 }
@@ -515,15 +519,44 @@ test("the document remains the viewport, not an overflow mask, at every supporte
   }
 });
 
-test("the wrapped page toolbar fills its available row at 430 and 560px", async ({ page }) => {
-  // Break caught: later desktop rules override the mobile .tools width, leaving a visibly short toolbar.
-  for (const width of [430, 560]) {
-    await loadPlanner(page, { width, height: 1100 });
-    const headerBox = await rect(page.locator("header.top"));
-    const toolsBox = await rect(page.locator(".tools"));
-    expect(Math.abs(toolsBox.left - headerBox.left), `${width}px toolbar left edge`).toBeLessThanOrEqual(PX_TOLERANCE);
-    expect(Math.abs(toolsBox.right - headerBox.right), `${width}px toolbar right edge`).toBeLessThanOrEqual(PX_TOLERANCE);
-  }
+test("the 1440px toolbar is one ordered row of four equal columns", async ({ page }) => {
+  // Break caught: the new opener is added without reducing the old grid or one label receives a different column width.
+  await loadPlanner(page, { width: 1440, height: 900 });
+  const geometry = await page.locator(".tools > button").evaluateAll(buttons => buttons.map(button => {
+    const box = button.getBoundingClientRect();
+    return { text: button.textContent.trim(), left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width };
+  }));
+  expect(geometry.map(button => button.text)).toEqual(["Projects+Prices", "Lil' Forgie", "Mined resources", "Settings"]);
+  expect(geometry).toHaveLength(4);
+  geometry.forEach((button, index) => {
+    expect(Math.abs(button.top - geometry[0].top), `desktop button ${index + 1} row`).toBeLessThanOrEqual(PX_TOLERANCE);
+    expect(Math.abs(button.bottom - geometry[0].bottom), `desktop button ${index + 1} height`).toBeLessThanOrEqual(PX_TOLERANCE);
+    expect(Math.abs(button.width - geometry[0].width), `desktop button ${index + 1} column width`).toBeLessThanOrEqual(PX_TOLERANCE);
+    if (index) expect(button.left, `desktop button ${index + 1} must follow its predecessor`).toBeGreaterThan(geometry[index - 1].right);
+  });
+});
+
+test("the 390px toolbar is an equal two-by-two grid that fills the header", async ({ page }) => {
+  // Break caught: the phone toolbar becomes one cramped row, a 3+1 wrap, or a short grid after the action consolidation.
+  await loadPlanner(page, { width: 390, height: 844 });
+  const headerBox = await rect(page.locator("header.top"));
+  const toolsBox = await rect(page.locator(".tools"));
+  const buttons = await page.locator(".tools > button").evaluateAll(nodes => nodes.map(node => {
+    const box = node.getBoundingClientRect();
+    return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width, height: box.height };
+  }));
+  expect(buttons).toHaveLength(4);
+  expect(Math.abs(toolsBox.left - headerBox.left), "phone toolbar left edge").toBeLessThanOrEqual(PX_TOLERANCE);
+  expect(Math.abs(toolsBox.right - headerBox.right), "phone toolbar right edge").toBeLessThanOrEqual(PX_TOLERANCE);
+  expect(Math.abs(buttons[0].top - buttons[1].top), "phone first row").toBeLessThanOrEqual(PX_TOLERANCE);
+  expect(Math.abs(buttons[2].top - buttons[3].top), "phone second row").toBeLessThanOrEqual(PX_TOLERANCE);
+  expect(buttons[2].top, "phone rows must not overlap").toBeGreaterThan(buttons[0].bottom);
+  expect(Math.abs(buttons[0].left - buttons[2].left), "phone first column").toBeLessThanOrEqual(PX_TOLERANCE);
+  expect(Math.abs(buttons[1].left - buttons[3].left), "phone second column").toBeLessThanOrEqual(PX_TOLERANCE);
+  buttons.forEach((button, index) => {
+    expect(Math.abs(button.width - buttons[0].width), `phone button ${index + 1} column width`).toBeLessThanOrEqual(PX_TOLERANCE);
+    expect(Math.abs(button.height - buttons[0].height), `phone button ${index + 1} row height`).toBeLessThanOrEqual(PX_TOLERANCE);
+  });
 });
 
 test("project cards preserve readable identity through the stacked-to-desktop handoff", async ({ page }) => {
@@ -553,7 +586,7 @@ test("project cards preserve readable identity through the stacked-to-desktop ha
   }
 });
 
-test("320px validation feedback stays inside line, Shopping-list Project, inline Project, and price owners", async ({ page }) => {
+test("320px validation feedback stays inside line, Projects-tab, inline Project, and Sell-prices owners", async ({ page }) => {
   await loadPlanner(page, { width: 320, height: 760 });
   const expectRootFits = async label => {
     const width = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
@@ -567,16 +600,16 @@ test("320px validation feedback stays inside line, Shopping-list Project, inline
   expectInside(await rect(lineError), await rect(speed.locator("xpath=..")), "line error must stay in its field");
   await expectRootFits("line error");
 
-  await page.getByRole("button", { name: "Sell prices" }).click();
+  await openInputsTab(page, "Sell prices");
   const price = page.getByRole("textbox", { name: "Frames sell price per unit" });
   await price.fill("abc");
   const priceError = page.locator(`#${await price.getAttribute("data-field-error")}`);
   await expect(priceError).toBeVisible();
   expectInside(await rect(priceError), await rect(price.locator("xpath=..")), "price error must stay in its row");
   await expectRootFits("price error");
-  await page.getByRole("button", { name: "Done editing sell prices" }).click();
+  await page.locator("#inputsDone").click();
 
-  await page.getByRole("button", { name: "Shopping list" }).click();
+  await openInputsTab(page, "Projects");
   await page.getByRole("button", { name: "New custom project" }).click();
   await page.getByRole("button", { name: "Add level to New project" }).click();
   const from = page.getByRole("spinbutton", { name: "New project starting level" });
@@ -585,8 +618,8 @@ test("320px validation feedback stays inside line, Shopping-list Project, inline
   await from.fill("2");
   const projectErrors = page.locator(".proj-field-errors").first();
   await expect(projectErrors).toBeVisible();
-  expectInside(await rect(projectErrors), await rect(page.locator(".proj-tools").first()), "Shopping-list errors must stay in tools");
-  await expectRootFits("Shopping-list Project error");
+  expectInside(await rect(projectErrors), await rect(page.locator(".proj-tools").first()), "Projects-tab errors must stay in tools");
+  await expectRootFits("Projects-tab Project error");
 
   await from.fill("1");
   await to.fill("2");
@@ -594,7 +627,7 @@ test("320px validation feedback stays inside line, Shopping-list Project, inline
     mutateState(st => { st.projects[0].levels[0].costs = [{ item: "Frames", qty: 100 }]; });
     save();
   });
-  await page.getByRole("button", { name: "Done editing shopping list" }).click();
+  await page.locator("#inputsDone").click();
   await page.getByRole("button", { name: "Project plan" }).click();
   await expect(page.getByText("Adjust project levels & completion")).toBeVisible();
   await page.getByText("Adjust project levels & completion").click();
@@ -624,20 +657,22 @@ test("320px fields keep labels clear and give the third line field an intentiona
   expect(Math.abs(thirdBox.width - lineBox.width), "third line field must span the full second row").toBeLessThanOrEqual(PX_TOLERANCE);
 
   const compactRows = [
-    { opener: "Sell prices", root: "#priceModal", close: "#priceDone", row: "#priceRows .price-row" },
+    { tab: "Sell prices", close: "#inputsDone", row: "#priceRows .price-row" },
     { opener: "Lil' Forgie", root: "#forgieModal", close: "#forgieDone", row: "#forgieRows .price-row" },
-    { opener: "Shopping list", root: "#projModal", close: "#projDone", row: "#invRows .price-row" },
+    { tab: "Inventory", close: "#inputsDone", row: "#invRows .price-row" },
   ];
   for (const entry of compactRows) {
-    await page.getByRole("button", { name: entry.opener, exact: true }).click();
+    if (entry.tab) await openInputsTab(page, entry.tab);
+    else await page.getByRole("button", { name: entry.opener, exact: true }).click();
     const row = page.locator(entry.row).first();
     await expect(row).toBeVisible();
     const rowBox = await rect(row);
     const labelBox = await rect(row.locator(".pnm"));
     const inputBox = await rect(row.locator("input"));
-    expect(inputBox.top, `${entry.opener} input must stack below its label`).toBeGreaterThanOrEqual(labelBox.bottom - PX_TOLERANCE);
-    expect(Math.abs(inputBox.left - rowBox.left), `${entry.opener} input left edge`).toBeLessThanOrEqual(PX_TOLERANCE);
-    expect(Math.abs(inputBox.right - rowBox.right), `${entry.opener} input right edge`).toBeLessThanOrEqual(PX_TOLERANCE);
+    const label = entry.tab || entry.opener;
+    expect(inputBox.top, `${label} input must stack below its label`).toBeGreaterThanOrEqual(labelBox.bottom - PX_TOLERANCE);
+    expect(Math.abs(inputBox.left - rowBox.left), `${label} input left edge`).toBeLessThanOrEqual(PX_TOLERANCE);
+    expect(Math.abs(inputBox.right - rowBox.right), `${label} input right edge`).toBeLessThanOrEqual(PX_TOLERANCE);
     await page.locator(entry.close).click();
   }
 
@@ -652,7 +687,7 @@ test("every rendered planning mode and long-dialog state obeys the discovered ov
   // Break caught: checking only known table owners misses rogue non-table overflow and untested Credits, Project, or dialog states.
   await loadPlanner(page, { width: 320, height: 844 });
   await seedCatalogProject(page);
-  await page.locator("#projDone").click();
+  await page.locator("#inputsDone").click();
 
   for (const width of [320, 390, 560, 900, 1024, 1440]) {
     await page.setViewportSize({ width, height: width >= 900 ? 900 : 844 });
@@ -683,9 +718,10 @@ test("every rendered planning mode and long-dialog state obeys the discovered ov
     await page.setViewportSize({ width, height: width === 1024 ? 720 : 600 });
     for (const dialog of [
       { opener: "Mined resources", root: "#minedModal", close: "#minedDone" },
-      { opener: "Shopping list", root: "#projModal", close: "#projDone" },
+      { opener: "Projects+Prices", tab: "Projects", root: "#inputsModal", close: "#inputsDone" },
     ]) {
-      await page.getByRole("button", { name: dialog.opener, exact: true }).click();
+      if (dialog.tab) await openInputsTab(page, dialog.tab);
+      else await page.getByRole("button", { name: dialog.opener, exact: true }).click();
       await expect(page.locator(dialog.root)).toBeVisible();
       await expectHorizontalOverflowContract(page, `${width}px ${dialog.opener} dialog`);
       await page.locator(dialog.close).click();
@@ -696,6 +732,7 @@ test("every rendered planning mode and long-dialog state obeys the discovered ov
 test.describe("Task 16 release viewport matrix", () => {
   for (const viewport of RELEASE_VIEWPORTS) {
     test(`${viewport.width}x${viewport.height} covers every mode and registered dialog`, async ({ page }, testInfo) => {
+      // Break caught: a semantic dialog or one consolidated tab is omitted from the hosted release geometry and action-reachability matrix.
       test.setTimeout(60_000);
       const viewportLabel = `${viewport.width}x${viewport.height}`;
       await loadPlanner(page, viewport);
@@ -727,12 +764,19 @@ test.describe("Task 16 release viewport matrix", () => {
       for (const dialog of RELEASE_DIALOGS) {
         await page.locator(dialog.opener).click();
         await expect(page.locator(dialog.root)).toBeVisible();
-        const stateLabel = `${viewportLabel}: ${dialog.name} dialog`;
-        await expectReleaseMatrixState(page, stateLabel, { scope: dialog.root });
-        await expectDialogActionsReachable(page, dialog, viewport, stateLabel);
-        if (dialog.name === "Shopping list") await expectProjectIdentityNotCollapsed(page, stateLabel);
-        if ((viewport.width === 390 || viewport.width === 640) && dialog.name === "Shopping list") {
-          await attachReleaseMatrixScreenshot(page, testInfo, `${viewportLabel}-shopping-dialog`);
+        const states = dialog.tabs || [null];
+        for (const tab of states) {
+          if (tab) {
+            await page.getByRole("tab", { name: tab, exact: true }).click();
+            await expect(page.getByRole("tab", { name: tab, exact: true })).toHaveAttribute("aria-selected", "true");
+          }
+          const stateLabel = `${viewportLabel}: ${dialog.name}${tab ? ` ${tab}` : ""} dialog`;
+          await expectReleaseMatrixState(page, stateLabel, { scope: dialog.root });
+          await expectDialogActionsReachable(page, dialog, viewport, stateLabel);
+          if (tab === "Projects") await expectProjectIdentityNotCollapsed(page, stateLabel);
+          if ((viewport.width === 390 || viewport.width === 640) && tab === "Projects") {
+            await attachReleaseMatrixScreenshot(page, testInfo, `${viewportLabel}-projects-prices`);
+          }
         }
         await page.locator(dialog.close).click();
         await expect(page.locator(dialog.root)).toBeHidden();
@@ -841,14 +885,24 @@ test("long dialogs keep header and footer reachable while only the designated bo
     await loadPlanner(page, viewport);
     for (const dialog of [
       { opener: "Mined resources", root: "#minedModal", close: "#minedDone" },
-      { opener: "Shopping list", root: "#projModal", close: "#projDone" },
+      { opener: "Projects+Prices", tab: "Inventory", root: "#inputsModal", close: "#inputsDone" },
+      { opener: "Projects+Prices", tab: "Projects", root: "#inputsModal", close: "#inputsDone" },
+      { opener: "Projects+Prices", tab: "Sell prices", root: "#inputsModal", close: "#inputsDone" },
     ]) {
-      await page.getByRole("button", { name: dialog.opener, exact: true }).click();
+      if (dialog.tab) await openInputsTab(page, dialog.tab);
+      else await page.getByRole("button", { name: dialog.opener, exact: true }).click();
       const root = page.locator(dialog.root);
       const panel = root.locator(".modal");
       const header = panel.locator(".modal-h");
       const body = panel.locator("[data-dialog-body]");
       const footer = panel.locator(".modal-f");
+      await body.evaluate(element => {
+        const fixture = document.createElement("div");
+        fixture.dataset.scrollFixture = "";
+        fixture.style.height = "1200px";
+        fixture.setAttribute("aria-hidden", "true");
+        element.append(fixture);
+      });
       const geometry = await panel.evaluate(panelElement => {
         const rootElement = panelElement.parentElement;
         const bodyElement = panelElement.querySelector("[data-dialog-body]");
@@ -872,8 +926,9 @@ test("long dialogs keep header and footer reachable while only the designated bo
       const footerBox = await rect(footer);
       expect(panelBox.top).toBeGreaterThanOrEqual(-PX_TOLERANCE);
       expect(panelBox.bottom).toBeLessThanOrEqual(viewport.height + PX_TOLERANCE);
-      expectInside(headerBox, panelBox, `${viewport.width}px ${dialog.opener} header`);
-      expectInside(footerBox, panelBox, `${viewport.width}px ${dialog.opener} footer`);
+      const label = `${viewport.width}px ${dialog.opener}${dialog.tab ? ` ${dialog.tab}` : ""}`;
+      expectInside(headerBox, panelBox, `${label} header`);
+      expectInside(footerBox, panelBox, `${label} footer`);
       expect(geometry.panelScrollHeight).toBeLessThanOrEqual(geometry.panelClientHeight + PX_TOLERANCE);
       expect(geometry.rootScrollHeight).toBeLessThanOrEqual(geometry.rootClientHeight + PX_TOLERANCE);
       expect(geometry.rootOverflow).not.toBe("auto");
@@ -881,35 +936,37 @@ test("long dialogs keep header and footer reachable while only the designated bo
       expect(geometry.bodyScrollHeight).toBeGreaterThan(geometry.bodyClientHeight);
 
       await body.evaluate(element => { element.scrollTop = Math.min(300, element.scrollHeight); });
-      expectInside(await rect(header), await rect(panel), `${viewport.width}px ${dialog.opener} header after body scroll`);
-      expectInside(await rect(footer), await rect(panel), `${viewport.width}px ${dialog.opener} footer after body scroll`);
+      expectInside(await rect(header), await rect(panel), `${label} header after body scroll`);
+      expectInside(await rect(footer), await rect(panel), `${label} footer after body scroll`);
       await page.locator(dialog.close).click();
-      await page.getByRole("button", { name: dialog.opener, exact: true }).click();
+      if (dialog.tab) await openInputsTab(page, dialog.tab);
+      else await page.getByRole("button", { name: dialog.opener, exact: true }).click();
       expect(await body.evaluate(element => element.scrollTop)).toBe(0);
       await page.locator(dialog.close).click();
+      await page.locator("[data-scroll-fixture]").evaluate(element => element.remove());
     }
   }
 });
 
-test("Credits-only Sell prices nudge clears before Project and Manual render", async ({ page }) => {
+test("Credits-only Projects+Prices nudge clears before Project and Manual render", async ({ page }) => {
   // Break caught: both synchronous early returns bypass the Credits-only nudge cleanup and leave it covering toolbar actions.
   await loadPlanner(page, { width: 390, height: 844 });
-  const prices = page.getByRole("button", { name: "Sell prices", exact: true });
+  const inputs = page.getByRole("button", { name: "Projects+Prices", exact: true });
   const poke = page.locator(".poke");
 
   await page.getByRole("button", { name: "Max credits/hr", exact: true }).click();
-  await expect(prices).toHaveClass(/poke-on/);
+  await expect(inputs).toHaveClass(/poke-on/);
   await expect(poke).toBeVisible();
   await page.getByRole("button", { name: "Project plan", exact: true }).click();
-  await expect(prices).not.toHaveClass(/poke-on/);
+  await expect(inputs).not.toHaveClass(/poke-on/);
   await expect(poke).toBeHidden();
-  await expect(page.getByRole("button", { name: "Shopping list", exact: true })).toBeVisible();
+  await expect(inputs).toBeVisible();
 
   await page.getByRole("button", { name: "Max credits/hr", exact: true }).click();
-  await expect(prices).toHaveClass(/poke-on/);
+  await expect(inputs).toHaveClass(/poke-on/);
   await expect(poke).toBeVisible();
   await page.getByRole("button", { name: "Manual", exact: true }).click();
-  await expect(prices).not.toHaveClass(/poke-on/);
+  await expect(inputs).not.toHaveClass(/poke-on/);
   await expect(poke).toBeHidden();
 });
 
@@ -960,10 +1017,10 @@ test("capture deterministic 11A review evidence when requested", async ({ page }
   await capture(1024, "project-result");
 
   await page.setViewportSize({ width: 430, height: 844 });
-  await page.getByRole("button", { name: "Shopping list", exact: true }).click();
+  await openInputsTab(page, "Projects");
   await expect(page.locator("#projList .cat-card")).toBeVisible();
   await capture(430, "project-card-dialog");
-  await page.locator("#projDone").click();
+  await page.locator("#inputsDone").click();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator("#results .metrics")).toBeVisible();

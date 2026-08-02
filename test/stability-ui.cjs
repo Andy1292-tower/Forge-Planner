@@ -247,12 +247,18 @@ assert.equal(policyState.projectStability, "reoptimize");
 assert.deepEqual({ mutations, saves, solves }, { mutations: 1, saves: 1, solves: 1 });
 
 const indexHtml = fs.readFileSync(path.join(root, "index.html"), "utf8");
-const projectModal = indexHtml.slice(indexHtml.indexOf('id="projModal"'), indexHtml.indexOf('id="progModal"'));
-assert.match(projectModal, /<label for="projectStability">Line-job policy<\/label>/);
-assert.match(projectModal, /<select id="projectStability" aria-describedby="projectStabilityHelp">/);
-assert.match(projectModal, /id="projectStabilityHelp"/);
-assert.match(projectModal, /5%/);assert.match(projectModal, /warm-up|warm-ups/i);
-assert.doesNotMatch(projectModal, /\b(?:fastest|optimal)\b/i);
+const projectPanelStart = indexHtml.indexOf('id="inputsProjectsPanel"');
+const projectPanelEnd = indexHtml.indexOf('id="inputsPricesPanel"', projectPanelStart);
+assert.ok(projectPanelStart >= 0,
+  "Projects stability controls must migrate with real behavior into #inputsProjectsPanel");
+assert.ok(projectPanelEnd > projectPanelStart,
+  "the Projects panel must end before the Sell prices panel in the consolidated dialog");
+const projectPanel = indexHtml.slice(projectPanelStart, projectPanelEnd);
+assert.match(projectPanel, /<label for="projectStability">Line-job policy<\/label>/);
+assert.match(projectPanel, /<select id="projectStability" aria-describedby="projectStabilityHelp">/);
+assert.match(projectPanel, /id="projectStabilityHelp"/);
+assert.match(projectPanel, /5%/);assert.match(projectPanel, /warm-up|warm-ups/i);
+assert.doesNotMatch(projectPanel, /\b(?:fastest|optimal)\b/i);
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 const projectReadmeLine = readme.split("\n").find(line => line.includes("Project plan + shopping list")) || "";
 assert.doesNotMatch(projectReadmeLine, /\b(?:fastest|optimal)\b/i);

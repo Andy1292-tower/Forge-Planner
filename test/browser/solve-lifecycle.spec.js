@@ -146,7 +146,8 @@ test("reset cancels before state replacement and a stale result cannot alter the
   const beforeReset = await revision(page);
   const beforeStatus = await page.evaluate(() => solveService.status());
   page.once("dialog", dialog => dialog.accept());
-  await page.getByRole("button", { name: "Reset", exact: true }).click();
+  await page.locator("#btnSettings").click();
+  await page.locator("#btnReset").click();
 
   const afterStatus = await page.evaluate(() => solveService.status());
   expect(afterStatus.generation).toBe(beforeStatus.generation + 2);
@@ -169,6 +170,7 @@ test("import cancels before transactional replacement and stale imported-over wo
   const beforeRevision = await revision(page);
   const beforeStatus = await page.evaluate(() => solveService.status());
 
+  await page.locator("#btnSettings").click();
   await page.locator("#fileImport").setInputFiles({
     name: "valid-import.json",
     mimeType: "application/json",
@@ -209,6 +211,7 @@ test("failed import rollback cancels candidate work before restoring accepted st
     };
   });
 
+  await page.locator("#btnSettings").click();
   await page.locator("#fileImport").setInputFiles({
     name: "candidate-render-failure.json",
     mimeType: "application/json",

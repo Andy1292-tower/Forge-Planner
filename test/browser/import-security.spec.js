@@ -69,6 +69,11 @@ async function importCandidate(page, candidate, name = "attack.json") {
   });
 }
 
+async function openInputsTab(page, name) {
+  await page.locator("#btnInputs").click();
+  await page.getByRole("tab", { name, exact: true }).click();
+}
+
 async function attackEvidence(page, attackRequests) {
   await page.waitForTimeout(150);
   return page.evaluate(requests => ({
@@ -106,7 +111,7 @@ test.describe("imported markup stays inert with CSP bypassed", () => {
     candidate.priceText = expected;
 
     await importCandidate(page, candidate, "sell-price-attack.json");
-    await page.getByRole("button", { name: "Sell prices", exact: true }).click();
+    await openInputsTab(page, "Sell prices");
 
     await expectAttackInert(page, requests);
     expect(await page.locator("[data-price]").evaluateAll(inputs =>
@@ -138,7 +143,7 @@ test.describe("imported markup stays inert with CSP bypassed", () => {
     candidate.inventoryText = expected;
 
     await importCandidate(page, candidate, "inventory-attack.json");
-    await page.getByRole("button", { name: "Shopping list", exact: true }).click();
+    await openInputsTab(page, "Inventory");
 
     await expectAttackInert(page, requests);
     expect(await page.locator("[data-inv]").evaluateAll(inputs =>
@@ -170,10 +175,10 @@ test.describe("imported markup stays inert with CSP bypassed", () => {
 
     await importCandidate(page, candidate, "project-text-attack.json");
     await expect(page.locator("#results")).toContainText(name);
-    await page.getByRole("button", { name: "Shopping list", exact: true }).click();
+    await openInputsTab(page, "Projects");
     await expect(page.locator("#projList .pname-static")).toContainText(name);
     await expect(page.locator("#projList .cat-card-desc")).toHaveText(description);
-    await page.locator("#projDone").click();
+    await page.locator("#inputsDone").click();
     await page.getByRole("button", { name: "Track progress", exact: true }).click();
     await expect(page.locator("#progList .prog-proj-name")).toContainText(name);
     await expect(page.locator("#progList .prog-desc")).toHaveText(description);
@@ -314,7 +319,8 @@ test.describe("imported markup stays inert with CSP bypassed", () => {
 
     await importCandidate(page, candidate, "clean-text.json");
     const downloadPromise = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Export build", exact: true }).click();
+    await page.locator("#btnSettings").click();
+    await page.locator("#btnExport").click();
     const download = await downloadPromise;
     const exported = JSON.parse(fs.readFileSync(await download.path(), "utf8"));
     expect(exported.priceText.Frames).toBe(exact);
@@ -331,16 +337,17 @@ test.describe("imported markup stays inert with CSP bypassed", () => {
       mimeType: "application/json",
       buffer: Buffer.from(JSON.stringify(exported)),
     });
-    await page.getByRole("button", { name: "Sell prices", exact: true }).click();
+    await openInputsTab(page, "Sell prices");
     await expect(page.locator("[data-price='Frames']")).toHaveValue(exact);
-    await page.locator("#priceDone").click();
+    await page.locator("#inputsDone").click();
     await page.getByRole("button", { name: "Lil' Forgie", exact: true }).click();
     await expect(page.locator("[data-forgie='Bits']")).toHaveValue(exact);
     await page.locator("#forgieDone").click();
-    await page.getByRole("button", { name: "Shopping list", exact: true }).click();
+    await openInputsTab(page, "Inventory");
     await expect(page.locator("[data-inv='Ingots']")).toHaveValue(exact);
+    await page.getByRole("tab", { name: "Projects", exact: true }).click();
     await expect(page.locator("[data-pname='0']")).toHaveValue(exact);
-    await page.locator("#projDone").click();
+    await page.locator("#inputsDone").click();
     await page.getByRole("button", { name: "Manual", exact: true }).click();
     await expect(page.locator("#manualPreset option[value='roundtrip-preset']")).toHaveText(exact);
   });
