@@ -119,3 +119,39 @@ Fix-round verification passed the exact helper suite and all impacted mined-rend
 
 - `js/solver.worker.js`: `4608f23266bc227cfa5b79afb37bbcbebd8bc5a121ddfc68447c68e01cca1188`
 - `compat/solver.worker.v2.js`: `9d8747eea5a5c0c8d88066532eb9c3f51da6ebeb14e803284734405f3bcd1cf2`
+
+## Fix round 2: four-path recomputation interval
+
+The second formal proof pass found that fix round 1 still understated the safe dominance interval. A prefix comparison contains the errors of two independently stable-summed states, and each final state is then stable-summed again from scratch. Relating a stored prefix gap to the final stored gap therefore requires four sum-error paths, not the prior two. The far-Vespium branch also used bare `maxFarGel >= candidate.gelHr`, which could discard a state after equal stored Gel values reverse order during final recomputation.
+
+The new boundary-first test failed on `707772e`: the strict decisive-gap case retained two states instead of one because the old scalar-envelope API could not express the new interval policy. The same fixture includes the substantive far-cost regression: at 64 additions, its computed round-drift bound is wider than the public final tie, so two equal stored Gel states must both survive instead of the old far-cost branch discarding one.
+
+Pruning now uses one explicit bounds object for each dimension:
+
+- `publicMagnitude` is the documented stored-value upper used for the unchanged final ULP-scale tie policy.
+- `exactMagnitude = publicMagnitude / (1 - gamma)` conservatively inflates a stored upper that may itself have rounded down.
+- `roundDrift` covers at least `4 * gamma * exactMagnitude`, plus a four-epsilon-magnitude comparison pad that rounds threshold construction away from pruning.
+- The decisive gap is `finalTie + roundDrift`. Equality is retained; only a strict crossing can use the ordinary dominance branch.
+- Far-cost dominance requires the cheaper state to lead by the full Gel `roundDrift`. This is intentionally more conservative than subtracting the final tie: it prevents worst-case Gel-order reversal entirely and avoids guessing the magnitude of a future final tie.
+- The same decisive construction protects the Vespium gap, using the budget as its stored public upper. The final public equality constants remain unchanged.
+
+Focused proof coverage now checks:
+
+- exact decisive-Gel equality versus the next representable strict crossing;
+- exact decisive-Vespium equality versus a strict crossing;
+- a far-cost Gel lead immediately below the safe margin is retained, while equality at the safe margin may prune;
+- the exact-magnitude inflation and the full four-path lower bound;
+- a synthetic 64-addition policy where `roundDrift > finalTie`, including equal stored Gel under decisive far-cost separation;
+- every assignment-order, signature-partition, exhaustive-oracle, 4096-subset, strict-budget, and solver-seed fixture from the prior rounds.
+
+The widened intervals did not materially change the bounded 12-line performance envelope in the focused scale run:
+
+- 5 mixed lines, forward / reverse / low: `9 / 6 / 5ms`
+- 7 mixed lines: `36 / 26 / 27ms`
+- 8 mixed lines: `56 / 68 / 59ms`
+- 10 mixed lines: `199 / 186 / 188ms`
+- 12 mixed lines: `676 / 672 / 660ms`
+- 12 identical max-512 lines: `31ms`
+- 12-line all-priced Credits: `36` bounded Gel seed calls in `697ms`
+
+Fix-round focused syntax, exact-helper, mined-render, mined-solver, mined-mode, static-build, project-transient, stability, scale, and parity checks passed. The full non-browser release gate was then rerun. No browser was launched; no cutoff or threshold was weakened; and the frozen Worker, compatibility, build, and golden files remain unchanged with the hashes recorded above.

@@ -579,36 +579,48 @@ function gelLoadoutChoiceCompare(a,b){
   }
   return aa.length-bb.length;
 }
-function gelLoadoutPruneEnvelope(upperBound,additions){
-  const magnitude=Math.max(1,Math.abs(upperBound));
+function gelLoadoutPruneBounds(upperBound,additions){
+  const publicMagnitude=Math.max(1,Math.abs(upperBound));
   const nu=Math.max(0,additions)*(Number.EPSILON/2);
   const gamma=nu<1?nu/(1-nu):Infinity;
-  // This is deliberately wider than the final tie band. Even after canonical value ordering, two
-  // different rate multisets can round along different n-term sum paths; 2*gamma covers both paths.
-  return GEL_LOADOUT_ABS_EPS+GEL_LOADOUT_REL_EPS*magnitude+2*gamma*magnitude;
+  // A stored positive sum can round below its exact magnitude, so recover a conservative exact
+  // upper bound before applying the error interval. Prefix totals and final totals are each
+  // recomputed from scratch: comparing two candidates therefore has four independent sum-error
+  // paths. The extra arithmetic pad rounds the interval and its later threshold comparisons away
+  // from pruning. It affects only pruning safety, never the documented final equality policy.
+  const exactMagnitude=gamma<1?publicMagnitude/(1-gamma):Infinity;
+  const comparisonPad=gamma>0?4*Number.EPSILON*exactMagnitude:0;
+  const roundDrift=gamma>0?4*gamma*exactMagnitude+comparisonPad:0;
+  const finalTie=GEL_LOADOUT_ABS_EPS+GEL_LOADOUT_REL_EPS*publicMagnitude;
+  return {publicMagnitude,exactMagnitude,gamma,roundDrift,finalTie,
+    decisiveGap:finalTie+roundDrift,
+    // Requiring the full drift is deliberately stricter than merely allowing a reversal inside
+    // the final Gel tie. It makes far-cost dominance safe without estimating a future tie width.
+    farGelAdvantage:roundDrift};
 }
 function gelLoadoutStableSum(values){
   // Positive rates are summed low-to-high. The value multiset—not its physical-ID assignment—now
   // owns candidate feasibility and totals, which makes identical-profile symmetry exact under IEEE.
   return values.filter(value=>value>0).slice().sort((a,b)=>a-b).reduce((sum,value)=>sum+value,0);
 }
-function gelLoadoutPruneGroup(candidates,gelEnvelope,vespEnvelope){
+function gelLoadoutPruneGroup(candidates,gelBounds,vespBounds){
   candidates.sort((a,b)=>a.vespHr-b.vespHr||b.gelHr-a.gelHr||gelLoadoutChoiceCompare(a,b));
   const next=[];let maxGel=-Infinity,maxFarGel=-Infinity,farIndex=0;
   candidates.forEach((candidate,index)=>{
     // vespium order makes both dominance queries monotone. Equality stays retained: only a gap
-    // strictly outside an envelope is safe to discard before the final staged tie calculation.
-    while(farIndex<index&&candidate.vespHr-candidates[farIndex].vespHr>vespEnvelope){
+    // strictly outside the decisive interval is safe before the final staged tie calculation.
+    while(farIndex<index&&candidate.vespHr-candidates[farIndex].vespHr>vespBounds.decisiveGap){
       maxFarGel=Math.max(maxFarGel,candidates[farIndex].gelHr);farIndex++;
     }
-    const pruned=maxGel>candidate.gelHr+gelEnvelope||maxFarGel>=candidate.gelHr;
+    const pruned=maxGel>candidate.gelHr+gelBounds.decisiveGap||
+      maxFarGel>=candidate.gelHr+gelBounds.farGelAdvantage;
     if(!pruned)next.push(candidate);
     maxGel=Math.max(maxGel,candidate.gelHr);
   });
   return next;
 }
-function gelLoadoutPruneCandidates(candidates,gelEnvelope,vespEnvelope,signatureOf){
-  if(typeof signatureOf!=="function")return gelLoadoutPruneGroup(candidates,gelEnvelope,vespEnvelope);
+function gelLoadoutPruneCandidates(candidates,gelBounds,vespBounds,signatureOf){
+  if(typeof signatureOf!=="function")return gelLoadoutPruneGroup(candidates,gelBounds,vespBounds);
   const groups=new Map();
   candidates.forEach(candidate=>{
     const signature=String(signatureOf(candidate));
@@ -617,7 +629,7 @@ function gelLoadoutPruneCandidates(candidates,gelEnvelope,vespEnvelope,signature
   });
   const next=[];
   [...groups.keys()].sort().forEach(signature=>next.push(...
-    gelLoadoutPruneGroup(groups.get(signature),gelEnvelope,vespEnvelope)));
+    gelLoadoutPruneGroup(groups.get(signature),gelBounds,vespBounds)));
   return next;
 }
 function gelLoadout(rows,vespBudgetHr){
@@ -636,8 +648,8 @@ function gelLoadout(rows,vespBudgetHr){
     });
   const gelUpperBound=gelLoadoutStableSum(ordered.map(entry=>
     entry.options.reduce((best,option)=>Math.max(best,option.gelHr),0)));
-  const gelPruneEnvelope=gelLoadoutPruneEnvelope(gelUpperBound,ordered.length);
-  const vespPruneEnvelope=gelLoadoutPruneEnvelope(vespBudgetHr,ordered.length);
+  const gelPruneBounds=gelLoadoutPruneBounds(gelUpperBound,ordered.length);
+  const vespPruneBounds=gelLoadoutPruneBounds(vespBudgetHr,ordered.length);
   const futureProfiles=ordered.map((entry,index)=>[...new Set(ordered.slice(index+1)
     .map(future=>future.profileId))].sort((a,b)=>a-b));
   let frontier=[{gelHr:0,vespHr:0,choices:[],lastRanks:new Array(profileIds.size).fill(-1)}];
@@ -657,7 +669,7 @@ function gelLoadout(rows,vespBudgetHr){
         choices,lastRanks});
     }));
     const signatureProfiles=futureProfiles[lineIndex];
-    frontier=gelLoadoutPruneCandidates(candidates,gelPruneEnvelope,vespPruneEnvelope,state=>
+    frontier=gelLoadoutPruneCandidates(candidates,gelPruneBounds,vespPruneBounds,state=>
       signatureProfiles.map(profileId=>state.lastRanks[profileId]).join(","));
   });
   const gelMax=frontier.reduce((maximum,state)=>Math.max(maximum,state.gelHr),-Infinity);

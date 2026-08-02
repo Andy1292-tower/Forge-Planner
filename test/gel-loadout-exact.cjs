@@ -119,17 +119,45 @@ const runner = `
   console.log("PASS equality is tight and ULP-scale");
 
   const pruneState=(id,gelHr,vespHr)=>({gelHr,vespHr,choices:[{row:{__i:id},L:1}]});
-  assert.equal(gelLoadoutPruneCandidates([pruneState(0,11,0),pruneState(1,10,0)],1,100).length,2,
+  const unitGelBounds={decisiveGap:1,farGelAdvantage:0};
+  const wideGelBounds={decisiveGap:100,farGelAdvantage:1};
+  const unitVespBounds={decisiveGap:5,farGelAdvantage:0};
+  const wideVespBounds={decisiveGap:100,farGelAdvantage:0};
+  assert.equal(gelLoadoutPruneCandidates(
+    [pruneState(0,11,0),pruneState(1,10,0)],unitGelBounds,wideVespBounds).length,2,
     "a Gel gap exactly at the prune envelope must be retained");
   assert.equal(gelLoadoutPruneCandidates([
     pruneState(0,11+Number.EPSILON*8,0),pruneState(1,10,0)
-  ],1,100).length,1,"a Gel gap strictly outside the prune envelope must be discarded");
-  assert.equal(gelLoadoutPruneCandidates([pruneState(0,10,0),pruneState(1,10,5)],100,5).length,2,
+  ],unitGelBounds,wideVespBounds).length,1,
+  "a Gel gap strictly outside the prune envelope must be discarded");
+  assert.equal(gelLoadoutPruneCandidates(
+    [pruneState(0,11,0),pruneState(1,10,5)],wideGelBounds,unitVespBounds).length,2,
     "a Vespium gap exactly at the prune envelope must be retained");
   assert.equal(gelLoadoutPruneCandidates([
-    pruneState(0,10,0),pruneState(1,10,5+Number.EPSILON*8)
-  ],100,5).length,1,"a Vespium gap strictly outside the prune envelope must be discarded");
-  console.log("PASS prune scans retain envelope equality and discard only strict crossings");
+    pruneState(0,11-Number.EPSILON*8,0),pruneState(1,10,5+Number.EPSILON*8)
+  ],wideGelBounds,unitVespBounds).length,2,
+  "a far-cost state just below the safe Gel-advantage margin must be retained");
+  assert.equal(gelLoadoutPruneCandidates([
+    pruneState(0,11,0),pruneState(1,10,5+Number.EPSILON*8)
+  ],wideGelBounds,unitVespBounds).length,1,
+  "a far-cost state exactly at the safe Gel-advantage margin may be discarded");
+
+  const bounds64=gelLoadoutPruneBounds(1e16,64);
+  assert.ok(bounds64.exactMagnitude>bounds64.publicMagnitude,
+    "the pruning proof must inflate a potentially rounded-down stored upper bound");
+  assert.ok(bounds64.roundDrift>=4*bounds64.gamma*bounds64.exactMagnitude,
+    "the pruning interval must cover all four independent prefix/final sum-error paths");
+  assert.ok(bounds64.decisiveGap>=bounds64.finalTie+bounds64.roundDrift,
+    "decisive dominance must include both the public final tie and recomputation drift");
+  assert.ok(bounds64.roundDrift>bounds64.finalTie,
+    "64 recomputed additions must expose round drift wider than the final public tie band");
+  assert.ok(bounds64.farGelAdvantage>=bounds64.roundDrift,
+    "far-cost pruning must require enough Gel advantage to prevent worst-case order reversal");
+  assert.equal(gelLoadoutPruneCandidates([
+    pruneState(0,1e16,0),pruneState(1,1e16,1)
+  ],bounds64,{decisiveGap:0,farGelAdvantage:0}).length,2,
+  "far-cost pruning must retain equal stored Gel when 64-addition recomputation can reverse its order");
+  console.log("PASS prune intervals retain strict boundaries and 64-addition Gel-order uncertainty");
 
   S.lines=[{max:1,spx:6,turbo:0},{max:1,spx:4,turbo:0},{max:1,spx:4,turbo:0}];
   const budget=4498594189315839;
@@ -263,13 +291,16 @@ const runner = `
 
   const signatureA=pruneState(0,12,4),signatureB=pruneState(1,10,5);
   signatureA.rankSignature="2";signatureB.rankSignature="0";
-  assert.equal(gelLoadoutPruneCandidates([signatureA,signatureB],0,0,state=>state.rankSignature).length,2,
+  const zeroPruneBounds={decisiveGap:0,farGelAdvantage:0};
+  assert.equal(gelLoadoutPruneCandidates(
+    [signatureA,signatureB],zeroPruneBounds,zeroPruneBounds,state=>state.rankSignature).length,2,
     "numeric dominance must not cross different remaining-profile rank signatures");
   signatureA.rankSignature="0";
-  assert.equal(gelLoadoutPruneCandidates([signatureA,signatureB],0,0,state=>state.rankSignature).length,1,
+  assert.equal(gelLoadoutPruneCandidates(
+    [signatureA,signatureB],zeroPruneBounds,zeroPruneBounds,state=>state.rankSignature).length,1,
     "compatible remaining-profile rank signatures should retain numeric pruning");
   const pruneOriginal=gelLoadoutPruneCandidates;let sawProductionSignaturePartition=false;
-  gelLoadoutPruneCandidates=function(candidates,gelEnvelope,vespEnvelope,signatureOf){
+  gelLoadoutPruneCandidates=function(candidates,gelBounds,vespBounds,signatureOf){
     if(typeof signatureOf==="function"&&new Set(candidates.map(signatureOf)).size>1)
       sawProductionSignaturePartition=true;
     return pruneOriginal.apply(null,arguments);
