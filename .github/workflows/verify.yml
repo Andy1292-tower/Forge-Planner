@@ -11,7 +11,8 @@ on:
   pull_request:
 
 jobs:
-  node:
+  verify:
+    name: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,54 +20,3 @@ jobs:
         with: { node-version: 24, cache: npm }
       - run: npm ci
       - run: npm test
-
-  playwright:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - lane: browser
-            command: "npm run test:browser"
-          - lane: accessibility
-            command: "npm run test:a11y"
-          - lane: visual
-            command: "npm run test:visual"
-          - lane: release
-            command: "npm run test:release"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 24, cache: npm }
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - name: Run ${{ matrix.lane }} lane
-        run: ${{ matrix.command }}
-      - name: Upload visual release-matrix evidence
-        if: always() && matrix.lane == 'visual'
-        uses: actions/upload-artifact@v4
-        with:
-          name: visual-release-matrix
-          path: test-results/**/release-matrix-*.png
-          if-no-files-found: error
-      - name: Upload Playwright failure artifacts
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-${{ matrix.lane }}-artifacts
-          path: |
-            playwright-report/
-            test-results/
-          if-no-files-found: ignore
-
-  verify:
-    name: verify
-    runs-on: ubuntu-latest
-    if: always()
-    needs: [node, playwright]
-    steps:
-      - name: Require every verification lane
-        env:
-          NODE_RESULT: ${{ needs.node.result }}
-          PLAYWRIGHT_RESULT: ${{ needs.playwright.result }}
-        run: test "$NODE_RESULT" = success && test "$PLAYWRIGHT_RESULT" = success

@@ -10,10 +10,9 @@ Use Node 24 and install the committed dependencies with `npm ci`.
 
 ```bash
 npm test
-npm run test:browser
 ```
 
-`npm test` first checks JavaScript syntax, then runs the explicit fast Node-test list, including a fresh parity snapshot checked against `test/golden.json`. `npm run test:browser` serves the real static page, verifies its Worker result, exercises every planning mode, and fails on any console error or failed request.
+`npm test` first checks JavaScript syntax, then runs the explicit fast Node-test list, including a fresh parity snapshot checked against `test/golden.json`.
 
 For a GUI preview, build and serve the production files, then open either listed address in your browser:
 
@@ -28,11 +27,9 @@ The preview rebuilds `dist/` and serves the same generated release at both mount
 
 ```bash
 npm run test:release
-npm run test:release -- --grep @cold
-npm run test:release -- --grep @warm-upgrade
 ```
 
-The cold check opens release B on a fresh origin at both mounts. The warm-upgrade check first caches an intentionally incompatible release A, swaps the same origin to release B, and requires coherent B HTML, app code, and Blob-Worker results without re-requesting A or unchanged immutable assets.
+The release check builds the deployable files and verifies the static-server and cache contract at both supported mounts.
 
 ## What it does
 
@@ -44,7 +41,6 @@ The cold check opens release B on a fresh origin at both mounts. The warm-upgrad
 - **Project plan + shopping list:** build named **projects** (each a list of levels and item costs), enter inventory, and ask **Project plan** mode for a replay-validated schedule. One-at-a-time ordering applies known unlocks first, then numeric order, then estimated completion time. Choose whether small edits preserve familiar line jobs within a 5% phase-throughput band or re-optimize them; complete-run comparisons include warm-ups and ordering. The **step-by-step** view is execution guidance only for a replay-valid schedule; blocked results retain a labeled analytical breakdown for diagnosis.
 - **Manual mode:** skip optimization and assign each line a resource and compression level. The live balance readout labels ordinary inputs healthy, tight, or short.
 - **Persistence and recovery:** auto-saves the complete schema-v3 build to `localStorage`, retains a previous-good backup, and provides GUI recovery for rejected saves. Export/Import covers the complete accepted build—not only crafting data—including lines, recipes, prices, projects, inventory, settings, and Manual presets.
-- **Browser evidence:** automated browser, accessibility, visual, and release-upgrade gates currently run in Playwright Chromium. Other modern browsers may work but are not an equivalent release gate yet.
 
 The solver runs in a generated Blob Worker with a configurable 200 ms–60 s budget, so the interface remains responsive. Simple searches can finish early; larger searches may return a clearly labeled best-found bounded result.
 

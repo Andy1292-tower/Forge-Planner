@@ -9,8 +9,6 @@ Forge Planner ships as a static site. Releases should come from a reviewed featu
 - A branch synchronized with current `main`
 - A clean understanding of any open PR that touches the same solver, state, build, or UI files
 
-Automated browser evidence currently covers Playwright Chromium. Other current browsers may work, but they are not a release gate unless equivalent evidence is added.
-
 ## Local checks and GUI preview
 
 Run the fast deterministic checks first:
@@ -32,16 +30,6 @@ Then open either mount:
 
 Both addresses serve the same generated `dist/`. The bare `/Forge-Planner` path redirects to `/Forge-Planner/`. Stop the preview when inspection is complete.
 
-The normal browser lanes are intentionally separate:
-
-```bash
-npm run test:browser
-npm run test:a11y
-npm run test:visual
-```
-
-Run them in CI when local browser execution is undesirable or unstable. `test:browser` excludes the dedicated accessibility, visual, and release-upgrade specs so the lanes do not silently duplicate work.
-
 ## Cold and warm release verification
 
 Run the complete release gate:
@@ -50,17 +38,7 @@ Run the complete release gate:
 npm run test:release
 ```
 
-Focused variants are:
-
-```bash
-npm run test:release -- --grep @cold
-npm run test:release -- --grep @warm-upgrade
-```
-
-The Node portion verifies the static server, both mounts, containment, permanent Worker files, cache headers, strong ETags, Last-Modified, conditional GET/HEAD, and same-origin A-to-B release rotation. The browser portion requires a clean current Blob-Worker solve and no mixed-release console/request failures.
-
-- `@cold` loads release B on a fresh browser context at `/` and `/Forge-Planner/`.
-- `@warm-upgrade` first caches an intentionally incompatible release A, atomically switches the same origin to B, and proves that B HTML selects B's hashed app while unchanged immutable assets remain reusable.
+The release check verifies the static server, both mounts, containment, permanent Worker files, cache headers, strong ETags, Last-Modified, conditional GET/HEAD, and same-origin A-to-B release rotation.
 
 ## Build and cache contract
 

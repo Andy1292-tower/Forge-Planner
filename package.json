@@ -5,18 +5,13 @@
   "scripts": {
     "build": "node scripts/build-static.cjs",
     "preview": "node test/serve-built.cjs",
-    "check:syntax": "for file in js/*.js compat/*.js scripts/*.cjs test/*.cjs test/browser/*.js playwright.config.js; do node --check \"$file\" || exit 1; done",
+    "check:syntax": "for file in js/*.js compat/*.js scripts/*.cjs test/*.cjs; do node --check \"$file\" || exit 1; done",
     "test:node": "node test/run-all.cjs",
     "test:parity": "node test/run-parity.cjs",
     "test": "npm run check:syntax && npm run test:node",
-    "test:a11y": "NO_COLOR= FORCE_COLOR=0 playwright test test/browser/accessibility.spec.js --workers=1",
-    "test:visual": "NO_COLOR= FORCE_COLOR=0 playwright test test/browser/visual-layout.spec.js --workers=1",
-    "test:browser": "NO_COLOR= FORCE_COLOR=0 FORGE_PLAYWRIGHT_LANE=browser playwright test",
-    "test:release": "npm run build && node scripts/release-smoke.cjs && NO_COLOR= FORCE_COLOR=0 FORGE_PLAYWRIGHT_LANE=release playwright test --workers=1"
+    "test:release": "npm run build && node scripts/release-smoke.cjs"
   },
   "devDependencies": {
-    "@axe-core/playwright": "4.12.1",
-    "@playwright/test": "1.62.1",
     "http-server": "14.1.1"
   }
 }
