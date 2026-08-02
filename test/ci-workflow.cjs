@@ -11,10 +11,36 @@ assert.match(workflow, /^on:\n  push:\n    branches:\n      - main\n  pull_reque
 
 function runOwnerCount(source, command) {
   const escaped = command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return (source.match(new RegExp(`^[ \\t]*(?:-[ \\t]+)?run:[ \\t]+${escaped}[ \\t]*$`, "gm")) || []).length;
+  const directRuns = (source.match(new RegExp(`^[ \\t]*(?:-[ \\t]+)?run:[ \\t]+${escaped}[ \\t]*$`, "gm")) || []).length;
+  const matrixCommands = (source.match(new RegExp(`^[ \\t]*command:[ \\t]+["']${escaped}["'][ \\t]*$`, "gm")) || []).length;
+  return directRuns + matrixCommands;
 }
 function commandMentionCount(source, command) {
   return source.split(/\r?\n/).filter(line => !line.trimStart().startsWith("#") && line.includes(command)).length;
+}
+function jobBlock(source, name) {
+  const header = `  ${name}:\n`;
+  const start = source.indexOf(header);
+  assert.notEqual(start, -1, `${name} job must exist`);
+  const remainder = source.slice(start + header.length);
+  const nextJob = remainder.search(/^  [A-Za-z0-9_-]+:\n/m);
+  return nextJob === -1 ? remainder : remainder.slice(0, nextJob);
+}
+
+function assertPlaywrightContract(source) {
+  const playwrightJob = jobBlock(source, "playwright");
+  assert.match(playwrightJob, /fail-fast: false/);
+  for (const lane of ["browser", "accessibility", "visual", "release"])
+    assert.match(playwrightJob, new RegExp(`- lane: ${lane}\\b`));
+  assert.match(playwrightJob, /playwright-\$\{\{ matrix\.lane \}\}-artifacts/);
+}
+
+function assertVerifyContract(source) {
+  const verifyJob = jobBlock(source, "verify");
+  assert.match(verifyJob, /needs: \[node, playwright\]/);
+  assert.match(verifyJob, /if: always\(\)/);
+  assert.match(verifyJob, /needs\.node\.result/);
+  assert.match(verifyJob, /needs\.playwright\.result/);
 }
 
 for (const command of ["npm test", "npm run test:browser", "npm run test:a11y", "npm run test:visual", "npm run test:release"]) {
@@ -34,17 +60,40 @@ for (const duplicate of [
     "the lane-owner check must fail closed on alternate run syntax");
 }
 
+assert.match(workflow, /^concurrency:\n[\s\S]*?cancel-in-progress: true$/m);
+const nodeJob = jobBlock(workflow, "node");
+assert.match(nodeJob, /run: npm test/);
+assertPlaywrightContract(workflow);
+assertVerifyContract(workflow);
+
+assert.throws(() => assertPlaywrightContract(workflow.replace(
+  "          - lane: visual\n            command: \"npm run test:visual\"\n", "")),
+"the contract must reject a workflow that omits a verification lane");
+assert.throws(() => assertPlaywrightContract(workflow.replace("fail-fast: false", "fail-fast: true")),
+  "the contract must reject fail-fast Playwright lanes");
+assert.throws(() => assertVerifyContract(workflow.replace(/(  verify:[\s\S]*?)if: always\(\)/, "$1if: success()")),
+  "the contract must reject an aggregator that does not always run");
+assert.throws(() => assertPlaywrightContract(workflow.replace(
+  "name: playwright-${{ matrix.lane }}-artifacts", "name: playwright-artifacts")),
+"the contract must reject non-unique failure artifact names");
+
 function visualUploadStep(source) {
   return source.match(/\n      - name: Upload visual release-matrix evidence\n([\s\S]*?)(?=\n      - |$)/);
 }
-const visualUpload = visualUploadStep(workflow);
-assert.ok(visualUpload, "the visual release-matrix upload step must exist");
-assert.match(visualUpload[1], /if-no-files-found: error/,
-  "a green visual lane must not silently omit release-matrix evidence");
+function assertVisualUploadContract(source) {
+  const visualUpload = visualUploadStep(source);
+  assert.ok(visualUpload, "the visual release-matrix upload step must exist");
+  assert.match(visualUpload[1], /if-no-files-found: error/,
+    "a green visual lane must not silently omit release-matrix evidence");
+}
+
+assertVisualUploadContract(workflow);
+assert.throws(() => assertVisualUploadContract(workflow.replace("if-no-files-found: error", "if-no-files-found: ignore")),
+  "the contract must reject relaxed visual-evidence uploads");
 
 const uploadBoundaryMutation = workflow
   .replace("if-no-files-found: error", "if-no-files-found: ignore")
-  .replace("      - name: Release upgrade", "      - uses: example/upload@v1\n        with:\n          if-no-files-found: error\n      - name: Release upgrade");
+  .replace("      - name: Upload Playwright failure artifacts", "      - uses: example/upload@v1\n        with:\n          if-no-files-found: error\n      - name: Upload Playwright failure artifacts");
 assert.doesNotMatch(visualUploadStep(uploadBoundaryMutation)[1], /if-no-files-found: error/,
   "the evidence check must not borrow success policy from a later unnamed step");
 
