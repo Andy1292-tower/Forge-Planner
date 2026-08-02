@@ -265,6 +265,7 @@ function renderProjectResults(res,el,stat){
 
 function renderResults(){
   if(typeof clearStaleUI==="function")clearStaleUI();   // results are about to reflect current inputs
+  if(typeof setPricePoke==="function")setPricePoke(false); // Credits owns this nudge; clear it before every synchronous mode path.
   const el=document.getElementById("results");
   const stat=document.getElementById("solveStat");
   if(S.mode==="manual"){solveService.cancel("Manual mode renders synchronously");renderManual(el,stat);return;}

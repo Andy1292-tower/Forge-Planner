@@ -84,10 +84,10 @@
     </div>
 
     <!-- RIGHT -->
-    <div class="card">
-      <div class="head"><h2>Optimal setup</h2>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <div class="modesw" id="modesw" aria-label="Planning mode">
+    <div class="card result-card">
+      <div class="head results-head"><h2>Optimal setup</h2>
+        <div class="result-head-controls">
+          <div class="modesw mode-nav" id="modesw" aria-label="Planning mode">
             <button data-mode="items" class="on" aria-pressed="true">Max items/hr</button>
             <button data-mode="credits" aria-pressed="false">Max credits/hr</button>
             <button data-mode="project" aria-pressed="false">Project plan</button>
@@ -101,7 +101,7 @@
       </div>
       <div class="notice warn" id="solveFallback" role="status" aria-live="polite" hidden></div>
       <div class="results-wrap">
-        <div class="body" id="results"></div>
+        <div class="body card-body" id="results"></div>
         <div class="solve-overlay" id="solveOverlay" aria-hidden="true" hidden>
           <span class="spinner" aria-hidden="true"></span>
           <span class="solve-overlay-txt">Solving…</span>
@@ -146,7 +146,7 @@
 
 <!-- SELL PRICE MODAL -->
 <div class="modal-bg" id="priceModal" hidden>
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="priceTitle">
+  <div class="modal dialog-shell" role="dialog" aria-modal="true" aria-labelledby="priceTitle">
     <div class="modal-h"><h3 id="priceTitle">Sell prices</h3><button class="iconbtn" id="priceClose" title="Close" aria-label="Close sell prices" data-dialog-close>×</button></div>
     <div class="modal-b" data-dialog-body>
       <p class="help" style="margin-bottom:6px">Enter what each item sells for (per single unit). Accepts game notation — <b>450k</b>, <b>2.5m</b>, <b>1.3qa</b>, or <b>1.3e36</b>. Used by <b>Max credits/hr</b> mode. Leave blank for anything you don't sell.</p>
@@ -158,7 +158,7 @@
 
 <!-- LIL' FORGIE MODAL -->
 <div class="modal-bg" id="forgieModal" hidden>
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="forgieTitle">
+  <div class="modal dialog-shell" role="dialog" aria-modal="true" aria-labelledby="forgieTitle">
     <div class="modal-h"><h3 id="forgieTitle">Lil' Forgie supply</h3><button class="iconbtn" id="forgieClose" title="Close" aria-label="Close Lil' Forgie supply" data-dialog-close>×</button></div>
     <div class="modal-b" data-dialog-body>
       <p class="help" style="margin-bottom:6px">Lil' Forgie produces some items for free in the background. Enter his <b>online hourly production rate</b> for each item he makes — accepts game notation (<b>5.96k</b>, <b>167.34k</b>, <b>11.91k</b>). This supply is added to your factory: it frees up crafting lines and counts toward output. Leave blank for anything he doesn't make.</p>
@@ -170,7 +170,7 @@
 
 <!-- MINED RESOURCES MODAL -->
 <div class="modal-bg" id="minedModal" hidden>
-  <div class="modal mined-modal" role="dialog" aria-modal="true" aria-labelledby="minedTitle">
+  <div class="modal dialog-shell mined-modal" role="dialog" aria-modal="true" aria-labelledby="minedTitle">
     <div class="modal-h"><h3 id="minedTitle">Mined resources</h3><button class="iconbtn" id="minedClose" title="Close" aria-label="Close mined resources" data-dialog-close>×</button></div>
     <div class="modal-b" data-dialog-body>
       <p class="help mined-intro">Enter each mined income independently. Rates accept game notation such as <b>500t</b>, <b>7.25qu</b>, or <b>3b</b>. Per-minute cost figures use your fastest current line that reaches each compression; an em dash means no current line reaches it.</p>
@@ -204,7 +204,7 @@
 
 <!-- SETTINGS MODAL -->
 <div class="modal-bg" id="settingsModal" hidden>
-  <div class="modal" style="max-width:520px" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+  <div class="modal dialog-shell" style="max-width:520px" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
     <div class="modal-h"><h3 id="settingsTitle">Settings</h3><button class="iconbtn" id="settingsClose" title="Close" aria-label="Close settings" data-dialog-close>×</button></div>
     <div class="modal-b" data-dialog-body>
       <div class="fl" style="display:block">
@@ -221,7 +221,7 @@
 </div>
 
 <div class="modal-bg" id="projModal" hidden>
-  <div class="modal" style="max-width:700px" role="dialog" aria-modal="true" aria-labelledby="projTitle">
+  <div class="modal dialog-shell" style="max-width:700px" role="dialog" aria-modal="true" aria-labelledby="projTitle">
     <div class="modal-h"><h3 id="projTitle">Shopping list — projects</h3><button class="iconbtn" id="projClose" title="Close" aria-label="Close shopping list" data-dialog-close>×</button></div>
     <div class="modal-b" data-dialog-body>
       <p class="help" style="margin-bottom:10px">Build named <b>projects</b> — each a list of <b>levels</b>, each level a set of item costs. Tick the ones to run and set each project's <b>from → to</b> level; <b>Project plan</b> mode sums those level costs (minus your inventory) and lays out the fastest pipelined craft schedule. Accepts game notation (<b>1.2m</b>, <b>3.4qa</b>). A one-level project is just a flat needs-list.</p>
@@ -246,7 +246,7 @@
 
 <!-- PROGRESS TRACKER MODAL -->
 <div class="modal-bg" id="progModal" hidden>
-  <div class="modal" style="max-width:680px" role="dialog" aria-modal="true" aria-labelledby="progTitle">
+  <div class="modal dialog-shell" style="max-width:680px" role="dialog" aria-modal="true" aria-labelledby="progTitle">
     <div class="modal-h"><h3 id="progTitle">Track progress</h3><button class="iconbtn" id="progClose" title="Close" aria-label="Close progress tracker" data-dialog-close>×</button></div>
     <div class="modal-b" data-dialog-body>
       <p class="help" style="margin-bottom:10px">Check off each <b>level</b> as you finish it in-game. Completed levels drop out of the remaining demand and the <b>line assignments re-solve live</b> — close this to see the updated plan. Progress is saved and doesn't change your <b>from → to</b> targets.</p>
