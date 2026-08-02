@@ -84,3 +84,38 @@ The frozen `6/4/4` counterexample is corrected: at `4498594189315839` Vespium/ho
 ## Remaining verification boundary
 
 No known Node-side blocker remains. The only intentionally deferred check is actual browser execution of the generated current Blob Worker; the spec is complete and syntax-valid, but CI must execute it because local browser launch was explicitly prohibited for this task.
+
+## Fix round 1: assignment-independent feasibility and rank-aware pruning
+
+Formal review found two correctness holes in the first exact implementation.
+
+- Identical-profile symmetry canonicalized a multiset onto the earliest physical IDs, but feasibility and totals were accumulated in physical-ID order. IEEE-754 addition is not associative, so the same multiset could fall on opposite sides of a strict budget when assigned to different symmetric IDs. Before the fix, the five-row regression returned `[[0,1],[1,2]]`; the independent exhaustive search found the higher-output strict-feasible assignment `[[1,1],[3,1],[4,1]]` under sequential physical-order aggregation.
+- Numeric dominance pruning compared states that had different last compression ranks for a symmetric profile. Those states permit different future option suffixes, so one cannot dominate the other until their remaining transition constraints match.
+
+The fix keeps the symmetry reduction and makes its equivalence relation exact:
+
+- Candidate Gel and Vespium totals are now recomputed from their positive rate multiset in ascending-value order. Strict `vespium <= budget` feasibility, objective comparison, upper-bound construction, and returned aggregate totals all use that deterministic order. A multiset therefore has one bit-identical total regardless of which symmetric physical IDs reconstruct it.
+- Frontier pruning is partitioned by the last-rank signature of every symmetric profile that appears in a future row. Numeric dominance runs only within one signature group. Ranks for profiles with no future occurrence are intentionally omitted because they can no longer constrain a transition.
+- The exhaustive test oracle independently implements ascending positive-value aggregation rather than calling the production helper. Structural aggregate checks and scale-budget construction use the same declared model through separately coded test logic.
+
+Two frozen strict-budget fixtures now cover the assignment-order boundary:
+
+- Five rows at budget `908244231392255100` produce `1816.4884627845104` Gel/hour and canonical pairs `[[0,1],[1,1],[3,1]]`, identically for forward and reversed input.
+- The minimized four-row fixture produces the same Gel total and canonical pairs `[[0,1],[1,1],[2,1]]`. Its Vespium total equals the budget exactly; reducing the budget by one Vespium ULP (`128`) rejects the higher-output multiset.
+
+Rank-aware pruning has both a focused unit regression and a production-path spy: different future-rank signatures retain both candidate states, an equal signature still permits numeric pruning, and `gelLoadout` is proven to pass multiple live signatures when a repeated profile remains.
+
+The final fix-round scale run remained below the asserted five-second bound:
+
+- 5 mixed lines, forward / reverse / low: `9 / 6 / 5ms`
+- 7 mixed lines: `30 / 28 / 23ms`
+- 8 mixed lines: `61 / 70 / 56ms`
+- 10 mixed lines: `194 / 189 / 177ms`
+- 12 mixed lines: `689 / 667 / 673ms`
+- 12 identical max-512 lines: `27ms`
+- 12-line all-priced Credits: `36` bounded Gel seed calls in `693ms`
+
+Fix-round verification passed the exact helper suite and all impacted mined-render, mined-solver, mined-mode, static-build, project-transient, stability, and parity suites. The full non-browser release gate was rerun after this report update. No browser was launched, and no cutoff, frontier limit, approximation threshold, Worker compatibility file, build script, or golden fixture changed. The compatibility hashes remain:
+
+- `js/solver.worker.js`: `4608f23266bc227cfa5b79afb37bbcbebd8bc5a121ddfc68447c68e01cca1188`
+- `compat/solver.worker.v2.js`: `9d8747eea5a5c0c8d88066532eb9c3f51da6ebeb14e803284734405f3bcd1cf2`

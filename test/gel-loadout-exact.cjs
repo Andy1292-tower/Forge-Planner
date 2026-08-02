@@ -19,6 +19,8 @@ const runner = `
   const ABS_EPS=Number.EPSILON*8,REL_EPS=Number.EPSILON*32;
   const tolerance=(a,b)=>ABS_EPS+REL_EPS*Math.max(1,Math.abs(a),Math.abs(b));
   const close=(a,b)=>Math.abs(a-b)<=tolerance(a,b);
+  const stablePositiveSum=values=>values.filter(value=>value>0).slice()
+    .sort((a,b)=>a-b).reduce((sum,value)=>sum+value,0);
   const activePairs=choices=>choices.filter(choice=>choice.L>0)
     .map(choice=>[choice.row.__i,choice.L]).sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
   const comparePairs=(a,b)=>{
@@ -46,8 +48,9 @@ const runner = `
     const ordered=rows.slice().sort((a,b)=>a.__i-b.__i);
     const visit=index=>{
       if(index===ordered.length){
-        let gelHr=0,vespHr=0;
-        choices.forEach(choice=>{if(choice.L){gelHr+=gelOutHr(choice.row,choice.L);vespHr+=gelVespHr(choice.row,choice.L);}});
+        const active=choices.filter(choice=>choice.L>0);
+        const gelHr=stablePositiveSum(active.map(choice=>gelOutHr(choice.row,choice.L)));
+        const vespHr=stablePositiveSum(active.map(choice=>gelVespHr(choice.row,choice.L)));
         if(vespHr<=budget){
           const candidate={gelHr,vespHr,choices:choices.map(choice=>({row:choice.row,L:choice.L}))};
           feasible.push(candidate);
@@ -83,8 +86,8 @@ const runner = `
       assert.ok(close(line.gelHr,gelOutHr(row,line.L)),name+": selected Gel rate must be recomputed from its source row");
       assert.ok(close(line.vespHr,gelVespHr(row,line.L)),name+": selected Vespium rate must be recomputed from its source row");
     });
-    const summedGel=result.perLine.reduce((sum,line)=>sum+line.gelHr,0);
-    const summedVesp=result.perLine.reduce((sum,line)=>sum+line.vespHr,0);
+    const summedGel=stablePositiveSum(result.perLine.map(line=>line.gelHr));
+    const summedVesp=stablePositiveSum(result.perLine.map(line=>line.vespHr));
     assert.ok(close(result.gelHr,summedGel),name+": Gel total is not the per-line sum");
     assert.ok(close(result.vespHr,summedVesp),name+": Vespium total is not the per-line sum");
     assert.equal(JSON.stringify(rows),before,name+": input rows were mutated");
@@ -213,6 +216,73 @@ const runner = `
   assert.deepEqual(stagedResult.perLine.map(line=>[line.__i,line.L]),[[0,1],[1,2],[2,1]],
     "the staged final selector must not inherit streaming pairwise-reducer order");
   console.log("PASS staged final selection is anchored before applying fuzzy tie bands");
+
+  const assignmentRows=[
+    {__i:0,max:8,spx:1615.1587544721074,turbo:0},
+    {__i:1,max:4,spx:0.0011185102264998333,turbo:0},
+    {__i:2,max:8,spx:1615.1587544721074,turbo:0},
+    {__i:3,max:4,spx:0.0011185102264998333,turbo:0},
+    {__i:4,max:8,spx:1615.1587544721074,turbo:0},
+  ];
+  const assignmentBudget=908244231392255100;
+  const assignmentOracle=exhaustive(assignmentRows,assignmentBudget);
+  const assignmentResult=gelLoadout(assignmentRows,assignmentBudget);
+  assertLoadout("assignment-order strict-budget regression",assignmentRows,assignmentBudget,
+    JSON.stringify(assignmentRows),assignmentResult,assignmentOracle);
+  assert.ok(close(assignmentResult.gelHr,1816.4884627845104),
+    "identical-profile symmetry must not discard the higher-Gel strict-budget-feasible multiset");
+  assert.deepEqual(assignmentResult.perLine.map(line=>[line.__i,line.L]),[[0,1],[1,1],[3,1]],
+    "stable multiset totals must reconstruct the lexicographically canonical physical assignment");
+  assert.deepEqual(gelLoadout(assignmentRows.slice().reverse(),assignmentBudget),assignmentResult,
+    "strict feasibility and stable totals must ignore input order");
+  console.log("PASS strict feasibility and totals are independent of symmetric physical assignment order");
+
+  const minimizedAssignmentRows=[
+    {__i:0,max:8,spx:1615.1587544721074,turbo:0},
+    {__i:1,max:4,spx:0.0011185102264998333,turbo:0},
+    {__i:2,max:4,spx:0.0011185102264998333,turbo:0},
+    {__i:3,max:8,spx:1615.1587544721074,turbo:0},
+  ];
+  const minimizedOracle=exhaustive(minimizedAssignmentRows,assignmentBudget);
+  const minimizedResult=gelLoadout(minimizedAssignmentRows,assignmentBudget);
+  assertLoadout("minimized assignment-order regression",minimizedAssignmentRows,assignmentBudget,
+    JSON.stringify(minimizedAssignmentRows),minimizedResult,minimizedOracle);
+  assert.deepEqual(minimizedResult.perLine.map(line=>[line.__i,line.L]),[[0,1],[1,1],[2,1]],
+    "the minimized stable-sum fixture must use its canonical higher-output multiset assignment");
+  assert.ok(close(minimizedResult.gelHr,1816.4884627845104),
+    "the minimized stable-sum fixture must retain 1816.4884627845104 Gel/hr");
+  assert.equal(minimizedResult.vespHr,assignmentBudget,
+    "the minimized canonical multiset must fit exactly at its stable-sum budget");
+  const minimizedBelow=gelLoadout(minimizedAssignmentRows,assignmentBudget-128);
+  assert.ok(minimizedBelow.vespHr<=assignmentBudget-128&&
+    minimizedBelow.gelHr<minimizedResult.gelHr-tolerance(minimizedBelow.gelHr,minimizedResult.gelHr),
+    "one Vespium ULP below the stable-sum boundary must reject the higher-output multiset");
+  assert.deepEqual(gelLoadout(minimizedAssignmentRows.slice().reverse(),assignmentBudget),minimizedResult,
+    "the minimized strict-budget fixture must ignore input order");
+  console.log("PASS minimized symmetric strict-budget fixture keeps the canonical higher-output multiset");
+
+  const signatureA=pruneState(0,12,4),signatureB=pruneState(1,10,5);
+  signatureA.rankSignature="2";signatureB.rankSignature="0";
+  assert.equal(gelLoadoutPruneCandidates([signatureA,signatureB],0,0,state=>state.rankSignature).length,2,
+    "numeric dominance must not cross different remaining-profile rank signatures");
+  signatureA.rankSignature="0";
+  assert.equal(gelLoadoutPruneCandidates([signatureA,signatureB],0,0,state=>state.rankSignature).length,1,
+    "compatible remaining-profile rank signatures should retain numeric pruning");
+  const pruneOriginal=gelLoadoutPruneCandidates;let sawProductionSignaturePartition=false;
+  gelLoadoutPruneCandidates=function(candidates,gelEnvelope,vespEnvelope,signatureOf){
+    if(typeof signatureOf==="function"&&new Set(candidates.map(signatureOf)).size>1)
+      sawProductionSignaturePartition=true;
+    return pruneOriginal.apply(null,arguments);
+  };
+  gelLoadout([
+    {__i:20,max:2,spx:1,turbo:0},
+    {__i:21,max:2,spx:1,turbo:0},
+    {__i:22,max:2,spx:1,turbo:0},
+  ],1e30);
+  gelLoadoutPruneCandidates=pruneOriginal;
+  assert.ok(sawProductionSignaturePartition,
+    "production DP must pass distinct future-rank signatures into the pruning partition");
+  console.log("PASS dominance pruning is partitioned by future symmetric-profile availability");
 
   const nearRows=[{__i:0,max:1,spx:0.000001,turbo:0},{__i:1,max:1,spx:0.0000010005,turbo:0}];
   const nearBudget=gelVespHr(nearRows[1],1);

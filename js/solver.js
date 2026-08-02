@@ -583,11 +583,16 @@ function gelLoadoutPruneEnvelope(upperBound,additions){
   const magnitude=Math.max(1,Math.abs(upperBound));
   const nu=Math.max(0,additions)*(Number.EPSILON/2);
   const gamma=nu<1?nu/(1-nu):Infinity;
-  // This is deliberately wider than the final tie band. Adding the same remaining rates to two
-  // prefixes can round differently and shrink their stored gap; 2*gamma covers both addition paths.
+  // This is deliberately wider than the final tie band. Even after canonical value ordering, two
+  // different rate multisets can round along different n-term sum paths; 2*gamma covers both paths.
   return GEL_LOADOUT_ABS_EPS+GEL_LOADOUT_REL_EPS*magnitude+2*gamma*magnitude;
 }
-function gelLoadoutPruneCandidates(candidates,gelEnvelope,vespEnvelope){
+function gelLoadoutStableSum(values){
+  // Positive rates are summed low-to-high. The value multiset—not its physical-ID assignment—now
+  // owns candidate feasibility and totals, which makes identical-profile symmetry exact under IEEE.
+  return values.filter(value=>value>0).slice().sort((a,b)=>a-b).reduce((sum,value)=>sum+value,0);
+}
+function gelLoadoutPruneGroup(candidates,gelEnvelope,vespEnvelope){
   candidates.sort((a,b)=>a.vespHr-b.vespHr||b.gelHr-a.gelHr||gelLoadoutChoiceCompare(a,b));
   const next=[];let maxGel=-Infinity,maxFarGel=-Infinity,farIndex=0;
   candidates.forEach((candidate,index)=>{
@@ -600,6 +605,19 @@ function gelLoadoutPruneCandidates(candidates,gelEnvelope,vespEnvelope){
     if(!pruned)next.push(candidate);
     maxGel=Math.max(maxGel,candidate.gelHr);
   });
+  return next;
+}
+function gelLoadoutPruneCandidates(candidates,gelEnvelope,vespEnvelope,signatureOf){
+  if(typeof signatureOf!=="function")return gelLoadoutPruneGroup(candidates,gelEnvelope,vespEnvelope);
+  const groups=new Map();
+  candidates.forEach(candidate=>{
+    const signature=String(signatureOf(candidate));
+    if(!groups.has(signature))groups.set(signature,[]);
+    groups.get(signature).push(candidate);
+  });
+  const next=[];
+  [...groups.keys()].sort().forEach(signature=>next.push(...
+    gelLoadoutPruneGroup(groups.get(signature),gelEnvelope,vespEnvelope)));
   return next;
 }
 function gelLoadout(rows,vespBudgetHr){
@@ -616,29 +634,31 @@ function gelLoadout(rows,vespBudgetHr){
       options.forEach((option,index)=>option.rank=option.L?index-1:offRank);
       return {row:entry.row,options,profileId:profileIds.get(profileKey)};
     });
-  const gelUpperBound=ordered.reduce((sum,entry)=>sum+
-    entry.options.reduce((best,option)=>Math.max(best,option.gelHr),0),0);
+  const gelUpperBound=gelLoadoutStableSum(ordered.map(entry=>
+    entry.options.reduce((best,option)=>Math.max(best,option.gelHr),0)));
   const gelPruneEnvelope=gelLoadoutPruneEnvelope(gelUpperBound,ordered.length);
   const vespPruneEnvelope=gelLoadoutPruneEnvelope(vespBudgetHr,ordered.length);
-  let frontier=[{gelHr:0,vespHr:0,choices:[]}];
-  ordered.forEach(({row,options,profileId})=>{
+  const futureProfiles=ordered.map((entry,index)=>[...new Set(ordered.slice(index+1)
+    .map(future=>future.profileId))].sort((a,b)=>a-b));
+  let frontier=[{gelHr:0,vespHr:0,choices:[],lastRanks:new Array(profileIds.size).fill(-1)}];
+  ordered.forEach(({row,options,profileId},lineIndex)=>{
     const candidates=[];
     frontier.forEach(state=>options.forEach(option=>{
       // Identical option profiles are symmetric. Nondecreasing positive-level ranks followed by
       // OFF represent each multiset once: earliest physical IDs stay active and lower compression
       // stays on the lower ID, which is exactly the documented lexicographic assignment.
-      let previousRank=-1;
-      for(let i=state.choices.length-1;i>=0;i--)if(state.choices[i].profileId===profileId){
-        previousRank=state.choices[i].rank;break;
-      }
+      const previousRank=state.lastRanks[profileId];
       if(option.rank<previousRank)return;
-      const vespHr=state.vespHr+option.vespHr;
+      const choices=state.choices.concat({row,L:option.L,gelHr:option.gelHr,vespHr:option.vespHr});
+      const vespHr=gelLoadoutStableSum(choices.map(choice=>choice.vespHr));
       if(vespHr>vespBudgetHr)return;
-      candidates.push({gelHr:state.gelHr+option.gelHr,vespHr,
-        choices:state.choices.concat({row,L:option.L,gelHr:option.gelHr,vespHr:option.vespHr,
-          profileId,rank:option.rank})});
+      const lastRanks=state.lastRanks.slice();lastRanks[profileId]=option.rank;
+      candidates.push({gelHr:gelLoadoutStableSum(choices.map(choice=>choice.gelHr)),vespHr,
+        choices,lastRanks});
     }));
-    frontier=gelLoadoutPruneCandidates(candidates,gelPruneEnvelope,vespPruneEnvelope);
+    const signatureProfiles=futureProfiles[lineIndex];
+    frontier=gelLoadoutPruneCandidates(candidates,gelPruneEnvelope,vespPruneEnvelope,state=>
+      signatureProfiles.map(profileId=>state.lastRanks[profileId]).join(","));
   });
   const gelMax=frontier.reduce((maximum,state)=>Math.max(maximum,state.gelHr),-Infinity);
   const gelBand=frontier.filter(state=>gelLoadoutClose(state.gelHr,gelMax));
@@ -650,8 +670,8 @@ function gelLoadout(rows,vespBudgetHr){
     __i:choice.row.__i,max:choice.row.max,L:choice.L,
     gelHr:gelOutHr(choice.row,choice.L),vespHr:gelVespHr(choice.row,choice.L),frac:1
   }));
-  return {gelHr:perLine.reduce((sum,line)=>sum+line.gelHr,0),
-    vespHr:perLine.reduce((sum,line)=>sum+line.vespHr,0),perLine};
+  return {gelHr:gelLoadoutStableSum(perLine.map(line=>line.gelHr)),
+    vespHr:gelLoadoutStableSum(perLine.map(line=>line.vespHr)),perLine};
 }
 // Vespium/hr income from the user's vespium/minute figure (0 if unset → Gel off).
 function gelVespBudgetHr(){return minedBudgetHr("Vespium");}

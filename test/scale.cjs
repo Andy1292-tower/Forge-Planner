@@ -55,6 +55,8 @@ const runner = `
       res&&Array.isArray(res.phases)?res.phases.flatMap(p=>p.minedUsage||[]):[];
     const out={};rows.forEach(x=>out[x.resource]=(out[x.resource]||0)+x.inputHr);return out;
   }
+  const stablePositiveSum=values=>values.filter(value=>value>0).slice()
+    .sort((a,b)=>a-b).reduce((sum,value)=>sum+value,0);
 
   // Directly exercise the exact helper at every UI-owned factory size. These are realistic
   // high caps (up to 512x), mixed line speeds, and two nontrivial budget points; optimize()
@@ -63,7 +65,7 @@ const runner = `
   [5,7,8,10,12].forEach(N=>{
     const s=base();s.lines=mkLines(N);normalize(s);S=s;
     const rows=lineRows(),before=JSON.stringify(rows);
-    const fullBudget=rows.reduce((sum,row)=>sum+gelVespHr(row,row.max),0);
+    const fullBudget=stablePositiveSum(rows.map(row=>gelVespHr(row,row.max)));
     const lowBudget=fullBudget*0.23,highBudget=fullBudget*0.41;
     let t0=performance.now();const high=gelLoadout(rows,highBudget),highMs=performance.now()-t0;
     t0=performance.now();const reversed=gelLoadout(rows.slice().reverse(),highBudget),reverseMs=performance.now()-t0;
@@ -75,7 +77,7 @@ const runner = `
   const symmetricState=base();symmetricState.lines=Array.from({length:12},()=>({max:512,spx:40,turbo:0}));
   normalize(symmetricState);S=symmetricState;
   const symmetricRows=lineRows();
-  const symmetricBudget=symmetricRows.reduce((sum,row)=>sum+gelVespHr(row,row.max),0)*0.41;
+  const symmetricBudget=stablePositiveSum(symmetricRows.map(row=>gelVespHr(row,row.max)))*0.41;
   let symmetricStart=performance.now();
   const symmetricExact=gelLoadout(symmetricRows,symmetricBudget);
   const symmetricMs=Math.round(performance.now()-symmetricStart);
@@ -117,8 +119,8 @@ const runner = `
       return source&&LEVELS.includes(line.L)&&line.L<=source.max&&line.frac===1&&
         close(line.gelHr,gelOutHr(source,line.L))&&close(line.vespHr,gelVespHr(source,line.L));
     });
-    const summedGel=x.high.perLine.reduce((sum,line)=>sum+line.gelHr,0);
-    const summedVesp=x.high.perLine.reduce((sum,line)=>sum+line.vespHr,0);
+    const summedGel=stablePositiveSum(x.high.perLine.map(line=>line.gelHr));
+    const summedVesp=stablePositiveSum(x.high.perLine.map(line=>line.vespHr));
     const ok=x.high.gelHr>0&&x.low.gelHr>0&&x.high.vespHr<=x.highBudget&&x.low.vespHr<=x.lowBudget&&
       x.high.gelHr>=x.seed.gelHr-Number.EPSILON*64*Math.max(1,x.high.gelHr,x.seed.gelHr)&&
       x.high.gelHr>=x.low.gelHr-Number.EPSILON*64*Math.max(1,x.high.gelHr,x.low.gelHr)&&
