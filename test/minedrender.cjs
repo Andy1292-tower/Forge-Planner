@@ -15,7 +15,7 @@ globalThis.document={
 };
 globalThis.localStorage={getItem:()=>null,setItem:()=>{}};
 globalThis.performance={now:()=>0};
-const src=["core.js","dom.js","solver.js","results.js","manual.js","render.js"]
+const src=["core.js","dom.js","project-schedule.js","solver.js","results.js","manual.js","render.js"]
   .map(f=>fs.readFileSync(path.join(__dirname,"..","js",f),"utf8")).join("\n;\n");
 
 const runner=`

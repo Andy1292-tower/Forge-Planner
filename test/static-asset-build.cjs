@@ -8,7 +8,7 @@ const path = require("path");
 const vm = require("vm");
 
 const root = path.resolve(__dirname, "..");
-const { buildStaticSite } = require("../scripts/build-static.cjs");
+const { buildStaticSite, buildWorkerPayload } = require("../scripts/build-static.cjs");
 
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
@@ -130,6 +130,8 @@ test("the generated page has a closed hashed asset graph and an in-memory Worker
   const appName = findOne(temporary, /^app\.[0-9a-f]{16}\.js$/);
   const app = fs.readFileSync(path.join(temporary, "static", appName), "utf8");
   assert.match(app, /__FORGE_SOLVER_WORKER_SOURCE__/);
+  assert.match(app, /function replayProjectSchedule\(/,
+    "the generated page and embedded Worker must include the pure Project replay helper");
   assert.match(app, /URL\.createObjectURL\(new Blob/);
   assert.match(app, /__forgeCreateSolverWorker\(\)/);
   assert.doesNotMatch(app, /new Worker\(["'][^"']+\.js/);
@@ -164,6 +166,15 @@ test("the generated page has a closed hashed asset graph and an in-memory Worker
   assert.match(legacyV2, /const res = optimize\(\)/);
   assert.doesNotMatch(legacyV2, /importScripts\s*\(/,
     "the frozen v2 compatibility Worker must be self-contained");
+});
+
+test("the current Worker payload registers Project scheduling before the solver", () => {
+  const payload = buildWorkerPayload(root);
+  const helper = payload.indexOf("function replayProjectSchedule(");
+  const solver = payload.indexOf("function optimizeProjectTop(");
+  assert.ok(helper >= 0, "current Worker payload omitted project-schedule.js");
+  assert.ok(solver > helper, "project-schedule.js must execute before solver.js");
+  assert.doesNotMatch(payload, /importScripts\s*\(/);
 });
 
 test("early generated Blob Worker termination releases its URL and backstop immediately", () => {
@@ -327,6 +338,21 @@ test("a Worker dependency change automatically rotates the app URL", () => {
     fs.readFileSync(path.join(after, "index.html")),
     "the release pointer must update when the app hash changes"
   );
+});
+
+test("a Project schedule helper change rotates only the generated app graph", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "forge-static-project-schedule-"));
+  const source = path.join(temporary, "source");
+  const before = path.join(temporary, "before");
+  const after = path.join(temporary, "after");
+  copyBuildInputs(source);
+  buildStaticSite({ sourceRoot: source, outputRoot: before });
+  fs.appendFileSync(path.join(source, "js", "project-schedule.js"), "\n/* project replay propagation mutation */\n");
+  buildStaticSite({ sourceRoot: source, outputRoot: after });
+  assert.notEqual(findOne(before, /^app\.[0-9a-f]{16}\.js$/),findOne(after, /^app\.[0-9a-f]{16}\.js$/));
+  assert.equal(findOne(before, /^styles\.[0-9a-f]{16}\.css$/),findOne(after, /^styles\.[0-9a-f]{16}\.css$/));
+  assert.deepEqual(fs.readFileSync(path.join(before,"js","solver.worker.js")),fs.readFileSync(path.join(after,"js","solver.worker.js")));
+  assert.deepEqual(fs.readFileSync(path.join(before,"js","solver.worker.v2.js")),fs.readFileSync(path.join(after,"js","solver.worker.v2.js")));
 });
 
 test("an untracked CSS asset dependency fails the build instead of shipping a mutable URL", () => {

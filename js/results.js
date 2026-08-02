@@ -156,6 +156,7 @@ function renderProjectResults(res,el,stat){
     el.innerHTML=`<div class="notice info">No project demand yet. Open <b>Shopping list</b>, add a project with item costs, tick it <b>on</b>, then come back. Enter your current <b>inventory</b> there too — it's subtracted from what you need to craft.</div>`;
     stat.textContent="Plan updated. No project demand selected.";return;
   }
+  const scheduleExecutable=!!(res.feasible&&res.lpFeasible&&res.scheduleValidation&&res.scheduleValidation.ok);
   let html="";
   // Header: ordering note + Track-progress opener. The step plan below is the main event, so there's
   // no longer a "Step-by-step" button — this panel *is* it.
@@ -169,6 +170,21 @@ function renderProjectResults(res,el,stat){
   // Key notices — the ones that change what you actually do. The old verbose "Project plan." explainer
   // is dropped; the step-plan intro below already tells you how to run it.
   html+=projectForgieNote(res);
+  const prerequisites=(res.executionPhases||[]).filter(ph=>ph.kind==="prerequisite");
+  const warmups=(res.executionPhases||[]).filter(ph=>ph.kind==="warmup");
+  if(scheduleExecutable&&prerequisites.length){
+    const needs=prerequisites.flatMap(ph=>Object.entries(ph.externalSupply||{})).map(([resource,amount])=>`<b>${disp(amount)} ${htmlText(resource)}</b>`).join(" and ");
+    html+=`<div class="notice info"><b>External pre-produced prerequisite:</b> Have ${needs} available before the timed work begins. This is listed as an explicit zero-time execution step and cannot be supplied by the same phase.</div>`;
+  }
+  if(scheduleExecutable&&warmups.length){const warmEta=warmups.reduce((sum,ph)=>sum+(ph.eta||0),0);
+    html+=`<div class="notice info"><b>Startup warm-up included:</b> ${fmtDuration(warmEta)} builds the ordinary input stock needed to keep every replay boundary nonnegative. The total and finish clocks include this time.</div>`;}
+  if(res.scheduleValidation&&!res.scheduleValidation.ok){
+    const f=res.scheduleValidation.firstFailure||{},when=isFinite(f.time)?` at ${fmtDuration(f.time)}`:"";
+    const detail=f.kind==="mined-rate"
+      ?`${htmlText(f.resource||"Mined resource")} exceeds its instantaneous income by <b>${disp(f.excess||0)}/hr</b>${when}.`
+      :`${htmlText(f.resource||"A required resource")} is short by <b>${disp(f.deficit||0)}</b>${when}.`;
+    html+=`<div class="notice warn"><b>Executable schedule blocked:</b> ${detail} ${htmlText(f.message||"")}</div>`;
+  }
   if(res.waved)html+=`<div class="notice info" style="font-size:11.5px"><b>Unlock-aware order.</b> Some projects unlock materials others need (Frames, Gel, Wire), so this is split into <b>${res.phases.length} waves</b> — finish each wave before starting the next. Everything within a wave is crafted together.</div>`;
   if(res.blockedMined&&Object.keys(res.blockedMined).length){
     const blocked=Object.entries(res.blockedMined).map(([item,resources])=>`<b>${item}</b> needs ${resources.map(r=>`<b>${r}</b>`).join(" and ")}`).join("; ");
@@ -179,7 +195,7 @@ function renderProjectResults(res,el,stat){
   if(res.partial)html+=`<div class="notice warn"><b>Partial plan only.</b> The blocked items remain excluded, so the ticked projects are <b>not fully finishable</b> with the current mined incomes. The time shown is for currently plannable work only.</div>`;
   // Summary metrics
   html+=`<div class="metrics">
-    <div class="metric"><div class="l">${res.partial?"Partial plan time":res.feasible?"Total time":"Plan time"}</div><div class="v">${fmtDuration(res.eta)}</div><div class="u">${res.partial?"currently plannable work only":res.feasible?(res.sequenced?"to finish every project":"to finish all ticked projects"):"blocked — no finish time available"}</div></div>
+    <div class="metric"><div class="l">${res.partial?"Partial plan time":scheduleExecutable?"Executable total time":"Analytical LP time"}</div><div class="v">${fmtDuration(scheduleExecutable?res.eta:res.workEta)}</div><div class="u">${res.partial?"currently plannable work only":scheduleExecutable?(res.sequenced?"includes warm-ups; finishes every project":"includes warm-ups and prerequisites"):"not executable — see blocking diagnostic"}</div></div>
     <div class="metric"><div class="l">Projects</div><div class="v">${res.perProject.length}</div><div class="u">${res.sequenced?"one at a time":res.waved?res.phases.length+" unlock waves":res.single?"all in one phase":"scheduled together"}</div></div>
     ${!res.sequenced&&!res.waved&&res.bottleneck?`<div class="metric"><div class="l">Bottleneck</div><div class="v" style="font-size:17px">${res.bottleneck}</div><div class="u">sets the ${res.partial?"partial plan":"finish"} time</div></div>`:""}
   </div>`;
@@ -257,9 +273,11 @@ function renderProjectResults(res,el,stat){
   }
   const minedNote=minedUsageNote(resultMinedUsage(res));
   if(minedNote)bd+=minedNote;
-  html+=`<details class="cat-panel breakdown-panel" ${_breakdownOpen?"open":""}><summary data-paneltoggle="breakdown"><span class="cat-sum-lbl">Full breakdown — demand, line assignment, resource balance</span><span class="cat-sum-meta">the numbers</span></summary><div class="panel-pad">${bd}</div></details>`;
+  html+=`<details class="cat-panel breakdown-panel" ${_breakdownOpen?"open":""}><summary data-paneltoggle="breakdown"><span class="cat-sum-lbl">${res.scheduleValidation&&res.scheduleValidation.ok?"Full breakdown":"Analytical LP breakdown"} — demand, line assignment, resource balance</span><span class="cat-sum-meta">the numbers</span></summary><div class="panel-pad">${bd}</div></details>`;
   el.innerHTML=html;
-  stat.textContent="Plan updated. Solved in "+(res.ms||0).toFixed(1)+" ms";
+  stat.textContent=scheduleExecutable
+    ?"Plan updated. Executable schedule solved in "+(res.ms||0).toFixed(1)+" ms"
+    :"Schedule blocked. Analytical LP retained for diagnosis.";
 }
 
 

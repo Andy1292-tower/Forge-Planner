@@ -11,6 +11,7 @@ const PAGE_SCRIPTS = [
   "state.js",
   "dom.js",
   "render.js",
+  "project-schedule.js",
   "solver.js",
   "solve-service.js",
   "results.js",
@@ -18,7 +19,7 @@ const PAGE_SCRIPTS = [
   "dialogs.js",
   "events.js",
 ];
-const WORKER_SCRIPTS = ["core.js", "fields.js", "state.js", "solver.js"];
+const WORKER_SCRIPTS = ["core.js", "fields.js", "state.js", "project-schedule.js", "solver.js"];
 const IMAGE_FILES = ["favicon.png", "dupe.jpg", "speed.jpg"];
 const HASH_LENGTH = 16;
 const LEGACY_V2_SHA256 = "9d8747eea5a5c0c8d88066532eb9c3f51da6ebeb14e803284734405f3bcd1cf2";
@@ -73,7 +74,7 @@ function buildWorkerPayload(sourceRoot) {
   let handler = readText(handlerPath);
   handler = replaceExactly(
     handler,
-    'importScripts("core.js", "fields.js", "state.js", "solver.js");',
+    'importScripts("core.js", "fields.js", "state.js", "project-schedule.js", "solver.js");',
     "",
     1,
     "Worker dependency import"

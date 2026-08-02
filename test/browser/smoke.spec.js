@@ -172,6 +172,34 @@ test("the planner serves, solves in its Worker, and opens every planning mode", 
     (window.__forgeWorkerResponses || []).some(response => response && response.res && !response.error)
   )).toBe(true);
   await expect(page.locator("#results")).toContainText("Line assignment");
+  const projectWorkerResult = await page.evaluate(() => new Promise((resolve, reject) => {
+    const state = defaults();
+    state.mode = "project";
+    state.dupe = 0;
+    state.lines = [
+      {max:64,spx:20,turbo:0},{max:64,spx:18,turbo:0},{max:32,spx:16,turbo:0},
+      {max:16,spx:14,turbo:0},{max:8,spx:12,turbo:0},
+    ];
+    state.projects = [{ id: "smoke-project", name: "Worker Project", catId: "", on: true,
+      from: 1, to: 1, done: 0, prio: null, levels: [{ costs: [{ item: "Frames", qty: 10_000 }] }] }];
+    normalize(state);syncManual(state);
+    const worker = __forgeCreateSolverWorker();
+    const timeout = setTimeout(() => { worker.terminate(); reject(new Error("Project Worker solve timed out")); }, 10_000);
+    worker.onmessage = event => {
+      clearTimeout(timeout);worker.terminate();
+      if(event.data&&event.data.error)reject(new Error(event.data.error));else resolve(event.data&&event.data.res);
+    };
+    worker.onerror = event => { clearTimeout(timeout);worker.terminate();reject(new Error(event.message||"Project Worker failed")); };
+    worker.postMessage({reqId:991,generation:991,mode:"project",stateRevision:1,state,budget:state.solveBudget,stab:{}});
+  }));
+  expect(projectWorkerResult.mode).toBe("project");
+  expect(projectWorkerResult.scheduleValidation.ok).toBe(true);
+  expect(projectWorkerResult.executionPhases.some(phase => phase.kind === "prerequisite" && phase.externalSupply.Bits === 80_000)).toBe(true);
+  expect(projectWorkerResult.executionPhases.some(phase => phase.kind === "warmup")).toBe(true);
+  expect(projectWorkerResult.eta).toBeGreaterThan(projectWorkerResult.workEta);
+  expect(projectWorkerResult.scheduleValidation.boundaries.every(boundary =>
+    Object.values(boundary.inventory || {}).every(value => value >= -1e-6)
+  )).toBe(true);
 
   const modes = [
     ["Max items/hr", "Line assignment"],
@@ -189,7 +217,7 @@ test("the planner serves, solves in its Worker, and opens every planning mode", 
   await secondWorker;
   await expect(page.locator("#results")).toContainText("Line assignment");
   const creations = await page.evaluate(() => window.__forgeWorkerCreations || []);
-  expect(creations).toHaveLength(2);
+  expect(creations).toHaveLength(3);
   expect(creations.every(url => url.startsWith("blob:"))).toBe(true);
   expect(sameOriginWorkerRequests, "Blob Worker creation must not reach the server").toEqual([]);
 

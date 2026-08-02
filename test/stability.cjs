@@ -26,6 +26,7 @@ globalThis.localStorage = { getItem: () => null, setItem: () => {} };
 globalThis.document = { getElementById: () => ({ innerHTML: "", textContent: "" }) };
 
 const coreSrc = fs.readFileSync(path.join(__dirname, "..", "js", "core.js"), "utf8");
+const projectSrc = fs.readFileSync(path.join(__dirname, "..", "js", "project-schedule.js"), "utf8");
 const solverSrc = fs.readFileSync(path.join(__dirname, "..", "js", "solver.js"), "utf8");
 
 const runner = `
@@ -43,7 +44,11 @@ const runner = `
     (ph.plan||[]).forEach(p=>{ const e=(p.entries||[])[0]; m[p.line]= e?(e.item+"@"+e.lvl):"idle"; }); return m; }
   function run(lines,frames){ let s=base(lines); s.projects=proj(frames); normalize(s); syncManual(s); S=s;
     const r=optimize(),p0=r.phases[0]; return {dom:dom(r), z:p0.z, eta:r.eta, stab:!!p0.stabilized,
-      feasible:r.feasible, phases:r.phases.length, zFree:p0.zFree, zPin:p0.zPin}; }
+      feasible:r.feasible, phases:r.phases.length, zFree:p0.zFree, zPin:p0.zPin,
+      preConsistent:r.phases.every(p=>{const actual=(plannedPreProducedDemand(p).Bits||0),reserved=(p.preProducedDemand&&p.preProducedDemand.Bits)||0,
+        solvedWith=(p.preProducedSolveDemand&&p.preProducedSolveDemand.Bits)||0,tol=1e-8+Number.EPSILON*32*Math.max(1,actual,reserved,solvedWith);
+        return p.preProducedConverged===true&&Math.abs(actual-reserved)<=tol&&Math.abs(actual-solvedWith)<=tol;}),
+      scheduleFailure:r.scheduleValidation&&r.scheduleValidation.firstFailure}; }
 
   const results=[]; const rec=(name,pass,detail)=>results.push({name,pass,detail});
 
@@ -62,6 +67,8 @@ const runner = `
     "free="+JSON.stringify(free.dom));
   rec("stability holds the prior assignment", JSON.stringify(stable.dom)===baseStr && stable.stab===true,
     "stable="+JSON.stringify(stable.dom)+" stabilized="+stable.stab);
+  rec("stabilized plan reserves the exact Bits obligation it solved with",stable.preConsistent,
+    "consistent="+stable.preConsistent);
   rec("held plan keeps throughput within HYST_FRAC", stable.z>=free.z*(1-HYST_FRAC)-1e-9,
     "stableZ="+stable.z.toFixed(6)+" freeZ="+free.z.toFixed(6)+" ratio="+(stable.z/free.z).toFixed(6));
 
@@ -69,7 +76,7 @@ const runner = `
   //    the dominant job within a stabilized set) — assert big.stab===false, not only that dom changed.
   resetLineStability(); run(LINES,200); const big=run(LINES,20000);
   rec("large change re-optimizes and releases the pin", JSON.stringify(big.dom)!==baseStr && big.stab===false && big.feasible && isFinite(big.eta) && big.eta>0,
-    "changed="+(JSON.stringify(big.dom)!==baseStr)+" released="+(big.stab===false)+" feasible="+big.feasible);
+    "changed="+(JSON.stringify(big.dom)!==baseStr)+" released="+(big.stab===false)+" feasible="+big.feasible+" failure="+JSON.stringify(big.scheduleFailure));
 
   // 4a) HYST_FRAC band — MUST HOLD: a Frames-demand bump whose pinned re-solve costs a *strict, sub-5%*
   //     amount of throughput is kept stable. This pins the band's lower edge: shrink HYST_FRAC below the
@@ -149,4 +156,4 @@ globalThis.__emit = (str) => {
 };
 
 // eslint-disable-next-line no-eval
-eval(coreSrc + "\n;\n" + solverSrc + "\n;\n" + runner);
+eval(coreSrc + "\n;\n" + projectSrc + "\n;\n" + solverSrc + "\n;\n" + runner);
