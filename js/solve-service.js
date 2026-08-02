@@ -100,7 +100,8 @@ const solveService=(()=>{
     owned.onerror=event=>{
       if(owned!==worker)return;
       if(event&&typeof event.preventDefault==="function")event.preventDefault();
-      if(!workerBusy||callback===null||!isCurrent(generation))return;
+      if(!workerBusy||callback===null){terminateOwned();return;}
+      if(!isCurrent(generation))return;
       workerFailed(owned,generation,(event&&event.message)||"Worker failed");
     };
   }

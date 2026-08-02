@@ -227,6 +227,80 @@ test("early generated Blob Worker termination releases its URL and backstop imme
   assert.deepEqual(revoked, ["blob:forge-worker-1"], "release must be idempotent after a late event");
 });
 
+test("generated Blob Worker setup failures terminate before one idempotent URL release", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "forge-static-worker-setup-failure-"));
+  buildStaticSite({ sourceRoot: root, outputRoot: temporary });
+  const app = generatedApp(temporary);
+  const scenarios = [
+    { stage: "property", terminateThrows: false },
+    { stage: "listener", terminateThrows: false },
+    { stage: "timer", terminateThrows: false },
+    { stage: "listener", terminateThrows: true },
+  ];
+
+  for (const scenario of scenarios) {
+    const workers = [];
+    const revoked = [];
+    class SetupFailingWorker {
+      constructor(url) {
+        this.url = String(url);
+        this.listeners = { message: [], error: [] };
+        this.terminateCalls = 0;
+        if (scenario.stage === "property") {
+          Object.defineProperty(this, "__forgeRelease", {
+            set() { throw new Error("property setup failed"); },
+          });
+        }
+        workers.push(this);
+      }
+      addEventListener(type, listener) {
+        if (scenario.stage === "listener" && type === "error") {
+          throw new Error("listener setup failed");
+        }
+        this.listeners[type].push(listener);
+      }
+      terminate() {
+        this.terminateCalls += 1;
+        if (scenario.terminateThrows) throw new Error("termination cleanup failed");
+      }
+      emit(type) { this.listeners[type].forEach(listener => listener({ type })); }
+    }
+
+    const context = {
+      console,
+      Blob: class GeneratedBlob {},
+      URL: {
+        createObjectURL() { return `blob:setup-${scenario.stage}-${scenario.terminateThrows}`; },
+        revokeObjectURL(url) { revoked.push(String(url)); },
+      },
+      Worker: SetupFailingWorker,
+      document: { getElementById() { return null; } },
+      S: { mode: "items" },
+      stateRevision: 0,
+      setTimeout() {
+        if (scenario.stage === "timer") throw new Error("timer setup failed");
+        return 1;
+      },
+      clearTimeout() {},
+    };
+    vm.createContext(context);
+    vm.runInContext(generatedWorkerLifecycleSource(app), context, {
+      filename: `generated-app-worker-${scenario.stage}-failure.js`,
+    });
+
+    assert.throws(
+      () => vm.runInContext("__forgeCreateSolverWorker()", context),
+      new RegExp(`${scenario.stage} setup failed`)
+    );
+    assert.equal(workers.length, 1);
+    assert.equal(workers[0].terminateCalls, 1,
+      `${scenario.stage} setup failure must terminate its already-created Worker`);
+    assert.deepEqual(revoked, [`blob:setup-${scenario.stage}-${scenario.terminateThrows}`]);
+    workers[0].emit("message");
+    assert.equal(revoked.length, 1, `${scenario.stage} cleanup must remain idempotent after a late event`);
+  }
+});
+
 test("a Worker dependency change automatically rotates the app URL", () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "forge-static-dependency-"));
   const source = path.join(temporary, "source");

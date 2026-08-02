@@ -213,7 +213,7 @@ test("Worker failure falls back accessibly, then a later request retries and rec
   expect(await page.evaluate(() => solveService.status().workerFailures)).toBe(0);
 });
 
-test("a completed idle Worker's late error does not expose fallback or start cooldown", async ({ page }) => {
+test("a completed idle Worker's late error disposes it silently before the next solve", async ({ page }) => {
   await installControllableWorker(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await waitForWorkers(page, 1);
@@ -226,13 +226,23 @@ test("a completed idle Worker's late error does not expose fallback or start coo
 
   expect(await page.evaluate(() => solveService.status())).toMatchObject({
     active: false,
-    workerOwned: true,
+    workerOwned: false,
     workerBusy: false,
     workerFailures: 0,
     fallbackActive: false,
   });
-  expect(await page.evaluate(() => window.__controlledWorkers[0].terminated)).toBe(false);
+  expect(await page.evaluate(() => solveService.status().retryInMs)).toBe(0);
+  expect(await page.evaluate(() => window.__controlledWorkers[0].terminated)).toBe(true);
   await expect(page.locator("#solveFallback")).toBeHidden();
+  await expect(page.locator("#solveOverlay")).toHaveJSProperty("hidden", true);
+
+  await page.getByRole("button", { name: "Max credits/hr", exact: true }).click();
+  await waitForWorkers(page, 2);
+  await emitWorkerMessage(page, 1, 0, { error: "controlled replacement completion" });
+
+  await expect(page.locator("#solveOverlay")).toHaveJSProperty("hidden", true);
+  await expect(page.locator("#solveFallback")).toBeHidden();
+  expect(await page.evaluate(() => solveService.status().workerFailures)).toBe(0);
 });
 
 test("entering Manual after fallback clears the inactive fallback notice", async ({ page }) => {

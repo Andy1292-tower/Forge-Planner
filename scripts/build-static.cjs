@@ -93,11 +93,13 @@ function workerBootstrap(workerPayload) {
 const __FORGE_SOLVER_WORKER_SOURCE__=${JSON.stringify(workerPayload)};
 function __forgeCreateSolverWorker(){
   const objectUrl=URL.createObjectURL(new Blob([__FORGE_SOLVER_WORKER_SOURCE__],{type:"text/javascript"}));
+  let created=null;
+  let release=null;
   try{
-    const created=new Worker(objectUrl);
+    created=new Worker(objectUrl);
     let released=false;
     let releaseTimer=null;
-    const release=()=>{
+    release=()=>{
       if(released)return;
       released=true;
       if(releaseTimer!==null){clearTimeout(releaseTimer);releaseTimer=null;}
@@ -110,7 +112,13 @@ function __forgeCreateSolverWorker(){
       releaseTimer=setTimeout(release,60000);
     }else releaseTimer=setTimeout(release,0);
     return created;
-  }catch(error){URL.revokeObjectURL(objectUrl);throw error;}
+  }catch(error){
+    if(created)try{created.terminate();}catch(cleanupError){}
+    if(release){
+      try{release();}catch(cleanupError){try{URL.revokeObjectURL(objectUrl);}catch(revokeError){}}
+    }else try{URL.revokeObjectURL(objectUrl);}catch(cleanupError){}
+    throw error;
+  }
 }
 `;
 }

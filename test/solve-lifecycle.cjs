@@ -287,7 +287,7 @@ test("a completed idle Worker is reused with the current stability snapshot", ()
   assert.deepEqual(painted, ["A", "B"]);
 });
 
-test("a completed idle Worker's late error cannot create a failure or fallback", () => {
+test("a completed idle Worker's late error disposes it silently before the next solve", () => {
   const harness = lifecycleHarness();
   const painted = [];
   harness.callRequest(request("items", 1, "A"), result => painted.push(result.marker));
@@ -300,11 +300,24 @@ test("a completed idle Worker's late error cannot create a failure or fallback",
   worker.emitError("late failure after delivery");
 
   const afterError = harness.status();
-  assert.equal(afterError.workerOwned, true);
+  assert.equal(afterError.workerOwned, false);
   assert.equal(afterError.workerFailures, 0);
+  assert.equal(afterError.retryInMs, 0);
   assert.equal(afterError.fallbackActive, false);
-  assert.equal(worker.terminated, false);
+  assert.equal(afterError.active, false);
+  assert.equal(worker.terminated, true);
+  assert.equal(worker.releaseCalls, 1);
   assert.equal(harness.elements.solveFallback.hidden, true);
+  assert.equal(harness.elements.solveOverlay.hidden, true);
+
+  harness.callRequest(request("items", 2, "B"), result => painted.push(result.marker));
+  assert.equal(harness.workers.length, 2);
+  const replacement = harness.workers[1];
+  replacement.emitMessage(workerResponse(replacement, { res: { mode: "items", marker: "B" } }));
+
+  assert.deepEqual(painted, ["A", "B"]);
+  assert.equal(harness.status().workerFailures, 0);
+  assert.equal(harness.status().fallbackActive, false);
 });
 
 test("a response whose echoed mode or revision disagrees cannot paint the current request", () => {
