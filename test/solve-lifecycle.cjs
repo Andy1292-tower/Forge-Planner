@@ -18,9 +18,10 @@ class FakeElement {
   classList = { toggle() {} };
 }
 
-function lifecycleHarness() {
+function lifecycleHarness(options = {}) {
   const workers = [];
   const timers = new Map();
+  const storage = options.storage || new Map();
   const elements = {
     solveOverlay: new FakeElement(),
     solveFallback: new FakeElement(),
@@ -28,7 +29,7 @@ function lifecycleHarness() {
     solveStat: new FakeElement(),
   };
   let nextTimer = 1;
-  let now = 1_000;
+  let now = options.now === undefined ? 1_000 : options.now;
   let stability = { remembered: ["line-1"] };
 
   class FakeWorker {
@@ -68,6 +69,11 @@ function lifecycleHarness() {
     num(value) { const number = Number(value); return Number.isFinite(number) ? number : null; },
     setTimeout(callback) { const id = nextTimer++; timers.set(id, callback); return id; },
     clearTimeout(id) { timers.delete(id); },
+    localStorage: {
+      getItem(key) { return storage.has(key) ? storage.get(key) : null; },
+      setItem(key, value) { storage.set(key, String(value)); },
+      removeItem(key) { storage.delete(key); },
+    },
     S: { mode: "items", solveBudget: 200 },
     stateRevision: 0,
   };
@@ -123,6 +129,7 @@ function lifecycleHarness() {
       }
     },
     advance(ms) { now += ms; },
+    storage,
     setStability(next) { stability = next; },
     cancel(reason) {
       context.__reason = reason;
@@ -240,8 +247,140 @@ function workerResponse(worker, body, messageIndex = 0) {
   };
 }
 
+function maxItemsState(overrides = {}) {
+  return {
+    mode: "items",
+    solveBudget: 200,
+    lines: [{ max: 64, spx: 1, turbo: 0 }],
+    maxTurbo: 0,
+    dupe: 12.4,
+    margin: 0,
+    targets: { Frames: { on: true, w: 1 } },
+    baseTime: { Frames: 308.9 },
+    prodCost: { Frames: { Rods: { 1: 2 } } },
+    forgie: { Frames: 3 },
+    minedIncome: { Vespium: 7, Hydracite: 11 },
+    sellPrice: { Frames: 123 },
+    projects: [{ id: "p1", done: 0, inventory: { Frames: 99 }, levels: [{ costs: [{ item: "Frames", qty: 4 }] }] }],
+    manual: [{ line: 1, job: "Frames" }],
+    planStart: 1_000,
+    ...overrides,
+  };
+}
+
+function cachedItemsResult(marker = "cached") {
+  // This matches the nonempty Items fields consumed by the real results renderer.
+  return {
+    mode: "items", marker, capped: true, empty: false, issues: [],
+    ms: 42, targets: ["Frames"], out: { Frames: 12 }, rate: { Frames: 1 }, net: { Frames: 12 },
+    plan: [{ line: 1, max: 64, spx: 1, dup: 12.4, sp: 1, dp: 1.124,
+      job: { kind: "produce", res: "Frames", lvl: 1, ct: 1, prod: [[0, 1]], cons: [] } }],
+    balance: [{ res: "Frames", prod: 12, forgie: 3, cons: 0 }],
+  };
+}
+
+function primeItemsCache(storage, state = maxItemsState(), now = 1_000) {
+  const harness = lifecycleHarness({ storage, now });
+  harness.callRequest({ mode: "items", stateRevision: 1, budget: state.solveBudget, stateSnapshot: state }, () => {});
+  assert.equal(harness.workers.length, 1, "the priming solve must be a fresh Worker solve");
+  harness.workers[0].emitMessage(workerResponse(harness.workers[0], { res: cachedItemsResult("primed") }));
+  return harness;
+}
+
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
+
+test("a completed capped Items solve is reused after the service is recreated", () => {
+  const storage = new Map();
+  const state = maxItemsState();
+  primeItemsCache(storage, state);
+  assert.ok(storage.size > 0, "a successful capped Items result must be persisted for daily reuse");
+
+  const harness = lifecycleHarness({ storage });
+  const delivered = [];
+  harness.callRequest({ mode: "items", stateRevision: 2, budget: state.solveBudget, stateSnapshot: state },
+    (result, error, metadata) => delivered.push({ result, error, metadata }));
+
+  assert.equal(harness.workers.length, 0, "an exact daily-cache hit must not create a Worker");
+  assert.equal(delivered.length, 1);
+  assert.equal(delivered[0].result.marker, "primed");
+  assert.equal(delivered[0].error, null);
+  assert.deepEqual(delivered[0].metadata, { cached: true, savedAt: 1_000 });
+});
+
+test("Items cache identity excludes sell prices, project/manual state, inventory, and plan start", () => {
+  const irrelevantChanges = [
+    ["sell price", state => ({ ...state, sellPrice: { Frames: 999999 } })],
+    ["project definition", state => ({ ...state, projects: [{ ...state.projects[0], levels: [{ costs: [{ item: "Bits", qty: 999 }] }] }] })],
+    ["project inventory", state => ({ ...state, projects: [{ ...state.projects[0], inventory: { Frames: 0 } }] })],
+    ["Manual layout", state => ({ ...state, manual: [{ line: 9, job: "Concrete" }] })],
+    ["plan start", state => ({ ...state, planStart: 99_999 })],
+  ];
+
+  for (const [name, change] of irrelevantChanges) {
+    const storage = new Map();
+    const original = maxItemsState();
+    primeItemsCache(storage, original);
+    const harness = lifecycleHarness({ storage });
+    const changed = change(original);
+    harness.callRequest({ mode: "items", stateRevision: 2, budget: changed.solveBudget, stateSnapshot: changed }, () => {});
+    assert.equal(harness.workers.length, 0, `${name} must not invalidate a Max Items cache record`);
+  }
+});
+
+test("Items cache misses projected input changes and expired records", () => {
+  const projectedChanges = [
+    ["line speed", state => ({ ...state, lines: [{ ...state.lines[0], spx: 2 }] })],
+    ["line max", state => ({ ...state, lines: [{ ...state.lines[0], max: 128 }] })],
+    ["target weight", state => ({ ...state, targets: { Frames: { on: true, w: 2 } } })],
+    ["Lil' Forgie production", state => ({ ...state, forgie: { Frames: 4 } })],
+    ["mined-resource income", state => ({ ...state, minedIncome: { Vespium: 8, Hydracite: 11 } })],
+  ];
+
+  for (const [name, change] of projectedChanges) {
+    const storage = new Map();
+    const original = maxItemsState();
+    primeItemsCache(storage, original);
+    const harness = lifecycleHarness({ storage });
+    const changed = change(original);
+    harness.callRequest({ mode: "items", stateRevision: 2, budget: changed.solveBudget, stateSnapshot: changed }, () => {});
+    assert.equal(harness.workers.length, 1, `${name} must dispatch a fresh Worker solve`);
+  }
+
+  const storage = new Map();
+  const state = maxItemsState();
+  primeItemsCache(storage, state, 1_000);
+  assert.ok(storage.size > 0, "expiry coverage requires a persisted cache record");
+  const expired = lifecycleHarness({ storage, now: 1_000 + 24 * 60 * 60 * 1_000 + 1 });
+  expired.callRequest({ mode: "items", stateRevision: 2, budget: state.solveBudget, stateSnapshot: state }, () => {});
+  assert.equal(expired.workers.length, 1, "a record older than 24 hours must dispatch a Worker");
+});
+
+test("non-Items, forceFresh, and malformed daily-cache bytes fail open to a Worker", () => {
+  for (const mode of ["credits", "project"]) {
+    const storage = new Map();
+    const state = maxItemsState({ mode });
+    const harness = lifecycleHarness({ storage });
+    harness.callRequest({ mode, stateRevision: 1, budget: state.solveBudget, stateSnapshot: state }, () => {});
+    assert.equal(harness.workers.length, 1, `${mode} must never use the Items cache`);
+  }
+
+  const freshStorage = new Map();
+  const state = maxItemsState();
+  primeItemsCache(freshStorage, state);
+  assert.ok(freshStorage.size > 0, "forceFresh coverage requires a persisted cache record");
+  const forceFresh = lifecycleHarness({ storage: freshStorage });
+  forceFresh.callRequest({ mode: "items", stateRevision: 2, budget: state.solveBudget, stateSnapshot: state, forceFresh: true }, () => {});
+  assert.equal(forceFresh.workers.length, 1, "forceFresh must bypass the daily cache once");
+
+  const malformedStorage = new Map();
+  primeItemsCache(malformedStorage, state);
+  assert.ok(malformedStorage.size > 0, "malformed-byte coverage requires a persisted cache record");
+  for (const key of malformedStorage.keys()) malformedStorage.set(key, "not valid cache JSON");
+  const malformed = lifecycleHarness({ storage: malformedStorage });
+  malformed.callRequest({ mode: "items", stateRevision: 2, budget: state.solveBudget, stateSnapshot: state }, () => {});
+  assert.equal(malformed.workers.length, 1, "malformed cache bytes must silently dispatch a Worker");
+});
 
 test("a Credits completion cannot paint after the accepted state enters Manual", () => {
   const harness = lifecycleHarness();
