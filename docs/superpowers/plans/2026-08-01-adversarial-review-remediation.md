@@ -119,7 +119,7 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 
 **Priority:** P1
 
-**Depends on:** Tasks 0 and 3F, emergency baseline `1466a5d`, and the integrated current build graph
+**Depends on:** Task 0
 
 **Files:**
 
@@ -669,7 +669,7 @@ The three `alternativeMinusSelected*` fields are `alternative - selected`; a neg
 
 **Priority:** P2 delivery
 
-**Depends on:** Task 0
+**Depends on:** Tasks 0 and 3F, emergency baseline `1466a5d`, and the integrated current build graph
 
 **Files:**
 
