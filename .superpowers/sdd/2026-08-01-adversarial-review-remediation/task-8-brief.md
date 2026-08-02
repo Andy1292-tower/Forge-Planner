@@ -66,10 +66,10 @@ fieldInputAttributes(rule, overrides)
 
 - `{status: "valid", value}`;
 - `{status: "blank", value: null}` only for a blank-allowed rule;
-- `{status: "incomplete", message}` for an unfinished edit such as native `badInput`, `1e`, `1e+`, `2.`, `+`, `-`, `1q`, or `1s` where a supported completion still exists;
+- `{status: "incomplete", message}` for an unfinished edit such as native `badInput`, `1e`, `1e+`, `+`, `-`, `1q`, or `1s` where a supported completion still exists;
 - `{status: "invalid", message}` for unknown syntax, wrong integer/enum, negative/out-of-range, overflow, or a forbidden blank.
 
-Decimal/integer rules accept ordinary exponent notation. Game-number rules also accept commas, case-insensitive established suffixes, and exponent notation. Do not loosen `parseGameNum()` into accepting unknown suffixes. Messages must be stable/specific enough for direct regression assertions and understandable without developer terminology.
+Decimal/integer rules accept ordinary exponent notation. Game-number rules also accept commas, case-insensitive established suffixes, and exponent notation. A readable trailing decimal such as `2.` is valid and canonicalizes to `2`; native `badInput` still takes precedence because the browser has not exposed a trustworthy raw value. Do not loosen `parseGameNum()` into accepting unknown suffixes. Messages must be stable/specific enough for direct regression assertions and understandable without developer terminology.
 
 State `_number()` must consume the same pure value validator so schema/import and GUI range decisions cannot drift. Preserve schema-v2 compatibility for historical display text: do not add numeric/text-pair coherence that could quarantine old `priceText`/Forgie/inventory/mined strings. Actual numeric fields remain strictly rejected when invalid.
 
@@ -82,19 +82,19 @@ Every free-entry numeric handler follows this order:
 3. On an allowed `blank`, commit `null`, clear its persisted display text, clear feedback, save, and retain the existing solve behavior.
 4. On `incomplete` or `invalid`, do not call `mutateState`, `save`, `markStale`, `scheduleSolve`, `flushSolve`, `doSolve`, or a render that rewrites the input.
 
-The invalid/incomplete draft remains visible in the current DOM while the last valid numeric model and persisted text map stay unchanged. Closing/reopening or otherwise rebuilding that editor may discard the unsaved bad draft and restore the last valid accepted value. Invalid drafts must never enter localStorage, Export, rendering state, or Worker snapshots.
+The invalid/incomplete draft remains visible in the current DOM while the last valid numeric model and persisted text map stay unchanged. Project `from`/`to` controls are a paired exception to one-input-at-a-time commits: parse both visible endpoint drafts whenever either changes, and commit both atomically only when both syntax/range checks and `from <= to` pass. A correction to either endpoint can therefore validate and commit the peer draft too, clearing both errors without forcing an edit order. Closing/reopening or otherwise rebuilding that editor may discard an unsaved bad draft and restore the last valid accepted value. Invalid drafts must never enter localStorage, Export, rendering state, or Worker snapshots.
 
-The document-level change/Enter flush must skip controls with `aria-invalid="true"`. A correction removes the invalid state and resumes normal behavior. Do not use fallback coercions such as invalid/blank line speed -> 1, turbo/dupe -> 0, base time -> 1, or malformed amount -> null.
+The document-level change/Enter flush and the line-local Enter handler must skip controls with `aria-invalid="true"`. A correction removes the invalid state and resumes normal behavior. `doSolve()` must abort if `save()` rejects the current state so an invalid model produced by any missed path cannot reach the Worker. Do not use fallback coercions such as invalid/blank line speed -> 1, turbo/dupe -> 0, base time -> 1, or malformed amount -> null.
 
 ## DOM and feedback contract
 
 Add shared DOM helpers that:
 
-- create/find one stable error element per field;
+- render/find one stable empty error element per field before any error text update;
 - set `aria-invalid="true"` for incomplete/invalid drafts;
 - append the error ID to existing `aria-describedby` tokens without replacing help/tooltip IDs;
 - clear only the error token/state when valid;
-- render `.field-error` as `aria-live="polite" aria-atomic="true"` (not one aggressive alert per input);
+- render `.field-error` as `aria-live="polite" aria-atomic="true"` (not one aggressive alert per input), outside any wrapping `<label>` so its copy cannot become part of the control's accessible name;
 - explain the accepted form/range and the last valid value still in use.
 
 Placement:
@@ -103,19 +103,20 @@ Placement:
 - line/global/mined/calibration: immediately below the control;
 - recipe cost: inside its table cell;
 - project quantity: inside its quantity cell/stack;
-- project range/priority: full-width `.proj-field-errors` inside the existing tools region so identity/tools grid ownership remains intact.
+- Shopping-list Project range/priority: full-width `.proj-field-errors` inside the existing tools region so identity/tools grid ownership remains intact;
+- inline Project range: a separate full-width `.proj-inline-errors` flex/grid child after the row's controls, with stable per-endpoint IDs and no dependency on `.proj-tools`.
 
-CSS must wrap at 320px with `min-width:0` / `max-width:100%` and create no root horizontal overflow. Preserve Task 10 help/name associations and Task 11A layout selectors.
+CSS must wrap at 320px with `min-width:0` / `max-width:100%` and create no root horizontal overflow. Cover Shopping-list and inline Project feedback independently. Preserve Task 10 help/name associations and Task 11A layout selectors. Refactor the nested calibration and Hydracite `<label>` structures as needed so their pre-existing live regions are siblings, not naming descendants.
 
 ## Field-family behavior
 
 - Line speed is required; line turbo, max turbo, and duplication are required nonnegative values. Only valid line/global edits mark results stale.
 - Margin and target priority remain native ranges, but their min/max/step derive from descriptors. Solver defensive margin clamp becomes 20, matching the descriptor.
 - Base time is required and strictly positive. Recipe costs are optional; blank clears to null.
-- Sell price, Forgie, mined income, inventory, and project quantity use game notation and optional blank. Only valid raw text is written to the persisted text map; invalid text stays DOM-only.
-- Project from/to/priority use integer rules plus current level-count and `from <= to` constraints. Shopping-list and inline Project controls share behavior; an invalid cross-range edit leaves the prior model untouched.
+- Sell price, Forgie, mined income, inventory, and project quantity use game notation, `inputmode="decimal"`, and optional blank. Only valid raw text is written to the persisted text map; invalid text stays DOM-only.
+- Project from/to/priority use integer rules plus current level-count and `from <= to` constraints. Each `from`/`to` input event parses both visible peer drafts; a valid pair atomically commits both endpoints and clears both peer errors, regardless of which endpoint was corrected last. An invalid pair leaves the prior model untouched. Shopping-list and inline Project controls share this behavior, while the inline `change` handler solves only a committed valid pair.
 - Calibration speed/seconds use the same decimal rules; Apply stays disabled while either draft is invalid/incomplete.
-- Solve-budget UI runs from 0.2 through 60 seconds and commits integer milliseconds within the descriptor.
+- Solve-budget UI preserves `200..60000ms` but maps its slider over friendly exact stops: `200, 500, 1000, 2000, 3000, 5000, 8000, 10000, 15000, 20000, 30000, 45000, 60000`. Insert any accepted nonstandard persisted value into the sorted session stops so opening Settings is lossless. The endpoints come from the descriptor and `aria-valuetext` exposes the actual duration.
 - Manual compression is already a constrained select and does not become a free-entry control.
 
 ## Required test matrix
@@ -124,7 +125,7 @@ Create/register `test/field-validation.cjs`:
 
 - required/optional blank, valid decimal/integer/enum, native `badInput`;
 - `abc`, negatives, bounds/overflow, integer fractions;
-- exponent valid and partial `1e`/`1e+`/`2.`;
+- exponent valid, partial `1e`/`1e+`, and readable `2.` canonicalization;
 - game commas/case, valid suffix/exponent, partial `1q`/`1s`, unknown suffix;
 - stable formatter/message behavior;
 - all descriptor ranges and generated attribute parity;
@@ -140,8 +141,9 @@ Create `test/browser/field-validation.spec.js` for CI only:
 - exact last-valid `S` and localStorage bytes while invalid;
 - invalid Enter/change causes no solve/Worker request; correction resumes stale/solve behavior;
 - nearby polite error, `aria-invalid`, preserved `aria-describedby`, keyboard/paste/mobile `inputmode`;
-- persisted 60 seconds displays as 60 and dispatches 60,000ms to the ordinary current Worker;
-- 320px visible-error states satisfy line/project/price geometry and root-overflow gates;
+- persisted 60 seconds displays as 60 and dispatches 60,000ms to the ordinary current Worker; a nonstandard in-range persisted integer survives Settings open/close byte-semantically;
+- Project endpoint drafts revalidate as a pair and commit atomically when either edit order becomes valid; invalid inline `change` never solves;
+- 320px visible-error states satisfy line/Shopping-list Project/inline Project/price geometry and root-overflow gates;
 - Axe scan with representative errors visible.
 
 Extend ordinary generated Blob Worker smoke coverage with one accepted boundary snapshot and one out-of-range state rejection through the shared field boundary. Require Blob transport, rotated hashed application output, and zero permanent Worker/dependency requests.

@@ -157,7 +157,7 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 
 **Priority:** P1 security
 
-**Depends on:** Tasks 1, 6, and 7
+**Depends on:** Task 1
 
 **Files:**
 
@@ -422,7 +422,7 @@ The three `alternativeMinusSelected*` fields are `alternative - selected`; a neg
 
 **Priority:** P2
 
-**Depends on:** Task 1
+**Depends on:** Tasks 1, 6, and 7
 
 **Files:**
 
@@ -448,11 +448,13 @@ The three `alternativeMinusSelected*` fields are `alternative - selected`; a neg
 
 **Version and budget decision:** keep `CURRENT_SCHEMA_VERSION = 2`, storage key `forgePlannerState_v3`, and the established `solveBudget` range of **200–60,000ms**. Task 1 explicitly restored 60 seconds for save compatibility, and current schema/normalization/solver/Worker code accepts it. Make the Settings slider reach 60 seconds and derive every clamp/range from the descriptor. Do not quarantine, coerce, or silently reduce valid existing 60-second saves.
 
-**Pure field API:** add helpers equivalent to `validateFieldValue(rule, value)`, `parseFieldDraft(rule, raw, {badInput})`, `formatFieldValue(rule, value)`, and descriptor-derived input attributes. Parsing returns exactly `valid`, `blank`, `incomplete`, or `invalid`. Rules own decimal versus integer versus enum/game-notation parsing, blank behavior, min/max, input mode, units, and specific end-user errors. Split the generic amount rule into named sell-price, Forgie, mined-income, inventory, and project-quantity descriptors even where their security limits currently match.
+**Pure field API:** add helpers equivalent to `validateFieldValue(rule, value)`, `parseFieldDraft(rule, raw, {badInput})`, `formatFieldValue(rule, value)`, and descriptor-derived input attributes. Parsing returns exactly `valid`, `blank`, `incomplete`, or `invalid`. Rules own decimal versus integer versus enum/game-notation parsing, blank behavior, min/max, input mode, units, and specific end-user errors. `1e`, `1e+`, `1q`, `1s`, and native `badInput` are incomplete; a readable trailing decimal such as `2.` is valid and canonicalizes to `2` so blur/change/Enter cannot strand an otherwise unambiguous value. Split the generic amount rule into named sell-price, Forgie, mined-income, inventory, and project-quantity descriptors even where their security limits currently match.
 
-**Mutation boundary:** parse before `mutateState`. A valid value updates the model and follows that field’s existing save/solve-or-stale behavior; a valid optional blank commits `null` and clears its persisted display text. Incomplete/invalid input stays visible in the DOM, leaves both the numeric model and persisted text map at their last valid values, and triggers no mutation, save, stale marker, solve scheduling, or Enter/change flush. Closing/reopening or otherwise rebuilding an editor may abandon that unsaved invalid draft and restore the last valid persisted value.
+**Mutation boundary:** parse before `mutateState`. A valid value updates the model and follows that field’s existing save/solve-or-stale behavior; a valid optional blank commits `null` and clears its persisted display text. Incomplete/invalid input stays visible in the DOM, leaves both the numeric model and persisted text map at their last valid values, and triggers no mutation, save, stale marker, solve scheduling, or Enter/change flush. Project `from`/`to` handlers parse both visible endpoint drafts together: only a syntactically and dynamically valid `from <= to` pair commits, and it commits both endpoints atomically. Correcting either endpoint may resolve a previously invalid peer draft, clear both errors, and commit the pair without forcing a particular edit order. The inline `change` path must not solve an invalid/uncommitted pair. `doSolve()` must also stop when transactional persistence rejects the current state rather than dispatching it to a Worker. Closing/reopening or otherwise rebuilding an editor may abandon an unsaved bad draft and restore the last valid persisted value.
 
-**Feedback contract:** nearby `.field-error` feedback is a polite atomic live region. Set `aria-invalid="true"` and append its stable ID to—not replace—any existing `aria-describedby` help tokens. Error copy names the accepted form/range and says which previous value remains active. Price/Forgie/inventory rows regain a direct feedback row; line/global/mined/calibration fields place feedback under the control; recipe errors remain inside their table cell; Project range/priority errors use a full-width tools error row so Task 11A geometry is preserved. At 320px, feedback wraps without page overflow.
+**Feedback contract:** render each empty `.field-error` before it can be updated, as a polite atomic live region outside any wrapping `<label>` naming subtree. Set `aria-invalid="true"` and append its stable ID to—not replace—any existing `aria-describedby` help tokens. Error copy names the accepted form/range and says which previous value remains active. Price/Forgie/inventory rows regain a direct feedback row; line/global/mined/calibration fields place feedback under the control; recipe errors remain inside their table cell; Shopping-list Project range/priority errors use a full-width tools error row so Task 11A geometry is preserved. Each inline Project row owns a separate full-width `.proj-inline-errors` flex/grid child after its controls, with stable per-endpoint associations. Refactor nested calibration and Hydracite labels as needed so feedback is a sibling rather than part of the accessible name. At 320px, both Project error placements wrap without page overflow.
+
+**Solve-budget control:** preserve the exact persisted integer range while making low budgets usable on a narrow screen. Map the range control over friendly millisecond stops `200, 500, 1000, 2000, 3000, 5000, 8000, 10000, 15000, 20000, 30000, 45000, 60000`; if an accepted persisted value is not a standard stop, inject it into the sorted stops for that session so merely opening Settings never rounds or changes it. Derive the first/last stops from `FIELD_SCHEMA.solveBudget`, expose the actual duration through `aria-valuetext`, and commit only the selected exact millisecond value.
 
 - [ ] RED: `abc`, negatives, oversized dupe/margin, invalid compression, imported 60-second budget versus 15-second slider, and partial scientific/game notation.
 - [ ] Use the decided 60-second maximum in HTML, descriptors, normalization, result dispatch, Worker messages, and solver. Prove a persisted 60-second value renders accurately and reaches the current generated Worker unchanged.
@@ -463,8 +465,8 @@ The three `alternativeMinusSelected*` fields are `alternative - selected`; a neg
 - [ ] Cover required line speed/base time, optional recipe cost and amount blanks, turbo/max turbo/dupe, target/margin sliders, calibration fields, Project quantity/range/priority (including `from <= to` and live level bounds), and inline Project range controls. Manual compression remains a constrained select.
 - [ ] Align solver defensive clamps with descriptors (including margin 20 and budget 60,000) without changing valid objectives.
 - [ ] Verify keyboard, paste, mobile numeric keyboards, game suffixes, exponent notation, blank values, and localization-safe display.
-- [ ] Node coverage must prove descriptor/state parity, commas/case/game suffixes, exponent notation, partial `1e`/`1e+`/`1q`, native `badInput`, negative/overflow/integer failures, optional/required blank behavior, stable messages, formatting, and dynamic Project bounds.
-- [ ] CI-only browser coverage must prove last-valid state/storage behavior, no invalid Enter/change solve, valid-to-invalid-to-corrected and valid-to-blank flows, error accessibility, 60-second settings/Worker dispatch, calibration Apply gating, 320px root-overflow geometry, and Axe with visible errors. Syntax-check locally; do not launch a browser.
+- [ ] Node coverage must prove descriptor/state parity, commas/case/game suffixes, exponent notation, partial `1e`/`1e+`/`1q`, readable trailing-decimal canonicalization, native `badInput`, negative/overflow/integer failures, optional/required blank behavior, stable messages, formatting, and dynamic Project bounds.
+- [ ] CI-only browser coverage must prove last-valid state/storage behavior, no invalid Enter/change solve, atomic two-endpoint Project correction in either edit order, valid-to-invalid-to-corrected and valid-to-blank flows, pre-existing live-region/error associations, exact preservation of a nonstandard in-range solve budget, 60-second settings/Worker dispatch, calibration Apply gating, both Project feedback layouts at 320px, root-overflow geometry, and Axe with visible errors. Syntax-check locally; do not launch a browser.
 - [ ] Exercise accepted/rejected snapshots through the ordinary generated current Blob Worker because `js/fields.js` and `js/state.js` are embedded Worker dependencies. Assert the hashed app rotates, no permanent Worker/dependency URL is requested, and both permanent compatibility files plus the historical fixture/golden remain byte-for-byte unchanged.
 
 ## Task 9: Introduce One Accessible Dialog Controller
