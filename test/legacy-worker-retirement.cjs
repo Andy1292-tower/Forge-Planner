@@ -148,9 +148,9 @@ test("the generated release gives hashed assets and both stable Worker endpoints
     assert.doesNotMatch(indexResponse.headers["cache-control"], /immutable/);
 
     const html = fs.readFileSync(path.join(root, "dist", "index.html"), "utf8");
-    const appMatch = html.match(/src="(\/static\/app\.[0-9a-f]{16}\.js)"/);
+    const appMatch = html.match(/src="(static\/app\.[0-9a-f]{16}\.js)"/);
     assert.ok(appMatch, "the built page must identify its hashed app bundle");
-    const appResponse = await head(port, appMatch[1]);
+    const appResponse = await head(port, `/${appMatch[1]}`);
     assert.equal(appResponse.statusCode, 200);
     assert.equal(appResponse.headers["cache-control"], "public, max-age=31536000, immutable");
   } finally {

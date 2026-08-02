@@ -11,7 +11,8 @@
     "test": "npm run check:syntax && npm run test:node",
     "test:a11y": "NO_COLOR= FORCE_COLOR=0 playwright test test/browser/accessibility.spec.js --workers=1",
     "test:visual": "NO_COLOR= FORCE_COLOR=0 playwright test test/browser/visual-layout.spec.js --workers=1",
-    "test:browser": "NO_COLOR= FORCE_COLOR=0 SKIP_A11Y=1 playwright test"
+    "test:browser": "NO_COLOR= FORCE_COLOR=0 FORGE_PLAYWRIGHT_LANE=browser playwright test",
+    "test:release": "npm run build && node scripts/release-smoke.cjs && NO_COLOR= FORCE_COLOR=0 FORGE_PLAYWRIGHT_LANE=release playwright test --workers=1"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.12.1",

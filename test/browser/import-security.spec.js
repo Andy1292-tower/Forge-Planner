@@ -354,7 +354,7 @@ test.describe("static Content Security Policy", () => {
   test("the served deployment header and meta fallback enforce self-only scripts", async ({ page }) => {
     const response = await page.goto("/", { waitUntil: "domcontentloaded" });
     const header = response.headers()["content-security-policy"];
-    const appPath = await page.locator("script[src^='/static/app.']").getAttribute("src");
+    const appPath = await page.locator("script[src^='static/app.']").getAttribute("src");
     expect(appPath, "the generated page must expose its real hashed app asset").toBeTruthy();
     const assetResponse = await page.request.get(appPath);
     const fallback = await page.locator("meta[http-equiv='Content-Security-Policy']").getAttribute("content");

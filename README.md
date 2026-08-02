@@ -15,6 +15,25 @@ npm run test:browser
 
 `npm test` first checks JavaScript syntax, then runs the explicit fast Node-test list, including a fresh parity snapshot checked against `test/golden.json`. `npm run test:browser` serves the real static page, verifies its Worker result, exercises every planning mode, and fails on any console error or failed request.
 
+For a GUI preview, build and serve the production files, then open either listed address in your browser:
+
+```bash
+npm run preview
+```
+
+- `http://127.0.0.1:4173/`
+- `http://127.0.0.1:4173/Forge-Planner/`
+
+The preview rebuilds `dist/` and serves the same generated release at both mounts. Run the release checks with:
+
+```bash
+npm run test:release
+npm run test:release -- --grep @cold
+npm run test:release -- --grep @warm-upgrade
+```
+
+The cold check opens release B on a fresh origin at both mounts. The warm-upgrade check first caches an intentionally incompatible release A, swaps the same origin to release B, and requires coherent B HTML, app code, and Blob-Worker results without re-requesting A or unchanged immutable assets.
+
 ## What it does
 
 - **Inputs:** Ingots, Bits, Concrete (raw producers — time only)

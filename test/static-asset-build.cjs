@@ -9,6 +9,37 @@ const vm = require("vm");
 
 const root = path.resolve(__dirname, "..");
 const { buildStaticSite, buildWorkerPayload } = require("../scripts/build-static.cjs");
+const ANALYTICS_SIGNATURE = /(?:\/_vercel\/(?:insights|speed-insights)|va\.vercel-scripts\.com|vercelAnalytics)/i;
+const ROOT_RELATIVE_OWNED_URL = /["'`(=]\/(?:static|assets|js|css)\//;
+const EXPECTED_WORKER_FACTORY = `function __forgeCreateSolverWorker(){
+  const objectUrl=URL.createObjectURL(new Blob([__FORGE_SOLVER_WORKER_SOURCE__],{type:"text/javascript"}));
+  let created=null;
+  let release=null;
+  try{
+    created=new Worker(objectUrl);
+    let released=false;
+    let releaseTimer=null;
+    release=()=>{
+      if(released)return;
+      released=true;
+      if(releaseTimer!==null){clearTimeout(releaseTimer);releaseTimer=null;}
+      URL.revokeObjectURL(objectUrl);
+    };
+    created.__forgeRelease=release;
+    if(typeof created.addEventListener==="function"){
+      created.addEventListener("message",release,{once:true});
+      created.addEventListener("error",release,{once:true});
+      releaseTimer=setTimeout(release,60000);
+    }else releaseTimer=setTimeout(release,0);
+    return created;
+  }catch(error){
+    if(created)try{created.terminate();}catch(cleanupError){}
+    if(release){
+      try{release();}catch(cleanupError){try{URL.revokeObjectURL(objectUrl);}catch(revokeError){}}
+    }else try{URL.revokeObjectURL(objectUrl);}catch(cleanupError){}
+    throw error;
+  }
+}`;
 
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
@@ -46,6 +77,34 @@ function findOne(directory, pattern) {
 function generatedApp(directory) {
   const appName = findOne(directory, /^app\.[0-9a-f]{16}\.js$/);
   return fs.readFileSync(path.join(directory, "static", appName), "utf8");
+}
+
+function generatedWorkerFactory(app) {
+  const start = app.indexOf("function __forgeCreateSolverWorker(){");
+  const end = app.indexOf("\n}\n\n;\n", start);
+  assert.ok(start >= 0 && end > start, "generated app must retain the exact Worker factory boundary");
+  return app.slice(start, end + 2);
+}
+
+function assertUrlResolvesAtMount(directory, url, mount) {
+  assert.doesNotMatch(url, /^\//, `${url} must be document-relative`);
+  const resolved = new URL(url, `https://forge.invalid${mount}`);
+  assert.equal(resolved.pathname, `${mount}${url}`, `${url} escaped the ${mount} mount`);
+  const emittedPath = resolved.pathname.slice(mount.length);
+  assert.ok(
+    fs.existsSync(path.join(directory, ...emittedPath.split("/"))),
+    `${url} resolved to missing ${resolved.pathname}`
+  );
+}
+
+function assetNames(directory) {
+  return {
+    app: findOne(directory, /^app\.[0-9a-f]{16}\.js$/),
+    styles: findOne(directory, /^styles\.[0-9a-f]{16}\.css$/),
+    favicon: findOne(directory, /^favicon\.[0-9a-f]{16}\.png$/),
+    dupe: findOne(directory, /^dupe\.[0-9a-f]{16}\.jpg$/),
+    speed: findOne(directory, /^speed\.[0-9a-f]{16}\.jpg$/),
+  };
 }
 
 function generatedWorkerLifecycleSource(app) {
@@ -119,12 +178,15 @@ test("the generated page has a closed hashed asset graph and an in-memory Worker
   const index = fs.readFileSync(path.join(temporary, "index.html"), "utf8");
   assert.doesNotMatch(index, /(?:src|href)=["'](?:js\/|css\/|assets\/)/);
   assert.doesNotMatch(index, /\/assets\/(?:dupe|speed)\.jpg/);
+  assert.doesNotMatch(index, ROOT_RELATIVE_OWNED_URL);
+  assert.doesNotMatch(index, ANALYTICS_SIGNATURE);
   assert.match(index, /worker-src 'self' blob:/);
 
-  const indexStaticUrls = [...index.matchAll(/["'(](\/static\/[^"')]+)["')]/g)].map(match => match[1]);
+  const indexStaticUrls = [...index.matchAll(/["'(](static\/[^"')]+)["')]/g)].map(match => match[1]);
   assert.ok(indexStaticUrls.length >= 4, "the page should reference its app, CSS, favicon, and tooltip image");
   for (const url of indexStaticUrls) {
-    assert.ok(fs.existsSync(path.join(temporary, ...url.split("/"))), `${url} is missing from the build`);
+    assertUrlResolvesAtMount(temporary, url, "/");
+    assertUrlResolvesAtMount(temporary, url, "/Forge-Planner/");
   }
 
   const appName = findOne(temporary, /^app\.[0-9a-f]{16}\.js$/);
@@ -134,12 +196,31 @@ test("the generated page has a closed hashed asset graph and an in-memory Worker
     "the generated page and embedded Worker must include the pure Project replay helper");
   assert.match(app, /URL\.createObjectURL\(new Blob/);
   assert.match(app, /__forgeCreateSolverWorker\(\)/);
+  assert.equal(generatedWorkerFactory(app), EXPECTED_WORKER_FACTORY,
+    "the base-path repair must not alter the current Worker factory or its cleanup contract");
+  assert.equal((app.match(/new Worker\(objectUrl\)/g) || []).length, 1,
+    "the generated app must retain exactly one Blob Worker constructor");
+  assert.equal((app.match(/created\.__forgeRelease=release/g) || []).length, 1,
+    "the generated app must retain exactly one release hook");
   assert.doesNotMatch(app, /new Worker\(["'][^"']+\.js/);
   assert.doesNotMatch(app, /importScripts\s*\(/);
   assert.doesNotMatch(app, /(?:js\/solver\.worker|\/assets\/speed\.jpg)/);
+  assert.doesNotMatch(app, ROOT_RELATIVE_OWNED_URL);
+  assert.doesNotMatch(app, ANALYTICS_SIGNATURE);
 
   const speedName = findOne(temporary, /^speed\.[0-9a-f]{16}\.jpg$/);
-  assert.match(app, new RegExp(`/static/${speedName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  const speedUrl = `static/${speedName}`;
+  assert.match(app, new RegExp(speedUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assertUrlResolvesAtMount(temporary, speedUrl, "/");
+  assertUrlResolvesAtMount(temporary, speedUrl, "/Forge-Planner/");
+
+  for (const relative of walk(temporary).filter(file => /\.(?:html|css|js)$/.test(file))) {
+    assert.doesNotMatch(
+      fs.readFileSync(path.join(temporary, ...relative.split("/")), "utf8"),
+      ANALYTICS_SIGNATURE,
+      `${relative} must not emit a Vercel Analytics bootstrap or endpoint`
+    );
+  }
 
   assertLegacyFence(path.join(temporary, "js", "solver.worker.js"));
   assert.deepEqual(
@@ -166,6 +247,66 @@ test("the generated page has a closed hashed asset graph and an in-memory Worker
   assert.match(legacyV2, /const res = optimize\(\)/);
   assert.doesNotMatch(legacyV2, /importScripts\s*\(/,
     "the frozen v2 compatibility Worker must be self-contained");
+});
+
+test("owned source tooltip URLs are document-relative", () => {
+  for (const relative of ["index.html", "js/render.js"]) {
+    const source = fs.readFileSync(path.join(root, ...relative.split("/")), "utf8");
+    assert.doesNotMatch(source, ROOT_RELATIVE_OWNED_URL, `${relative} contains a root-relative owned URL`);
+  }
+});
+
+test("CSS, favicon, dupe, and speed inputs rotate only their dependent hashed graph", () => {
+  const cases = [
+    {
+      label: "CSS",
+      relative: "css/styles.css",
+      mutation: "\n/* independent stylesheet rotation */\n",
+      rotated: ["styles"],
+    },
+    {
+      label: "favicon",
+      relative: "assets/favicon.png",
+      mutation: Buffer.from("independent-favicon-rotation"),
+      rotated: ["favicon"],
+    },
+    {
+      label: "dupe tooltip",
+      relative: "assets/dupe.jpg",
+      mutation: Buffer.from("independent-dupe-rotation"),
+      rotated: ["dupe"],
+    },
+    {
+      label: "speed tooltip",
+      relative: "assets/speed.jpg",
+      mutation: Buffer.from("independent-speed-rotation"),
+      rotated: ["speed", "app"],
+    },
+  ];
+
+  for (const entry of cases) {
+    const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "forge-static-independent-"));
+    const source = path.join(temporary, "source");
+    const before = path.join(temporary, "before");
+    const after = path.join(temporary, "after");
+    copyBuildInputs(source);
+    buildStaticSite({ sourceRoot: source, outputRoot: before });
+    fs.appendFileSync(path.join(source, ...entry.relative.split("/")), entry.mutation);
+    buildStaticSite({ sourceRoot: source, outputRoot: after });
+
+    const beforeNames = assetNames(before);
+    const afterNames = assetNames(after);
+    for (const kind of Object.keys(beforeNames)) {
+      const message = `${entry.label} mutation ${entry.rotated.includes(kind) ? "must" : "must not"} rotate ${kind}`;
+      if (entry.rotated.includes(kind)) assert.notEqual(afterNames[kind], beforeNames[kind], message);
+      else assert.equal(afterNames[kind], beforeNames[kind], message);
+    }
+    assert.notDeepEqual(
+      fs.readFileSync(path.join(after, "index.html")),
+      fs.readFileSync(path.join(before, "index.html")),
+      `${entry.label} mutation must update the release pointer`
+    );
+  }
 });
 
 test("the current Worker payload registers Project scheduling before the solver", () => {
