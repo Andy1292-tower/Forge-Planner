@@ -18,21 +18,15 @@
   <header class="top">
     <div class="brand">
       <h1>Forge<span class="spark">·</span>Planner</h1>
-      <p>Crafting production-line optimizer · enter your stats, get the optimal crafter setup</p>
+      <p>Crafting production-line planner · enter your stats, compare crafter setups</p>
       <p><a href="https://github.com/Andy1292-tower/Forge-Planner/issues" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:underline;text-underline-offset:2px">Submit Bug Reports and Feature Requests Here</a></p>
       <p>Got a project that needs to be added to the project catalog that I haven't gotten to yet? Please either submit it and its costs by level as a github issue/feature request at the link above or add it to your personal projects and export your save and submit that</p>
     </div>
     <div class="tools">
       <span class="saveind" id="saveind" role="status" aria-live="polite" aria-atomic="true"></span>
-      <button class="btn ghost" id="btnExport">Export build</button>
-      <button class="btn ghost" id="btnImport">Import</button>
-      <input type="file" id="fileImport" accept="application/json" class="hidden-file">
-      <button class="btn ghost" id="btnReset">Reset</button>
-      <button class="btn primary" id="btnPrices">Sell prices</button>
+      <button class="btn primary" id="btnInputs">Projects+Prices</button>
       <button class="btn primary" id="btnForgie">Lil' Forgie</button>
       <button class="btn primary" id="btnMined">Mined resources</button>
-      <button class="btn primary" id="btnProjects">Shopping list</button>
-      <button class="btn ghost" id="btnRecipes">Crafting data</button>
       <button class="btn ghost" id="btnSettings">Settings</button>
     </div>
   </header>
@@ -59,8 +53,8 @@
         <div class="head"><h2>Crafter lines</h2><span class="sub" id="lineCount"></span></div>
         <div class="body">
           <div class="globals">
-            <div class="fl"><span><label for="maxTurbo">max turbo stacks</label> <button type="button" class="tip" aria-label="Help for max turbo stacks" aria-describedby="maxTurboHelp">?<span class="tip-text" id="maxTurboHelp" role="tooltip">The most turbo stacks any crafter can reach — a global cap (each stack = +1% speed). The planner projects every line's current speed up to this many stacks, so the plan reflects your sustained speed at full turbo.</span></button></span><input type="number" min="0" step="any" id="maxTurbo" placeholder="0"></div>
-            <div class="fl"><span><label for="dupe">dupe %</label> <button type="button" class="tip tip-ic" style="--tip-img:url('/assets/dupe.jpg')" aria-label="Help for duplication chance" aria-describedby="dupeHelp">?<span class="tip-text" id="dupeHelp" role="tooltip">Duplication chance — average % of crafts that drop a free duplicate. Adds output without spending extra material. Global to every crafter; leave 0 if you don't have dupe bonuses.</span></button></span><input type="number" min="0" max="100" step="any" id="dupe" placeholder="0"></div>
+            <div class="fl"><span><label for="maxTurbo">max turbo stacks</label> <button type="button" class="tip" aria-label="Help for max turbo stacks" aria-describedby="maxTurboHelp">?<span class="tip-text" id="maxTurboHelp" role="tooltip">The most turbo stacks any crafter can reach — a global cap (each stack = +1% speed). The planner projects every line's current speed up to this many stacks, so the plan reflects your sustained speed at full turbo.</span></button></span><input type="number" min="0" max="1000000" step="any" inputmode="decimal" id="maxTurbo" placeholder="0" aria-describedby="maxTurboHelp" data-field-error="field-max-turbo-error"><div class="field-error" id="field-max-turbo-error" aria-live="polite" aria-atomic="true"></div></div>
+            <div class="fl"><span><label for="dupe">dupe %</label> <button type="button" class="tip tip-ic" style="--tip-img:url('../assets/dupe.jpg')" aria-label="Help for duplication chance" aria-describedby="dupeHelp">?<span class="tip-text" id="dupeHelp" role="tooltip">Duplication chance — average % of crafts that drop a free duplicate. Adds output without spending extra material. Global to every crafter; leave 0 if you don't have dupe bonuses.</span></button></span><input type="number" min="0" max="100" step="any" inputmode="decimal" id="dupe" placeholder="0" aria-describedby="dupeHelp" data-field-error="field-dupe-error"><div class="field-error" id="field-dupe-error" aria-live="polite" aria-atomic="true"></div></div>
           </div>
           <div id="lines"></div>
           <button class="btn ghost" id="btnAddLine" style="width:100%;justify-content:center;margin-top:4px">+ Add line</button>
@@ -85,7 +79,7 @@
 
     <!-- RIGHT -->
     <div class="card result-card">
-      <div class="head results-head"><h2>Optimal setup</h2>
+      <div class="head results-head"><h2>Planner results</h2>
         <div class="result-head-controls">
           <div class="modesw mode-nav" id="modesw" aria-label="Planning mode">
             <button data-mode="items" class="on" aria-pressed="true">Max items/hr</button>
@@ -124,10 +118,10 @@
       <div class="calib-h">Calibrate / verify a base time</div>
       <p class="help" style="margin:0 0 8px">The base times below are universal constants — you shouldn't need to touch them. To double-check one against your own game (or set one for a new item), pick the item, then enter that crafter's compression, its total speed ×, and how long one craft takes (just read the in-game countdown the moment a craft starts — no stopwatch needed).</p>
       <div class="calib-row">
-        <label class="fl"><span>item</span><select id="cbItem"></select></label>
-        <label class="fl"><span>compression (yield ×)</span><select id="cbComp"></select></label>
-        <label class="fl"><span>that unit's speed ×</span><input type="number" id="cbSpeed" min="0" step="any" placeholder="49.38"></label>
-        <label class="fl"><span>craft seconds</span><input type="number" id="cbSec" min="0" step="any" placeholder="7.5"></label>
+        <div class="fl"><label for="cbItem">item</label><select id="cbItem"></select></div>
+        <div class="fl"><label for="cbComp">compression (yield ×)</label><select id="cbComp"></select></div>
+        <div class="fl"><label for="cbSpeed">that unit's speed ×</label><input type="number" id="cbSpeed" min="0.000001" max="1000000000" step="any" inputmode="decimal" placeholder="49.38" data-field-error="field-calibration-speed-error"><div class="field-error" id="field-calibration-speed-error" aria-live="polite" aria-atomic="true"></div></div>
+        <div class="fl"><label for="cbSec">craft seconds</label><input type="number" id="cbSec" min="0.000001" max="1000000000000000" step="any" inputmode="decimal" placeholder="7.5" data-field-error="field-calibration-seconds-error"><div class="field-error" id="field-calibration-seconds-error" aria-live="polite" aria-atomic="true"></div></div>
       </div>
       <div class="calib-out" id="cbOut">Enter values to compute a base time.</div>
       <button class="btn ghost" id="cbApply" style="margin-top:8px" disabled>Set as base time</button>
@@ -140,19 +134,55 @@
   </main>
 
   <footer>
-    Steady-state model: the plan guarantees every input is produced at least as fast as it's consumed, so it runs forever without re-shuffling. Seed a small starting stockpile to smooth the batch timing. Frames assume Bits are pre-produced. All math runs locally in your browser — nothing is uploaded.
+    Strict steady-state plans require produced inputs to keep pace with consumption; May-work can intentionally allow a disclosed paper shortfall. Project results disclose required warm-up or starting stock. Frames assume Bits are pre-produced. Calculations and saved planner state stay in this browser; the page loads Google Fonts but does not send them your planner state.
   </footer>
 </div>
 
-<!-- SELL PRICE MODAL -->
-<div class="modal-bg" id="priceModal" hidden>
-  <div class="modal dialog-shell" role="dialog" aria-modal="true" aria-labelledby="priceTitle">
-    <div class="modal-h"><h3 id="priceTitle">Sell prices</h3><button class="iconbtn" id="priceClose" title="Close" aria-label="Close sell prices" data-dialog-close>×</button></div>
+<!-- PROJECTS + PRICES MODAL -->
+<div class="modal-bg" id="inputsModal" hidden>
+  <div class="modal dialog-shell inputs-modal" role="dialog" aria-modal="true" aria-labelledby="inputsTitle">
+    <div class="modal-h"><h3 id="inputsTitle">Projects+Prices</h3><button class="iconbtn" id="inputsClose" title="Close" aria-label="Close Projects and Prices" data-dialog-close>×</button></div>
     <div class="modal-b" data-dialog-body>
-      <p class="help" style="margin-bottom:6px">Enter what each item sells for (per single unit). Accepts game notation — <b>450k</b>, <b>2.5m</b>, <b>1.3qa</b>, or <b>1.3e36</b>. Used by <b>Max credits/hr</b> mode. Leave blank for anything you don't sell.</p>
-      <div id="priceRows"></div>
+      <div class="inputs-tabs" role="tablist" aria-label="Projects and prices sections">
+        <button type="button" id="inputsInventoryTab" role="tab" aria-selected="true" aria-controls="inputsInventoryPanel" tabindex="0">Inventory</button>
+        <button type="button" id="inputsProjectsTab" role="tab" aria-selected="false" aria-controls="inputsProjectsPanel" tabindex="-1">Projects</button>
+        <button type="button" id="inputsPricesTab" role="tab" aria-selected="false" aria-controls="inputsPricesPanel" tabindex="-1">Sell prices</button>
+      </div>
+
+      <section id="inputsInventoryPanel" role="tabpanel" aria-labelledby="inputsInventoryTab">
+        <div class="price-grp first">Current inventory — subtracted from total demand</div>
+        <div id="invRows"></div>
+      </section>
+
+      <section id="inputsProjectsPanel" role="tabpanel" aria-labelledby="inputsProjectsTab" hidden>
+        <p class="help" style="margin-bottom:10px">Build named <b>projects</b> — each a list of <b>levels</b>, each level a set of item costs. Tick the ones to run and set each project's <b>from → to</b> level; <b>Project plan</b> mode sums those level costs (minus your inventory) and asks for a pipelined craft schedule. Executable results are replay-checked; blocked results show a labeled diagnostic instead of run instructions. Accepts game notation (<b>1.2m</b>, <b>3.4qa</b>). A one-level project is just a flat needs-list.</p>
+        <label class="seq-toggle"><input type="checkbox" id="projSeqToggle"><span>Complete projects <b>one at a time</b> — required material unlocks first, then your numeric order, then estimated completion time. Uncheck to craft everything together in a shared schedule.</span></label>
+        <label class="seq-toggle"><input type="checkbox" id="projGateToggle"><span>Craft everything in <b>one phase</b> — ignore unlock ordering (waves) and run the whole list at once. Only applies when “one at a time” is off; use when you’ve already unlocked the needed materials.</span></label>
+        <div class="fl" style="display:block;margin-bottom:14px">
+          <label for="projectStability">Line-job policy</label>
+          <select id="projectStability" aria-describedby="projectStabilityHelp">
+            <option value="prefer-current">Prefer current line jobs</option>
+            <option value="reoptimize">Re-optimize line jobs</option>
+          </select>
+          <p class="help" id="projectStabilityHelp" style="margin-top:6px">Prefer current keeps a phase's existing jobs while their throughput stays within 5% of a fresh solve. Re-optimization can improve phase throughput, but changed warm-ups or phase order mean it may not finish the complete schedule sooner.</p>
+        </div>
+
+        <details class="cat-panel" id="catPanel">
+          <summary><span class="cat-sum-lbl">Browse project catalog</span><span class="cat-sum-meta" id="catCount"></span></summary>
+          <input type="text" id="catSearch" class="cat-search" placeholder="Search projects…" aria-label="Search project catalog">
+          <div id="catList" class="cat-list"></div>
+        </details>
+
+        <div id="projList"></div>
+        <button class="btn ghost" id="projAdd" style="width:100%;justify-content:center;margin-top:8px">+ New custom project</button>
+      </section>
+
+      <section id="inputsPricesPanel" role="tabpanel" aria-labelledby="inputsPricesTab" hidden>
+        <p class="help" style="margin-bottom:6px">Enter what each item sells for (per single unit). Accepts game notation — <b>450k</b>, <b>2.5m</b>, <b>1.3qa</b>, or <b>1.3e36</b>. Used by <b>Max credits/hr</b> mode. Leave blank for anything you don't sell.</p>
+        <div id="priceRows"></div>
+      </section>
     </div>
-    <div class="modal-f"><button class="btn ghost" id="priceClear">Clear all</button><button class="btn primary" id="priceDone" aria-label="Done editing sell prices" data-dialog-close>Done</button></div>
+    <div class="modal-f"><button class="btn ghost" id="projInvClear" style="margin-right:auto">Clear inventory</button><button class="btn ghost" id="projClear" style="margin-right:auto" hidden>Clear projects</button><button class="btn ghost" id="priceClear" style="margin-right:auto" hidden>Clear sell prices</button><button class="btn primary" id="inputsDone" aria-label="Done editing Projects and Prices" data-dialog-close>Done</button></div>
   </div>
 </div>
 
@@ -180,7 +210,7 @@
             <div><h4 id="minedVespiumTitle">Vespium → Gel</h4><p>Set the mined Vespium budget that Gel-producing lines can spend.</p></div>
             <span class="mined-badge">Gel supply</span>
           </div>
-          <div class="fl mined-income"><span><label for="minedVespium">Vespium / minute income</label> <button type="button" class="tip" aria-label="Help for Vespium income" aria-describedby="vespiumHelp">?<span class="tip-text" id="vespiumHelp" role="tooltip">You'll have to experiment with this number a little bit to get it accurate. Vesp rigs mined/min is a good place to start, but Duo Affinity 9 can materially change actual production.</span></button></span><input type="text" inputmode="decimal" id="minedVespium" data-mined-income="Vespium" placeholder="e.g. 500t" autocomplete="off" aria-label="Vespium per minute income"></div>
+          <div class="fl mined-income"><span><label for="minedVespium">Vespium / minute income</label> <button type="button" class="tip" aria-label="Help for Vespium income" aria-describedby="vespiumHelp">?<span class="tip-text" id="vespiumHelp" role="tooltip">You'll have to experiment with this number a little bit to get it accurate. Vesp rigs mined/min is a good place to start, but Duo Affinity 9 can materially change actual production.</span></button></span><input type="text" inputmode="decimal" id="minedVespium" data-mined-income="Vespium" placeholder="e.g. 500t" autocomplete="off" aria-label="Vespium per minute income" data-field-error="field-mined-vespium-error"><div class="field-error" id="field-mined-vespium-error" aria-live="polite" aria-atomic="true"></div></div>
           <div class="mined-capacity" id="minedVespiumSummary"></div>
           <div id="minedGelLoadout"></div>
           <h5 class="mined-table-title">Vespium and Rocks cost by compression</h5>
@@ -191,7 +221,7 @@
             <div><h4 id="minedHydraciteTitle">Hydracite → Batteries</h4><p>Set the mined Hydracite budget used while crafting Batteries.</p></div>
             <span class="mined-badge">Battery input</span>
           </div>
-          <label class="fl mined-income"><span>Hydracite / minute income</span><input type="text" inputmode="decimal" id="minedHydracite" data-mined-income="Hydracite" placeholder="e.g. 3b" autocomplete="off" aria-label="Hydracite per minute income"></label>
+          <div class="fl mined-income"><label for="minedHydracite">Hydracite / minute income</label><input type="text" inputmode="decimal" id="minedHydracite" data-mined-income="Hydracite" placeholder="e.g. 3b" autocomplete="off" aria-label="Hydracite per minute income" data-field-error="field-mined-hydracite-error"><div class="field-error" id="field-mined-hydracite-error" aria-live="polite" aria-atomic="true"></div></div>
           <div class="notice info mined-summary"><b>Full pipeline required.</b> Hydracite is only one Battery input; actual Batteries production also requires <b>Wire and Gel</b>. This table shows Hydracite consumption, not a standalone Battery production ceiling.</div>
           <h5 class="mined-table-title">Hydracite cost by compression</h5>
           <div class="mined-table-wrap" id="minedHydraciteCosts"></div>
@@ -210,37 +240,22 @@
       <div class="fl" style="display:block">
         <span><label for="solveBudget">Max solve time</label> <button type="button" class="tip" aria-label="Help for max solve time" aria-describedby="solveBudgetHelp">?<span class="tip-text" id="solveBudgetHelp" role="tooltip">How long the optimizer may search before returning its best plan. The solve runs in the background (no freeze) with a progress spinner. More time can improve plans on big factories; simple setups finish early regardless.</span></button></span>
         <div style="display:flex;align-items:center;gap:12px;margin-top:6px">
-          <input type="range" id="solveBudget" min="0.2" max="15" step="0.1" style="flex:1">
+          <input type="range" id="solveBudget" min="0" max="12" step="1" style="flex:1" aria-valuetext="10 s">
           <span class="mono" id="solveBudgetVal" style="min-width:64px;text-align:right"></span>
         </div>
       </div>
       <p class="help" style="margin-top:10px">The plan is computed in a background thread, so a longer budget won't freeze the page. Bigger factories (7+ lines, mined-resource chains) benefit most from extra time; simple setups return as soon as they're solved.</p>
+      <section class="settings-section build-management" aria-labelledby="buildManagementTitle">
+        <h4 class="settings-section-title" id="buildManagementTitle">Build management</h4>
+        <div class="settings-actions">
+          <button class="btn ghost" id="btnExport">Export build</button>
+          <button class="btn ghost" id="btnImport">Import</button>
+          <input type="file" id="fileImport" accept="application/json" class="hidden-file">
+          <button class="btn ghost" id="btnReset">Reset</button>
+        </div>
+      </section>
     </div>
     <div class="modal-f"><button class="btn primary" id="settingsDone" aria-label="Done editing settings" data-dialog-close>Done</button></div>
-  </div>
-</div>
-
-<div class="modal-bg" id="projModal" hidden>
-  <div class="modal dialog-shell" style="max-width:700px" role="dialog" aria-modal="true" aria-labelledby="projTitle">
-    <div class="modal-h"><h3 id="projTitle">Shopping list — projects</h3><button class="iconbtn" id="projClose" title="Close" aria-label="Close shopping list" data-dialog-close>×</button></div>
-    <div class="modal-b" data-dialog-body>
-      <p class="help" style="margin-bottom:10px">Build named <b>projects</b> — each a list of <b>levels</b>, each level a set of item costs. Tick the ones to run and set each project's <b>from → to</b> level; <b>Project plan</b> mode sums those level costs (minus your inventory) and lays out the fastest pipelined craft schedule. Accepts game notation (<b>1.2m</b>, <b>3.4qa</b>). A one-level project is just a flat needs-list.</p>
-      <label class="seq-toggle"><input type="checkbox" id="projSeqToggle"><span>Complete projects <b>one at a time</b> — cheapest first, with “<b>1st</b>” projects pinned ahead (unlock bonuses sooner). Uncheck to craft everything together as fast as possible.</span></label>
-      <label class="seq-toggle"><input type="checkbox" id="projGateToggle"><span>Craft everything in <b>one phase</b> — ignore unlock ordering (waves) and run the whole list at once. Only applies when “one at a time” is off; use when you’ve already unlocked the needed materials.</span></label>
-
-      <details class="cat-panel" id="catPanel">
-        <summary><span class="cat-sum-lbl">Browse project catalog</span><span class="cat-sum-meta" id="catCount"></span></summary>
-        <input type="text" id="catSearch" class="cat-search" placeholder="Search projects…" aria-label="Search project catalog">
-        <div id="catList" class="cat-list"></div>
-      </details>
-
-      <div id="projList"></div>
-      <button class="btn ghost" id="projAdd" style="width:100%;justify-content:center;margin-top:8px">+ New custom project</button>
-
-      <div class="price-grp" style="margin-top:20px">Current inventory — subtracted from total demand</div>
-      <div id="invRows"></div>
-    </div>
-    <div class="modal-f"><button class="btn ghost" id="projClear" style="margin-right:auto">Clear projects</button><button class="btn ghost" id="projInvClear">Clear inventory</button><button class="btn primary" id="projDone" aria-label="Done editing shopping list" data-dialog-close>Done</button></div>
   </div>
 </div>
 
@@ -263,6 +278,7 @@
 <script src="js/state.js"></script>
 <script src="js/dom.js"></script>
 <script src="js/render.js"></script>
+<script src="js/project-schedule.js"></script>
 <script src="js/solver.js"></script>
 <script src="js/solve-service.js"></script>
 <script src="js/results.js"></script>

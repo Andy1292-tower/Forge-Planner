@@ -20,6 +20,7 @@ globalThis.localStorage = { getItem: () => null, setItem: () => {} };
 globalThis.document = { getElementById: () => ({ innerHTML: "", textContent: "" }) };
 
 const coreSrc = fs.readFileSync(path.join(__dirname, "..", "js", "core.js"), "utf8");
+const projectSrc = fs.readFileSync(path.join(__dirname, "..", "js", "project-schedule.js"), "utf8");
 const solverSrc = fs.readFileSync(path.join(__dirname, "..", "js", "solver.js"), "utf8");
 
 const runner = `
@@ -72,4 +73,4 @@ globalThis.__emit = (str) => {
   if (fail) process.exitCode = 1;
 };
 
-eval(coreSrc + "\n;\n" + solverSrc + "\n;\n" + runner);
+eval(coreSrc + "\n;\n" + projectSrc + "\n;\n" + solverSrc + "\n;\n" + runner);

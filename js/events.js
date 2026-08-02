@@ -1,14 +1,65 @@
 "use strict";
 /* ---------- EVENTS ---------- */
 let renderT;
-function doSolve(){renderT=null;save();renderResults();}
+let persistT=null;
+let persistedRevision=-1;
+function stateMatchesPersisted(){
+  try{return typeof localStorage!=="undefined"&&localStorage.getItem(LSKEY)===JSON.stringify(S);}
+  catch(error){return false;}
+}
+function persistNow(){
+  if(persistT!==null){clearTimeout(persistT);persistT=null;}
+  const revision=stateRevision;
+  if(stateMatchesPersisted()){persistedRevision=revision;return true;}
+  const persisted=save();
+  if(persisted!==false)persistedRevision=revision;
+  return persisted;
+}
+function schedulePersist(){
+  if(persistedRevision===stateRevision||stateMatchesPersisted()){
+    persistedRevision=stateRevision;
+    if(persistT!==null){clearTimeout(persistT);persistT=null;}
+    return;
+  }
+  if(persistT!==null)clearTimeout(persistT);
+  persistT=setTimeout(()=>{persistT=null;persistNow();},100);
+}
+function flushPersist(){
+  if(persistT===null)return true;
+  clearTimeout(persistT);persistT=null;
+  return persistNow();
+}
+function hasInvalidFieldDraft(){
+  return [...document.querySelectorAll('[aria-invalid="true"]')].some(input=>input.offsetParent!==null);
+}
+function doSolve(options){
+  renderT=null;
+  if(hasInvalidFieldDraft())return false;
+  if(persistNow()===false)return false;
+  renderResults(options);return true;
+}
 // Debounce the (potentially heavy) re-solve: while typing, wait until the user pauses;
 // leaving a field, pressing Enter, or making a selection flushes it immediately. State is
 // still captured on every keystroke (handlers update S synchronously), so nothing is lost.
-function scheduleSolve(){clearTimeout(renderT);renderT=setTimeout(doSolve,500);}
+function scheduleSolve(){schedulePersist();clearTimeout(renderT);renderT=setTimeout(doSolve,500);}
 function flushSolve(){if(renderT){clearTimeout(renderT);doSolve();}}
-document.addEventListener("change",e=>{if(e.target&&e.target.matches&&e.target.matches("input,select"))flushSolve();});
-document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target&&e.target.matches&&e.target.matches("input"))flushSolve();});
+document.addEventListener("change",e=>{if(e.target&&e.target.matches&&e.target.matches("input,select")&&e.target.getAttribute("aria-invalid")!=="true")flushSolve();});
+document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target&&e.target.matches&&e.target.matches("input")&&e.target.getAttribute("aria-invalid")!=="true")flushSolve();});
+
+function readFieldDraft(input,rule){
+  return parseFieldDraft(rule,input.value,{badInput:!!(input.validity&&input.validity.badInput)});
+}
+/* The parser is deliberately above the only mutateState call in this helper. Invalid and
+ * incomplete drafts update DOM feedback only; they never enter S or persistence. */
+function commitFieldDraft(input,rule,previousValue,mutator){
+  const parsed=parseFieldDraft(rule,input.value,{badInput:!!(input.validity&&input.validity.badInput)});
+  const error=fieldErrorForInput(input);
+  updateFieldFeedback(input,error,rule,parsed,previousValue);
+  if(parsed.status!=="valid"&&parsed.status!=="blank")return {...parsed,committed:false};
+  const raw=parsed.status==="blank"?"":input.value;
+  mutateState(st=>mutator(st,parsed.value,raw));
+  return {...parsed,raw,committed:true};
+}
 
 // Crafter-line edits can drive a heavy re-solve (credits mode runs ~1s+), and people
 // typically batch many speed/turbo changes before checking output. So rather than
@@ -20,8 +71,8 @@ function showStale(on){
   const res=document.getElementById("results");if(res)res.classList.toggle("stale",on);
 }
 function clearStaleUI(){showStale(false);}
-function markStale(){clearTimeout(renderT);renderT=null;save();showStale(true);}
-function resimulate(){doSolve();}   // doSolve→renderResults repaints and clears the stale UI
+function markStale(){clearTimeout(renderT);renderT=null;persistNow();showStale(true);}
+function resimulate(){doSolve({forceFresh:true});}   // explicit refresh replaces today's Items/Credits cache once
 document.getElementById("btnResim").addEventListener("click",resimulate);
 
 document.getElementById("lines").addEventListener("change",e=>{
@@ -30,11 +81,11 @@ document.getElementById("lines").addEventListener("change",e=>{
 });
 document.getElementById("lines").addEventListener("input",e=>{
   const si=e.target.dataset.spx, ti=e.target.dataset.turbo;
-  if(si!==undefined){mutateState(st=>{st.lines[+si].spx=num(e.target.value)||1;});refreshLineNotes();markStale();}
-  if(ti!==undefined){mutateState(st=>{st.lines[+ti].turbo=Math.max(0,num(e.target.value)||0);});refreshLineNotes();markStale();}
+  if(si!==undefined){const result=commitFieldDraft(e.target,FIELD_SCHEMA.lineSpeed,S.lines[+si].spx,(st,value)=>{st.lines[+si].spx=value;});if(result.committed){refreshLineNotes();markStale();}}
+  if(ti!==undefined){const result=commitFieldDraft(e.target,FIELD_SCHEMA.turbo,S.lines[+ti].turbo,(st,value)=>{st.lines[+ti].turbo=value;});if(result.committed){refreshLineNotes();markStale();}}
 });
 document.getElementById("lines").addEventListener("keydown",e=>{
-  if(e.key==="Enter"){e.preventDefault();resimulate();}
+  if(e.key==="Enter"){e.preventDefault();if(e.target.getAttribute("aria-invalid")!=="true")resimulate();}
 });
 document.getElementById("lines").addEventListener("click",e=>{
   const d=e.target.dataset.del;
@@ -45,18 +96,17 @@ document.getElementById("btnAddLine").addEventListener("click",()=>{
 });
 
 document.getElementById("margin").addEventListener("input",e=>{
-  mutateState(st=>{st.margin=num(e.target.value)||0;});
-  document.getElementById("marginv").textContent=fmt(S.margin,1)+"%";
-  scheduleSolve();
+  const result=commitFieldDraft(e.target,FIELD_SCHEMA.margin,S.margin,(st,value)=>{st.margin=value;});
+  if(result.committed){document.getElementById("marginv").textContent=fmt(S.margin,1)+"%";save();scheduleSolve();}
 });
 
 document.getElementById("maxTurbo").addEventListener("input",e=>{
-  mutateState(st=>{st.maxTurbo=Math.max(0,num(e.target.value)||0);});
-  refreshLineNotes();markStale();
+  const result=commitFieldDraft(e.target,FIELD_SCHEMA.maxTurbo,S.maxTurbo,(st,value)=>{st.maxTurbo=value;});
+  if(result.committed){refreshLineNotes();markStale();}
 });
 document.getElementById("dupe").addEventListener("input",e=>{
-  mutateState(st=>{st.dupe=Math.max(0,num(e.target.value)||0);});
-  markStale();
+  const result=commitFieldDraft(e.target,FIELD_SCHEMA.dupe,S.dupe,(st,value)=>{st.dupe=value;});
+  if(result.committed)markStale();
 });
 
 document.getElementById("targets").addEventListener("change",e=>{
@@ -65,17 +115,18 @@ document.getElementById("targets").addEventListener("change",e=>{
 });
 document.getElementById("targets").addEventListener("input",e=>{
   const w=e.target.dataset.w;
-  if(w){mutateState(st=>{st.targets[w].w=+e.target.value;});e.target.parentElement.querySelector(".pv").textContent=e.target.value;scheduleSolve();}
+  if(w){const result=commitFieldDraft(e.target,FIELD_SCHEMA.targetWeight,S.targets[w].w,(st,value)=>{st.targets[w].w=value;});if(result.committed){e.target.parentElement.querySelector(".pv").textContent=String(result.value);save();scheduleSolve();}}
 });
 
 document.getElementById("recipes").addEventListener("input",e=>{
   const d=e.target.dataset;if(!d.res)return;
-  const v=num(e.target.value);
-  mutateState(st=>{
-    if(d.fld==="baseT")st.baseTime[d.res]=(v==null||v<=0)?1:v;
-    else if(d.fld==="cost")st.prodCost[d.res][d.in][+d.lv]=v;
+  const rule=d.fld==="baseT"?FIELD_SCHEMA.baseTime:FIELD_SCHEMA.recipeCost;
+  const previous=d.fld==="baseT"?S.baseTime[d.res]:S.prodCost[d.res][d.in][+d.lv];
+  const result=commitFieldDraft(e.target,rule,previous,(st,value)=>{
+    if(d.fld==="baseT")st.baseTime[d.res]=value;
+    else st.prodCost[d.res][d.in][+d.lv]=value;
   });
-  scheduleSolve();
+  if(result.committed){save();scheduleSolve();}
 });
 
 /* export / import / reset */
@@ -83,7 +134,21 @@ const stateRecovery=document.getElementById("stateRecovery");
 const stateRecoveryReason=document.getElementById("stateRecoveryReason");
 const stateRecoveryDownload=document.getElementById("stateRecoveryDownload");
 let _recoveryDownload=null;
-function showStateRecovery(raw,reason,file){
+let _recoveryInvoker=null;
+let _recoveryInvokerId=null;
+let _recoveryImportFallback=false;
+function showStateRecovery(raw,reason,file,invoker=document.activeElement,importFallback=false){
+  const candidate=invoker&&invoker!==document.body&&invoker!==document.documentElement&&typeof invoker.focus==="function"?invoker:null;
+  const insideRecovery=!!(candidate&&stateRecovery&&(candidate===stateRecovery||(typeof stateRecovery.contains==="function"&&stateRecovery.contains(candidate))));
+  if(candidate&&!insideRecovery){
+    _recoveryInvoker=candidate;
+    _recoveryInvokerId=candidate&&candidate.id||null;
+    _recoveryImportFallback=false;
+  }else if(!stateRecovery||stateRecovery.hidden){
+    _recoveryInvoker=null;
+    _recoveryInvokerId=null;
+    _recoveryImportFallback=!!importFallback;
+  }
   if(typeof raw==="string")quarantineRejectedState(raw,reason);
   _recoveryDownload=file||((typeof raw==="string")?new Blob([raw],{type:"application/json"}):null);
   if(stateRecoveryDownload)stateRecoveryDownload.disabled=!_recoveryDownload;
@@ -91,8 +156,18 @@ function showStateRecovery(raw,reason,file){
   if(stateRecovery){stateRecovery.hidden=false;stateRecovery.focus();}
 }
 function dismissStateRecovery(restoreFocus=true){
+  const invoker=_recoveryInvoker,invokerId=_recoveryInvokerId,importFallback=_recoveryImportFallback;
+  _recoveryInvoker=null;_recoveryInvokerId=null;_recoveryImportFallback=false;
   if(stateRecovery)stateRecovery.hidden=true;
-  if(restoreFocus){const button=document.getElementById("btnImport");if(button)button.focus();}
+  if(!restoreFocus)return;
+  if(invoker&&invoker.isConnected){invoker.focus();return;}
+  if(invokerId){const replacement=document.getElementById(invokerId);if(replacement&&typeof replacement.focus==="function"){replacement.focus();return;}}
+  if(importFallback){const button=document.getElementById("btnSettings");if(button)button.focus();}
+}
+function showSettingsRecovery(raw,reason,file){
+  const settings=document.getElementById("settingsModal");
+  if(settings&&!settings.hidden)closeSettings();
+  showStateRecovery(raw,reason,file,document.getElementById("btnSettings"));
 }
 stateRecoveryDownload.addEventListener("click",()=>{
   if(!_recoveryDownload)return;
@@ -105,7 +180,7 @@ document.getElementById("stateRecoveryDismiss").addEventListener("click",()=>dis
 
 document.getElementById("btnExport").addEventListener("click",()=>{
   const result=validateAndMigrate(S);
-  if(!result.ok){showStateRecovery(null,"The current build contains a value that cannot be exported safely: "+result.errors.join("; "));return;}
+  if(!result.ok){showSettingsRecovery(null,"The current build contains a value that cannot be exported safely: "+result.errors.join("; "));return;}
   const blob=new Blob([JSON.stringify(result.state,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);
   a.download="forge-build.json";a.click();URL.revokeObjectURL(a.href);
@@ -115,19 +190,19 @@ document.getElementById("fileImport").addEventListener("change",e=>{
   const f=e.target.files[0];if(!f)return;
   e.target.value="";
   if(f.size>STATE_LIMITS.maxBytes){
-    showStateRecovery(null,"That import is too large to open safely. Your current build was not changed.",f);
+    showSettingsRecovery(null,"That import is too large to open safely. Your current build was not changed.",f);
     return;
   }
   const r=new FileReader();
   r.onload=()=>{
     const raw=String(r.result==null?"":r.result);let candidate;
-    try{candidate=JSON.parse(raw);}catch(error){showStateRecovery(raw,"Could not read that file because it is not valid JSON.",f);return;}
+    try{candidate=JSON.parse(raw);}catch(error){showSettingsRecovery(raw,"Could not read that file because it is not valid JSON.",f);return;}
     solveService.cancel("Import is replacing accepted state");
     const result=applyImportedState(candidate,renderAll,()=>solveService.cancel("Import rollback is restoring accepted state"));
-    if(!result.ok){showStateRecovery(raw,result.errors.join("; "),f);return;}
+    if(!result.ok){showSettingsRecovery(raw,result.errors.join("; "),f);return;}
     dismissStateRecovery(false);flashSaved();
   };
-  r.onerror=()=>showStateRecovery(null,"Could not read that file. Your current build was not changed.",f);
+  r.onerror=()=>showSettingsRecovery(null,"Could not read that file. Your current build was not changed.",f);
   r.readAsText(f);
 });
 document.getElementById("btnReset").addEventListener("click",()=>{
@@ -153,7 +228,7 @@ function itemTypeTag(it){
   const kind=KIND[it]==="raw"?["raw","raw"]:KIND[it]==="fin"?["fin","assembly"]:["pr","craft"];
   return domElement("span","ty "+kind[0],kind[1]);
 }
-function renderItemValueRows(box,textMap,numberMap,dataName,placeholder,inputMode){
+function renderItemValueRows(box,textMap,numberMap,dataName,placeholder,rule){
   const nodes=[];
   const addGroup=(label,items,first)=>{
     nodes.push(domElement("div","price-grp"+(first?" first":""),label));
@@ -166,7 +241,8 @@ function renderItemValueRows(box,textMap,numberMap,dataName,placeholder,inputMod
       const accessibleName=dataName==="price"?`${it} sell price per unit`
         :dataName==="forgie"?`${it} Lil' Forgie production per hour`
         :`${it} current inventory`;
-      row.append(name,domTextInput(dataName,it,text,{placeholder,inputMode,accessibleName}));
+      const errorId=`field-${fieldDomToken(dataName)}-${fieldDomToken(it)}-error`;
+      row.append(name,domTextInput(dataName,it,text,{placeholder,inputMode:rule.inputMode,accessibleName,rule,errorId}),domFieldError(errorId));
       nodes.push(row);
     });
   };
@@ -176,30 +252,82 @@ function renderItemValueRows(box,textMap,numberMap,dataName,placeholder,inputMod
 }
 function renderPrices(){
   const box=document.getElementById("priceRows");
-  renderItemValueRows(box,S.priceText,S.sellPrice,"price","—","");
+  renderItemValueRows(box,S.priceText,S.sellPrice,"price","—",FIELD_SCHEMA.sellPrice);
 }
-const priceDialog=dialogController.register({root:document.getElementById("priceModal"),panel:document.querySelector("#priceModal .modal"),opener:document.getElementById("btnPrices"),initialFocus:()=>document.querySelector("#priceRows input"),onOpen:renderPrices});
-function openPrices(invoker){priceDialog.open(invoker);}
-function closePrices(){priceDialog.close();}
+const INPUT_TABS=Object.freeze({
+  inventory:{tab:"inputsInventoryTab",panel:"inputsInventoryPanel",clear:"projInvClear",initial:()=>document.querySelector("#invRows input")},
+  projects:{tab:"inputsProjectsTab",panel:"inputsProjectsPanel",clear:"projClear",initial:()=>document.getElementById("projSeqToggle")},
+  prices:{tab:"inputsPricesTab",panel:"inputsPricesPanel",clear:"priceClear",initial:()=>document.querySelector("#priceRows input")},
+});
+let activeInputsTab="inventory";
+let renderedInputsTab="inventory";
+let pendingInputsOpen=null;
+function selectInputsTab(name,{focus=false,remember=true}={}){
+  const selected=INPUT_TABS[name]?name:"inventory";
+  renderedInputsTab=selected;
+  if(remember)activeInputsTab=selected;
+  Object.entries(INPUT_TABS).forEach(([key,meta])=>{
+    const on=key===selected,tab=document.getElementById(meta.tab);
+    tab.setAttribute("aria-selected",on?"true":"false");
+    tab.tabIndex=on?0:-1;
+    document.getElementById(meta.panel).hidden=!on;
+    document.getElementById(meta.clear).hidden=!on;
+  });
+  if(focus)document.getElementById(INPUT_TABS[selected].tab).focus();
+}
+const inputsDialog=dialogController.register({
+  root:document.getElementById("inputsModal"),
+  panel:document.querySelector("#inputsModal .modal"),
+  opener:null,
+  initialFocus:()=>INPUT_TABS[renderedInputsTab].initial()||document.getElementById(INPUT_TABS[renderedInputsTab].tab),
+  onOpen:()=>{
+    renderInv();renderProjects();renderCatalog();renderPrices();
+    const requested=pendingInputsOpen||{name:activeInputsTab,remember:true};
+    pendingInputsOpen=null;
+    selectInputsTab(requested.name,{remember:requested.remember});
+  },
+});
+function openInputs(invoker,requestedTab,{remember=true}={}){
+  pendingInputsOpen={name:INPUT_TABS[requestedTab]?requestedTab:activeInputsTab,remember};
+  inputsDialog.open(invoker);
+}
+function closeInputs(){inputsDialog.close();}
+function openPrices(invoker){openInputs(invoker,"prices");}
+function closePrices(){closeInputs();}
+function openProjects(invoker){openInputs(invoker,"projects");}
+function closeProjects(){closeInputs();}
+const inputsTabs=document.querySelector(".inputs-tabs");
+inputsTabs.addEventListener("click",event=>{
+  const tab=event.target.closest('[role="tab"]');if(!tab)return;
+  const selected=Object.keys(INPUT_TABS).find(name=>INPUT_TABS[name].tab===tab.id);
+  if(selected)selectInputsTab(selected,{focus:true});
+});
+inputsTabs.addEventListener("keydown",event=>{
+  const tab=event.target.closest('[role="tab"]');if(!tab)return;
+  const names=Object.keys(INPUT_TABS),current=names.findIndex(name=>INPUT_TABS[name].tab===tab.id);if(current<0)return;
+  let next=null;
+  if(event.key==="ArrowRight")next=names[(current+1)%names.length];
+  else if(event.key==="ArrowLeft")next=names[(current-1+names.length)%names.length];
+  else if(event.key==="Home")next=names[0];
+  else if(event.key==="End")next=names[names.length-1];
+  if(!next)return;
+  event.preventDefault();selectInputsTab(next,{focus:true});
+});
 document.getElementById("priceClear").addEventListener("click",()=>{
   if(!confirm("Clear all sell prices?"))return;
   mutateState(st=>{[...RAWS,...PRODUCTS].forEach(it=>{st.sellPrice[it]=null;st.priceText[it]="";});});
-  renderPrices();scheduleSolve();
+  renderPrices();save();scheduleSolve();
 });
 document.getElementById("priceRows").addEventListener("input",e=>{
   const it=e.target.dataset.price;if(!it)return;
-  const raw=e.target.value;
-  const v=parseGameNum(raw);
-  mutateState(st=>{st.priceText[it]=raw;st.sellPrice[it]=v;});
-  const prev=document.querySelector(`[data-prev="${it}"]`);
-  if(prev)prev.textContent=v!=null?"= "+fmt(v):(raw.trim()?"unrecognized":"");
-  scheduleSolve();
+  const result=commitFieldDraft(e.target,FIELD_SCHEMA.sellPrice,S.sellPrice[it],(st,value,raw)=>{st.priceText[it]=raw;st.sellPrice[it]=value;});
+  if(result.committed){save();scheduleSolve();}
 });
 
 /* ---------- Lil' Forgie supply modal ---------- */
 function renderForgie(){
   const box=document.getElementById("forgieRows");
-  renderItemValueRows(box,S.forgieText,S.forgie,"forgie","—","decimal");
+  renderItemValueRows(box,S.forgieText,S.forgie,"forgie","—",FIELD_SCHEMA.forgie);
 }
 const forgieDialog=dialogController.register({root:document.getElementById("forgieModal"),panel:document.querySelector("#forgieModal .modal"),opener:document.getElementById("btnForgie"),initialFocus:()=>document.querySelector("#forgieRows input"),onOpen:renderForgie});
 function openForgie(invoker){forgieDialog.open(invoker);}
@@ -207,13 +335,12 @@ function closeForgie(){forgieDialog.close();}
 document.getElementById("forgieClear").addEventListener("click",()=>{
   if(!confirm("Clear all Lil' Forgie supply rates?"))return;
   mutateState(st=>{[...RAWS,...PRODUCTS].forEach(it=>{st.forgie[it]=null;st.forgieText[it]="";});});
-  renderForgie();scheduleSolve();
+  renderForgie();save();scheduleSolve();
 });
 document.getElementById("forgieRows").addEventListener("input",e=>{
   const it=e.target.dataset.forgie;if(!it)return;
-  const raw=e.target.value;
-  mutateState(st=>{st.forgieText[it]=raw;st.forgie[it]=parseGameNum(raw);});
-  scheduleSolve();
+  const result=commitFieldDraft(e.target,FIELD_SCHEMA.forgie,S.forgie[it],(st,value,raw)=>{st.forgieText[it]=raw;st.forgie[it]=value;});
+  if(result.committed){save();scheduleSolve();}
 });
 
 /* ---------- mined resources modal ---------- */
@@ -223,22 +350,38 @@ function openMined(invoker){minedDialog.open(invoker);}
 function closeMined(){minedDialog.close();}
 document.getElementById("minedModal").addEventListener("input",e=>{
   const resource=e.target.dataset.minedIncome;if(!resource)return;
-  mutateState(()=>{setMinedIncome(resource,e.target.value);});
-  renderMinedResources();scheduleSolve();
+  const result=commitFieldDraft(e.target,FIELD_SCHEMA.minedIncome,S.minedIncome[resource],(st,value,raw)=>{st.minedIncomeText[resource]=raw;st.minedIncome[resource]=value;});
+  if(result.committed){save();renderMinedResources();scheduleSolve();}
 });
 
 /* ---------- settings modal (max solve time) ---------- */
 const solveBudgetInput=document.getElementById("solveBudget");
 const solveBudgetVal=document.getElementById("solveBudgetVal");
-function fmtBudget(ms){return (ms/1000).toFixed(ms<1000?1:(ms%1000?1:0))+" s";}
-function syncBudgetUI(){const ms=Math.max(200,Math.min(60000,num(S.solveBudget)||2000));
-  if(solveBudgetInput)solveBudgetInput.value=(ms/1000);if(solveBudgetVal)solveBudgetVal.textContent=fmtBudget(ms);}
+function fmtBudget(ms){return formatMillisecondsAsSeconds(FIELD_SCHEMA.solveBudget,ms);}
+const STANDARD_SOLVE_BUDGET_STOPS=Object.freeze([200,500,1000,2000,3000,5000,8000,10000,15000,20000,30000,45000,60000]);
+let solveBudgetSessionStops=[];
+function budgetStopsFor(value){
+  const rule=FIELD_SCHEMA.solveBudget,checked=validateFieldValue(rule,value);
+  const values=[rule.min,...STANDARD_SOLVE_BUDGET_STOPS.filter(stop=>stop>=rule.min&&stop<=rule.max),rule.max];
+  if(checked.valid)values.push(checked.value);
+  solveBudgetSessionStops=[...new Set([...solveBudgetSessionStops,...values])].sort((a,b)=>a-b);
+  return solveBudgetSessionStops;
+}
+function syncBudgetUI(){
+  const ms=clampFieldValue(FIELD_SCHEMA.solveBudget,S.solveBudget);
+  const stops=budgetStopsFor(ms),index=stops.indexOf(ms);
+  if(solveBudgetInput){solveBudgetInput.min="0";solveBudgetInput.max=String(stops.length-1);solveBudgetInput.step="1";solveBudgetInput.value=String(index);solveBudgetInput.setAttribute("aria-valuetext",fmtBudget(ms));}
+  if(solveBudgetVal)solveBudgetVal.textContent=fmtBudget(ms);
+}
 const settingsDialog=dialogController.register({root:document.getElementById("settingsModal"),panel:document.querySelector("#settingsModal .modal"),opener:document.getElementById("btnSettings"),initialFocus:solveBudgetInput,onOpen:syncBudgetUI});
 function openSettings(invoker){settingsDialog.open(invoker);}
 function closeSettings(){settingsDialog.close();}
 if(solveBudgetInput)solveBudgetInput.addEventListener("input",()=>{
-  mutateState(st=>{st.solveBudget=Math.round(Math.max(0.2,Math.min(15,Number(solveBudgetInput.value)||2))*1000);});
-  if(solveBudgetVal)solveBudgetVal.textContent=fmtBudget(S.solveBudget);save();});
+  const index=Number(solveBudgetInput.value),value=solveBudgetSessionStops[index];
+  const checked=validateFieldValue(FIELD_SCHEMA.solveBudget,value);if(!checked.valid)return;
+  mutateState(st=>{st.solveBudget=checked.value;});
+  const text=fmtBudget(S.solveBudget);solveBudgetInput.setAttribute("aria-valuetext",text);
+  if(solveBudgetVal)solveBudgetVal.textContent=text;save();});
 
 /* ---------- collapsible crafting-data panel ---------- */
 function setRecipesOpen(open){
@@ -246,21 +389,25 @@ function setRecipesOpen(open){
   document.getElementById("recipeToggle").setAttribute("aria-expanded",open?"true":"false");
 }
 document.getElementById("recipeToggle").addEventListener("click",()=>setRecipesOpen(document.getElementById("recipeBody").hidden));
-document.getElementById("btnRecipes").addEventListener("click",()=>{setRecipesOpen(true);document.querySelector(".rsec").scrollIntoView({behavior:"smooth",block:"start"});});
 
 /* ---------- "add sell prices" attention nudge ---------- */
 const pricePoke=document.createElement("div");
 pricePoke.className="poke";pricePoke.hidden=true;pricePoke.textContent="↑ Enter your sell prices";
 document.querySelector(".tools").appendChild(pricePoke);
+let pricePokeActive=false;
 function positionPoke(){
-  const b=document.getElementById("btnPrices");
+  const b=document.getElementById("btnInputs");
   pricePoke.style.left=(b.offsetLeft+b.offsetWidth/2)+"px";
   pricePoke.style.top=(b.offsetTop+b.offsetHeight+9)+"px";
 }
 function setPricePoke(on){
-  document.getElementById("btnPrices").classList.toggle("poke-on",on);
-  if(on){positionPoke();pricePoke.hidden=false;}else pricePoke.hidden=true;
+  pricePokeActive=!!on;
+  document.getElementById("btnInputs").classList.toggle("poke-on",pricePokeActive);
+  if(pricePokeActive){positionPoke();pricePoke.hidden=false;}else pricePoke.hidden=true;
 }
+document.getElementById("btnInputs").addEventListener("click",event=>{
+  openInputs(event.currentTarget,pricePokeActive?"prices":undefined,{remember:!pricePokeActive});
+});
 window.addEventListener("resize",()=>{if(!pricePoke.hidden)positionPoke();});
 
 function initCalib(){
@@ -271,13 +418,25 @@ function initCalib(){
     it.value="Ingots"; cp.value="512";
   }
   const out=document.getElementById("cbOut"), apply=document.getElementById("cbApply");
+  const speedInput=document.getElementById("cbSpeed"),secondsInput=document.getElementById("cbSec");
+  applyFieldInputAttributes(speedInput,FIELD_SCHEMA.calibrationSpeed);
+  applyFieldInputAttributes(secondsInput,FIELD_SCHEMA.calibrationSeconds);
   let computed=null;
-  function recalc(){
-    const item=it.value, L=+cp.value, spd=num(document.getElementById("cbSpeed").value), sec=num(document.getElementById("cbSec").value);
+  function recalc(showFeedback=false){
+    const item=it.value,L=+cp.value;
+    const speedDraft=readFieldDraft(speedInput,FIELD_SCHEMA.calibrationSpeed);
+    const secondsDraft=readFieldDraft(secondsInput,FIELD_SCHEMA.calibrationSeconds);
+    if(showFeedback){
+      updateFieldFeedback(speedInput,fieldErrorForInput(speedInput),FIELD_SCHEMA.calibrationSpeed,speedDraft,null);
+      updateFieldFeedback(secondsInput,fieldErrorForInput(secondsInput),FIELD_SCHEMA.calibrationSeconds,secondsDraft,null);
+    }
+    const spd=speedDraft.status==="valid"?speedDraft.value:null,sec=secondsDraft.status==="valid"?secondsDraft.value:null;
     const cur=num(S.baseTime[item])||1, mult=Math.pow(1.5,Math.log2(L));
     const predict=cur*mult/(spd||1);
-    if(spd>0&&sec>0){
-      computed=sec*spd/mult;
+    if(spd!=null&&sec!=null){
+      const candidate=sec*spd/mult,accepted=validateFieldValue(FIELD_SCHEMA.baseTime,candidate);
+      computed=accepted.valid?accepted.value:null;
+      if(computed==null){apply.disabled=true;out.textContent="Those values calculate a base time outside the supported range.";return;}
       out.innerHTML=`base time = ${fmt(sec,2)} × ${fmt(spd,2)} ÷ ${fmt(mult,2)} = <b style="color:var(--amber)">${fmt(computed,2)}s</b><br>`+
         `currently set for ${item}: ${fmt(cur,2)}s &nbsp;·&nbsp; which predicts a ${fmt(predict,2)}s craft at these settings`+
         (Math.abs(predict-sec)/sec>0.15?` <span class="calib-warning">— off by ${fmt(Math.abs(predict-sec)/sec*100,0)}%, worth setting</span>`:` <span style="color:#6c9">— matches, base looks right</span>`);
@@ -287,7 +446,8 @@ function initCalib(){
       out.innerHTML=spd>0?`current ${item} base (${fmt(cur,2)}s) predicts a <b>${fmt(predict,2)}s</b> craft at ${compressionLabel(L)} / ×${fmt(spd,2)}. Enter the real craft seconds to compare.`:`Enter that unit's speed × and a craft time to compute or verify.`;
     }
   }
-  ["cbItem","cbComp","cbSpeed","cbSec"].forEach(id=>document.getElementById(id).addEventListener("input",recalc));
+  ["cbItem","cbComp"].forEach(id=>document.getElementById(id).addEventListener("input",()=>recalc(false)));
+  [speedInput,secondsInput].forEach(input=>input.addEventListener("input",()=>recalc(true)));
   apply.addEventListener("click",()=>{
     if(computed==null)return;
     mutateState(st=>{st.baseTime[it.value]=computed;}); save(); renderRecipes(); renderResults(); recalc();
@@ -297,22 +457,27 @@ function initCalib(){
 function renderAll(){
   renderModeSwitch();
   renderLines();renderTargets();renderMinedResources();renderRecipes();renderResults();
-  document.getElementById("margin").value=S.margin||0;
-  document.getElementById("marginv").textContent=fmt(S.margin||0,1)+"%";
-  document.getElementById("maxTurbo").value=S.maxTurbo||0;
-  document.getElementById("dupe").value=S.dupe||0;
+  const margin=document.getElementById("margin"),maxTurbo=document.getElementById("maxTurbo"),dupe=document.getElementById("dupe");
+  applyFieldInputAttributes(margin,FIELD_SCHEMA.margin,{step:0.5});
+  applyFieldInputAttributes(maxTurbo,FIELD_SCHEMA.maxTurbo);
+  applyFieldInputAttributes(dupe,FIELD_SCHEMA.dupe);
+  margin.value=String(S.margin??FIELD_SCHEMA.margin.defaultValue);
+  document.getElementById("marginv").textContent=fmt(S.margin??FIELD_SCHEMA.margin.defaultValue,1)+"%";
+  maxTurbo.value=String(S.maxTurbo??FIELD_SCHEMA.maxTurbo.defaultValue);
+  dupe.value=String(S.dupe??FIELD_SCHEMA.dupe.defaultValue);
 }
 const initialState=initializeState(renderAll);
 initCalib();
 document.getElementById("saveind").textContent="auto-saves locally";
-if(initialState.recovery)showStateRecovery(initialState.recovery.raw,initialState.recovery.reason);
+if(initialState.recovery)showStateRecovery(initialState.recovery.raw,initialState.recovery.reason,null,null,true);
 function costRow(pi,li,ci,c){
   const projectName=(S.projects[pi]&&S.projects[pi].name)||`Project ${pi+1}`;
   const opts=ALLITEMS.map(it=>`<option value="${it}" ${it===c.item?"selected":""}>${it}</option>`).join("");
   const txt=(c.qty!=null&&isFinite(c.qty))?formatGameNum(c.qty,4):"";
+  const errorId=`field-project-${fieldDomToken(S.projects[pi]&&S.projects[pi].id||pi)}-quantity-${li}-${ci}-error`;
   return `<div class="cost-row">
     <select data-citem="${pi}_${li}_${ci}" aria-label="${htmlAttribute(projectName)} level ${li+1} item ${ci+1}">${opts}</select>
-    <input type="text" placeholder="qty" value="${txt}" data-cqty="${pi}_${li}_${ci}" aria-label="${htmlAttribute(projectName)} level ${li+1} ${htmlAttribute(c.item)} quantity">
+    <span class="field-stack cost-qty"><input type="text" ${htmlFieldInputAttributes(FIELD_SCHEMA.projectQuantity)} placeholder="qty" value="${txt}" data-cqty="${pi}_${li}_${ci}" data-field-error="${errorId}" aria-label="${htmlAttribute(projectName)} level ${li+1} ${htmlAttribute(c.item)} quantity"><span class="field-error" id="${errorId}" aria-live="polite" aria-atomic="true"></span></span>
     <button class="iconbtn" data-cdel="${pi}_${li}_${ci}" title="Remove item" aria-label="Remove ${htmlAttribute(c.item)} from ${htmlAttribute(projectName)} level ${li+1}">×</button>
   </div>`;
 }
@@ -331,6 +496,43 @@ function projStepper(p,pi){
     <button class="iconbtn" data-psinc="${pi}" ${done>=span?"disabled":""} title="Mark one more level done" aria-label="Mark one more ${htmlAttribute(p.name)} level complete">+</button>
   </span>`;
 }
+function projectFieldIds(p,scope="project"){
+  const base=`field-${scope}-${fieldDomToken(p&&p.id)}`;
+  return {from:`${base}-from-error`,to:`${base}-to-error`,priority:`${base}-priority-error`};
+}
+function projPrioField(p,pi,errorId){
+  const disabled=S.projectSeq===false;
+  const title=disabled
+    ?"Turn on Complete projects one at a time to set a manual order."
+    :"Numbered projects run first in numeric order after required material unlocks. Leave blank to use the planner's estimated order.";
+  return `<label class="proj-prio${disabled?" disabled":""}" title="${htmlAttribute(title)}"><input type="number" class="pprio" ${htmlFieldInputAttributes(FIELD_SCHEMA.projectPriority)} data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–" data-field-error="${errorId}" aria-label="${htmlAttribute(p.name)} schedule order"${disabled?" disabled":""}>order</label>`;
+}
+function projectRangeRule(p,endpoint){
+  const count=Math.max(1,(p&&p.levels||[]).length);
+  return fieldRuleWithBounds(FIELD_SCHEMA.projectIndex,{max:count,label:`${p&&p.name||"Project"} ${endpoint==="from"?"starting":"ending"} level`});
+}
+function parseProjectRangeDrafts(fromInput,toInput,p){
+  const fromRule=projectRangeRule(p,"from"),toRule=projectRangeRule(p,"to");
+  let from=readFieldDraft(fromInput,fromRule),to=readFieldDraft(toInput,toRule);
+  const fromSyntax=from.status==="valid",toSyntax=to.status==="valid";
+  if(fromSyntax&&toSyntax&&from.value>to.value){
+    const fromValue=from.value,toValue=to.value;
+    from={status:"invalid",message:`Enter a starting level no higher than ending level ${toValue}.`};
+    to={status:"invalid",message:`Enter an ending level at least as high as starting level ${fromValue}.`};
+  }
+  updateFieldFeedback(fromInput,fieldErrorForInput(fromInput),fromRule,from,p.from);
+  updateFieldFeedback(toInput,fieldErrorForInput(toInput),toRule,to,p.to);
+  return {valid:from.status==="valid"&&to.status==="valid",from:from.value,to:to.value};
+}
+function commitProjectRangeDrafts(fromInput,toInput,p){
+  const parsed=parseProjectRangeDrafts(fromInput,toInput,p);
+  if(!parsed.valid)return {...parsed,committed:false};
+  if(p.from!==parsed.from||p.to!==parsed.to)mutateState(()=>{
+    p.from=parsed.from;p.to=parsed.to;
+    p.done=Math.max(0,Math.min(parsed.to-parsed.from+1,Math.floor(num(p.done)||0)));
+  });
+  return {...parsed,committed:true};
+}
 // Compact card for a catalog-sourced project: name is a fixed label, costs are
 // read-only, user only controls on/off, level range, "1st", and remove. Reuses
 // the same data-* hooks as the editable card so existing handlers apply.
@@ -339,9 +541,11 @@ function compactProjCard(p,pi){
   const view=lv.map((L,li)=>`<div class="cat-lvl"><span class="cat-lvl-n">Lv ${li+1}</span><span>${catLevelView(L)}</span></div>`).join("");
   const desc=p.description?`<span class="cat-card-desc">${htmlText(p.description)}</span>`:"";
   const single=lv.length<=1;
+  const ids=projectFieldIds(p);
+  const fromRule=projectRangeRule(p,"from"),toRule=projectRangeRule(p,"to");
   const range=single
     ? `<span class="proj-lvls one">1 level</span>`
-    : `<span class="proj-lvls">lv <input type="number" min="1" max="${lv.length}" step="1" data-pfrom="${pi}" value="${p.from||1}" aria-label="${htmlAttribute(p.name)} starting level"> → <input type="number" min="1" max="${lv.length}" step="1" data-pto="${pi}" value="${p.to||lv.length}" aria-label="${htmlAttribute(p.name)} ending level"></span>`;
+    : `<span class="proj-lvls">lv <input type="number" ${htmlFieldInputAttributes(fromRule)} data-pfrom="${pi}" value="${p.from||1}" data-field-error="${ids.from}" aria-label="${htmlAttribute(p.name)} starting level"> → <input type="number" ${htmlFieldInputAttributes(toRule)} data-pto="${pi}" value="${p.to||lv.length}" data-field-error="${ids.to}" aria-label="${htmlAttribute(p.name)} ending level"></span>`;
   const bodyId=`projectBody${pi}`;
   const disclosureLabel=`${p._open?"Hide":"Show"} level costs for ${htmlAttribute(p.name)}`;
   return `<div class="proj cat-card ${p._open?"open":""}" data-pi="${pi}">
@@ -350,10 +554,11 @@ function compactProjCard(p,pi){
       <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule" aria-label="Include ${htmlAttribute(p.name)} in schedule">
       <span class="pname-static">${htmlText(p.name)}${desc}</span>
       <div class="proj-tools">
-        <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–" aria-label="${htmlAttribute(p.name)} schedule order">order</label>
+        ${projPrioField(p,pi,ids.priority)}
         ${range}
         ${projStepper(p,pi)}
-        <button class="iconbtn" data-pdel="${pi}" title="Remove from list" aria-label="Remove ${htmlAttribute(p.name)} from shopping list">×</button>
+        <button class="iconbtn" data-pdel="${pi}" title="Remove from Projects" aria-label="Remove ${htmlAttribute(p.name)} from Projects">×</button>
+        <div class="proj-field-errors">${single?"":`<div class="field-error" id="${ids.from}" aria-live="polite" aria-atomic="true"></div><div class="field-error" id="${ids.to}" aria-live="polite" aria-atomic="true"></div>`}<div class="field-error" id="${ids.priority}" aria-live="polite" aria-atomic="true"></div></div>
       </div>
     </div>
     <div class="proj-b" id="${bodyId}"><div class="cat-lvls">${view}</div></div>
@@ -372,17 +577,19 @@ function projCard(p,pi){
   }).join("");
   const bodyId=`projectBody${pi}`;
   const disclosureLabel=`${p._open?"Hide":"Show"} level costs for ${htmlAttribute(p.name)}`;
+  const ids=projectFieldIds(p),fromRule=projectRangeRule(p,"from"),toRule=projectRangeRule(p,"to");
   return `<div class="proj ${p._open?"open":""}" data-pi="${pi}">
     <div class="proj-h">
       <button type="button" class="pchev" data-ptoggle="${pi}" aria-label="${disclosureLabel}" aria-expanded="${p._open?"true":"false"}" aria-controls="${bodyId}">▸</button>
       <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule" aria-label="Include ${htmlAttribute(p.name)} in schedule">
       <input type="text" class="pname" data-pname="${pi}" value="${htmlAttribute(p.name)}" placeholder="Project name" aria-label="Project name">
       <div class="proj-tools">
-        <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–" aria-label="${htmlAttribute(p.name)} schedule order">order</label>
-        <span class="proj-lvls">lv <input type="number" min="1" step="1" data-pfrom="${pi}" value="${p.from||1}" aria-label="${htmlAttribute(p.name)} starting level"> → <input type="number" min="1" step="1" data-pto="${pi}" value="${p.to||lv.length||1}" aria-label="${htmlAttribute(p.name)} ending level"></span>
+        ${projPrioField(p,pi,ids.priority)}
+        <span class="proj-lvls">lv <input type="number" ${htmlFieldInputAttributes(fromRule)} data-pfrom="${pi}" value="${p.from||1}" data-field-error="${ids.from}" aria-label="${htmlAttribute(p.name)} starting level"> → <input type="number" ${htmlFieldInputAttributes(toRule)} data-pto="${pi}" value="${p.to||lv.length||1}" data-field-error="${ids.to}" aria-label="${htmlAttribute(p.name)} ending level"></span>
         ${projStepper(p,pi)}
         <button class="iconbtn" data-pdup="${pi}" title="Duplicate" aria-label="Duplicate ${htmlAttribute(p.name)}" style="font-size:13px">⧉</button>
         <button class="iconbtn" data-pdel="${pi}" title="Delete project" aria-label="Delete ${htmlAttribute(p.name)}">×</button>
+        <div class="proj-field-errors"><div class="field-error" id="${ids.from}" aria-live="polite" aria-atomic="true"></div><div class="field-error" id="${ids.to}" aria-live="polite" aria-atomic="true"></div><div class="field-error" id="${ids.priority}" aria-live="polite" aria-atomic="true"></div></div>
       </div>
     </div>
     <div class="proj-b" id="${bodyId}">
@@ -393,7 +600,16 @@ function projCard(p,pi){
 }
 function renderInv(){
   const box=document.getElementById("invRows");
-  renderItemValueRows(box,S.inventoryText,S.inventory,"inv","0","");
+  renderItemValueRows(box,S.inventoryText,S.inventory,"inv","0",FIELD_SCHEMA.inventory);
+}
+function setProjectStabilityPolicy(value){
+  if(value!=="prefer-current"&&value!=="reoptimize")return false;
+  mutateState(st=>{st.projectStability=value;});save();doSolve();return true;
+}
+function setProjectLineMode(value){
+  const checked=validateFieldValue(FIELD_SCHEMA.projLineMode,value);if(!checked.valid)return false;
+  if(checked.value===S.projLineMode)return true;
+  mutateState(st=>{st.projLineMode=checked.value;});persistNow();doSolve();return true;
 }
 function renderProjects(){
   const box=document.getElementById("projList");
@@ -401,11 +617,13 @@ function renderProjects(){
     :`<div class="proj-mini" style="padding:6px 2px">No projects yet — add one to start building a schedule.</div>`;
   const st=document.getElementById("projSeqToggle");if(st)st.checked=S.projectSeq!==false;
   const gt=document.getElementById("projGateToggle");if(gt){gt.checked=S.projectGate===false;gt.disabled=S.projectSeq!==false;gt.closest(".seq-toggle").classList.toggle("disabled",gt.disabled);}
+  const stability=document.getElementById("projectStability");if(stability)stability.value=S.projectStability==="reoptimize"?"reoptimize":"prefer-current";
   renderInv();
   if(typeof renderCatalog==="function")renderCatalog();
 }
 document.getElementById("projSeqToggle").addEventListener("change",e=>{mutateState(st=>{st.projectSeq=e.target.checked;});renderProjects();save();scheduleSolve();});
 document.getElementById("projGateToggle").addEventListener("change",e=>{mutateState(st=>{st.projectGate=!e.target.checked;});save();scheduleSolve();});
+document.getElementById("projectStability").addEventListener("change",e=>{setProjectStabilityPolicy(e.target.value);});
 
 /* ---------- project catalog (static, read-only source list) ---------- */
 const CATALOG=(typeof PROJECT_CATALOG!=="undefined"&&Array.isArray(PROJECT_CATALOG))?PROJECT_CATALOG:[];
@@ -434,7 +652,7 @@ function renderCatalog(){
     const meta=`${lvls} level${lvls===1?"":"s"}${c.description?" · "+htmlText(c.description):""}`;
     return `<div class="cat-row${has?" added":""}">
       <div class="cat-row-info"><span class="cat-row-name">${htmlText(c.name)}</span><span class="cat-row-meta">${meta}</span></div>
-      <button class="btn ${has?"ghost":"primary"} cat-add" data-cat-add="${htmlAttribute(c.catId)}" aria-label="${has?"Added":"Add"} ${htmlAttribute(c.name)}${has?"":" to shopping list"}" ${has?"disabled":""}>${has?"Added":"Add"}</button>
+      <button class="btn ${has?"ghost":"primary"} cat-add" data-cat-add="${htmlAttribute(c.catId)}" aria-label="${has?"Added":"Add"} ${htmlAttribute(c.name)}${has?"":" to Projects"}" ${has?"disabled":""}>${has?"Added":"Add"}</button>
     </div>`;
   }).join(""):`<div class="proj-mini" style="padding:6px 2px">No matching projects.</div>`;
 }
@@ -446,28 +664,25 @@ if(catListEl)catListEl.addEventListener("click",e=>{
 const catSearchEl=document.getElementById("catSearch");
 if(catSearchEl)catSearchEl.addEventListener("input",e=>{catQuery=e.target.value;renderCatalog();});
 
-const projectsDialog=dialogController.register({root:document.getElementById("projModal"),panel:document.querySelector("#projModal .modal"),opener:document.getElementById("btnProjects"),initialFocus:()=>document.getElementById("projSeqToggle"),onOpen:()=>{renderProjects();renderCatalog();}});
-function openProjects(invoker){projectsDialog.open(invoker);}
-function closeProjects(){projectsDialog.close();}
 document.getElementById("projAdd").addEventListener("click",()=>{
   mutateState(st=>{st.projects.push({id:newId(),name:"New project",on:true,prio:null,from:1,to:1,done:0,levels:[{costs:[]}],_open:true});});
   renderProjects();save();scheduleSolve();
 });
 document.getElementById("projClear").addEventListener("click",()=>{
   if(!(S.projects||[]).length)return;
-  if(!confirm("Remove all projects from the shopping list? This clears every added catalog project and custom project."))return;
+  if(!confirm("Remove all projects? This clears every added catalog project and custom project."))return;
   mutateState(st=>{st.projects=[];});
   renderProjects();save();scheduleSolve();
 });
 document.getElementById("projInvClear").addEventListener("click",()=>{
   if(!confirm("Clear all inventory amounts?"))return;
   mutateState(st=>{ALLITEMS.forEach(it=>{st.inventory[it]=null;st.inventoryText[it]="";});});
-  renderInv();scheduleSolve();
+  renderInv();save();scheduleSolve();
 });
 document.getElementById("projList").addEventListener("click",e=>{
   const t=e.target,g=a=>t.getAttribute(a);
   let v;
-  if((v=g("data-ptoggle"))!=null){mutateState(st=>{st.projects[+v]._open=!st.projects[+v]._open;});renderProjects();const disclosure=document.querySelector(`[data-ptoggle="${v}"]`);if(disclosure)disclosure.focus();return;}
+  if((v=g("data-ptoggle"))!=null){mutateState(st=>{st.projects[+v]._open=!st.projects[+v]._open;});schedulePersist();renderProjects();const disclosure=document.querySelector(`[data-ptoggle="${v}"]`);if(disclosure)disclosure.focus();return;}
   if((v=g("data-pdel"))!=null){if(confirm("Delete this project?")){mutateState(st=>{st.projects.splice(+v,1);});renderProjects();save();scheduleSolve();}return;}
   if((v=g("data-pdup"))!=null){mutateState(st=>{const c=JSON.parse(JSON.stringify(st.projects[+v]));c.id=newId();c.name=(c.name||"Project")+" copy";c._open=true;st.projects.splice(+v+1,0,c);});renderProjects();save();scheduleSolve();return;}
   if((v=g("data-paddlvl"))!=null){mutateState(st=>{const p=st.projects[+v];p.levels.push({costs:[]});p.to=p.levels.length;});renderProjects();save();scheduleSolve();return;}
@@ -485,10 +700,15 @@ document.getElementById("projList").addEventListener("input",e=>{
     if(disclosure){const label=`${S.projects[+v]._open?"Hide":"Show"} level costs for ${t.value.trim()||"untitled project"}`;disclosure.setAttribute("aria-label",label);disclosure.title=label;}
     save();scheduleSolve();return;
   }
-  if((v=g("data-pfrom"))!=null){mutateState(st=>{st.projects[+v].from=Math.max(1,Math.floor(num(t.value)||1));});save();scheduleSolve();return;}
-  if((v=g("data-pto"))!=null){mutateState(st=>{st.projects[+v].to=Math.max(1,Math.floor(num(t.value)||1));});save();scheduleSolve();return;}
-  if((v=g("data-pprio"))!=null){const n=Math.floor(num(t.value));mutateState(st=>{st.projects[+v].prio=(n>=1)?n:null;});save();scheduleSolve();return;}
-  if((v=g("data-cqty"))!=null){const[pi,li,ci]=v.split("_").map(Number);mutateState(st=>{st.projects[pi].levels[li].costs[ci].qty=parseGameNum(t.value);});save();scheduleSolve();return;}
+  if((v=g("data-pfrom"))!=null||(v=g("data-pto"))!=null){
+    const pi=+v,p=S.projects[pi],card=t.closest(".proj");if(!p||!card)return;
+    const fromInput=card.querySelector(`[data-pfrom="${pi}"]`),toInput=card.querySelector(`[data-pto="${pi}"]`);
+    if(!fromInput||!toInput)return;
+    const result=commitProjectRangeDrafts(fromInput,toInput,p);
+    if(result.committed){save();scheduleSolve();}return;
+  }
+  if((v=g("data-pprio"))!=null){const pi=+v,p=S.projects[pi];if(!p)return;const result=commitFieldDraft(t,FIELD_SCHEMA.projectPriority,p.prio,(st,value)=>{st.projects[pi].prio=value;});if(result.committed){save();scheduleSolve();}return;}
+  if((v=g("data-cqty"))!=null){const[pi,li,ci]=v.split("_").map(Number),cost=S.projects[pi].levels[li].costs[ci];const result=commitFieldDraft(t,FIELD_SCHEMA.projectQuantity,cost.qty,(st,value)=>{st.projects[pi].levels[li].costs[ci].qty=value;});if(result.committed){save();scheduleSolve();}return;}
 });
 document.getElementById("projList").addEventListener("change",e=>{
   const t=e.target,g=a=>t.getAttribute(a);let v;
@@ -497,29 +717,29 @@ document.getElementById("projList").addEventListener("change",e=>{
 });
 document.getElementById("invRows").addEventListener("input",e=>{
   const it=e.target.getAttribute("data-inv");if(!it)return;
-  mutateState(st=>{st.inventoryText[it]=e.target.value;st.inventory[it]=parseGameNum(e.target.value);});save();scheduleSolve();
+  const result=commitFieldDraft(e.target,FIELD_SCHEMA.inventory,S.inventory[it],(st,value,raw)=>{st.inventoryText[it]=raw;st.inventory[it]=value;});
+  if(result.committed){save();scheduleSolve();}
 });
 
 /* ---------- Progress tracker modal ---------- */
 // Levels completed for a project, clamped to its from→to span (non-destructive).
 function projSpan(p){const n=(p.levels||[]).length;const from=Math.max(1,Math.min(n||1,Math.floor(num(p.from)||1)));const to=Math.max(from,Math.min(n,Math.floor(num(p.to)||n)));return {from,to,span:to-from+1};}
 function projDone(p){const {span}=projSpan(p);return Math.max(0,Math.min(span,Math.floor(num(p.done)||0)));}
-function renderProgress(){
-  const list=document.getElementById("progList");
+function renderProgressSummary(active){
   const sum=document.getElementById("progSummary");
-  if(!list||!sum)return;
-  const active=(S.projects||[]).filter(p=>p.on&&(p.levels||[]).length);
-  if(!active.length){
-    sum.innerHTML="";
-    list.innerHTML=`<div class="notice info">No active projects. Open <b>Shopping list</b>, add or tick on a project, then track its level progress here.</div>`;
-    return;
-  }
+  if(!sum)return;
+  active=active||(S.projects||[]).filter(p=>p.on&&(p.levels||[]).length);
+  if(!active.length){sum.innerHTML="";return;}
   let totalLv=0,doneLv=0;
   active.forEach(p=>{const {span}=projSpan(p);totalLv+=span;doneLv+=projDone(p);});
-  const res=optimizeProjectTop();
+  const currentKey=solveStateKey(S);
+  const current=_lastProjectRes&&_lastProjectKey===currentKey;
+  const status=solveService.status();
+  const updating=!current&&(renderT!=null||(status.active&&status.current&&status.mode==="project"));
+  const res=current?_lastProjectRes:null;
   const remLv=totalLv-doneLv;
   const pct=totalLv?Math.round(doneLv/totalLv*100):0;
-  const etaTxt=(res&&!res.empty&&remLv>0)?fmtDuration(res.eta):(remLv>0?"—":"all done 🎉");
+  const etaTxt=(res&&!res.empty&&remLv>0)?fmtDuration(res.eta):(remLv>0?(updating?"updating…":"out of date — Resimulate"):"all done 🎉");
   sum.innerHTML=`
     <div class="prog-bar-wrap"><div class="prog-bar" style="width:${pct}%"></div></div>
     <div class="prog-metrics">
@@ -527,6 +747,18 @@ function renderProgress(){
       <div class="prog-metric"><div class="pm-v">${remLv}</div><div class="pm-l">levels left</div></div>
       <div class="prog-metric"><div class="pm-v">${etaTxt}</div><div class="pm-l">time remaining</div></div>
     </div>${res&&!res.empty&&!res.feasible&&remLv>0?`<div class="notice warn" style="margin:10px 0 0;font-size:11.5px">Plan isn't fully sustainable with current lines — see the main panel for blocked items.</div>`:""}`;
+}
+function renderProgress(){
+  const list=document.getElementById("progList");
+  const sum=document.getElementById("progSummary");
+  if(!list||!sum)return;
+  const active=(S.projects||[]).filter(p=>p.on&&(p.levels||[]).length);
+  if(!active.length){
+    sum.innerHTML="";
+    list.innerHTML=`<div class="notice info">No active projects. Open <b>Projects+Prices</b>, choose <b>Projects</b>, then add or tick on a project before tracking progress here.</div>`;
+    return;
+  }
+  renderProgressSummary(active);
   list.innerHTML=active.map(p=>{
     const {from,to,span}=projSpan(p);
     const done=projDone(p);
@@ -548,11 +780,15 @@ function renderProgress(){
     </div>`;
   }).join("");
 }
+function refreshProgressIfOpen(){
+  const modal=document.getElementById("progModal");
+  if(modal&&!modal.hidden)renderProgressSummary();
+}
 function setProjDone(pid,newDone){
   const p=(S.projects||[]).find(x=>x.id===pid);if(!p)return;
   const {span}=projSpan(p);
   mutateState(()=>{p.done=Math.max(0,Math.min(span,Math.floor(newDone)));});
-  save();renderProgress();scheduleSolve();
+  persistNow();scheduleSolve();renderProgress();
 }
 const progressDialog=dialogController.register({root:document.getElementById("progModal"),panel:document.querySelector("#progModal .modal"),opener:null,initialFocus:()=>document.getElementById("progDone"),onOpen:renderProgress});
 function openProgress(invoker){progressDialog.open(invoker);}
@@ -572,7 +808,7 @@ document.getElementById("progResetAll").addEventListener("click",()=>{
   if(!(S.projects||[]).some(p=>projDone(p)>0))return;
   if(!confirm("Reset completed-level progress on all projects?"))return;
   mutateState(st=>{(st.projects||[]).forEach(p=>{p.done=0;});});
-  save();renderProgress();scheduleSolve();
+  persistNow();scheduleSolve();renderProgress();
 });
 
 /* ---------- Step-by-step plan modal ---------- */
@@ -583,7 +819,7 @@ function itemTier(it,seen){
   return deps.length?1+Math.max(...deps.map(k=>itemTier(k,new Set(seen)))):1;
 }
 // Issue #69: let the user set a project complete or change its levels without leaving this page.
-// Reuses the same fields the Shopping list & Progress tracker edit (on / from / to / done), so all
+// Reuses the same fields the Projects tab and Progress tracker edit (on / from / to / done), so all
 // three views stay in sync. Completion = every level in the from→to span checked off (done=span).
 function stepsProjControls(){
   const active=(S.projects||[]).filter(p=>(p.levels||[]).length);
@@ -592,16 +828,18 @@ function stepsProjControls(){
     const {from,to,span}=projSpan(p),done=projDone(p),complete=done>=span;
     const name=p.name||"Project";
     const badge=complete?' <span class="pill craft" style="font-size:9px">done</span>':"";
-    return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--line)">
+    const ids=projectFieldIds(p,"inline-project"),fromRule=projectRangeRule(p,"from"),toRule=projectRangeRule(p,"to");
+    return `<div class="proj-inline-row">
       <input type="checkbox" data-spon="${htmlAttribute(p.id)}" ${p.on?"checked":""} aria-label="Include ${htmlAttribute(name)} in the plan" title="Include ${htmlAttribute(name)} in the plan">
       <span style="flex:1 1 130px;min-width:110px;${complete?"color:var(--ink3)":""}">${htmlText(name)}${badge}</span>
-      <span class="proj-mini" style="white-space:nowrap">lv <input type="number" min="1" step="1" data-spfrom="${htmlAttribute(p.id)}" value="${from}" aria-label="${htmlAttribute(name)} starting level" style="width:46px"> → <input type="number" min="1" step="1" data-spto="${htmlAttribute(p.id)}" value="${to}" aria-label="${htmlAttribute(name)} ending level" style="width:46px"></span>
+      <span class="proj-mini proj-inline-range">lv <input type="number" ${htmlFieldInputAttributes(fromRule)} data-spfrom="${htmlAttribute(p.id)}" value="${from}" data-field-error="${ids.from}" aria-label="${htmlAttribute(name)} starting level"> → <input type="number" ${htmlFieldInputAttributes(toRule)} data-spto="${htmlAttribute(p.id)}" value="${to}" data-field-error="${ids.to}" aria-label="${htmlAttribute(name)} ending level"></span>
       <span class="lvl-step" title="Mark levels done one at a time">
         <button class="iconbtn" data-spdec="${htmlAttribute(p.id)}" ${done<=0?"disabled":""} aria-label="Mark one fewer ${htmlAttribute(name)} level done" title="Mark one fewer ${htmlAttribute(name)} level done">−</button>
         <span class="mono proj-mini" title="levels completed">${done}/${span}</span>
         <button class="iconbtn" data-spinc="${htmlAttribute(p.id)}" ${done>=span?"disabled":""} aria-label="Mark one more ${htmlAttribute(name)} level done" title="Mark one more ${htmlAttribute(name)} level done">+</button>
       </span>
       <button class="btn ghost" style="padding:2px 9px;font-size:11px" data-spcomplete="${htmlAttribute(p.id)}" aria-label="${complete?"Reopen":"Mark"} ${htmlAttribute(name)} ${complete?"project":"complete"}">${complete?"Reopen":"Mark complete"}</button>
+      <div class="proj-inline-errors"><div class="field-error" id="${ids.from}" aria-live="polite" aria-atomic="true"></div><div class="field-error" id="${ids.to}" aria-live="polite" aria-atomic="true"></div></div>
     </div>`;
   }).join("");
   // Rows only — the caller (renderProjectResults) wraps these in a collapsible <details> panel.
@@ -612,11 +850,14 @@ function stepsProjControls(){
 // surrounding controls. Returns "" when there's no plan yet.
 function stepPlanHtml(res){
   if(!res||res.empty||!res.phases||!res.phases.length)return "";
-  let h=`<p class="help" style="margin:0 0 12px">${res.sequenced
-      ?"Do these phases <b>in order</b>. Within a phase, a line listing two jobs splits its time — do the input job first so you don't stall. Reset the lines when you start the next phase."
-      :res.waved
-      ?"Do these waves <b>in order</b> — finish a wave before starting the next so the unlocks land first. Within a wave, a line listing two jobs splits its time; do the input job first."
-      :"Set every line as shown and let it run. A line listing two jobs splits its time across the run; do the input job first."} ${res.partial?"Currently plannable work":res.feasible?"Total":"No finish time"} ${res.feasible||res.partial?`≈ <b>${fmtDuration(res.eta)}</b>.`:"— this plan is blocked."} ${res.partial?'<span style="color:var(--danger)">Blocked items are excluded; this does not finish every ticked project.</span> ':""}<span style="color:var(--ink3)">Clock times count from the <b>plan start</b> above — edit it or tap “Now” to re-anchor.</span></p>`;
+  const valid=!!(res.feasible&&res.lpFeasible&&res.scheduleValidation&&res.scheduleValidation.ok),execution=res.executionPhases||[];
+  const staticInstructions=S.projLineMode==="static"
+    ?" Within each timed phase, every busy line keeps one job for the whole phase; reset lines only between listed phases. The slowest required item sets that phase's duration."
+    :" Every line switch and stock figure comes from the executable replay.";
+  let h=valid
+    ?`<p class="help" style="margin:0 0 12px">Follow the prerequisite, warm-up, and project phases <b>in order</b>.${staticInstructions} Total ≈ <b>${fmtDuration(res.eta)}</b>. <span style="color:var(--ink3)">Clock times count from the <b>plan start</b> above.</span></p>`
+    :`<div class="notice warn"><b>No executable run instructions are available.</b> The analytical LP breakdown is retained below for diagnosis, but it must not be followed as a schedule.</div>`;
+  if(!valid)return h;
   const _ps=(S.planStart!=null&&isFinite(S.planStart))?new Date(S.planStart):null;
   const now=(_ps&&!isNaN(_ps.getTime()))?_ps:new Date();
   const fmtClock=h=>{
@@ -628,43 +869,32 @@ function stepPlanHtml(res){
     return t;
   };
   let phaseStart=0;
-  res.phases.forEach((ph,i)=>{
+  const allBoundaries=res.scheduleValidation.boundaries||[];
+  execution.forEach((ph,i)=>{
     const pStart=phaseStart; phaseStart+=ph.eta||0;
     const lines=(ph.plan||[]).filter(p=>p.entries&&p.entries.length).map(p=>({
       line:p.line,max:p.max,
-      segs:p.entries.slice().sort((a,b)=>itemTier(a.item)-itemTier(b.item)||b.frac-a.frac)
+      segs:p.entries
     }));
     h+=`<div class="step-phase">`;
-    const blocked=Object.entries(ph.blockedMined||{}),phaseTime=ph.partial?"partial plan":ph.feasible?"phase":"blocked";
-    h+=res.sequenced
-      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>${htmlText(ph.name)}</b> ${ph.prio!=null?'<span class="pill craft" style="font-size:9px">#'+ph.prio+'</span>':""} <span class="proj-mini">· ${phaseTime}${ph.eta>0?" ~"+fmtDuration(ph.eta):""}${ph.feasible?" · done by "+fmtDuration(ph.doneAt):ph.partial?" · plannable work by "+fmtDuration(ph.doneAt):""} </span>${ph.eta>0?'<span class="step-clock">(~'+fmtClock(pStart+(ph.eta||0))+')</span>':""}</div>`
-      : res.waved
-      ? `<div class="step-h"><span class="step-n">${i+1}</span> <b>Wave ${i+1} — build together</b> ${ph.members&&ph.members.length?'<span class="proj-mini">'+htmlText(ph.members.join(" + "))+'</span>':""} <span class="proj-mini">· ${phaseTime}${ph.eta>0?" ~"+fmtDuration(ph.eta):""}${ph.feasible?" · done by "+fmtDuration(ph.doneAt):ph.partial?" · plannable work by "+fmtDuration(ph.doneAt):""} </span>${ph.eta>0?'<span class="step-clock">(~'+fmtClock(pStart+(ph.eta||0))+')</span>':""}</div>`
-      : `<div class="step-h"><b>${ph.partial?"Run this partial line plan":ph.feasible?"Set all lines like this and run":"This phase is blocked"}</b> <span class="proj-mini">· ${ph.partial?"currently plannable work ~"+fmtDuration(ph.eta)+" · plannable work by ":ph.feasible?"finish time ~"+fmtDuration(ph.eta)+" · finish by ":"no finish time"}</span>${ph.eta>0?'<span class="step-clock">~'+fmtClock(pStart+(ph.eta||0))+'</span>':""}</div>`;
-    if(!ph.feasible){const why=blocked.length?" — "+blocked.map(([item,resources])=>item+" needs "+resources.join(" + ")).join("; "):"";
-      h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">Can't fully produce this phase with the current lines and incomes${why}. ${ph.partial?"The line work below is only the currently plannable portion.":""}</div>`;}
-    if(ph.atRisk&&ph.atRisk.length)h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">No line here is crafting ${ph.atRisk.join(", ")} — this plan is spending down your current stock of ${ph.atRisk.length>1?"them":"it"} instead. Once that stock is gone, this schedule stops working.</div>`;
+    const label=ph.kind==="prerequisite"?"External prerequisite":ph.kind==="warmup"?"Warm-up":htmlText(ph.name||"Project phase");
+    h+=`<div class="step-h"><span class="step-n">${i+1}</span> <b>${label}</b> <span class="proj-mini">${ph.eta>0?"· "+fmtDuration(ph.eta)+" · complete by ":"· before crafting begins"}</span>${ph.eta>0?'<span class="step-clock">~'+fmtClock(pStart+(ph.eta||0))+'</span>':""}</div>`;
+    if(ph.kind==="prerequisite"){
+      const supply=Object.entries(ph.externalSupply||{}).map(([resource,amount])=>{const current=(ph.invStart&&ph.invStart[resource])||0;
+        const total=(ph.prerequisiteDemand&&ph.prerequisiteDemand[resource])||current+amount;
+        return `Pre-produce <b>${disp(amount)} more ${htmlText(resource)}</b> (<b>${disp(total)} total</b>; <b>${disp(current)} currently on hand</b>)`;}).join(" and ");
+      h+=`<div class="notice info" style="font-size:11px;margin:4px 0 6px">${supply} before starting. Same-phase production cannot satisfy this prerequisite.</div></div>`;return;
+    }
     if(!lines.length){h+=`<div class="proj-mini" style="padding:2px 0">No line activity.</div></div>`;return;}
-    // Projected on-hand stock of each item at a given point in the phase (issue #87 follow-up):
-    // stock when the phase began + net (produced + Lil' Forgie − consumed by other lines) so far. Uses
-    // the phase-average rates from the LP's balance table, so a just-in-time intermediate reads ~0 (it's
-    // eaten as fast as it's made) while a finished product climbs toward the amount the project needs.
-    const bal={};(ph.balance||[]).forEach(b=>{bal[b.res]=b;});
-    const inv0=ph.invStart||{};
-    const onHandAt=(item,elapsed)=>{
-      const b=bal[item];const netRate=b?((b.prod||0)+(b.forgie||0)-(b.cons||0)):0;
-      const v=(num(inv0[item])||0)+netRate*elapsed;
-      return isFinite(v)?Math.max(0,v):0;
-    };
+    const onHandAt=(item,elapsed)=>{const matches=allBoundaries.filter(b=>b.phaseIndex===i&&b.kind==="switch"&&Math.abs((b.phaseTime||0)-elapsed)<1e-7);
+      const boundary=matches[matches.length-1];return boundary&&boundary.inventory?boundary.inventory[item]:null;};
     h+=`<ol class="step-list">`;
     lines.forEach(L=>{
-      let cum=0;
       const parts=L.segs.map(s=>{
-        cum+=s.frac;
-        const elapsed=Math.min(cum,1)*(ph.eta||0);
+        const elapsed=s.end;
         const at=fmtClock(pStart+elapsed);
         const tag=at?` <span class="proj-mini">· until </span><span class="step-clock">~${at}</span>`:"";
-        const stock=at?` <span class="proj-mini">· ~<b>${disp(onHandAt(s.item,elapsed))}</b> on hand</span>`:"";
+        const onHand=onHandAt(s.item,elapsed),stock=onHand!=null?` <span class="proj-mini">· <b>${disp(onHand)}</b> on hand</span>`:"";
         const verb=RAWS.includes(s.item)?"produce":"craft";
         const cfg=MINED_CRAFTS[s.item],mined=cfg?` <span class="proj-mini">· uses ${cfg.resource} income</span>`:"";
         return `${verb} <b>${s.item}</b> @${compressionLabel(s.lvl)}${s.frac>=0.999?" (whole phase)":` for ~${fmtDuration(s.frac*ph.eta)}`}${mined}${tag}${stock}`;
@@ -692,21 +922,28 @@ function repaintProject(){
 }
 document.getElementById("results").addEventListener("input",e=>{
   const t=e.target;if(!t||!t.getAttribute)return;let v;
-  // Level-range typing: update state only (no re-render) so the caret is kept; the plan rebuilds on
-  // commit (change). Editing `from` must never touch `to` mid-keystroke (issue #87 item 4) —
-  // reconciliation happens on read via projSpan()/projectDemand(). Skip the write while transiently
-  // empty so backspacing doesn't coerce to 1; the commit re-render restores it.
-  if((v=t.getAttribute("data-spfrom"))!=null){const p=stepsProj(v);if(p&&t.value.trim()!==""){mutateState(()=>{p.from=Math.max(1,Math.floor(num(t.value)||1));});save();}return;}
-  if((v=t.getAttribute("data-spto"))!=null){const p=stepsProj(v);if(p&&t.value.trim()!==""){mutateState(()=>{p.to=Math.max(1,Math.floor(num(t.value)||1));});save();}return;}
+  // Parse the two visible endpoints as one draft transaction. Either correction can make both
+  // drafts valid; only then are both accepted together, without rebuilding the focused row.
+  if((v=t.getAttribute("data-spfrom"))!=null||(v=t.getAttribute("data-spto"))!=null){
+    const p=stepsProj(v),row=t.closest(".proj-inline-row");if(!p||!row)return;
+    const fromInput=row.querySelector("[data-spfrom]"),toInput=row.querySelector("[data-spto]");
+    if(!fromInput||!toInput)return;
+    const result=commitProjectRangeDrafts(fromInput,toInput,p);if(result.committed)save();return;
+  }
 });
 document.getElementById("results").addEventListener("change",e=>{
   const t=e.target;if(!t||!t.getAttribute)return;let v;
   // Plan-start anchor: display-only, so repaint from cache (no solve).
   if(t.id==="spStart"){const val=t.value,ms=val?new Date(val).getTime():null;if(!val||!isNaN(ms))mutateState(st=>{st.planStart=ms;});save();repaintProject();return;}
-  // Inline project controls — same fields as Shopping list / Track progress, kept in sync. These change
+  // Inline project controls — same fields as Projects / Track progress, kept in sync. These change
   // demand, so re-solve; doSolve() rebuilds #results (and thus the plan) right away.
   if((v=t.getAttribute("data-spon"))!=null){const p=stepsProj(v);if(p){mutateState(()=>{p.on=t.checked;});save();doSolve();}return;}
-  if(t.getAttribute("data-spfrom")!=null||t.getAttribute("data-spto")!=null){doSolve();return;}   // commit level edit
+  if((v=t.getAttribute("data-spfrom"))!=null||(v=t.getAttribute("data-spto"))!=null){
+    const p=stepsProj(v),row=t.closest(".proj-inline-row");if(!p||!row)return;
+    const fromInput=row.querySelector("[data-spfrom]"),toInput=row.querySelector("[data-spto]");
+    if(!fromInput||!toInput)return;
+    const result=commitProjectRangeDrafts(fromInput,toInput,p);if(result.committed)doSolve();return;
+  }
   // Manual-mode dropdowns also live inside #results (re-rendered each change)
   if(t.id==="manualPreset"){if(t.value)loadManualPreset(t.value);return;}
   const ri=t.getAttribute("data-mres");
@@ -719,8 +956,14 @@ document.getElementById("results").addEventListener("change",e=>{
 document.getElementById("results").addEventListener("click",e=>{
   const cl=sel=>e.target.closest&&e.target.closest(sel);
   if(cl("#btnProgress")){openProgress(cl("#btnProgress"));return;}
+  const projectEditor=cl("[data-open-projects]");
+  if(projectEditor){openProjects(projectEditor);return;}
+  const lineMode=cl("[data-linemode]");
+  if(lineMode){setProjectLineMode(lineMode.getAttribute("data-linemode"));return;}
   // Plan-start "Now" — re-anchor the clock to the current moment (display only).
   if(cl("#spNow")){mutateState(st=>{st.planStart=Date.now();});save();repaintProject();return;}
+  const stabilityAction=cl("[data-project-stability]");
+  if(stabilityAction){setProjectStabilityPolicy(stabilityAction.getAttribute("data-project-stability"));return;}
   // Persist a disclosure's open state across the next re-render. The native <details> toggle still
   // fires; at click time .open is the pre-toggle state, so the new state is its inverse.
   const sm=cl("summary[data-paneltoggle]");
@@ -740,4 +983,9 @@ document.getElementById("results").addEventListener("click",e=>{
   if(cl("#manualDelPreset")){const sel=document.getElementById("manualPreset");const id=(sel&&sel.value)||S.manualActiveId;if(id&&confirm("Delete this saved setup?"))deleteManualPreset(id);return;}
 });
 
-window.addEventListener("pagehide",()=>solveService.cancel("Page teardown"));
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")flushPersist();});
+window.addEventListener("pagehide",()=>{
+  flushPersist();
+  if(renderT!=null){clearTimeout(renderT);renderT=null;}
+  solveService.cancel("Page teardown");
+});

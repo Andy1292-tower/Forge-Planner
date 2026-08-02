@@ -5,7 +5,7 @@
  *
  * The Worker imports the same field/schema boundary as the page; no unvalidated snapshot can
  * become the solver's global state. */
-importScripts("core.js", "fields.js", "state.js", "solver.js");
+importScripts("core.js", "fields.js", "state.js", "project-schedule.js", "solver.js");
 
 self.onmessage = function (e) {
   const { reqId, generation, mode, stateRevision, state, budget, stab } = e.data || {};

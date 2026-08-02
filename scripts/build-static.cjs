@@ -11,6 +11,7 @@ const PAGE_SCRIPTS = [
   "state.js",
   "dom.js",
   "render.js",
+  "project-schedule.js",
   "solver.js",
   "solve-service.js",
   "results.js",
@@ -18,10 +19,12 @@ const PAGE_SCRIPTS = [
   "dialogs.js",
   "events.js",
 ];
-const WORKER_SCRIPTS = ["core.js", "fields.js", "state.js", "solver.js"];
+const WORKER_SCRIPTS = ["core.js", "fields.js", "state.js", "project-schedule.js", "solver.js"];
 const IMAGE_FILES = ["favicon.png", "dupe.jpg", "speed.jpg"];
 const HASH_LENGTH = 16;
 const LEGACY_V2_SHA256 = "9d8747eea5a5c0c8d88066532eb9c3f51da6ebeb14e803284734405f3bcd1cf2";
+const ANALYTICS_SIGNATURE = /(?:\/_vercel\/(?:insights|speed-insights)|va\.vercel-scripts\.com|vercelAnalytics)/i;
+const ROOT_RELATIVE_OWNED_URL = /["'`(=]\/(?:static|assets|js|css)\//;
 
 function read(file) {
   return fs.readFileSync(file);
@@ -57,7 +60,7 @@ function write(directory, relative, bytes) {
 function emitHashed(directory, stem, extension, bytes) {
   const name = `${stem}.${sha16(bytes)}.${extension}`;
   write(directory, `static/${name}`, bytes);
-  return `/static/${name}`;
+  return `static/${name}`;
 }
 
 function assertSafeRoots(sourceRoot, outputRoot) {
@@ -73,7 +76,7 @@ function buildWorkerPayload(sourceRoot) {
   let handler = readText(handlerPath);
   handler = replaceExactly(
     handler,
-    'importScripts("core.js", "fields.js", "state.js", "solver.js");',
+    'importScripts("core.js", "fields.js", "state.js", "project-schedule.js", "solver.js");',
     "",
     1,
     "Worker dependency import"
@@ -93,17 +96,32 @@ function workerBootstrap(workerPayload) {
 const __FORGE_SOLVER_WORKER_SOURCE__=${JSON.stringify(workerPayload)};
 function __forgeCreateSolverWorker(){
   const objectUrl=URL.createObjectURL(new Blob([__FORGE_SOLVER_WORKER_SOURCE__],{type:"text/javascript"}));
+  let created=null;
+  let release=null;
   try{
-    const created=new Worker(objectUrl);
+    created=new Worker(objectUrl);
     let released=false;
-    const release=()=>{if(!released){released=true;URL.revokeObjectURL(objectUrl);}};
+    let releaseTimer=null;
+    release=()=>{
+      if(released)return;
+      released=true;
+      if(releaseTimer!==null){clearTimeout(releaseTimer);releaseTimer=null;}
+      URL.revokeObjectURL(objectUrl);
+    };
+    created.__forgeRelease=release;
     if(typeof created.addEventListener==="function"){
       created.addEventListener("message",release,{once:true});
       created.addEventListener("error",release,{once:true});
-      setTimeout(release,60000);
-    }else setTimeout(release,0);
+      releaseTimer=setTimeout(release,60000);
+    }else releaseTimer=setTimeout(release,0);
     return created;
-  }catch(error){URL.revokeObjectURL(objectUrl);throw error;}
+  }catch(error){
+    if(created)try{created.terminate();}catch(cleanupError){}
+    if(release){
+      try{release();}catch(cleanupError){try{URL.revokeObjectURL(objectUrl);}catch(revokeError){}}
+    }else try{URL.revokeObjectURL(objectUrl);}catch(cleanupError){}
+    throw error;
+  }
 }
 `;
 }
@@ -118,10 +136,12 @@ function buildApp(sourceRoot, assetUrls) {
     1,
     "production Worker constructor"
   );
-  app = replaceExactly(app, "/assets/speed.jpg", assetUrls.speed, 1, "speed tooltip image");
+  app = replaceExactly(app, "assets/speed.jpg", assetUrls.speed, 1, "speed tooltip image");
   if (/importScripts\s*\(/.test(app)) throw new Error("The app still contains a network-importing Worker");
   if (/js\/solver\.worker(?:\.v2)?\.js/.test(app)) throw new Error("The app still references a Worker URL");
-  if (/\/assets\/speed\.jpg/.test(app)) throw new Error("The app still references the unhashed speed image");
+  if (/assets\/speed\.jpg/.test(app)) throw new Error("The app still references the unhashed speed image");
+  if (ROOT_RELATIVE_OWNED_URL.test(app)) throw new Error("The app contains a root-relative owned asset URL");
+  if (ANALYTICS_SIGNATURE.test(app)) throw new Error("The app contains a Vercel Analytics signature");
   return Buffer.from(app);
 }
 
@@ -135,7 +155,7 @@ function buildIndex(sourceRoot, urls) {
     1,
     "stylesheet reference"
   );
-  html = replaceExactly(html, "/assets/dupe.jpg", urls.dupe, 1, "dupe tooltip image");
+  html = replaceExactly(html, "assets/dupe.jpg", urls.dupe, 1, "dupe tooltip image");
   html = replaceExactly(html, "worker-src 'self';", "worker-src 'self' blob:;", 1, "HTML Worker CSP");
 
   const sourceTags = PAGE_SCRIPTS.map(file => `<script src="js/${file}"></script>`).join("\n");
@@ -144,9 +164,11 @@ function buildIndex(sourceRoot, urls) {
   if (/(?:src|href)=["'](?:js\/|css\/|assets\/)/.test(html)) {
     throw new Error("Generated HTML still references unhashed local assets");
   }
-  if (/\/assets\/(?:dupe|speed)\.jpg/.test(html)) {
+  if (/assets\/(?:dupe|speed)\.jpg/.test(html)) {
     throw new Error("Generated HTML still references an unhashed tooltip image");
   }
+  if (ROOT_RELATIVE_OWNED_URL.test(html)) throw new Error("Generated HTML contains a root-relative owned asset URL");
+  if (ANALYTICS_SIGNATURE.test(html)) throw new Error("Generated HTML contains a Vercel Analytics signature");
   return Buffer.from(html);
 }
 
@@ -162,7 +184,7 @@ function verifyStage(stageRoot) {
   const appFiles = fs.readdirSync(staticRoot).filter(name => /^app\.[0-9a-f]{16}\.js$/.test(name));
   if (appFiles.length !== 1) throw new Error(`Expected one generated app bundle, found ${appFiles.length}`);
   const html = readText(path.join(stageRoot, "index.html"));
-  if (!html.includes(`/static/${appFiles[0]}`)) throw new Error("Generated HTML does not load the emitted app bundle");
+  if (!html.includes(`static/${appFiles[0]}`)) throw new Error("Generated HTML does not load the emitted app bundle");
 }
 
 function buildStaticSite({ sourceRoot, outputRoot } = {}) {

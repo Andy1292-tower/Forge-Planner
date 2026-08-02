@@ -1,8 +1,9 @@
 "use strict";
 const fs=require("fs"),path=require("path");
 class El{
-  constructor(){this.innerHTML="";this.textContent="";this.value="";this.hidden=false;this.dataset={};this.children=[];}
-  addEventListener(){} setAttribute(){} appendChild(x){this.children.push(x);return x;} querySelector(){return null;}
+  constructor(){this.innerHTML="";this.textContent="";this.value="";this.hidden=false;this.dataset={};this.children=[];
+    this.classList={add:()=>{},remove:()=>{},toggle:()=>{}};}
+  addEventListener(){} setAttribute(){} appendChild(x){this.children.push(x);return x;} prepend(x){this.children.unshift(x);} querySelector(){return null;}
 }
 const els={};
 globalThis.document={
@@ -13,7 +14,7 @@ globalThis.document={
 };
 globalThis.localStorage={getItem:()=>null,setItem:()=>{}};
 globalThis.performance={now:()=>0};
-const src=["core.js","solver.js","render.js"].map(f=>fs.readFileSync(path.join(__dirname,"..","js",f),"utf8")).join("\n");
+const src=["core.js","fields.js","dom.js","solver.js","render.js"].map(f=>fs.readFileSync(path.join(__dirname,"..","js",f),"utf8")).join("\n");
 const runner=`
 (function(){
   let fail=0;const check=(n,ok,d)=>{console.log((ok?"ok   ":"FAIL ")+n+" ["+d+"]");if(!ok)fail++;};

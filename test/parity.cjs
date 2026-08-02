@@ -23,6 +23,7 @@ globalThis.localStorage = { getItem: () => null, setItem: () => {} };
 globalThis.document = { getElementById: () => ({ innerHTML: "", textContent: "" }) };
 
 const coreSrc = fs.readFileSync(path.join(__dirname, "..", "js", "core.js"), "utf8");
+const projectSrc = fs.readFileSync(path.join(__dirname, "..", "js", "project-schedule.js"), "utf8");
 const solverSrc = fs.readFileSync(path.join(__dirname, "..", "js", "solver.js"), "utf8");
 
 // ---- canonical summary (rounded so float noise doesn't break diffs) ----
@@ -125,4 +126,4 @@ globalThis.__emit = (str) => process.stdout.write(str + "\n");
 
 // direct eval keeps top-level const/let (S, optimize, ...) visible to the appended runner
 // eslint-disable-next-line no-eval
-eval(coreSrc + "\n;\n" + solverSrc + "\n;\n" + runner);
+eval(coreSrc + "\n;\n" + projectSrc + "\n;\n" + solverSrc + "\n;\n" + runner);

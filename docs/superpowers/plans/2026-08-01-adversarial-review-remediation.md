@@ -17,7 +17,7 @@
 - Vespium and Hydracite remain independent hard budgets. May-work margin must never borrow either one.
 - Credits remains a **dedicated-one-item comparison** unless a separate, explicitly approved mixed-sales mode is designed.
 - Crafter-line edits remain explicit Resimulate actions; improve visibility without bringing back expensive solve-on-every-keystroke behavior.
-- Line stability remains available, but its speed cost must be visible and optional.
+- Line stability remains available, but its full-schedule tradeoff must be visible and optional. A lower-throughput held phase may still finish sooner overall by avoiding recursive warm-ups and reordering.
 - The application stays usable without a backend or account.
 - User-controlled values must never enter executable HTML contexts.
 - Every UI change must be checked at desktop and mobile widths, with keyboard-only navigation and preserved focus.
@@ -25,6 +25,17 @@
 - Wide data belongs in named component-level scrollers; page-level clipping is not an acceptable responsive strategy.
 - Do not erase a damaged save. Quarantine it and offer GUI recovery/download.
 - Do not merge implementation branches or PRs without explicit owner approval.
+
+## Release and Worker Contract
+
+Emergency fixes `188e913` and `1466a5d` are the release baseline for every remaining task:
+
+- `npm run build` produces `dist/` through `scripts/build-static.cjs`. `dist/index.html` is the only revalidated release pointer; generated `/static/*` assets are content-addressed and immutable.
+- The current source Worker handler is `js/solver.worker.v2.js`. Production does not fetch that path: the build concatenates the current Worker dependencies and handler into the hashed app, then creates a `blob:` Worker from that in-memory payload.
+- `/js/solver.worker.js` is a permanent immutable error fence for the oldest open tabs. `compat/solver.worker.v2.js` is the checksum-locked, self-contained v2-era Worker copied to the permanent immutable `/js/solver.worker.v2.js` compatibility endpoint. Never edit, replace, import, or repurpose either compatibility contract for current features.
+- Every change to a page script, Worker dependency, stylesheet, image, or future font must be registered in the build graph and proven to rotate only the affected content hash. Source-mode unit tests remain useful, but browser/release claims must exercise the generated app and its Blob Worker.
+- URLs emitted into HTML, CSS, or JavaScript must derive from the document/build base and work at both `/` and a subpath. Do not add new root-relative application assets.
+- Worker factories own every resource they create. Terminating an owned Blob Worker must revoke its object URL immediately; a timeout may remain only as a leak backstop, not the normal cleanup path.
 
 ## Agentic Execution Model
 
@@ -34,9 +45,9 @@ Use a fresh `codex/` worktree branch for each merge unit. Parallel research and 
 | --- | --- | --- |
 | 0 | Task 0 | One foundation agent; merge first |
 | 1 | Task 1, then Tasks 2–3 | Merge the state boundary first; security and solve-lifecycle work may then run in parallel worktrees with serialized integration |
-| 2 | Tasks 4–7 | Solver corrections can be independent if each owns separate functions/tests; one integration review after all four |
+| 2 | Task 3F, then Tasks 4–7 | Land the Worker/release follow-up first. Solver corrections can be independent if each owns separate functions/tests; one integration review after all four |
 | 3 | Tasks 8–10 | Field, dialog, and accessibility foundations; serialize shared markup/events changes |
-| 4 | Task 11A; approval; Tasks 11B–11D; then Task 12 | Land P1 geometry first, then approved system composition, then onboarding/IA; one UI integration agent |
+| 4 | Task 11A checkpoint only | The owner accepted and released the checkpoint as the final UI scope for this pass. Do not implement Tasks 11B–11D or Task 12 without a new explicit request. |
 | 5 | Tasks 13–14, then Task 15, then Task 16 | Resilience and release engineering may run in parallel where safe; documentation follows Task 14 and settled behavior, then final verification runs after integration |
 
 Each task follows this handoff:
@@ -47,9 +58,21 @@ Each task follows this handoff:
 4. Integration agent rebases, resolves overlaps, and runs the standard full gate.
 5. Owner reviews rendered changes before merge.
 
+### Deferred minor ownership
+
+The checkpoint minors remain assigned and must not disappear merely because their originating task is marked complete:
+
+| Deferred minor | Owning task |
+| --- | --- |
+| Recovery dismissal restores Import focus rather than the exact invoker | Task 16 targeted regression; no UI redesign |
+| An owned but idle reused Worker can report an error as an active failure | Task 3F |
+| Dialog cleanup can overwrite a pre-existing `inert` state | Task 16 targeted regression; no dialog redesign |
+| Skip-link destination suppresses a visible focus indicator | Task 16 targeted regression; preserve the checkpoint composition |
+| Visual CI step is unnamed and `test:browser` duplicates `visual-layout` | Task 14 CI/release wiring |
+
 ## Standard Verification Gate
 
-Task 0 creates `npm test` and `test:browser`. Task 10 adds `test:a11y`; Task 11 adds `test:visual`; Task 14 adds `build` and `test:release`. Until each command exists, run the task's focused checks plus the available subset. Never add a placeholder command that reports green without running its promised checks.
+Task 0 creates `npm test` and `test:browser`. Task 10 adds `test:a11y`; Task 11 adds `test:visual`. Emergency baseline `1466a5d` supplies `build`; Task 14 adds `test:release` and completes its upgrade/subpath coverage. Until each command exists, run the task's focused checks plus the available subset. Never add a placeholder command that reports green without running its promised checks.
 
 ```bash
 npm test
@@ -189,6 +212,36 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - [ ] Preserve per-request Worker termination while `optimize()` remains synchronous. A healthy Worker may be reused only after it completes a request; superseding an active request still requires termination because it cannot process a cancel message mid-solve. Any reused idle Worker must reset its line-stability cache from the request snapshot.
 - [ ] GREEN in browser: rapid mode switching, reset/import mid-solve, Worker load failure/recovery, and repeated solves never paint stale output or leave the overlay stuck.
 
+## Task 3F: Reconcile Worker Lifecycle With the Hashed Blob Release
+
+**Priority:** P1 follow-up
+
+**Depends on:** Task 3 and release baseline `1466a5d`; must land before Task 4
+
+**Files:**
+
+- Modify: `js/solve-service.js`
+- Modify: `scripts/build-static.cjs`
+- Modify: `test/solve-lifecycle.cjs`
+- Modify: `test/browser/solve-lifecycle.spec.js`
+- Modify: `test/browser/smoke.spec.js`
+- Modify: `test/static-asset-build.cjs`
+- Modify: `test/legacy-worker-retirement.cjs`
+- Create: `test/fixtures/solver-worker-v2-request.json`
+- Preserve unchanged: `js/solver.worker.js`
+- Preserve unchanged: `compat/solver.worker.v2.js`
+
+**Interfaces produced:** an explicit current-Worker factory/owner contract used by `solveService`, with a termination path that releases factory-owned resources.
+
+- [ ] RED: finish a request so the current Worker is owned but idle, emit that exact Worker’s late `error`, and assert the service neither increments failure state nor exposes fallback for a request that no longer exists.
+- [ ] Ignore errors from an owned idle Worker after a completed delivery. An event may affect retry/fallback state only when that Worker is busy and owns the authoritative generation/callback.
+- [ ] RED at the build boundary: create a generated Blob Worker, terminate it before its first message/error, and require its object URL to be revoked immediately rather than waiting for the 60-second backstop.
+- [ ] Make the Worker factory return/attach an idempotent release operation and ensure every `solveService` termination path calls it. Natural completion/error may release the Blob URL after construction, but early termination must also release it synchronously.
+- [ ] Keep one frozen v2-era request/response fixture that executes against `compat/solver.worker.v2.js` and proves the permanent compatibility endpoint still solves with its historical schema. Do not regenerate that fixture from current source.
+- [ ] Keep source tests injectable without weakening the production build: the current source handler remains `js/solver.worker.v2.js`, while `scripts/build-static.cjs` substitutes the registered in-memory Blob factory in the hashed app.
+- [ ] Assert the oldest-tab fence and checksum-locked v2 compatibility file are byte-for-byte unchanged.
+- [ ] GREEN: focused lifecycle, static-build, compatibility, and generated-app Blob Worker tests all pass.
+
 ## Task 4: Make Project Instructions Executable From the Stated Inventory
 
 **Priority:** P1 correctness
@@ -203,7 +256,12 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - Modify: `js/solver.js`
 - Modify: `js/results.js`
 - Modify: `js/events.js`
-- Modify: `js/solver.worker.js`
+- Modify: `js/solver.worker.v2.js`
+- Modify: `scripts/build-static.cjs` when registering any new page/Worker module
+- Modify: `test/static-asset-build.cjs`
+- Modify: `test/browser/smoke.spec.js`
+
+**Worker ownership:** current Project behavior belongs only to the current source graph and generated Blob Worker. Never change `js/solver.worker.js`, `compat/solver.worker.v2.js`, or either permanent deployed compatibility endpoint for this task.
 
 **Interfaces produced:**
 
@@ -224,7 +282,8 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - [ ] Include warm-up duration in ETA and finish-by clocks. Never retain the old ETA after inserting prerequisites.
 - [ ] If an executable schedule cannot be constructed, suppress imperative run instructions and show a blocking diagnostic; never call it feasible merely because the average LP is feasible.
 - [ ] Ensure displayed stock comes from the event replay, not phase-average rates, and never hide a deficit by `Math.max(0, ...)` before validation.
-- [ ] GREEN: zero-stock Frames case starts with a valid warm-up, all boundaries stay nonnegative, ETA includes it, and existing inventory/mined/partial scenarios retain their intended behavior.
+- [ ] Register `js/project-schedule.js` in the page and Worker dependency arrays in `scripts/build-static.cjs`; fail the build if the current Worker payload omits it or a compatibility file changes.
+- [ ] GREEN in both direct Node coverage and the generated Blob Worker: zero-stock Frames starts with a valid warm-up, all boundaries stay nonnegative, ETA includes it, and existing inventory/mined/partial scenarios retain their intended behavior.
 
 ## Task 5: Replace the Greedy Gel Capacity Claim With an Exact Loadout
 
@@ -249,6 +308,7 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - [ ] Account for real call volume: `solveCore` invokes Gel loadouts for ranked-line prefixes and Credits repeats that work across candidates. Reuse prefix frontiers incrementally where possible, or keep a separately named bounded seed helper while reserving exact `gelLoadout` for claims of maximum capacity.
 - [ ] Add full Items/Credits timing, parity, and budget-monotonicity tests plus 5/7/8/10/12-line helper guards. Do not introduce a wall-clock cap that silently makes “best” approximate again.
 - [ ] Assert `vespHr <= budget`, one choice per line, exact total sums, and no exhaustive candidate beats the result.
+- [ ] Prove the exact helper through the generated app’s current Blob Worker as well as direct Node tests. A `js/solver.js` change must rotate the hashed app; no test or implementation may update the frozen v2 compatibility Worker.
 - [ ] Update copy only if the result remains approximate for any supported input. Otherwise retain “best” with the new proof tests.
 
 ## Task 6: Correct Credits Warning Ownership and Enforce a Real Deadline
@@ -276,16 +336,18 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - [ ] Define confidence precisely: `allCandidatesEvaluated` means every candidate got the bounded baseline; `searchExhaustive` means no competitive candidate was capped. Copy remains “best found” whenever exhaustive comparison is false, and identifies unevaluated candidates when present.
 - [ ] Hide/disable Copy to Manual unless the winning plan contains a non-idle job.
 - [ ] Rewrite the false “always mono-product” comment to describe the dedicated-item comparison contract.
+- [ ] Run the budget/deadline contract through the generated current Blob Worker. Keep deterministic clock/work-budget injection in current source/test seams only; never add it to either permanent compatibility endpoint.
 
 ## Task 7: Expose and Control Project Line-Stability Tradeoffs
 
 **Priority:** P2 trust
 
-**Depends on:** Task 4
+**Depends on:** Tasks 4 and 6
 
 **Files:**
 
 - Create: `test/stability-ui.cjs`
+- Modify: `js/fields.js`
 - Modify: `js/state.js`
 - Modify: `test/state-schema.cjs`
 - Modify: `js/core.js`
@@ -293,19 +355,74 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - Modify: `js/results.js`
 - Modify: `js/events.js`
 - Modify: `index.html`
+- Modify: `test/stability.cjs`
+- Modify: `test/project-transients.cjs`
+- Modify: `test/browser/smoke.spec.js`
+- Modify: `test/browser/state-recovery.spec.js`
+- Modify: `test/run-all.cjs`
+- Modify: `README.md`
+- Modify: `css/styles.css` only if the new semantic block needs component styling
 
-- [ ] Reuse the existing 2.36% held-plan case as RED UI coverage.
-- [ ] Add persisted, schema-validated setting `projectStability: "prefer-current" | "fastest"`; default new and legacy saves to `prefer-current`, preserve it through export/import, and cover its migration.
-- [ ] When stabilized and slower, render each affected phase’s exact throughput/ETA difference plus the total plan ETA difference, the reason jobs were retained, and GUI actions **Keep current line jobs** / **Use fastest plan**.
-- [ ] Make the choice global and unambiguous: **Use fastest plan** changes the persisted setting to `fastest`, bypasses pins for every phase, and re-solves the entire plan. A future phase-specific override requires a separate design.
-- [ ] Remove unqualified “fastest/optimal” wording when a slower stable plan is displayed.
-- [ ] Test zero-gap swaps, sub-band holds, past-band releases, mode persistence, and Worker serialization.
+**State contract:** bump `CURRENT_SCHEMA_VERSION` from 1 to 2 without renaming `forgePlannerState_v3`. Add `projectStability: "prefer-current" | "reoptimize"`; default new, unversioned, and valid v1 saves to `prefer-current`, and require the exact enum for v2. Preserve strict validation of every v1-required field during migration—do not let the new version branch weaken old structural checks. V2 also requires unique project IDs. For a legacy v1/unversioned duplicate, preserve the first ID and deterministically assign each later duplicate a collision-free safe migrated ID based on its source-array position; never let two accepted projects share a semantic/cache identity.
+
+**Cache policy:** a visible prefer-current solve may read pins and propose remembered stability records; a visible reoptimize solve ignores pins but may remember its selected jobs. Hidden comparison solves, ordering estimates, preliminary fixed-point passes, and warm-up solves may neither read nor write pins. `projectSchedule()` must not mutate stability state directly. `optimizeProjectTop()` commits only the selected visible plan’s proposed updates, atomically after a successful full run; failed selected runs retain the previous-good cache, unrelated keys survive, and the 256-entry cap remains. Worker `__stab` is the complete post-commit cache snapshot: it preserves unrelated incoming records, applies additions/replacements only from the successful selected visible run, and includes nothing learned from hidden, preliminary, ordering, warm-up, partial, or failed work.
+
+**Comparison contract:** return the selected visible plan plus this summary only; never expose the hidden alternative plan:
+
+```js
+{
+  projectStability,
+  stabilityComparison: null | {
+    comparable,
+    selectedExecutable,
+    alternativeExecutable,
+    selectedPhaseOrder,
+    alternativePhaseOrder,
+    orderChanged,
+    selectedTotalEta,
+    alternativeTotalEta,
+    alternativeMinusSelectedTotalEta,
+    selectedWorkEta,
+    alternativeWorkEta,
+    alternativeMinusSelectedWorkEta,
+    selectedWarmupEta,
+    alternativeWarmupEta,
+    alternativeMinusSelectedWarmupEta,
+    alternativeIsShorter,
+    phases: [{
+      phaseKey,
+      name,
+      selectedThroughput,
+      alternativeThroughput,
+      selectedEta,
+      alternativeEta,
+      selectedThroughputLossPct,
+      selectedEtaPenaltyPct
+    }]
+  }
+}
+```
+
+The three `alternativeMinusSelected*` fields are `alternative - selected`; a negative total difference means re-optimization is shorter. Totals come from complete `executionPhases`; work/per-phase values come from semantic phases. `selectedPhaseOrder` and `alternativePhaseOrder` are arrays of phase keys, never display names. Match phases by a validated-unique semantic key—sequenced project ID, sorted combined IDs, or sorted wave IDs—never by display name or array index. Include only actually stabilized phases in the per-phase comparison.
+
+`selectedExecutable` / `alternativeExecutable` require the run itself to have `feasible === true`, `lpFeasible === true`, and `partial !== true`, plus `scheduleValidation.ok === true`, no first failure, and finite nonnegative total/work/warm-up ETAs. The same full-demand success boundary gates selected-cache commit. `comparable` additionally requires both schedules executable, unique phase keys, and exactly one finite positive-throughput/nonnegative-ETA alternative match for every stabilized selected key. Use `ETA_COMPARE_EPS = max(1e-9 hours, Number.EPSILON * 64 * max(1, |selected|, |alternative|))` for total/work/phase ETA comparisons and the analogous `THROUGHPUT_COMPARE_EPS = max(LP_ASSIGN_EPS, Number.EPSILON * 64 * max(1, |selected|, |alternative|))` for throughput. `alternativeIsShorter` is true only when `alternativeTotalEta - selectedTotalEta < -ETA_COMPARE_EPS`. Define `selectedThroughputLossPct = 100 * (alternativeThroughput - selectedThroughput) / alternativeThroughput` and `selectedEtaPenaltyPct = 100 * (selectedEta - alternativeEta) / alternativeEta`; a zero/invalid denominator makes the comparison noncomparable instead of fabricating a percentage.
+
+- [ ] Freeze the 420-Frames case as RED coverage: held phase throughput is 2.6304% lower and its ETA 2.7015% longer, but held warm-up is 129.94 seconds shorter and complete held ETA `0.6659750249h` beats reoptimized `0.6846583163h` by 67.26 seconds. Both schedules must have `scheduleValidation.ok === true`, no first failure, and no inventory boundary below the configured absolute-plus-relative stock tolerance. Do not clamp the tiny accepted floating-point residuals merely to satisfy a literal `>= 0` assertion.
+- [ ] Refactor a full-run path such as `solveProjectRun(sequence, net, perProject, policy)` through sequencing, waves/combined phases, recursive warm-ups, phase ordering, carried inventory, replay, and finish clocks. The hidden alternative is eligible only when prefer-current actually stabilizes a phase.
+- [ ] Make stability records an explicit input/output of schedule construction. Build records only from final converged feasible semantic phases; never mutate cache during preliminary, hidden, ordering, warm-up, failed, or partial work.
+- [ ] Add the Project policy selector in the Shopping-list controls with a visible `<label for="projectStability">Line-job policy</label>` plus `aria-describedby` help explaining the 5% band and that re-optimization can improve phase throughput yet lose overall after warm-ups/order changes. Sync it from state and re-solve Project mode on a valid user change; cover both the accessible name and description association.
+- [ ] Render escaped affected-phase throughput/ETA differences, selected versus alternative complete ETA, warm-up difference, order changes, executability, and the retained-policy reason. Present **Current line jobs retained** as selected-state text rather than a no-op button. Offer **Use shorter re-optimized plan** only when its total is shorter. Otherwise use **Use higher-throughput line jobs anyway** only when every compared phase is at least within its pairwise throughput tolerance and at least one phase is higher by more than tolerance. Use neutral **Use re-optimized line jobs anyway** when all phases are within tolerance or when material phase deltas are mixed/negative. Quantify across every compared phase; never branch on the first row. When reoptimize is active, offer **Prefer current line jobs on future edits**. If the alternative is nonexecutable or the summary is noncomparable, explain why and offer no comparison-block speed/throughput switch; the always-available policy selector remains the deliberate override.
+- [ ] Remove remaining unqualified Project-facing “fastest/optimal” wording, including the Project modal, sequence toggle, result summary, and README. Replace the existing warm-up promise that every boundary is literally nonnegative with truthful “no material shortage / within replay tolerance” copy. Do not alter accurate Mined-mode “fastest current line” copy.
+- [ ] Cover sub-band holds, past-band release at the established 420/500 boundary, zero-gap swaps, both longer and shorter alternatives, a replay-safe but LP-partial run that is not executable/comparable and cannot commit cache, a failed/noncomparable alternative with no misleading action, a mixed multi-phase throughput case that uses neutral copy rather than the first row, duplicate display names, deterministic legacy duplicate-ID migration plus v2 duplicate-ID rejection, sequenced/wave key ordering, JSON roundtrip, eviction, schema migration/strictness, selector persistence/reset, malicious phase names, and truthful static copy.
+- [ ] Prove cache isolation with sentinels: hidden comparison, ordering, preliminary, and warm-up work cannot touch cache; repeated held runs remain held; visible reoptimize remembers its selected jobs; failed selected runs retain prior-good records.
+- [ ] Extend generated-app smoke coverage using the ordinary current Blob Worker: establish schema-v2 prefer-current pins, rerun the 420 case under both policies, assert the expected executable/full-ETA tradeoff and a full post-commit `__stab` snapshot whose changes come only from the selected visible run, and require zero permanent Worker/dependency requests. Use no deterministic test hook in the browser path.
+- [ ] Preserve `js/solver.worker.js`, `compat/solver.worker.v2.js`, `test/fixtures/solver-worker-v2-request.json`, the compatibility checksums/golden, and both permanent endpoints byte-for-byte. No production change is expected in `js/solve-service.js` or the current Worker handler.
 
 ## Task 8: Unify Numeric Validation, Error Messaging, and UI Ranges
 
 **Priority:** P2
 
-**Depends on:** Task 1
+**Depends on:** Tasks 1, 6, and 7
 
 **Files:**
 
@@ -317,17 +434,40 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - Modify: `js/core.js`
 - Modify: `js/events.js`
 - Modify: `js/render.js`
+- Modify: `js/dom.js`
+- Modify: `js/results.js`
+- Modify: `js/solver.js`
+- Modify: `css/styles.css`
 - Modify: `index.html`
+- Modify: `test/run-all.cjs`
+- Modify: `test/browser/accessibility.spec.js`
+- Modify: `test/browser/visual-layout.spec.js`
+- Modify: `test/browser/smoke.spec.js`
 
 **Interface:** extend Task 1’s authoritative field descriptors with parser/formatter/error presentation and bind them to controls; do not duplicate state/import constraints.
 
+**Version and budget decision (owner-approved supersession):** use `CURRENT_SCHEMA_VERSION = 3`, keep storage key `forgePlannerState_v3`, and retain the established `solveBudget` range of **200–60,000ms**. Fresh/reset state defaults to **10,000ms**. Validate an older accepted save's existing budget, then migrate schema 1, schema 2, and recognized unversioned state to 10,000ms exactly once; schema 2 retains its former current-state Project strictness. After the state is written as schema 3, preserve every valid user-selected value—including 2,000ms, nonstandard in-range integers, and 60,000ms—through reload, import, export, Settings, and Worker dispatch. Make the Settings slider reach 60 seconds and derive every clamp/range from the descriptor.
+
+**Pure field API:** add helpers equivalent to `validateFieldValue(rule, value)`, `parseFieldDraft(rule, raw, {badInput})`, `formatFieldValue(rule, value)`, and descriptor-derived input attributes. Parsing returns exactly `valid`, `blank`, `incomplete`, or `invalid`. Rules own decimal versus integer versus enum/game-notation parsing, blank behavior, min/max, input mode, units, and specific end-user errors. `1e`, `1e+`, `1q`, `1s`, and native `badInput` are incomplete; a readable trailing decimal such as `2.` is valid and canonicalizes to `2` so blur/change/Enter cannot strand an otherwise unambiguous value. Split the generic amount rule into named sell-price, Forgie, mined-income, inventory, and project-quantity descriptors even where their security limits currently match.
+
+**Mutation boundary:** parse before `mutateState`. A valid value updates the model and follows that field’s existing save/solve-or-stale behavior; a valid optional blank commits `null` and clears its persisted display text. Incomplete/invalid input stays visible in the DOM, leaves both the numeric model and persisted text map at their last valid values, and triggers no mutation, save, stale marker, solve scheduling, or Enter/change flush. Project `from`/`to` handlers parse both visible endpoint drafts together: only a syntactically and dynamically valid `from <= to` pair commits, and it commits both endpoints atomically. Correcting either endpoint may resolve a previously invalid peer draft, clear both errors, and commit the pair without forcing a particular edit order. The inline `change` path must not solve an invalid/uncommitted pair. `doSolve()` must also stop when transactional persistence rejects the current state rather than dispatching it to a Worker. Closing/reopening or otherwise rebuilding an editor may abandon an unsaved bad draft and restore the last valid persisted value.
+
+**Feedback contract:** render each empty `.field-error` before it can be updated, as a polite atomic live region outside any wrapping `<label>` naming subtree. Set `aria-invalid="true"` and append its stable ID to—not replace—any existing `aria-describedby` help tokens. Error copy names the accepted form/range and says which previous value remains active. Price/Forgie/inventory rows regain a direct feedback row; line/global/mined/calibration fields place feedback under the control; recipe errors remain inside their table cell; Shopping-list Project range/priority errors use a full-width tools error row so Task 11A geometry is preserved. Each inline Project row owns a separate full-width `.proj-inline-errors` flex/grid child after its controls, with stable per-endpoint associations. Refactor nested calibration and Hydracite labels as needed so feedback is a sibling rather than part of the accessible name. At 320px, both Project error placements wrap without page overflow.
+
+**Solve-budget control:** preserve the exact persisted integer range while making low budgets usable on a narrow screen. Map the range control over friendly millisecond stops `200, 500, 1000, 2000, 3000, 5000, 8000, 10000, 15000, 20000, 30000, 45000, 60000`; if an accepted persisted value is not a standard stop, inject it into the sorted stops for that session so merely opening Settings never rounds or changes it. Derive the first/last stops from `FIELD_SCHEMA.solveBudget`, expose the actual duration through `aria-valuetext`, and commit only the selected exact millisecond value.
+
 - [ ] RED: `abc`, negatives, oversized dupe/margin, invalid compression, imported 60-second budget versus 15-second slider, and partial scientific/game notation.
-- [ ] Choose one supported solve-budget maximum and use it in HTML, descriptors, normalization, Worker messages, and solver. Recommendation: retain 15 seconds unless measured user cases justify 60.
+- [ ] Use the decided 60-second maximum in HTML, descriptors, normalization, result dispatch, Worker messages, and solver. Prove a persisted 60-second value renders accurately and reaches the current generated Worker unchanged.
 - [ ] Apply explicit valid ranges to dupe, margin, turbo, line speed, inventory, Forgie, prices, mined income, project quantities, base time, and recipe costs.
-- [ ] Preserve typed text while invalid, preserve the last valid model value, and show a nearby message with `aria-invalid=true` and `aria-describedby`.
-- [ ] Remove dead `data-prev` lookup or render the intended feedback element consistently.
-- [ ] Reject invalid import fields in the transactional preview rather than silently coercing them.
+- [ ] Preserve a typed invalid/incomplete DOM draft without changing the last valid model or stored bytes. Show nearby feedback with `aria-invalid=true`, preserved help associations, and prior-value copy; correction clears the error and resumes the existing solve/stale path.
+- [ ] Replace the dead `data-prev` lookup with the shared visible field-feedback contract.
+- [ ] Keep schema v1/v2 compatibility for historical display-text maps, validate an older save's budget before the one-time schema-v3 10-second replacement, and preserve current-v3 user choices exactly. Reject actual invalid numeric/import fields transactionally instead of normalizing them. Invalid GUI drafts must never enter export, localStorage, rendering state, or Worker snapshots.
+- [ ] Cover required line speed/base time, optional recipe cost and amount blanks, turbo/max turbo/dupe, target/margin sliders, calibration fields, Project quantity/range/priority (including `from <= to` and live level bounds), and inline Project range controls. Manual compression remains a constrained select.
+- [ ] Align solver defensive clamps with descriptors (including margin 20 and budget 60,000) without changing valid objectives.
 - [ ] Verify keyboard, paste, mobile numeric keyboards, game suffixes, exponent notation, blank values, and localization-safe display.
+- [ ] Node coverage must prove descriptor/state parity, commas/case/game suffixes, exponent notation, partial `1e`/`1e+`/`1q`, readable trailing-decimal canonicalization, native `badInput`, negative/overflow/integer failures, optional/required blank behavior, stable messages, formatting, and dynamic Project bounds.
+- [ ] CI-only browser coverage must prove last-valid state/storage behavior, no invalid Enter/change solve, atomic two-endpoint Project correction in either edit order, valid-to-invalid-to-corrected and valid-to-blank flows, pre-existing live-region/error associations, exact preservation of a nonstandard in-range solve budget, 60-second settings/Worker dispatch, calibration Apply gating, both Project feedback layouts at 320px, root-overflow geometry, and Axe with visible errors. Syntax-check locally; do not launch a browser.
+- [ ] Exercise accepted/rejected snapshots through the ordinary generated current Blob Worker because `js/fields.js` and `js/state.js` are embedded Worker dependencies. Assert the hashed app rotates, no permanent Worker/dependency URL is requested, and both permanent compatibility files plus the historical fixture/golden remain byte-for-byte unchanged.
 
 ## Task 9: Introduce One Accessible Dialog Controller
 
@@ -388,6 +528,8 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - [ ] Test 200% zoom, high-contrast/forced-colors where supported, keyboard-only, and mobile touch layouts.
 
 ## Task 11: Repair Visual Regressions and Establish the Visual System
+
+> **Owner scope correction (2026-08-02):** Merge unit 11A was reviewed, approved, released on `main`, and is the final UI checkpoint for this remediation pass. Merge units 11B–11D below are retained only as historical review notes and must not be implemented unless the owner makes a new explicit request. Preserve the checkpoint's design and continue with code, resilience, release, documentation, and audit work.
 
 **Priority:** P1 responsive regressions / P2 visual system
 
@@ -459,12 +601,17 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 
 - [ ] Move presentation-only inline styles in owned surfaces into semantic classes. Keep an explicit allowlist only for genuinely dynamic values such as progress width and tooltip image variables; fail a source check on new unapproved inline presentation.
 - [ ] Consolidate breakpoints around component needs and keep overrides after—or at equal specificity to—the declarations they replace.
-- [ ] Self-host the selected fonts with license notices before recording geometry/screenshots. Capture only after `document.fonts.ready`; freeze animations, current-clock text, and solver-time text; use deterministic saved-state fixtures.
+- [ ] Self-host the selected fonts with license notices before recording geometry/screenshots. Add every font file and CSS reference to `scripts/build-static.cjs` so fonts are content-addressed members of the closed asset graph; the build must fail on an unregistered `url(...)` dependency.
+- [ ] Emit font and other owned asset URLs relative to the generated stylesheet/document base so the same build works at `/` and `/Forge-Planner/`; do not add a new root-relative `/static/...` assumption while extending the graph.
+- [ ] Capture only after `document.fonts.ready`; freeze animations, current-clock text, and solver-time text; use deterministic saved-state fixtures.
 - [ ] Store approved baselines under `test/browser/visual-baselines/<viewport>/<state>.png`. The manifest records source revision, viewport, fixture/state name, font asset revision, capture command, expected intentional differences, reviewer, and approval date.
+- [ ] Name the visual CI step and make `test:browser`/`test:visual` ownership non-overlapping so `visual-layout.spec.js` is not silently executed twice in the same gate.
 - [ ] GREEN geometry at 320, 375, 390, 430, 560, 561, 640, 768, 880, 881, 900, 1024, and 1440px: document `scrollWidth <= clientWidth + 1`; each surface matches its documented inset token; the 11A selector assertions remain green; and sparse recipe layouts have neither stretched cards nor large empty row gaps.
 - [ ] Screenshot-review fresh Items, solved Items, stale, Credits empty/solved, Project empty/long, Manual, Crafting Data, Sell prices, Forgie, Mined Resources, Shopping list with a long catalog name, Progress, and Settings at 320/375/390/430/768/900/1024/1440px. Record reviewer sign-off in the manifest and design spec.
 
 ## Task 12: Redesign First-Run and Mobile Task Flow Without Hiding Power
+
+> **Owner scope correction (2026-08-02):** Deferred outside this remediation pass. The approved UI checkpoint is complete; do not reopen onboarding, navigation, header, dialog, or visual composition work without a new explicit request.
 
 **Priority:** P2 UX
 
@@ -497,73 +644,116 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 
 **Priority:** P3 resilience/performance
 
-**Depends on:** Tasks 1 and 3
+**Depends on:** Tasks 1, 3, 3F, and 8 on the emergency-resynced current-build baseline
 
 **Files:**
 
 - Create: `test/browser/persistence.spec.js`
+- Modify: `test/solve-lifecycle.cjs`
+- Modify: `test/browser/solve-lifecycle.spec.js`
 - Modify: `js/events.js`
 - Modify: `js/results.js`
 - Modify: `js/solve-service.js`
+- Modify: `scripts/build-static.cjs` and `test/static-asset-build.cjs` only if the exact production Worker-constructor replacement seam changes
 
-- [ ] RED: edit a target/price/margin and reload within 500ms; current value is lost.
-- [ ] Add a cheap persistence debounce independent of the solve debounce; flush pending persistence on `pagehide` and when visibility becomes hidden.
-- [ ] Do not launch an expensive solve merely to persist.
-- [ ] Remove synchronous `optimizeProjectTop()` from `renderProgress()`. Consume a current cached project result or request it through the solve service.
-- [ ] Add a deliberately slow fake solve and assert Progress remains responsive.
+- [ ] RED: toggle a Shopping-list Project disclosure and tear down/reload before any unrelated save; `_open` is accepted schema-v2 state but is currently lost because the handler mutates without persistence. Also prove a dedicated persistence timer can write accepted state without calling `doSolve()`, `renderResults()`, or `solveService.request()`. Preserve Task 8's immediate-save behavior for price, margin, and other numeric drafts with explicit non-regression coverage.
+- [ ] Add one owned 100ms persistence debounce (`schedulePersist` / `persistNow` / `flushPersist`) independent of the 500ms solve debounce. Audit accepted GUI mutations: each must save immediately, schedule persistence, or be explicitly documented as non-persisted transient UI. The disclosure path must schedule persistence. Existing solve-scheduling handlers must no longer depend on a future solve for durability; avoid duplicate delayed writes when `doSolve()` or an immediate save already persisted the same revision.
+- [ ] Lifecycle ordering is exact: `pagehide` flushes pending persistence, clears `renderT` so delayed `doSolve()` cannot restart work, then cancels `solveService`; `visibilitychange` while hidden flushes persistence only and does not otherwise cancel, reschedule, or manufacture a solve. Do not launch an expensive solve merely to persist.
+- [ ] Remove synchronous `optimizeProjectTop()` from `renderProgress()`. Cache a Project result with a solve-equivalence key derived from the exact dispatched state snapshot after removing only documented display-only `planStart` and each Project's `_open`; do not use raw global `stateRevision`, because those display mutations legitimately advance it without changing solver output. Any other state change invalidates the cache. Use that same solve-equivalence key at `solveService`'s in-flight currentness boundary (or an exactly equivalent solve-relevant revision): display-only `_open`/`planStart` mutations during a slow solve must not discard an otherwise authoritative result, while every solver-relevant mutation must still reject or supersede it.
+- [ ] Opening Progress with a current key consumes the cache immediately. A Progress completion mutation schedules the existing normal debounced Project render/solve before repainting its counts, shows a truthful pending ETA while the key is stale, and refreshes an open Progress dialog when that one authoritative result returns. Opening an already-stale Project result after an explicit-Resimulate crafter-line edit must show out-of-date ETA and must not silently solve. Never start a second Progress request that supersedes the authoritative main Project request.
+- [ ] Add the missing explicit current-solver factory/test hook inside `solveService`. Its default factory must retain the exact source constructor seam consumed by `scripts/build-static.cjs`, or the builder and static graph tests must be updated in the same task. Changing the factory must cancel/release any owned Worker before replacement.
+- [ ] Add a deliberately slow fake solve through that factory hook and assert Progress opens and accepts completion controls without main-thread optimization or global `Worker` replacement; when the controlled result returns, both the main Project result and still-open Progress summary become current. Cover both sides of in-flight currentness explicitly: `_open` and `planStart` changes during the slow solve still accept its result, while a solver-relevant mutation rejects/supersedes it. Do not bypass `solveService` or couple persistence tests to either permanent compatibility endpoint.
+- [ ] Preserve the explicit-Resimulate policy for crafter-line edits: persistence may flush independently, but this task must not turn those edits back into automatic expensive solves.
 
-## Task 14: Make Releases Cache-Coherent and Subpath-Safe
+## Task 13P: Semantically Integrate PR #94 Set & Forget Scheduling
+
+**Priority:** Owner-requested integration gate before remaining release work
+
+**Depends on:** Tasks 3F–8 and 13 on emergency baseline `1466a5d`; PR #94 head `b97cc95`
+
+**Files:** the exact PR #94 feature surface plus integration regressions and this plan/ledger; do not broaden checkpoint UI scope
+
+- [ ] Preserve PR #94's history and intended user feature while resolving its seven textual conflicts against the newer architecture. Never choose an entire side for `solver.js`, `events.js`, `results.js`, state, or validation.
+- [ ] Persist and validate `projLineMode` through the current schema/descriptor boundary. Add only the minimal accessible line-mode control, order-field disabled state, and datetime overflow repair required by #94; do not reopen visual composition.
+- [ ] Port one-job-per-line static scheduling onto the current shared absolute solve control, exact Gel/mined-resource model, executable replay, warm-up/external-prerequisite accounting, and Task 7 stability boundary. Every semantic static pass must remain static; static ranking must use the same inventory world as the selected run; a deadline must degrade search before it restarts a per-phase budget.
+- [ ] Preserve the last exact-replay-certified static incumbent when fixed-point refinement or a lower-ceiling recovery attempt reaches the shared deadline. Analytical feasibility alone is not certification; later replay-invalid candidates must not erase a usable plan. Keep this certification static-only so default Line switching pays no extra replay-build cost.
+- [ ] Detect repeated pre-produced-Bits obligations and retry finite strict-lower compression ceilings under the same root control without mutating configured line caps. Select only replay-certified feasible fallbacks, retain honest capped/non-exhaustive telemetry, and never replace a certified unrestricted incumbent with an interrupted empty retry.
+- [ ] Keep visible follow-up copy factual and geometry-neutral: static infeasibility may need more lines because each phase has at most one job per line; one-at-a-time precedence is unlocks → numeric order → estimated completion; executable bounded results may not be shortest; held-feeder disclosure must come from replay execution inventory/consumption after subtracting same-phase pre-produced reserves.
+- [ ] Keep Task 13's solve-equivalence-keyed authoritative Progress cache. Do not restore PR #94's weaker raw `solveService.status()` cache inference; a solve landing may refresh only the Progress summary so focused level controls survive.
+- [ ] Reconcile `staticmode`, `seqgate`, schema, accessibility, and ordered-runner coverage with current contracts. Replace obsolete assumptions (including pre-Task4 four-line Frames infeasibility and per-phase budget-grant helpers) with exact replayed prerequisite and one-root-control assertions.
+- [ ] Re-run Tasks 4–8/13 focused contracts, all ordered Node tests, deterministic build/static graph, parity, syntax/diff, and frozen endpoint/fixture/golden hashes. Browser execution remains CI-only in this local pass.
+- [ ] Require independent exact-diff semantic review before committing the conflict resolution. Do not merge or push `main` without the owner's later explicit approval.
+
+## Task 14: Finish Release Upgrade Coverage and Subpath Safety on the Hashed Build
 
 **Priority:** P2 delivery
 
-**Depends on:** Task 0
+**Depends on:** Tasks 0, 3F, and 13P, emergency baseline `1466a5d`, and the integrated current build graph
 
 **Files:**
 
-- Create: `scripts/build.cjs`
 - Create: `scripts/release-smoke.cjs`
 - Create: `test/browser/release-upgrade.spec.js`
 - Modify: `package.json`
-- Modify: `index.html`
-- Modify: `js/results.js`
-- Modify: `js/solver.worker.js`
+- Modify: `scripts/build-static.cjs`
+- Modify: `test/static-asset-build.cjs`
+- Modify: `test/serve-built.cjs`
+- Modify: `test/serve-vercel-config.cjs`
+- Modify: `playwright.config.js`
+- Modify: `.github/workflows/verify.yml`
+- Modify: `js/render.js`
+- Modify: `index.html` and owned asset references only where subpath fixes require it
 - Modify: `README.md`
-- Modify: deployment configuration if/when confirmed
+- Modify: `vercel.json` only if verification exposes a header/routing gap
 
-- [ ] Build a static release directory with content-addressed filenames for CSS, every page script, the Worker, and Worker dependencies. Do not treat a query string on an overwritten path as equivalent unless the actual host is separately proven to provide atomic, immutable, query-keyed artifacts.
-- [ ] Add `build` and `test:release` package scripts to the existing manifest and CI release lane.
-- [ ] Keep HTML revalidated/no-cache and fingerprinted assets long-lived/immutable.
-- [ ] Make Worker dependency revision derive from its own revisioned URL so page and Worker code cannot split versions.
-- [ ] Replace root-relative tooltip assets with base-aware/document-relative URLs. Remove Vercel Analytics or make its script/request path explicitly subpath-safe before claiming `/Forge-Planner/` support.
-- [ ] Serve and test under both `/` and `/Forge-Planner/`.
-- [ ] On one origin, warm release A, swap to incompatible release B, reload without clearing cache, and assert every loaded asset belongs to B and no console error occurs. Exercise explicit `Cache-Control`, ETag, and Last-Modified behavior; use a fresh origin only as the control case.
-- [ ] Document the exact GUI-friendly local preview and release verification steps.
+**Implemented baseline at `1466a5d`:**
 
-## Task 15: Correct Product Copy, Privacy Scope, Catalog Provenance, and Release Docs
+- [x] `scripts/build-static.cjs` emits deterministic content-addressed app, CSS, image, and embedded Worker bytes into `dist/`.
+- [x] The current Worker and its dependencies are one self-contained payload inside the hashed app and run from a Blob URL; production solves do not fetch Worker scripts or `importScripts` dependencies.
+- [x] `npm run build` and `npm run preview` exist, Playwright serves `dist/`, and the generated asset graph has a Node regression test.
+- [x] `/` and `/index.html` revalidate; `/static/*` is long-lived/immutable under the production header configuration.
+- [x] The original retired Worker fence and checksum-locked v2-era functional compatibility Worker are served at permanent immutable endpoints.
+- [x] Current tooltip images are copied into the hashed graph and the generated app/page references their emitted assets.
+
+**Remaining gaps:**
+
+- [ ] Preserve the exact current Worker-constructor substitution, idempotent `__forgeRelease`, immediate termination revocation/setup-failure cleanup, frozen fixtures, and both permanent Worker bytes while changing URL emission or release wiring.
+- [ ] Add `test:release` to the existing manifest and CI. It must build from clean source and verify the emitted site; it must not be an alias for the ordinary Node suite. Give every browser lane a named, non-overlapping CI step: `test:browser` excludes the dedicated accessibility, visual, and release-upgrade specs, while `test:a11y`, `test:visual`, and `test:release` each run their owned lane exactly once.
+- [ ] Make every emitted application URL base-aware for both `/` and `/Forge-Planner/`. Replace the builder’s current root-relative `/static/...` output and any remaining root-relative tooltip/font/application references with document- or stylesheet-relative URLs. Preserve and assert the existing absence of Vercel Analytics.
+- [ ] Extend the actual server seam in `test/serve-vercel-config.cjs` plus `test/serve-built.cjs`/release smoke so one identical `dist` byte tree is mounted at `/` and `/Forge-Planner/`. Strip only the recognized mount before safe file resolution and logical header matching; verify HTML revalidation, immutable hashed assets, CSP, `nosniff`, and the generated Blob Worker at both mounts.
+- [ ] Implement standards-correct validators in the release server: ETag and Last-Modified on emitted files, conditional GET/HEAD, A validators against changed B HTML returning `200` with B bytes and a new ETag, and B validators returning `304`.
+- [ ] On one port/origin, build temporary A and B sources with matching HTML/app release sentinels that deliberately fail when mixed. Warm A, atomically swap the served tree to B, reload with A validators, and assert B HTML plus the B app sentinel, a successful B Blob-Worker solve, no A-app request, unchanged-asset reuse, and no same-origin console/network error. Use a fresh origin only as a control.
+- [ ] Assert old permanent Worker endpoints retain their exact bytes/cache behavior across the A→B swap while current page/Worker changes rotate only content-addressed assets.
+- [ ] Verify current CSS/image graph changes independently rotate their affected hashes. If the existing externally hosted fonts are self-hosted solely for deterministic release/privacy, preserve the checkpoint's exact font families and appearance, register them here, and do not treat that plumbing as authorization for visual redesign.
+- [ ] Document the exact GUI-friendly local preview plus cold-cache and warm-upgrade release verification steps. Do not replace the existing build architecture while filling these gaps.
+
+## Task 15: Align Remaining Product Trust Copy and Operator Documentation
 
 **Priority:** P2/P3 trust
 
-**Depends on:** behavior decisions from Tasks 4–7 and 14
+**Depends on:** settled behavior from Tasks 4–7, 13, and 14
 
 **Files:**
 
 - Create: `docs/STATE_SCHEMA.md`
 - Create: `docs/SOLVER_CONTRACT.md`
 - Create: `docs/CATALOG.md`
-- Create: `docs/RELEASING.md`
+- Create or update: `docs/RELEASING.md`
 - Create: `test/catalog-validation.cjs`
 - Modify: `test/run-all.cjs`
 - Modify: `README.md`
 - Modify: `index.html`
-- Modify: `js/results.js`
+- Modify: `js/catalog.js` only to add truthful machine-readable provenance/update metadata; do not invent a source version or date
+- Modify: `js/results.js` only if a focused regression proves a remaining inaccurate runtime claim
 
-- [ ] Replace “almost certainly optimal” with “best found within this time budget; not proven optimal.”
-- [ ] Remove the absolute sustainability guarantee when May-work margin is active.
-- [ ] Explain dedicated-item Credits, visible stability tradeoff, project warm-up/buffer semantics, and mined-resource hard caps.
-- [ ] Document Task 11’s self-hosted font assets/licenses. Recommendation: remove analytics so the local-only privacy story stays simple. If analytics is retained, document it visibly and verify planner state never enters requests.
-- [ ] Clarify README export scope, solve-time behavior, browser support, persistence/recovery, schema version, and release process.
-- [ ] Document catalog source/version/update procedure, add structural/semantic validation to the explicit `test/run-all.cjs` list, and prove `npm test` executes it.
+- [ ] Preserve the already-correct bounded-result, May-work, dedicated Credits, stability, warm-up/buffer, and mined-resource runtime copy. Do not churn released UI copy or layout unless a focused regression proves a remaining false claim. The live trust-copy corrections are currently limited to the stale absolute guarantee/privacy language in `index.html` and the unqualified solver/export/speed claims in `README.md`.
+- [ ] Replace any remaining unqualified “optimal” claim with “best found within this time budget; not proven optimal,” and remove any absolute sustainability guarantee when May-work margin is active.
+- [ ] Explain dedicated-item Credits, visible stability tradeoff, project warm-up/buffer semantics, and mined-resource hard caps in the operator/contract documentation without duplicating already-correct runtime copy.
+- [ ] Document any Task 14 self-hosted copies of the checkpoint's existing font assets and their licenses. Keep the existing no-backend/local-first privacy scope precise; if any analytics remains after Task 14, document it visibly and verify planner state never enters requests.
+- [ ] Clarify only the still-missing README/operator facts: export scope, solve-time behavior, browser support, persistence/recovery, schema version, and the final Task 14 preview/release commands. Reference the existing hashed-build and permanent Worker compatibility contract rather than redesigning or duplicating it.
+- [ ] Document catalog source/version/update procedure and provenance. If no trusted game export/version/date/hash is available, record it explicitly as unknown/unverified rather than inventing provenance. Add structural/semantic validation to the explicit `test/run-all.cjs` list and prove `npm test` executes it: category IDs are unique and descriptor-valid; names and levels are nonempty and well-formed; item references are known; quantities are finite, nonnegative, and within the supported range; duplicate cost items within a level are rejected where that is the catalog contract; and every `PROJECT_PREREQS` key/target resolves to a catalog entry. Do not encode unverified game-value assertions.
 - [ ] Document supported mechanics and intentional non-findings so future agents do not “correct” pre-produced Bits, independent mined budgets, or explicit Resimulate.
+- [ ] Keep release documentation bounded to operator behavior: clean build, GUI-friendly preview, cold/warm verification, immutable asset expectations, and rollback. The deterministic builder and cache headers remain executable truth.
 
 ## Task 16: Final Adversarial Regression and Release Candidate Audit
 
@@ -574,17 +764,29 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 **Files:**
 
 - Create: `docs/reviews/YYYY-MM-DD-hardening-release-verification.md`
-- Update tests/docs only when the verification discovers a real gap
+- Modify: `js/events.js`
+- Modify: `js/dialogs.js`
+- Modify: `css/styles.css`
+- Modify: `test/browser/state-recovery.spec.js` (or the existing owned recovery spec)
+- Modify: `test/browser/dialogs.spec.js`
+- Modify: `test/browser/accessibility.spec.js`
+- Update other tests/docs only when verification discovers a real gap
 
 - [ ] Start from the current live application save or an exported copy supplied for release verification; never overwrite it during testing.
+- [ ] Before the broad audit, close the three owned checkpoint minors with targeted RED/GREEN regressions and no composition, navigation, dialog, or token redesign: recovery dismissal restores the connected exact invoker (or its replacement by stable ID), with a safe Import fallback only for boot-time recovery; nested-dialog cleanup snapshots and restores each body child's pre-existing `inert` state; and activating the skip link focuses `#plannerMain` with a visible non-`none` focus indicator in normal and forced-colors modes.
 - [ ] Run the Standard Verification Gate twice: cold cache and warm upgrade cache.
-- [ ] Replay every review counterexample: project transient, Worker/Manual race, import attack corpus, corrupt storage, Gel packing, Credits warnings/deadline, stability disclosure, invalid notation, empty Credits copy, stale price nudge, and stale dialog scroll.
+- [ ] Re-run and record the existing named counterexample coverage—including project transients, Worker/Manual lifecycle, import attack corpus, state schema/recovery, Gel exactness, Credits contracts, stability UI, numeric fields, compatibility/static build, dialogs, and visual layout—instead of duplicating it. Add new tests only for Task 13 persistence/Progress, Task 14 release upgrade/subpath, Task 15 catalog validation, the three targeted minors above, or a newly reproduced gap.
 - [ ] Run exhaustive-oracle small solver cases, parity, scale through 12 lines, catalog validation, and all legacy migration fixtures.
-- [ ] Browser-test every mode/dialog at 1440×900, 1024×768, 900×760, 881×900, 880×900, 768×1024, 640×900, 561×900, 560×900, 430×932, 390×844, 375×812, and 320×568; capture representative screenshots.
-- [ ] Keyboard-test the complete first-run → data entry → solve → project → progress → export path.
+- [ ] Run the frozen v2-era compatibility request/response fixture and byte/checksum assertions for both permanent Worker endpoints; confirm current features execute only in the generated Blob Worker.
+- [ ] Browser-test every mode/dialog at 1440×900, 1024×768, 900×760, 881×900, 880×900, 768×1024, 640×900, 561×900, 560×900, 430×932, 390×844, 375×812, and 320×568; capture representative screenshots. Current visual coverage samples only a subset of mode×viewport combinations, so the release matrix itself must be complete. Any repair is limited to a reproduced regression against the released checkpoint tokens/geometry and is not authorization for redesign.
+- [ ] Keyboard-test the existing checkpoint flow from fresh load → data entry → solve → project → progress → export; no new onboarding or navigation design is implied.
 - [ ] Inspect console, failed requests, CSP violations, storage mutations, Worker lifecycle, and outbound request payloads.
+- [ ] Instrument current Blob Worker creation/termination and prove every early termination immediately revokes its object URL, an idle late error cannot activate fallback, and repeated solves add no Worker/dependency HTTP requests.
 - [ ] Confirm no body-level horizontal overflow, zero-inset result state, title/tab/status collision, project-name collapse, label/input overlap, offscreen dialog action, or stretched sparse recipe card; intentional tables must identify and contain horizontal scrolling.
 - [ ] Have a second agent review the implementation against this plan and the original review without seeing the implementer’s conclusions first.
+- [ ] Build and serve the same release under `/` and `/Forge-Planner/`; verify all app/CSS/image/font URLs, CSP, dialogs/tooltips, and solves without root-relative leakage.
+- [ ] On one origin, execute the release-A warm cache → incompatible release-B swap. Record HTML revalidation, cache headers/validators, loaded asset hashes, compatibility endpoint bytes, and the successful B solve.
+- [ ] Confirm the generated asset graph is closed: every page script, Worker dependency, stylesheet, image, and font is registered; a mutation rotates the expected hash and leaves unrelated assets stable.
 - [ ] Record passed evidence, known limitations, and any deliberately deferred P3 item in the verification document.
 - [ ] Do not call the release complete, push, or merge until the owner reviews the rendered release candidate and explicitly approves it.
 
@@ -597,7 +799,7 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - Gel “best,” Credits warnings, Credits timing, and Project stability copy match the actual algorithms.
 - All primary workflows are keyboard-operable, named, focus-safe, contrast-compliant, and usable at 320px.
 - Every primary surface has approved spacing/hierarchy at the breakpoint matrix; the document never hides horizontal overflow, and wide components own visible, operable scrolling.
-- Visual tokens and semantic component classes own layout; new arbitrary inline presentation is blocked outside the documented dynamic allowlist.
+- The released Task 11A geometry remains intact across the viewport matrix; no post-checkpoint visual redesign or new visual-system requirement is implied.
 - One command runs the deterministic suite; CI, browser/Worker, accessibility, and release-upgrade gates are green.
 - Existing saves and intentional mechanics are preserved.
 - Final documentation describes observed behavior without stronger guarantees than the code can support.

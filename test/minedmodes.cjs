@@ -8,6 +8,7 @@ globalThis.localStorage = { getItem: () => null, setItem: () => {} };
 globalThis.document = { getElementById: () => ({ innerHTML: "", textContent: "" }) };
 
 const coreSrc = fs.readFileSync(path.join(__dirname, "..", "js", "core.js"), "utf8");
+const projectSrc = fs.readFileSync(path.join(__dirname, "..", "js", "project-schedule.js"), "utf8");
 const solverSrc = fs.readFileSync(path.join(__dirname, "..", "js", "solver.js"), "utf8");
 const manualSrc = fs.readFileSync(path.join(__dirname, "..", "js", "manual.js"), "utf8");
 
@@ -67,7 +68,7 @@ const runner = `
     levels:[{costs:[{item:"Reinforced Concrete",qty:1}]}]}];
   r=optimize();
   const rcUses=(r.phases[0]&&r.phases[0].minedUsage)||[];
-  check("reinforced project needs no mined income",r.feasible&&r.eta>0&&rcUses.length===0,"eta="+r.eta+", uses="+JSON.stringify(rcUses));
+  check("reinforced project needs no mined income",r.feasible&&r.eta>0&&rcUses.length===0,"eta="+r.eta+", uses="+JSON.stringify(rcUses)+", lp="+r.lpFeasible+", failure="+JSON.stringify(r.scheduleValidation&&r.scheduleValidation.firstFailure));
   S=defaults();S.dupe=0;S.lines=Array.from({length:3},()=>({max:1,spx:1,turbo:0}));
   S.minedIncome.Vespium=1e15;S.minedIncome.Hydracite=1e9;
   S.manual=[{job:"Gel",lvl:1,sell:false},{job:"Batteries",lvl:1,sell:false},{job:"Reinforced Concrete",lvl:1,sell:false}];syncManual(S);
@@ -87,4 +88,4 @@ const runner = `
 })();
 `;
 
-eval(coreSrc + "\n;\n" + solverSrc + "\n;\n" + manualSrc + "\n;\n" + runner);
+eval(coreSrc + "\n;\n" + projectSrc + "\n;\n" + solverSrc + "\n;\n" + manualSrc + "\n;\n" + runner);

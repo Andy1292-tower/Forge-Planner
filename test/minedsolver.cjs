@@ -8,6 +8,7 @@ globalThis.localStorage = { getItem: () => null, setItem: () => {} };
 globalThis.document = { getElementById: () => ({ innerHTML: "", textContent: "" }) };
 
 const coreSrc = fs.readFileSync(path.join(__dirname, "..", "js", "core.js"), "utf8");
+const projectSrc = fs.readFileSync(path.join(__dirname, "..", "js", "project-schedule.js"), "utf8");
 const solverSrc = fs.readFileSync(path.join(__dirname, "..", "js", "solver.js"), "utf8");
 
 const runner = `
@@ -67,6 +68,25 @@ const runner = `
   S.forgie.Bricks=1e12;S.forgie.Concrete=1e12;S.forgie.Frames=1e12;
   r=optimize();
   check("credits can select reinforced concrete",r.feasible&&r.bestItem==="Reinforced Concrete","best="+r.bestItem);
+  function frozenGelSolve(mode){
+    const s=defaults();s.dupe=0;s.maxTurbo=0;s.margin=0;s.mode=mode;
+    s.lines=[{max:1,spx:6,turbo:0},{max:1,spx:4,turbo:0},{max:1,spx:4,turbo:0}];
+    s.minedIncome.Vespium=4498594189315839/60;
+    PRODUCTS.forEach(product=>s.targets[product]={on:mode==="items"&&product==="Gel",w:1});
+    [...RAWS,...PRODUCTS].forEach(item=>s.sellPrice[item]=null);
+    if(mode==="credits")s.sellPrice.Gel=1;
+    normalize(s);syncManual(s);S=s;return optimize();
+  }
+  const frozenItems=frozenGelSolve("items"),frozenCredits=frozenGelSolve("credits");
+  const creditCandidate=(frozenCredits.ranking||[]).find(candidate=>candidate.item==="Gel");
+  const itemGel=frozenItems.out.Gel||0,creditGel=creditCandidate&&creditCandidate.out||0;
+  check("items keeps the frozen exact Gel optimum",Math.abs(itemGel-8.997188378631677)<=1e-12,"out="+itemGel);
+  check("credits keeps Items Gel parity",frozenCredits.bestItem==="Gel"&&Math.abs(creditGel-itemGel)<=1e-12,
+    "items="+itemGel+", credits="+creditGel);
+  check("frozen Items and Credits stay inside Vespium budget",
+    [frozenItems,frozenCredits].every(result=>(result.minedUsage||[])
+      .filter(use=>use.resource==="Vespium").reduce((sum,use)=>sum+use.inputHr,0)<=4498594189315839),
+    "items="+JSON.stringify(frozenItems.minedUsage)+", credits="+JSON.stringify(frozenCredits.minedUsage));
   S=base();S.minedIncome.Hydracite=300000000;
   const direct=optimize(),directOut=direct.out.Batteries||0;
   S=JSON.parse(JSON.stringify(S));r=optimize();
@@ -75,4 +95,4 @@ const runner = `
 })();
 `;
 
-eval(coreSrc + "\n;\n" + solverSrc + "\n;\n" + runner);
+eval(coreSrc + "\n;\n" + projectSrc + "\n;\n" + solverSrc + "\n;\n" + runner);

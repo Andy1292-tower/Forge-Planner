@@ -247,31 +247,30 @@
     "mode": "project",
     "feasible": true,
     "capped": false,
-    "objective": 0.578498,
+    "objective": 0.575111,
     "plan": [
       {
         "line": 1,
         "reserved": false,
         "jobs": [
-          "Bits@4:0.132253",
-          "Ingots@4:0.867747"
+          "Frames@1:0.0916737",
+          "Ingots@4:0.908326"
         ]
       },
       {
         "line": 2,
         "reserved": false,
         "jobs": [
-          "Bits@4:0.051606",
-          "Frames@1:0.203738",
-          "Rods@4:0.744656"
+          "Frames@1:0.220521",
+          "Rods@4:0.779479"
         ]
       },
       {
         "line": 3,
         "reserved": false,
         "jobs": [
-          "Frames@1:0.627712",
-          "Plates@2:0.372288"
+          "Frames@1:0.610303",
+          "Plates@2:0.389697"
         ]
       },
       {
@@ -290,13 +289,12 @@
       }
     ],
     "balance": [
-      "Bits:925.597",
-      "Frames:115.7",
-      "Ingots:1.81899e-12",
-      "Plates:2.27374e-13",
-      "Rods:-1.13687e-13"
+      "Frames:121.11",
+      "Ingots:-1.31877e-11",
+      "Plates:-5.11591e-13",
+      "Rods:3.63798e-12"
     ],
-    "eta": 1.72861,
+    "eta": 1.73879,
     "unsat": [],
     "phases": 1
   },
@@ -304,24 +302,23 @@
     "mode": "project",
     "feasible": true,
     "capped": false,
-    "objective": 0.0610318,
+    "objective": 0.057275,
     "plan": [
       {
         "line": 1,
         "reserved": false,
         "jobs": [
-          "Bits@4:0.00282791",
-          "Gel@4:0.734915",
-          "Ingots@4:0.164786",
-          "Wire@1:0.0974715"
+          "Gel@4:0.736071",
+          "Ingots@4:0.164903",
+          "Wire@1:0.0990262"
         ]
       },
       {
         "line": 2,
         "reserved": false,
         "jobs": [
-          "Gel@4:0.811452",
-          "Rods@4:0.188548"
+          "Gel@4:0.811319",
+          "Rods@4:0.188681"
         ]
       },
       {
@@ -347,18 +344,17 @@
       }
     ],
     "balance": [
-      "Bits:14.6476",
-      "Gel:1.06581e-14",
-      "Ingots:2.27374e-13",
-      "Rods:1.27898e-13",
-      "Wire:7.32382"
+      "Gel:5.32907e-15",
+      "Ingots:5.68434e-13",
+      "Rods:2.84217e-14",
+      "Wire:7.329"
     ],
-    "eta": 16.3849,
+    "eta": 17.4596,
     "unsat": [],
     "phases": 1,
     "gelReserved": {
       "lines": 2,
-      "outHr": 14.6476
+      "outHr": 14.658
     }
   },
   "items.single.noGel.L7": {
@@ -669,7 +665,7 @@
     "mode": "project",
     "feasible": true,
     "capped": false,
-    "objective": 0.809897,
+    "objective": 0.83406,
     "plan": [
       {
         "line": 1,
@@ -682,10 +678,9 @@
         "line": 2,
         "reserved": false,
         "jobs": [
-          "Bits@4:0.277975",
-          "Frames@1:0.374123",
-          "Ingots@4:0.238718",
-          "Rods@4:0.109185"
+          "Frames@1:0.540222",
+          "Ingots@4:0.301841",
+          "Rods@4:0.157937"
         ]
       },
       {
@@ -720,19 +715,18 @@
         "line": 7,
         "reserved": false,
         "jobs": [
-          "Frames@1:0.451366",
-          "Plates@2:0.548634"
+          "Frames@1:0.425709",
+          "Plates@2:0.574291"
         ]
       }
     ],
     "balance": [
-      "Bits:1295.84",
-      "Frames:161.979",
-      "Ingots:-2.27374e-12",
+      "Frames:169.554",
+      "Ingots:-4.54747e-12",
       "Plates:-3.97904e-13",
-      "Rods:0"
+      "Rods:-1.13687e-13"
     ],
-    "eta": 1.23472,
+    "eta": 1.19895,
     "unsat": [],
     "phases": 1
   },
@@ -740,16 +734,15 @@
     "mode": "project",
     "feasible": true,
     "capped": false,
-    "objective": 0.0854446,
+    "objective": 0.0809159,
     "plan": [
       {
         "line": 1,
         "reserved": false,
         "jobs": [
-          "Bits@4:0.00395907",
-          "Gel@4:0.548881",
-          "Ingots@4:0.2307",
-          "Wire@1:0.21646"
+          "Gel@4:0.5505",
+          "Ingots@4:0.230864",
+          "Wire@1:0.218637"
         ]
       },
       {
@@ -784,8 +777,8 @@
         "line": 6,
         "reserved": false,
         "jobs": [
-          "Gel@4:0.717178",
-          "Rods@4:0.282822"
+          "Gel@4:0.716978",
+          "Rods@4:0.283022"
         ]
       },
       {
@@ -797,18 +790,17 @@
       }
     ],
     "balance": [
-      "Bits:20.5067",
-      "Gel:-1.42109e-14",
-      "Ingots:4.54747e-13",
-      "Rods:-2.55795e-13",
-      "Wire:10.2533"
+      "Gel:1.42109e-14",
+      "Ingots:1.13687e-13",
+      "Rods:8.52651e-14",
+      "Wire:10.2606"
     ],
-    "eta": 11.7035,
+    "eta": 12.3585,
     "unsat": [],
     "phases": 1,
     "gelReserved": {
       "lines": 3,
-      "outHr": 20.5067
+      "outHr": 20.5212
     }
   }
 }

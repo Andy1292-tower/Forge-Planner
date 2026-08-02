@@ -1,0 +1,45 @@
+{
+  "capturedFromCommit": "188e913af56a2342a04885c44c59b9dbc8748de6",
+  "request": {
+    "reqId": 93,
+    "generation": 93,
+    "mode": "items",
+    "stateRevision": 17,
+    "state": {
+      "lines": [
+        { "max": 128, "spx": 43.85, "turbo": 0 }
+      ],
+      "prodCost": {},
+      "baseTime": {
+        "Ingots": 9.63,
+        "Bits": 12.85,
+        "Frames": 300.123
+      },
+      "targets": {
+        "Frames": { "on": true, "w": 1 }
+      }
+    },
+    "budget": 2000,
+    "stab": {}
+  },
+  "response": {
+    "reqId": 93,
+    "generation": 93,
+    "mode": "items",
+    "stateRevision": 17,
+    "res": {
+      "empty": false,
+      "mode": "items",
+      "issues": [],
+      "targets": ["Frames"],
+      "feasible": false,
+      "plan": [
+        {
+          "line": 1,
+          "max": 128,
+          "job": { "label": "Idle", "kind": "idle" }
+        }
+      ]
+    }
+  }
+}

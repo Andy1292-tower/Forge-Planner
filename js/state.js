@@ -58,13 +58,15 @@ function _scanStructure(root,errors){
   visit(root,"state",0);
 }
 function _number(value,rule,path,errors){
-  if(value===null&&rule.allowBlank)return null;
-  if(typeof value!=="number"||!Number.isFinite(value)){
-    _pushError(errors,path,"must be a finite number");return undefined;
+  const checked=validateFieldValue(rule,value);
+  if(!checked.valid){
+    if(value===null&&!rule.allowBlank)_pushError(errors,path,"must be a finite number");
+    else if(typeof value!=="number"||!Number.isFinite(value))_pushError(errors,path,"must be a finite number");
+    else if(rule.type==="integer"&&!Number.isInteger(value))_pushError(errors,path,"must be an integer");
+    else _pushError(errors,path,"must be between "+rule.min+" and "+rule.max);
+    return undefined;
   }
-  if(rule.type==="integer"&&!Number.isInteger(value))_pushError(errors,path,"must be an integer");
-  if(value<rule.min||value>rule.max)_pushError(errors,path,"must be between "+rule.min+" and "+rule.max);
-  return value;
+  return checked.value;
 }
 function _string(value,rule,path,errors){
   if(typeof value!=="string"){
@@ -117,19 +119,21 @@ function validateAndMigrate(candidate){
       _pushError(errors,"schemaVersion","was written by a newer version of Forge Planner");
       return {ok:false,errors,sourceVersion};
     }
-    if(sourceVersion!==CURRENT_SCHEMA_VERSION)return {ok:false,errors:["schemaVersion is not supported"],sourceVersion};
+    if(sourceVersion!==1&&sourceVersion!==2&&sourceVersion!==CURRENT_SCHEMA_VERSION)return {ok:false,errors:["schemaVersion is not supported"],sourceVersion};
   }else{
     const legacyShape=Array.isArray(candidate.lines)&&_plainObject(candidate.prodCost)&&_plainObject(candidate.targets);
     if(!legacyShape)return {ok:false,errors:["unversioned save does not match a known Forge Planner shape"],sourceVersion:0};
   }
 
-  const current=sourceVersion===CURRENT_SCHEMA_VERSION;
-  if(current){
+  const strictProjectState=sourceVersion>=2;
+  const versioned=sourceVersion>=1;
+  if(versioned){
     ["lines","maxTurbo","dupe","prodCost","baseTime","baseTimeRev","margin","mode","solveBudget",
       "sellPrice","priceText","forgie","forgieText","minedIncome","minedIncomeText","targets",
       "projects","inventory","inventoryText","projectSeq","projectGate","planStart","manual","manualSaved",
       "manualActiveId"].forEach(key=>_required(candidate,key,errors));
   }
+  if(strictProjectState)_required(candidate,"projectStability",errors);
   const out=defaults();
   out.schemaVersion=CURRENT_SCHEMA_VERSION;
 
@@ -142,7 +146,7 @@ function validateAndMigrate(candidate){
       const path="lines["+index+"]",line=_object(raw,path,errors);if(!line)return;
       if(!_own(line,"max"))_pushError(errors,path+".max","is required");
       if(!_own(line,"spx"))_pushError(errors,path+".spx","is required");
-      if(current&&!_own(line,"turbo"))_pushError(errors,path+".turbo","is required");
+      if(versioned&&!_own(line,"turbo"))_pushError(errors,path+".turbo","is required");
       const max=_enum(_readData(line,"max",path+".max",errors),FIELD_SCHEMA.lineMax,path+".max",errors);
       const spx=_number(_readData(line,"spx",path+".spx",errors),FIELD_SCHEMA.lineSpeed,path+".spx",errors);
       const turbo=_own(line,"turbo")?_number(_readData(line,"turbo",path+".turbo",errors),FIELD_SCHEMA.turbo,path+".turbo",errors):0;
@@ -166,31 +170,35 @@ function validateAndMigrate(candidate){
   }
   if(_own(candidate,"margin"))out.margin=_number(_readData(candidate,"margin","margin",errors),FIELD_SCHEMA.margin,"margin",errors);
   if(_own(candidate,"mode"))out.mode=_enum(_readData(candidate,"mode","mode",errors),FIELD_SCHEMA.mode,"mode",errors);
-  if(_own(candidate,"solveBudget"))out.solveBudget=_number(_readData(candidate,"solveBudget","solveBudget",errors),FIELD_SCHEMA.solveBudget,"solveBudget",errors);
+  const parsedSolveBudget=_own(candidate,"solveBudget")
+    ?_number(_readData(candidate,"solveBudget","solveBudget",errors),FIELD_SCHEMA.solveBudget,"solveBudget",errors)
+    :undefined;
+  if(sourceVersion<CURRENT_SCHEMA_VERSION)out.solveBudget=defaults().solveBudget;
+  else if(parsedSolveBudget!==undefined)out.solveBudget=parsedSolveBudget;
 
   const rawBase=_readData(candidate,"baseTime","baseTime",errors),base=_object(rawBase,"baseTime",errors);
   if(base){
     ALLITEMS.forEach(item=>{
-      if(current&&!_own(base,item))_pushError(errors,"baseTime."+item,"is required");
+      if(versioned&&!_own(base,item))_pushError(errors,"baseTime."+item,"is required");
       if(_own(base,item))out.baseTime[item]=_number(_readData(base,item,"baseTime."+item,errors),FIELD_SCHEMA.baseTime,"baseTime."+item,errors);
     });
   }
-  if(_own(candidate,"baseTimeRev"))out.baseTimeRev=_number(_readData(candidate,"baseTimeRev","baseTimeRev",errors),{type:"integer",min:0,max:CURRENT_SCHEMA_VERSION+10,allowBlank:false},"baseTimeRev",errors);
+  if(_own(candidate,"baseTimeRev"))out.baseTimeRev=_number(_readData(candidate,"baseTimeRev","baseTimeRev",errors),FIELD_SCHEMA.baseTimeRev,"baseTimeRev",errors);
 
   const rawCosts=_readData(candidate,"prodCost","prodCost",errors),prodCost=_object(rawCosts,"prodCost",errors);
   if(prodCost){
     PRODUCTS.forEach(product=>{
-      if(current&&!_own(prodCost,product))_pushError(errors,"prodCost."+product,"is required");
+      if(versioned&&!_own(prodCost,product))_pushError(errors,"prodCost."+product,"is required");
       if(!_own(prodCost,product))return;
       const productMap=_object(_readData(prodCost,product,"prodCost."+product,errors),"prodCost."+product,errors);if(!productMap)return;
       RECIPE[product].inputs.forEach(input=>{
         const path="prodCost."+product+"."+input;
-        if(current&&!_own(productMap,input))_pushError(errors,path,"is required");
+        if(versioned&&!_own(productMap,input))_pushError(errors,path,"is required");
         if(!_own(productMap,input))return;
         const levelMap=_object(_readData(productMap,input,path,errors),path,errors);if(!levelMap)return;
         Object.keys(levelMap).forEach(level=>{if(!LEVELS.some(item=>String(item)===level))_pushError(errors,path+"."+level,"uses an unknown compression level");});
         LEVELS.forEach(level=>{
-          if(current&&!_own(levelMap,String(level)))_pushError(errors,path+"."+level,"is required");
+          if(versioned&&!_own(levelMap,String(level)))_pushError(errors,path+"."+level,"is required");
           if(_own(levelMap,String(level)))out.prodCost[product][input][level]=_number(_readData(levelMap,String(level),path+"."+level,errors),FIELD_SCHEMA.recipeCost,path+"."+level,errors);
         });
       });
@@ -201,28 +209,28 @@ function validateAndMigrate(candidate){
     if(!_own(candidate,key))return;
     const map=_object(_readData(candidate,key,key,errors),key,errors);if(!map)return;
     ALLITEMS.forEach(item=>{
-      if(current&&!text&&!_own(map,item))_pushError(errors,key+"."+item,"is required");
+      if(versioned&&!text&&!_own(map,item))_pushError(errors,key+"."+item,"is required");
       if(_own(map,item))out[key][item]=text?_string(_readData(map,item,key+"."+item,errors),rule,key+"."+item,errors):_number(_readData(map,item,key+"."+item,errors),rule,key+"."+item,errors);
     });
   };
-  copyItemMap("sellPrice",FIELD_SCHEMA.amount,false);
+  copyItemMap("sellPrice",FIELD_SCHEMA.sellPrice,false);
   copyItemMap("priceText",FIELD_SCHEMA.displayText,true);
-  copyItemMap("forgie",FIELD_SCHEMA.amount,false);
+  copyItemMap("forgie",FIELD_SCHEMA.forgie,false);
   copyItemMap("forgieText",FIELD_SCHEMA.displayText,true);
-  copyItemMap("inventory",FIELD_SCHEMA.amount,false);
+  copyItemMap("inventory",FIELD_SCHEMA.inventory,false);
   copyItemMap("inventoryText",FIELD_SCHEMA.displayText,true);
 
   if(_own(candidate,"minedIncome")){
     const map=_object(_readData(candidate,"minedIncome","minedIncome",errors),"minedIncome",errors);
     if(map)MINED_RESOURCES.forEach(resource=>{
-      if(current&&!_own(map,resource))_pushError(errors,"minedIncome."+resource,"is required");
-      if(_own(map,resource))out.minedIncome[resource]=_number(_readData(map,resource,"minedIncome."+resource,errors),FIELD_SCHEMA.amount,"minedIncome."+resource,errors);
+      if(versioned&&!_own(map,resource))_pushError(errors,"minedIncome."+resource,"is required");
+      if(_own(map,resource))out.minedIncome[resource]=_number(_readData(map,resource,"minedIncome."+resource,errors),FIELD_SCHEMA.minedIncome,"minedIncome."+resource,errors);
     });
-  }else if(_own(candidate,"gelVesp"))out.minedIncome.Vespium=_number(_readData(candidate,"gelVesp","gelVesp",errors),FIELD_SCHEMA.amount,"gelVesp",errors);
+  }else if(_own(candidate,"gelVesp"))out.minedIncome.Vespium=_number(_readData(candidate,"gelVesp","gelVesp",errors),FIELD_SCHEMA.minedIncome,"gelVesp",errors);
   if(_own(candidate,"minedIncomeText")){
     const map=_object(_readData(candidate,"minedIncomeText","minedIncomeText",errors),"minedIncomeText",errors);
     if(map)MINED_RESOURCES.forEach(resource=>{
-      if(current&&!_own(map,resource))_pushError(errors,"minedIncomeText."+resource,"is required");
+      if(versioned&&!_own(map,resource))_pushError(errors,"minedIncomeText."+resource,"is required");
       if(_own(map,resource))out.minedIncomeText[resource]=_string(_readData(map,resource,"minedIncomeText."+resource,errors),FIELD_SCHEMA.displayText,"minedIncomeText."+resource,errors);
     });
   }else if(_own(candidate,"gelVespText"))out.minedIncomeText.Vespium=_string(_readData(candidate,"gelVespText","gelVespText",errors),FIELD_SCHEMA.displayText,"gelVespText",errors);
@@ -230,7 +238,7 @@ function validateAndMigrate(candidate){
   const rawTargets=_readData(candidate,"targets","targets",errors),targets=_object(rawTargets,"targets",errors);
   if(targets)ALLITEMS.forEach(item=>{
     const path="targets."+item;
-    if(current&&!_own(targets,item))_pushError(errors,path,"is required");
+    if(versioned&&!_own(targets,item))_pushError(errors,path,"is required");
     if(!_own(targets,item))return;
     const target=_object(_readData(targets,item,path,errors),path,errors);if(!target)return;
     if(!_own(target,"on"))_pushError(errors,path+".on","is required");
@@ -244,9 +252,15 @@ function validateAndMigrate(candidate){
   let totalLevels=0,totalCosts=0;
   if(_own(candidate,"projects")){
     const projects=_array(_readData(candidate,"projects","projects",errors),"projects",errors,STATE_LIMITS.maxProjects);
-    if(projects){out.projects=[];projects.slice(0,STATE_LIMITS.maxProjects).forEach((raw,index)=>{
+    if(projects){
+      const projectSlice=projects.slice(0,STATE_LIMITS.maxProjects),usedProjectIds=new Set(),reservedProjectIds=new Set();
+      projectSlice.forEach(raw=>{if(!_plainObject(raw)||!_own(raw,"id"))return;const value=_readData(raw,"id","projects[].id",errors);
+        if(typeof value==="string"&&FIELD_SCHEMA.id.pattern.test(value)&&value.length<=FIELD_SCHEMA.id.maxLength)reservedProjectIds.add(value);});
+      const migratedProjectId=index=>{const base="legacy-project-"+(index+1);let id=base+"-migrated",suffix=2;
+        while(usedProjectIds.has(id)||reservedProjectIds.has(id))id=base+"-migrated-"+(suffix++);return id;};
+      out.projects=[];projectSlice.forEach((raw,index)=>{
       const path="projects["+index+"]",project=_object(raw,path,errors);if(!project)return;
-      if(current)["id","name","on","prio","from","to","done","levels"].forEach(key=>{if(!_own(project,key))_pushError(errors,path+"."+key,"is required");});
+      if(versioned)["id","name","on","prio","from","to","done","levels"].forEach(key=>{if(!_own(project,key))_pushError(errors,path+"."+key,"is required");});
       const rawLevels=_readData(project,"levels",path+".levels",errors),levels=_array(rawLevels,path+".levels",errors,STATE_LIMITS.maxLevelsPerProject);
       if(!levels||levels.length===0){_pushError(errors,path+".levels","must contain at least one level");return;}
       totalLevels+=levels.length;if(totalLevels>STATE_LIMITS.maxTotalLevels)_pushError(errors,"projects","exceeds the total level limit");
@@ -258,25 +272,30 @@ function validateAndMigrate(candidate){
         const copiedCosts=[];
         costs.slice(0,STATE_LIMITS.maxCostsPerLevel).forEach((rawCost,costIndex)=>{
           const costPath=levelPath+".costs["+costIndex+"]",cost=_object(rawCost,costPath,errors);if(!cost)return;
-          if(current)["item","qty"].forEach(key=>{if(!_own(cost,key))_pushError(errors,costPath+"."+key,"is required");});
+          if(versioned)["item","qty"].forEach(key=>{if(!_own(cost,key))_pushError(errors,costPath+"."+key,"is required");});
           copiedCosts.push({
             item:_enum(_readData(cost,"item",costPath+".item",errors),FIELD_SCHEMA.item,costPath+".item",errors),
-            qty:_number(_readData(cost,"qty",costPath+".qty",errors),FIELD_SCHEMA.amount,costPath+".qty",errors)
+            qty:_number(_readData(cost,"qty",costPath+".qty",errors),FIELD_SCHEMA.projectQuantity,costPath+".qty",errors)
           });
         });
         copiedLevels.push({costs:copiedCosts});
       });
       const count=copiedLevels.length||1;
-      const id=_own(project,"id")?_string(_readData(project,"id",path+".id",errors),FIELD_SCHEMA.id,path+".id",errors):"legacy-project-"+(index+1);
+      let id=_own(project,"id")?_string(_readData(project,"id",path+".id",errors),FIELD_SCHEMA.id,path+".id",errors):"legacy-project-"+(index+1);
+      if(id!==undefined&&usedProjectIds.has(id)){
+        if(strictProjectState)_pushError(errors,path+".id","must be unique across projects");
+        else id=migratedProjectId(index);
+      }else if(id!==undefined&&!_own(project,"id")&&reservedProjectIds.has(id))id=migratedProjectId(index);
+      if(id!==undefined)usedProjectIds.add(id);
       const name=_own(project,"name")?_string(_readData(project,"name",path+".name",errors),FIELD_SCHEMA.projectName,path+".name",errors):"Project";
       const on=_own(project,"on")?_boolean(_readData(project,"on",path+".on",errors),path+".on",errors):true;
       const legacyCursorRule={type:"integer",min:-1e6,max:1e6,allowBlank:false};
-      const cursorRule=current?{...FIELD_SCHEMA.projectIndex,max:count}:legacyCursorRule;
+      const cursorRule=versioned?{...FIELD_SCHEMA.projectIndex,max:count}:legacyCursorRule;
       const from=_own(project,"from")?_number(_readData(project,"from",path+".from",errors),cursorRule,path+".from",errors):1;
       const to=_own(project,"to")?_number(_readData(project,"to",path+".to",errors),cursorRule,path+".to",errors):count;
-      if(current&&Number.isFinite(from)&&Number.isFinite(to)&&from>to)_pushError(errors,path+".from","must not exceed "+path+".to");
+      if(versioned&&Number.isFinite(from)&&Number.isFinite(to)&&from>to)_pushError(errors,path+".from","must not exceed "+path+".to");
       const span=Number.isFinite(from)&&Number.isFinite(to)?Math.max(0,to-from+1):count;
-      const doneRule=current?{...FIELD_SCHEMA.projectDone,max:span}:legacyCursorRule;
+      const doneRule=versioned?{...FIELD_SCHEMA.projectDone,max:span}:legacyCursorRule;
       const done=_own(project,"done")?_number(_readData(project,"done",path+".done",errors),doneRule,path+".done",errors):0;
       let prio=null;
       if(_own(project,"prio"))prio=_number(_readData(project,"prio",path+".prio",errors),FIELD_SCHEMA.projectPriority,path+".prio",errors);
@@ -286,22 +305,25 @@ function validateAndMigrate(candidate){
       if(_own(project,"description"))copied.description=_string(_readData(project,"description",path+".description",errors),FIELD_SCHEMA.projectDescription,path+".description",errors);
       if(_own(project,"_open"))copied._open=_boolean(_readData(project,"_open",path+"._open",errors),path+"._open",errors);
       out.projects.push(copied);
-    });}
+      });
+    }
   }
 
   if(_own(candidate,"projectSeq"))out.projectSeq=_boolean(_readData(candidate,"projectSeq","projectSeq",errors),"projectSeq",errors);
   if(_own(candidate,"projectGate"))out.projectGate=_boolean(_readData(candidate,"projectGate","projectGate",errors),"projectGate",errors);
+  if(strictProjectState)out.projectStability=_enum(_readData(candidate,"projectStability","projectStability",errors),FIELD_SCHEMA.projectStability,"projectStability",errors);
+  if(_own(candidate,"projLineMode"))out.projLineMode=_enum(_readData(candidate,"projLineMode","projLineMode",errors),FIELD_SCHEMA.projLineMode,"projLineMode",errors);
   if(_own(candidate,"planStart"))out.planStart=_number(_readData(candidate,"planStart","planStart",errors),FIELD_SCHEMA.timestamp,"planStart",errors);
 
   if(_own(candidate,"manual")){
     const manual=_array(_readData(candidate,"manual","manual",errors),"manual",errors,STATE_LIMITS.maxLines);
-    if(manual){if(current&&manual.length!==out.lines.length)_pushError(errors,"manual","must have one entry per crafter line");out.manual=[];manual.slice(0,STATE_LIMITS.maxLines).forEach((raw,index)=>{
+    if(manual){if(versioned&&manual.length!==out.lines.length)_pushError(errors,"manual","must have one entry per crafter line");out.manual=[];manual.slice(0,STATE_LIMITS.maxLines).forEach((raw,index)=>{
       const path="manual["+index+"]",entry=_object(raw,path,errors);if(!entry)return;
-      if(current)["job","lvl","sell"].forEach(key=>{if(!_own(entry,key))_pushError(errors,path+"."+key,"is required");});
+      if(versioned)["job","lvl","sell"].forEach(key=>{if(!_own(entry,key))_pushError(errors,path+"."+key,"is required");});
       const job=_enum(_readData(entry,"job",path+".job",errors),FIELD_SCHEMA.manualJob,path+".job",errors);
       const lvl=_enum(_readData(entry,"lvl",path+".lvl",errors),FIELD_SCHEMA.lineMax,path+".lvl",errors);
       const sell=_boolean(_readData(entry,"sell",path+".sell",errors),path+".sell",errors);
-      if(current&&Number.isFinite(lvl)&&out.lines[index]&&Number.isFinite(out.lines[index].max)&&lvl>out.lines[index].max)_pushError(errors,path+".lvl","must not exceed its crafter line cap");
+      if(versioned&&Number.isFinite(lvl)&&out.lines[index]&&Number.isFinite(out.lines[index].max)&&lvl>out.lines[index].max)_pushError(errors,path+".lvl","must not exceed its crafter line cap");
       out.manual.push({job,lvl,sell});
     });}
   }
@@ -309,11 +331,11 @@ function validateAndMigrate(candidate){
     const presets=_array(_readData(candidate,"manualSaved","manualSaved",errors),"manualSaved",errors,STATE_LIMITS.maxPresets);
     if(presets){out.manualSaved=[];presets.slice(0,STATE_LIMITS.maxPresets).forEach((raw,index)=>{
       const path="manualSaved["+index+"]",preset=_object(raw,path,errors);if(!preset)return;
-      if(current)["id","name","config"].forEach(key=>{if(!_own(preset,key))_pushError(errors,path+"."+key,"is required");});
+      if(versioned)["id","name","config"].forEach(key=>{if(!_own(preset,key))_pushError(errors,path+"."+key,"is required");});
       const config=_array(_readData(preset,"config",path+".config",errors),path+".config",errors,STATE_LIMITS.maxLines);if(!config)return;
       const copiedConfig=[];config.slice(0,STATE_LIMITS.maxLines).forEach((rawEntry,entryIndex)=>{
         const entryPath=path+".config["+entryIndex+"]",entry=_object(rawEntry,entryPath,errors);if(!entry)return;
-        if(current)["job","lvl","sell"].forEach(key=>{if(!_own(entry,key))_pushError(errors,entryPath+"."+key,"is required");});
+        if(versioned)["job","lvl","sell"].forEach(key=>{if(!_own(entry,key))_pushError(errors,entryPath+"."+key,"is required");});
         copiedConfig.push({job:_enum(_readData(entry,"job",entryPath+".job",errors),FIELD_SCHEMA.manualJob,entryPath+".job",errors),lvl:_enum(_readData(entry,"lvl",entryPath+".lvl",errors),FIELD_SCHEMA.lineMax,entryPath+".lvl",errors),sell:_boolean(_readData(entry,"sell",entryPath+".sell",errors),entryPath+".sell",errors)});
       });
       out.manualSaved.push({id:_own(preset,"id")?_string(_readData(preset,"id",path+".id",errors),FIELD_SCHEMA.id,path+".id",errors):"legacy-preset-"+(index+1),name:_own(preset,"name")?_string(_readData(preset,"name",path+".name",errors),FIELD_SCHEMA.projectName,path+".name",errors):"Setup",config:copiedConfig});

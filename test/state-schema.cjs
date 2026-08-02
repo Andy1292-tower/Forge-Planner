@@ -56,7 +56,7 @@ const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
 
 test("exports a current schema and pure field descriptors", () => {
-  assert.equal(api("CURRENT_SCHEMA_VERSION"), 1);
+  assert.equal(api("CURRENT_SCHEMA_VERSION"), 3);
   const schema = api("FIELD_SCHEMA");
   assert.equal(schema.dupe.type, "number");
   assert.equal(schema.dupe.min, 0);
@@ -66,6 +66,122 @@ test("exports a current schema and pure field descriptors", () => {
   assert.equal(schema.id.maxLength, 64);
   assert.equal(schema.timestamp.type, "number");
   assert.equal(schema.timestamp.allowBlank, true);
+  assert.deepEqual(Array.from(schema.projectStability.values), ["prefer-current", "reoptimize"]);
+});
+
+test("the current schema requires an exact Project line-job policy", () => {
+  const missing = currentState();
+  delete missing.projectStability;
+  let result = api("validateAndMigrate")(missing);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /projectStability.*required/i);
+
+  const invalid = currentState();
+  invalid.projectStability = "fastest";
+  result = api("validateAndMigrate")(invalid);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /projectStability.*supported values/i);
+
+  const valid = currentState();
+  valid.projectStability = "reoptimize";
+  result = api("validateAndMigrate")(valid);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.state.projectStability, "reoptimize");
+});
+
+test("strict v1 migration defaults Project line jobs without weakening old required fields", () => {
+  const v1 = currentState();
+  v1.schemaVersion = 1;
+  delete v1.projectStability;
+  let result = api("validateAndMigrate")(v1);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.sourceVersion, 1);
+  assert.equal(result.state.schemaVersion, 3);
+  assert.equal(result.state.projectStability, "prefer-current");
+
+  delete v1.targets;
+  result = api("validateAndMigrate")(v1);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /targets.*required/i);
+});
+
+test("older schemas migrate once to 10 seconds while current user choices remain exact", () => {
+  for (const sourceVersion of [1, 2]) {
+    const candidate = currentState();
+    candidate.schemaVersion = sourceVersion;
+    candidate.solveBudget = sourceVersion === 1 ? 2000 : 2345;
+    if (sourceVersion === 1) delete candidate.projectStability;
+    const result = api("validateAndMigrate")(candidate);
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    assert.equal(result.sourceVersion, sourceVersion);
+    assert.equal(result.state.schemaVersion, 3);
+    assert.equal(result.state.solveBudget, 10000);
+  }
+
+  const current = currentState();
+  current.solveBudget = 2000;
+  let result = api("validateAndMigrate")(current);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.state.solveBudget, 2000);
+  result = api("parseStoredState")(JSON.stringify(result.state));
+  assert.equal(result.recovery, null);
+  assert.equal(result.state.schemaVersion, 3);
+  assert.equal(result.state.solveBudget, 2000);
+});
+
+test("older schema solve budgets are validated before the one-time replacement", () => {
+  for (const sourceVersion of [1, 2]) for (const solveBudget of [199, 60001, 2345.5, "2000"]) {
+    const candidate = currentState();
+    candidate.schemaVersion = sourceVersion;
+    candidate.solveBudget = solveBudget;
+    if (sourceVersion === 1) delete candidate.projectStability;
+    const result = api("validateAndMigrate")(candidate);
+    assert.equal(result.ok, false, `schema ${sourceVersion} accepted ${JSON.stringify(solveBudget)}`);
+    assert.match(result.errors.join(" "), /solveBudget/i);
+  }
+});
+
+test("schema v2 retains its former current-state project strictness", () => {
+  const candidate = currentState();
+  candidate.schemaVersion = 2;
+  delete candidate.projectStability;
+  let result = api("validateAndMigrate")(candidate);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /projectStability.*required/i);
+
+  const project = { id: "repeat", name: "Same", on: true, prio: null, from: 1, to: 1, done: 0,
+    levels: [{ costs: [] }] };
+  candidate.projectStability = "prefer-current";
+  candidate.projects = [project, { ...project, levels: [{ costs: [] }] }];
+  result = api("validateAndMigrate")(candidate);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /projects\[1\]\.id.*unique/i);
+});
+
+test("legacy duplicate project IDs migrate deterministically while v2 duplicates are rejected", () => {
+  const project = id => ({
+    id, name: "Same name", on: true, prio: null, from: 1, to: 1, done: 0,
+    levels: [{ costs: [] }],
+  });
+  const legacy = currentState();
+  legacy.schemaVersion = 1;
+  delete legacy.projectStability;
+  legacy.projects = [project("repeat"), project("repeat"), project("legacy-project-2")];
+  const first = api("validateAndMigrate")(legacy);
+  const second = api("validateAndMigrate")(legacy);
+  assert.equal(first.ok, true, JSON.stringify(first.errors));
+  assert.equal(second.ok, true, JSON.stringify(second.errors));
+  const ids = first.state.projects.map(entry => entry.id);
+  assert.equal(ids[0], "repeat");
+  assert.equal(new Set(ids).size, ids.length);
+  assert.deepEqual(ids, second.state.projects.map(entry => entry.id));
+
+  const current = currentState();
+  current.projectStability = "prefer-current";
+  current.projects = [project("repeat"), project("repeat")];
+  const rejected = api("validateAndMigrate")(current);
+  assert.equal(rejected.ok, false);
+  assert.match(rejected.errors.join(" "), /projects\[1\]\.id.*unique/i);
 });
 
 test("rejects unsafe imported IDs and a non-numeric plan start", () => {
@@ -94,12 +210,36 @@ test("accepts a complete current state into a fresh object", () => {
   candidate.unknownRoot = "discard me";
   const result = api("validateAndMigrate")(candidate);
   assert.equal(result.ok, true, JSON.stringify(result.errors));
-  assert.equal(result.sourceVersion, 1);
+  assert.equal(result.sourceVersion, api("CURRENT_SCHEMA_VERSION"));
   assert.equal(result.state.lines[0].spx, 77.7);
   assert.equal(Object.hasOwn(result.state, "unknownRoot"), false);
   assert.notStrictEqual(result.state, candidate);
   assert.notStrictEqual(result.state.lines, candidate.lines);
   assert.equal(candidate.unknownRoot, "discard me");
+});
+
+test("keeps an explicit set-and-forget line mode through validation", () => {
+  const candidate = currentState();
+  candidate.projLineMode = "static";
+  const result = api("validateAndMigrate")(candidate);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.state.projLineMode, "static");
+});
+
+test("rejects an unknown line mode", () => {
+  const candidate = currentState();
+  candidate.projLineMode = "nonsense";
+  const result = api("validateAndMigrate")(candidate);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /projLineMode.*supported values/i);
+});
+
+test("a save written before the line mode existed defaults to split", () => {
+  const candidate = currentState();
+  delete candidate.projLineMode;
+  const result = api("validateAndMigrate")(candidate);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.state.projLineMode, "split");
 });
 
 for (const [label, candidate] of [
@@ -212,7 +352,7 @@ test("rejects future versions without guessing", () => {
   candidate.schemaVersion = api("CURRENT_SCHEMA_VERSION") + 1;
   const result = api("validateAndMigrate")(candidate);
   assert.equal(result.ok, false);
-  assert.equal(result.sourceVersion, 2);
+  assert.equal(result.sourceVersion, api("CURRENT_SCHEMA_VERSION") + 1);
   assert.match(result.errors.join(" "), /newer version/i);
 });
 
@@ -279,7 +419,7 @@ test("migrates calculated duplication fixture", () => {
   assert.equal(Object.hasOwn(result.state, "trio4"), false);
 });
 
-test("preserves the established 60000 ms solve budget when migrating a pre-schema save", () => {
+test("pre-schema saves receive the one-time 10-second solve budget migration", () => {
   const candidate = currentState();
   delete candidate.schemaVersion;
   candidate.solveBudget = 60000;
@@ -287,7 +427,7 @@ test("preserves the established 60000 ms solve budget when migrating a pre-schem
   const result = api("validateAndMigrate")(candidate);
 
   assert.equal(result.ok, true, JSON.stringify(result.errors));
-  assert.equal(result.state.solveBudget, 60000);
+  assert.equal(result.state.solveBudget, 10000);
 });
 
 test("migrates old base-time defaults but preserves custom calibration", () => {
@@ -361,6 +501,34 @@ test("importState is a pure validation boundary", () => {
   assert.strictEqual(api("S"), beforeGlobal);
 });
 
+test("reoptimize survives import, persisted reload, and reset returns prefer-current", () => {
+  const storage = storageWith();
+  context.localStorage = storage;
+  api("commitState")(api("validateAndMigrate")(currentState()).state);
+
+  const candidate = currentState();
+  candidate.projectStability = "reoptimize";
+  const imported = api("applyImportedState")(candidate, () => {});
+  assert.equal(imported.ok, true, JSON.stringify(imported.errors));
+  assert.equal(api("S.projectStability"), "reoptimize");
+  assert.equal(JSON.parse(storage.value("forgePlannerState_v3")).projectStability, "reoptimize");
+
+  api("commitState")(api("defaults")());
+  const reloaded = api("initializeState")(() => {});
+  assert.equal(reloaded.recovery, null);
+  assert.equal(api("S.projectStability"), "reoptimize");
+
+  api("commitState")(api("defaults")());
+  assert.equal(api("S.projectStability"), "prefer-current");
+  assert.equal(api("save")(), true);
+  assert.equal(JSON.parse(storage.value("forgePlannerState_v3")).projectStability, "prefer-current");
+
+  api("commitState")({});
+  const resetReloaded = api("initializeState")(() => {});
+  assert.equal(resetReloaded.recovery, null);
+  assert.equal(api("S.projectStability"), "prefer-current");
+});
+
 test("validates Worker snapshots through the same boundary", () => {
   const candidate = currentState();
   candidate.lines[0].max = 3;
@@ -377,7 +545,8 @@ test("successful boot upgrades the existing key and retains the exact previous-g
   assert.equal(result.recovery, null);
   assert.equal(storage.value("forgePlannerState_v3_previous_good"), legacyRaw);
   const upgraded = JSON.parse(storage.value("forgePlannerState_v3"));
-  assert.equal(upgraded.schemaVersion, 1);
+  assert.equal(upgraded.schemaVersion, 3);
+  assert.equal(upgraded.solveBudget, 10000);
   assert.equal(upgraded.dupe, 17.25);
 });
 
@@ -469,6 +638,85 @@ test("storage failure leaves both current and previous-good keys byte-for-byte u
   assert.equal(result.ok, false);
   assert.equal(storage.value("forgePlannerState_v3"), previousRaw);
   assert.equal(storage.value("forgePlannerState_v3_previous_good"), oldBackup);
+});
+
+test("accepts every numeric descriptor boundary including an exact 60000 ms budget", () => {
+  const candidate = currentState();
+  candidate.lines[0] = { max: 16384, spx: 1e-6, turbo: 1e6 };
+  candidate.maxTurbo = 1e6;
+  candidate.dupe = 100;
+  candidate.margin = 20;
+  candidate.solveBudget = 60000;
+  candidate.baseTime.Ingots = 1e-6;
+  candidate.prodCost.Glass.Bits[1] = 1e100;
+  candidate.sellPrice.Frames = 1e100;
+  candidate.forgie.Frames = 0;
+  candidate.minedIncome.Vespium = 1e100;
+  candidate.inventory.Ingots = 0;
+  candidate.targets.Frames.w = 9;
+  candidate.projects = [{
+    id: "numeric-boundaries", name: "Numeric boundaries", on: true, prio: 1e6,
+    from: 1, to: 2, done: 2,
+    levels: [{ costs: [{ item: "Frames", qty: 0 }] }, { costs: [{ item: "Glass", qty: 1e100 }] }],
+  }];
+  candidate.manual[0].lvl = 16384;
+
+  const result = api("validateAndMigrate")(candidate);
+
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.state.solveBudget, 60000);
+  assert.equal(result.state.lines[0].spx, 1e-6);
+  assert.equal(result.state.projects[0].levels[1].costs[0].qty, 1e100);
+});
+
+test("rejects representative numeric values beyond every live field family", () => {
+  const cases = [
+    ["line speed", state => { state.lines[0].spx = 1e-7; }],
+    ["line turbo", state => { state.lines[0].turbo = 1e6 + 1; }],
+    ["max turbo", state => { state.maxTurbo = 1e6 + 1; }],
+    ["dupe", state => { state.dupe = 101; }],
+    ["margin", state => { state.margin = 21; }],
+    ["solve budget integer", state => { state.solveBudget = 2345.5; }],
+    ["base time", state => { state.baseTime.Ingots = 0; }],
+    ["recipe", state => { state.prodCost.Glass.Bits[1] = 1e101; }],
+    ["price", state => { state.sellPrice.Frames = -1; }],
+    ["Forgie", state => { state.forgie.Frames = 1e101; }],
+    ["mined", state => { state.minedIncome.Hydracite = -1; }],
+    ["inventory", state => { state.inventory.Ingots = 1e101; }],
+    ["target", state => { state.targets.Frames.w = 1.5; }],
+  ];
+  for (const [label, mutate] of cases) {
+    const candidate = currentState();
+    mutate(candidate);
+    const before = JSON.stringify(candidate);
+    const result = api("validateAndMigrate")(candidate);
+    assert.equal(result.ok, false, label);
+    assert.equal(JSON.stringify(candidate), before, `${label} rejection mutated caller bytes`);
+  }
+});
+
+test("invalid numeric import is transactional while historical display text stays independent", () => {
+  const previous = currentState();
+  previous.priceText.Frames = "old UI text can differ from 12.5";
+  previous.sellPrice.Frames = 12.5;
+  const previousRaw = JSON.stringify(previous);
+  const storage = storageWith({ forgePlannerState_v3: previousRaw });
+  context.localStorage = storage;
+  api("commitState")(api("validateAndMigrate")(previous).state);
+
+  const accepted = api("validateAndMigrate")(previous);
+  assert.equal(accepted.ok, true, JSON.stringify(accepted.errors));
+  assert.equal(accepted.state.priceText.Frames, previous.priceText.Frames);
+  assert.equal(accepted.state.sellPrice.Frames, 12.5);
+
+  const invalid = currentState();
+  invalid.solveBudget = 60001;
+  invalid.projects = [{ id: "invalid-qty", name: "Invalid", on: true, prio: null, from: 1, to: 1, done: 0,
+    levels: [{ costs: [{ item: "Frames", qty: -1 }] }] }];
+  const result = api("applyImportedState")(invalid, () => {});
+  assert.equal(result.ok, false);
+  assert.equal(storage.value("forgePlannerState_v3"), previousRaw);
+  assert.equal(api("S.sellPrice.Frames"), 12.5);
 });
 
 test("stateRevision changes only through the single commit hook", () => {

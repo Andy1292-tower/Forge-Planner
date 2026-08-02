@@ -17,14 +17,15 @@ function renderLines(){
   S.lines.forEach((ln,i)=>{
     const opts=LEVELS.map(L=>`<option value="${L}" ${L===ln.max?"selected":""}>${compressionLabel(L)}</option>`).join("");
     const row=document.createElement("div");row.className="line-row";
+    const speedError=`field-line-${i}-speed-error`,turboError=`field-line-${i}-turbo-error`;
     const projected=(num(ln.turbo)||0)!==(num(S.maxTurbo)||0);
     const spNote=projected?`<div class="line-final mono">→ ×${fmt(lineSpeed(ln),2)} at ${fmt(num(S.maxTurbo)||0,0)} turbo stacks</div>`:"";
     row.innerHTML=`<div class="tag mono">#${i+1}</div>
       <div><div class="lname">Line ${i+1}${tipHtml(`line${i+1}Help`,`Line ${i+1}`,TIPS.line)}</div>
         <div class="line-fields">
           <div class="fl"><span>max compression</span><select data-line="${i}" aria-label="Line ${i+1} max compression">${opts}</select></div>
-          <div class="fl"><span>speed × ${tipHtml(`line${i+1}SpeedHelp`,`Line ${i+1} speed`,TIPS.spx,"tip-right tip-ic","--tip-img:url('/assets/speed.jpg')")}</span><input type="number" min="0" step="any" placeholder="1" value="${ln.spx??1}" data-spx="${i}" aria-label="Line ${i+1} currently displayed speed multiplier"></div>
-          <div class="fl"><span>turbo stacks ${tipHtml(`line${i+1}TurboHelp`,`Line ${i+1} turbo stacks`,TIPS.turbo,"tip-right")}</span><input type="number" min="0" step="any" placeholder="0" value="${ln.turbo??0}" data-turbo="${i}" aria-label="Line ${i+1} current turbo stacks"></div>
+          <div class="fl"><span>speed × ${tipHtml(`line${i+1}SpeedHelp`,`Line ${i+1} speed`,TIPS.spx,"tip-right tip-ic","--tip-img:url('../assets/speed.jpg')")}</span><input type="number" ${htmlFieldInputAttributes(FIELD_SCHEMA.lineSpeed)} placeholder="1" value="${ln.spx??1}" data-spx="${i}" aria-describedby="line${i+1}SpeedHelp" data-field-error="${speedError}" aria-label="Line ${i+1} currently displayed speed multiplier"><div class="field-error" id="${speedError}" aria-live="polite" aria-atomic="true"></div></div>
+          <div class="fl"><span>turbo stacks ${tipHtml(`line${i+1}TurboHelp`,`Line ${i+1} turbo stacks`,TIPS.turbo,"tip-right")}</span><input type="number" ${htmlFieldInputAttributes(FIELD_SCHEMA.turbo)} placeholder="0" value="${ln.turbo??0}" data-turbo="${i}" aria-describedby="line${i+1}TurboHelp" data-field-error="${turboError}" aria-label="Line ${i+1} current turbo stacks"><div class="field-error" id="${turboError}" aria-live="polite" aria-atomic="true"></div></div>
         </div>${spNote}</div>
       <button class="iconbtn" data-del="${i}" title="${TIPS.del}" aria-label="Remove crafter line ${i+1}">×</button>`;
     box.appendChild(row);
@@ -53,7 +54,7 @@ function targetRow(it){
   row.innerHTML=`<label><input type="checkbox" data-tg="${it}" ${t.on?"checked":""}> ${it}</label>
     <div class="prio" style="${t.on?"":"visibility:hidden"}">
       <span>PRIORITY</span>
-      <input type="range" min="1" max="9" step="1" value="${t.w}" data-w="${it}" aria-label="${it} priority">
+      <input type="range" ${htmlFieldInputAttributes(FIELD_SCHEMA.targetWeight)} value="${t.w}" data-w="${it}" aria-label="${it} priority">
       <span class="pv mono">${t.w}</span></div>`;
   return row;
 }
@@ -69,28 +70,41 @@ function renderTargets(){
 }
 
 /* ---------- RENDER: mined resources ---------- */
+const GEL_EXACT_UI_MAX_LINES=12;
 function renderMinedResources(){
   MINED_RESOURCES.forEach(resource=>{
     const inp=document.getElementById("mined"+resource);
-    if(inp&&document.activeElement!==inp)inp.value=S.minedIncomeText[resource]||"";
+    if(inp){
+      applyFieldInputAttributes(inp,FIELD_SCHEMA.minedIncome);
+      if(document.activeElement!==inp)inp.value=S.minedIncomeText[resource]||"";
+    }
   });
   const vespHr=minedBudgetHr("Vespium");
-  // Preserve the established Gel capacity/loadout calculation across all current lines.
-  const lo=gelLoadout(lineRows(),vespHr);
+  const rows=lineRows(),exact=rows.length<=GEL_EXACT_UI_MAX_LINES;
+  // Exact multiple-choice capacity is responsive through the gameplay-scale 12-line boundary.
+  // Larger compatible saves use the bounded solver seed with explicitly estimated copy.
+  const lo=exact?gelLoadout(rows,vespHr):gelSeedLoadout(rows,vespHr);
   const summary=document.getElementById("minedVespiumSummary");
-  if(summary)summary.textContent=vespHr>0?`Gel/hr capacity: ${disp(lo.gelHr)}`:"Gel/hr capacity: off";
-  renderMinedGelLoadout(lo,vespHr);
+  if(summary)summary.textContent=exact
+    ?(vespHr>0?`Gel/hr capacity: ${disp(lo.gelHr)}`:"Gel/hr capacity: off")
+    :(vespHr>0?`Estimated capacity: ${disp(lo.gelHr)} Gel/hr`:"Estimated capacity: off");
+  renderMinedGelLoadout(lo,vespHr,exact);
   renderMinedCostRows("Gel","minedVespiumCosts");
   renderMinedCostRows("Batteries","minedHydraciteCosts");
 }
-function renderMinedGelLoadout(lo,vespHr){
+function renderMinedGelLoadout(lo,vespHr,exact=true){
   const box=document.getElementById("minedGelLoadout");if(!box)return;
   if(vespHr<=0){box.innerHTML=`<p class="help mined-help">No Vespium income set — Gel is off, so Gel-consuming items (Wire and Batteries) can't be planned until you enter your income.</p>`;return;}
   if(!lo.perLine.length){box.innerHTML=`<div class="notice warn mined-summary">Your Vespium income is too low to run Gel on any current line. Raise your income (or add a lower-cap line) to make Gel.</div>`;return;}
-  const head=lo.vespHr<vespHr-1e-6
-    ? `Each line runs one compression full-time; this loadout burns <b>${disp(lo.vespHr)}</b> of your <b>${disp(vespHr)}</b> Vespium/hr (the rest is profit — raise a line's cap to spend it).`
-    : `Each line runs one compression full-time, burning <b>${disp(lo.vespHr)}</b> of your <b>${disp(vespHr)}</b> Vespium/hr.`;
-  let h=`<div class="notice info mined-summary">With <b>${disp(num(S.minedIncome.Vespium)||0)}</b> Vespium/min you can sustain up to <b>${disp(lo.gelHr)}</b> Gel/hr. ${head} Best loadout if you put everything you can on Gel:</div>
+  const head=exact
+    ?(lo.vespHr<vespHr-1e-6
+      ? `Each line runs one compression full-time; this loadout burns <b>${disp(lo.vespHr)}</b> of your <b>${disp(vespHr)}</b> Vespium/hr (the rest is profit — raise a line's cap to spend it).`
+      : `Each line runs one compression full-time, burning <b>${disp(lo.vespHr)}</b> of your <b>${disp(vespHr)}</b> Vespium/hr.`)
+    : `Each selected line runs one compression full-time. This bounded estimate burns <b>${disp(lo.vespHr)}</b> of your <b>${disp(vespHr)}</b> Vespium/hr; unused income may reflect the heuristic rather than a capacity limit.`;
+  const claim=exact
+    ?`With <b>${disp(num(S.minedIncome.Vespium)||0)}</b> Vespium/min you can sustain up to <b>${disp(lo.gelHr)}</b> Gel/hr. ${head} Best loadout if you put everything you can on Gel:`
+    :`<b>Estimated capacity.</b> With <b>${disp(num(S.minedIncome.Vespium)||0)}</b> Vespium/min, the bounded search found <b>${disp(lo.gelHr)}</b> Gel/hr. ${head} Best found loadout if you put everything you can on Gel:`;
+  let h=`<div class="notice info mined-summary">${claim}</div>
     <div class="mined-table-wrap"><table><thead><tr><th>Line</th><th>Compression</th><th class="num">Gel /hr</th><th class="num">Vespium /hr</th></tr></thead><tbody>`;
   lo.perLine.slice().sort((a,b)=>a.__i-b.__i).forEach(p=>{
     h+=`<tr><td class="mono">#${p.__i+1}</td><td class="mono">${compressionLabel(p.L)}</td>
@@ -126,9 +140,10 @@ function renderRecipes(){
 }
 function baseTimeField(item){
   const v=S.baseTime[item]??12.85;
-  return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 2px 8px">
+  const errorId=`field-base-time-${fieldDomToken(item)}-error`;
+  return `<div class="base-time-field" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 2px 8px">
     <span style="font-size:10.5px;color:var(--ink3)">base time @1× (s)</span>
-    <input type="number" min="0" step="any" class="base-time-input" value="${v}" data-res="${item}" data-fld="baseT" aria-label="${item} base time at 1x in seconds"></div>`;
+    <span class="field-stack"><input type="number" ${htmlFieldInputAttributes(FIELD_SCHEMA.baseTime)} class="base-time-input" value="${v}" data-res="${item}" data-fld="baseT" data-field-error="${errorId}" aria-label="${item} base time at 1x in seconds"><span class="field-error" id="${errorId}" aria-live="polite" aria-atomic="true"></span></span></div>`;
 }
 function rawCard(r){
   const c=document.createElement("div");c.className="rcard";
@@ -148,8 +163,9 @@ function prodCard(p){
     let cells=`<td class="lv">${compressionLabel(L)}</td>`;
     ins.forEach(k=>{
       const v=S.prodCost[p][k][L];
-      cells+=`<td><input type="number" min="0" step="any" placeholder="–" value="${v??""}"
-        data-res="${p}" data-fld="cost" data-in="${k}" data-lv="${L}" aria-label="${p} recipe ${k} cost at compression ${L}x"></td>`;
+      const errorId=`field-recipe-${fieldDomToken(p)}-${fieldDomToken(k)}-${L}-error`;
+      cells+=`<td><span class="field-stack"><input type="number" ${htmlFieldInputAttributes(FIELD_SCHEMA.recipeCost)} placeholder="–" value="${v??""}"
+        data-res="${p}" data-fld="cost" data-in="${k}" data-lv="${L}" data-field-error="${errorId}" aria-label="${p} recipe ${k} cost at compression ${L}x"><span class="field-error" id="${errorId}" aria-live="polite" aria-atomic="true"></span></span></td>`;
     });
     rows+=`<tr>${cells}</tr>`;
   });

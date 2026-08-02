@@ -1,8 +1,8 @@
 # Forge Planner
 
-A steady-state crafting-line optimizer for a power-law compression economy. Enter your own per-level stats (cost + time) for each input and craft, set your crafter line caps, pick the outputs you want, and it computes the optimal assignment that runs forever without starving, maximizing throughput at a priority-weighted output ratio.
+A browser-based crafting-line planner for a power-law compression economy. Enter your per-level costs and times, crafter caps, and goals; Forge Planner returns the best plan it finds within your selected solve-time budget. A bounded result is not a proof of optimality, and a plan using the optional May-work margin can include a disclosed paper shortfall.
 
-Everything runs client-side.
+Calculations, autosaves, imports, and exports stay in the browser. The page loads its existing typefaces from Google Fonts, but the generated app contains no analytics integration or planner backend and does not place planner state in those requests.
 
 ## Verify changes
 
@@ -10,10 +10,26 @@ Use Node 24 and install the committed dependencies with `npm ci`.
 
 ```bash
 npm test
-npm run test:browser
 ```
 
-`npm test` first checks JavaScript syntax, then runs the explicit fast Node-test list, including a fresh parity snapshot checked against `test/golden.json`. `npm run test:browser` serves the real static page, verifies its Worker result, exercises every planning mode, and fails on any console error or failed request.
+`npm test` first checks JavaScript syntax, then runs the explicit fast Node-test list, including a fresh parity snapshot checked against `test/golden.json`.
+
+For a GUI preview, build and serve the production files, then open either listed address in your browser:
+
+```bash
+npm run preview
+```
+
+- `http://127.0.0.1:4173/`
+- `http://127.0.0.1:4173/Forge-Planner/`
+
+The preview rebuilds `dist/` and serves the same generated release at both mounts. Run the release checks with:
+
+```bash
+npm run test:release
+```
+
+The release check builds the deployable files and verifies the static-server and cache contract at both supported mounts.
 
 ## What it does
 
@@ -21,9 +37,11 @@ npm run test:browser
 - **Crafts:** Glass (←Bits), Bricks (←Concrete), Plates (←Ingots), Rods (←Ingots), Frames (←Plates + Rods; Bits pre-produced), Gel (←Vespium), Wire (←Gel + Rods), Reinforced Concrete (←Bricks + Concrete + Frames), Batteries (←Wire + Gel, plus Hydracite)
 - **Mined income:** enter Vespium and Hydracite income separately; the planner budgets each resource independently for Gel and Batteries
 - **Per-line caps:** each crafter line has its own max compression, 1×–16.4k×
-- **Multi-output:** select several outputs at once; the priority slider sets the *ratio* (higher = more of that one), and the solver maximizes the weighted floor so you always get a real mix
-- **Project plan + shopping list:** build named **projects** (each a list of levels, each level a set of item costs), enter your current inventory, and **Project plan** mode sums what's left to craft and lays out the fastest pipelined schedule — either all projects together or one at a time (cheapest first, with "do first" projects pinned ahead). Accepts game notation (`1.2m`, `3.4qa`), and a **step-by-step** view gives the exact per-phase line setup.
-- **Manual mode:** skip the solver and assign each line a resource and compression level by hand. A live resource-balance readout flags each input as healthy / tight / short, so you can build setups that aren't purely optimal but still sustain themselves.
-- **Persistence:** auto-saves to `localStorage`; Export/Import craftables stats as JSON
+- **Multi-output:** select several outputs at once; priority weights shape the shared weighted-output floor. The result reports when constraints are infeasible or the bounded search did not finish an exhaustive proof.
+- **Project plan + shopping list:** build named **projects** (each a list of levels and item costs), enter inventory, and ask **Project plan** mode for a replay-validated schedule. One-at-a-time ordering applies known unlocks first, then numeric order, then estimated completion time. Choose whether small edits preserve familiar line jobs within a 5% phase-throughput band or re-optimize them; complete-run comparisons include warm-ups and ordering. The **step-by-step** view is execution guidance only for a replay-valid schedule; blocked results retain a labeled analytical breakdown for diagnosis.
+- **Manual mode:** skip optimization and assign each line a resource and compression level. The live balance readout labels ordinary inputs healthy, tight, or short.
+- **Persistence and recovery:** auto-saves the complete schema-v3 build to `localStorage`, retains a previous-good backup, and provides GUI recovery for rejected saves. Export/Import covers the complete accepted build—not only crafting data—including lines, recipes, prices, projects, inventory, settings, and Manual presets.
 
-The solver is branch-and-bound with symmetry reduction over identical lines — instant at 5 lines, fine at 6+.
+The solver runs in a generated Blob Worker with a configurable 200 ms–60 s budget, so the interface remains responsive. Simple searches can finish early; larger searches may return a clearly labeled best-found bounded result.
+
+Operator contracts: [state schema](docs/STATE_SCHEMA.md), [solver behavior](docs/SOLVER_CONTRACT.md), [catalog provenance](docs/CATALOG.md), and [release/rollback](docs/RELEASING.md).

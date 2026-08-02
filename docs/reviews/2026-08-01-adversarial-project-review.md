@@ -8,6 +8,8 @@
 
 **Review posture:** hostile pre-release review; findings are separated into confirmed defects, intentional tradeoffs that need disclosure, and lower-confidence engineering risks
 
+**Post-emergency reconciliation (2026-08-02):** the findings and remaining work were remapped onto emergency release baseline `1466a5d` and the continuation through `49a9c36`. The hashed static build, generated Blob Worker, immutable compatibility endpoints, executable Project schedules, exact Gel capacity work, and Credits deadline/confidence fixes change implementation boundaries but do not invalidate the remaining findings. COR-06 is materially refined below using the new executable-schedule model.
+
 ## Executive Verdict
 
 Forge Planner is a useful, unusually domain-aware tool with a recognizable industrial visual identity, a responsive Worker-based optimizer, good mined-resource modeling, and meaningful regression coverage. That identity currently masks materially unfinished composition: the main result body has accidentally lost all padding, the title/tabs/status collide at common laptop widths, narrow-mobile project and data controls collapse into each other, and several dense surfaces rely on clipping or undiscoverable horizontal scrolling. The current test suite is green, the catalog is structurally clean, no application JavaScript errors occur on a fresh-origin load, and the main Items solver matched exhaustive search in 48 deliberately small comparison cases. Outside Vercel, the expected Analytics script request still returns 404.
@@ -21,7 +23,7 @@ It is not ready to be treated as a fully trustworthy planner yet. The highest-ri
 5. Core project and dialog workflows remain inaccessible to keyboard, screen-reader, and many touch users.
 6. At narrow mobile widths, primary project and data-entry layouts visibly overlap or crush labels, making the GUI unreliable for the audience it is intended to serve.
 
-There are also two direct optimizer-trust problems: the Mined Resources modal can call a Gel loadout “best” when it is 25% below the true discrete optimum, and Project mode silently accepts a plan up to 5% below newly optimized throughput while continuing to use “optimal” and “fastest” language.
+There are also two direct optimizer-trust problems: the Mined Resources modal can call a Gel loadout “best” when it is 25% below the true discrete optimum, and Project mode silently retains line jobs within a 5% phase-throughput band without exposing the full-schedule tradeoff. The latter is not simply a speed penalty: avoiding job switches can reduce warm-up work enough for the lower-throughput phase plan to finish the complete project sooner.
 
 **Release recommendation:** stop feature expansion until the P1 work, the optimizer-trust subset of P2, and the confirmed visual-regression repairs are complete. Keep the static, local-first architecture and the established visual character; this review recommends a system-first recomposition, not a framework rewrite.
 
@@ -65,7 +67,7 @@ No P0 issue was found.
 | COR-03 | P2 | “Best” Gel loadout can be 25% below the true discrete optimum | Confirmed counterexample |
 | COR-04 | P2 | Credits can attach a losing candidate’s margin warning to a strict winner | Confirmed counterexample |
 | COR-05 | P2 | Credits “max solve time” is not an end-to-end time ceiling | Confirmed timing diagnostic |
-| COR-06 | P2 | Project stability silently accepts slower plans | Confirmed by existing test |
+| COR-06 | P2 | Project stability hides an end-to-end throughput/warm-up tradeoff | Confirmed by executable-schedule replay |
 | STATE-02 | P2 | Import and numeric-state validation are weak and inconsistent | Confirmed inspection/repro |
 | DEPLOY-01 | P2 | Unversioned scripts permit mixed-release cache failures | Confirmed locally; production incidence unproven |
 | UX-01 | P2 | First use looks preconfigured and buries the result on mobile | Confirmed browser measurement |
@@ -241,13 +243,22 @@ Relevant paths: `js/solver.js:482-525`.
 
 **Required change:** establish one absolute deadline, pass remaining time to each candidate, and check it between fixed seeds/local search stages. Rename the setting only if it intentionally remains a per-search budget.
 
-### COR-06 — Project stability silently accepts slower plans (P2)
+### COR-06 — Project stability hides an end-to-end throughput/warm-up tradeoff (P2)
 
-The 5% throughput hysteresis is intentional and useful for avoiding line churn, but it is invisible. The existing stability test proves a cached plan is held with a 2.36% throughput gap (about 2.42% longer ETA). The configured limit can produce as much as approximately 5.26% longer ETA, while applicable project summaries can still say “fastest total.”
+The 5% throughput hysteresis is intentional and useful for avoiding line churn, but its effect is invisible. Replaying the existing 420-Frames held-plan case through the executable Project schedule shows why phase throughput alone is the wrong decision metric:
 
-Relevant paths: `js/solver.js:16-24,679-727`; diagnostic fields already exist on phases.
+| Measurement | Prefer current jobs | Re-optimize jobs | Effect of re-optimizing |
+| --- | ---: | ---: | ---: |
+| Stabilized-phase throughput | baseline | 2.6304% higher | higher phase output |
+| Stabilized-phase ETA | baseline | 2.7015% shorter | shorter work phase |
+| Recursive warm-up time | baseline | 129.94 seconds longer | extra switch/startup work |
+| Complete executable ETA | 0.6659750249h | 0.6846583163h | **67.26 seconds slower overall** |
 
-**Required change:** show the exact tradeoff when `stabilized` is true and give a GUI choice: Keep current line jobs / Use fastest found plan. Do not silently weaken “optimal.”
+The retained plan is therefore worse for the affected phase but faster for the complete run. Any label or action that calls the unconstrained alternative “fastest” is false for this case. Comparison must cover prerequisites, recursive warm-ups, phase ordering, carried inventory, and every execution phase—not just a local LP objective.
+
+Relevant paths: `js/solver.js`, `js/project-schedule.js`; stabilized-phase diagnostics already exist but no player-facing full-schedule comparison or choice does.
+
+**Required change:** persist an explicit **Prefer current line jobs** / **Re-optimize line jobs** policy. When a held plan differs, solve and replay both complete schedules without letting the hidden alternative mutate the visible stability cache. Show affected-phase throughput/ETA, full-run ETA, warm-up difference, ordering changes, and why the selected policy was retained. The alternative action must be truthful: use **Use shorter re-optimized plan** only when its total executable ETA is actually lower; otherwise use **Use higher-throughput line jobs anyway** (or neutral copy for an effective zero gap).
 
 ### STATE-02 — Import and numeric-state validation are inconsistent (P2)
 
@@ -452,12 +463,12 @@ ES modules are reasonable after those boundaries are tested. A framework migrati
 
 - Footer says the plan “guarantees” sustainability even when May-work margin explicitly permits a paper shortfall.
 - Capped copy says a result is “almost certainly optimal,” which the current search cannot establish for that specific run.
-- Project copy says “fastest” while hidden stability may deliberately retain a slower plan.
+- Project copy says “fastest” even though stability can retain lower-throughput phases and, after prerequisites and warm-ups, either policy may have the shorter complete schedule.
 - Footer says “nothing is uploaded,” while Google Fonts and Vercel Analytics make network requests. There is no evidence planner inputs are sent; the wording is simply broader than the implementation.
 - README says Export/Import covers craftable stats, but it exports all state.
 - README’s “instant at 5 lines, fine at 6+” does not describe 1–15 second configurable searches.
 
-**Required change:** state the exact contract: build data remains local; optional fonts/analytics make requests; capped means best found within budget and not proven optimal; May-work is not guaranteed; stability may trade speed for fewer line changes.
+**Required change:** state the exact contract: build data remains local; optional fonts/analytics make requests; capped means best found within budget and not proven optimal; May-work is not guaranteed; Project stability trades phase throughput and line changes against warm-up work, so only a full executable-schedule comparison establishes which policy finishes sooner.
 
 ### P3 Resilience, Web, Accessibility, and Data Findings
 
@@ -495,7 +506,7 @@ The code says the optimum is “always mono-product.” A counterexample makes 3
 - **Credits is currently a dedicated-item comparison.** Do not silently change it to a mixed-sales optimizer; rename/explain it or make a separate mode if that product decision changes.
 - **Explicit Resimulate after crafter-line edits is intentional.** Improve visibility and accessibility without returning to expensive solve-on-every-keystroke behavior.
 - **Vespium and Hydracite are independent hard budgets.** They passed adversarial checks and must remain separate.
-- **Line stability is a desirable feature.** The defect is its hidden cost and absence of user control, not the existence of stability.
+- **Line stability is a desirable feature.** The defect is its hidden end-to-end effect and absence of user control, not the existence of stability. Preserve it and compare complete executable schedules before making speed claims.
 - **The Mined Resources dialog is the correct dialog/focus-lifecycle reference.** Generalize that behavior; it still shares the application’s tooltip, validation, contrast, and live-status defects.
 - **The static/local-first shape is an asset.** Keep it unless a future requirement genuinely needs a backend.
 

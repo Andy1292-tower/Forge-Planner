@@ -2,6 +2,7 @@
 
 const dialogController=(()=>{
   const stack=[];
+  const backgroundInert=new Map();
   const focusableSelector='a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"])';
   const top=()=>stack[stack.length-1]||null;
   const focusables=panel=>[...panel.querySelectorAll(focusableSelector)].filter(el=>
@@ -10,7 +11,15 @@ const dialogController=(()=>{
   function syncBackground(){
     const active=top();
     document.body.classList.toggle("dialog-open",!!active);
-    [...document.body.children].forEach(child=>{child.inert=!!active&&child!==active.root;});
+    if(active){
+      [...document.body.children].forEach(child=>{
+        if(!backgroundInert.has(child))backgroundInert.set(child,!!child.inert);
+        child.inert=child!==active.root;
+      });
+      return;
+    }
+    backgroundInert.forEach((inert,child)=>{child.inert=inert;});
+    backgroundInert.clear();
   }
   function resetScroll(entry){
     entry.root.scrollTop=0;

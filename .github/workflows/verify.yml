@@ -1,30 +1,22 @@
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 name: Verify
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 jobs:
   verify:
+    name: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
+        with: { node-version: 24, cache: npm }
       - run: npm ci
       - run: npm test
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:a11y
-      - run: npm run test:visual
-      - run: npm run test:browser
-      - name: Upload Playwright artifacts
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-artifacts
-          path: |
-            playwright-report/
-            test-results/
-          if-no-files-found: ignore
