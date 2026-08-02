@@ -134,6 +134,27 @@ function projectForgieNote(res){
   const parts=made.map(it=>`<b>${disp(num(S.forgie[it])||0)}</b>/hr ${it}`).join(", ");
   return `<div class="notice info" style="font-size:11.5px"><b>Lil' Forgie</b> is passively supplying ${parts} — already credited toward these projects, so it's crafting you don't have to do.</div>`;
 }
+// How the user's Shopping-list toggles say the list should be ordered — which is NOT always the shape
+// this particular solve took. With one project left there is nothing to sequence, so res.sequenced
+// goes false (correct for every phase-shaped readout), but the header describes the SETTING and "all
+// together" is simply untrue when the toggle reads one-at-a-time. optimizeProjectTop carries the raw
+// settings through as orderSeqSetting/orderGateSetting; older cached results without them fall back
+// to the structural flags, so a stale repaint still words itself sensibly.
+function projOrderMode(res){
+  const seq=(res.orderSeqSetting!=null)?!!res.orderSeqSetting:!!res.sequenced;
+  if(seq)return "seq";
+  const gateOff=(res.orderGateSetting!=null)?!res.orderGateSetting:!!res.single;
+  if(gateOff)return "single";
+  return (res.phases&&res.phases.length>1)?"waves":"together";
+}
+function projOrderHeader(res){
+  switch(projOrderMode(res)){
+    case "seq":return 'Order: <b style="color:var(--ink2)">one project at a time</b> — unlocks first, then your order numbers, then cheapest. Change in Shopping list.';
+    case "single":return 'Order: <b style="color:var(--ink2)">all projects in one phase</b> — unlock ordering off. Change in Shopping list.';
+    case "waves":return 'Order: <b style="color:var(--ink2)">all together, in unlock waves</b> — material unlocks first, then the rest. Change in Shopping list.';
+    default:return 'Order: <b style="color:var(--ink2)">all projects together</b> (fastest total). Change in Shopping list.';
+  }
+}
 function renderProjectResults(res,el,stat){
   _lastProjectRes=res;
   // Seed the plan-start anchor once, the first time a real plan exists (issue #87 item 1) — moved here
@@ -160,7 +181,7 @@ function renderProjectResults(res,el,stat){
   // Header: ordering note + Track-progress opener. The step plan below is the main event, so there's
   // no longer a "Step-by-step" button — this panel *is* it.
   html+=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-    <div class="proj-mini" style="font-size:11.5px">${res.sequenced?'Order: <b style="color:var(--ink2)">one project at a time</b> — unlocks first, then your order, then cheapest. Change in Shopping list.':res.waved?'Order: <b style="color:var(--ink2)">all together, in unlock waves</b> — material unlocks first, then the rest. Change in Shopping list.':res.single?'Order: <b style="color:var(--ink2)">all projects in one phase</b> — unlock ordering off. Change in Shopping list.':'Order: <b style="color:var(--ink2)">all projects together</b> (fastest total). Change in Shopping list.'}</div>
+    <div class="proj-mini" style="font-size:11.5px">${projOrderHeader(res)}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn primary" id="btnProgress">Track progress</button>
     </div></div>`;
@@ -177,10 +198,12 @@ function renderProjectResults(res,el,stat){
   if(res.infeasItems&&res.infeasItems.length)html+=`<div class="notice warn"><b>Can't sustainably produce:</b> ${res.infeasItems.join(", ")}. Raise a line's max compression, add a line, or check recipe costs — the time below excludes these.</div>`;
   if(res.atRiskItems&&res.atRiskItems.length)html+=`<div class="notice warn"><b>Relies entirely on stock:</b> ${res.atRiskItems.join(", ")}. No line is crafting ${res.atRiskItems.length>1?"these":"this"} — the plan is spending down your current inventory to cover them. Once it runs out you'll need dedicated crafters.</div>`;
   if(res.partial)html+=`<div class="notice warn"><b>Partial plan only.</b> The blocked items remain excluded, so the ticked projects are <b>not fully finishable</b> with the current mined incomes. The time shown is for currently plannable work only.</div>`;
-  // Summary metrics
+  // Summary metrics. The "how" caption reads off the user's order SETTING (see projOrderMode), not
+  // this solve's shape — same reason as the header above.
+  const om=projOrderMode(res);
   html+=`<div class="metrics">
-    <div class="metric"><div class="l">${res.partial?"Partial plan time":res.feasible?"Total time":"Plan time"}</div><div class="v">${fmtDuration(res.eta)}</div><div class="u">${res.partial?"currently plannable work only":res.feasible?(res.sequenced?"to finish every project":"to finish all ticked projects"):"blocked — no finish time available"}</div></div>
-    <div class="metric"><div class="l">Projects</div><div class="v">${res.perProject.length}</div><div class="u">${res.sequenced?"one at a time":res.waved?res.phases.length+" unlock waves":res.single?"all in one phase":"scheduled together"}</div></div>
+    <div class="metric"><div class="l">${res.partial?"Partial plan time":res.feasible?"Total time":"Plan time"}</div><div class="v">${fmtDuration(res.eta)}</div><div class="u">${res.partial?"currently plannable work only":res.feasible?(om==="seq"?"to finish every project":"to finish all ticked projects"):"blocked — no finish time available"}</div></div>
+    <div class="metric"><div class="l">Projects</div><div class="v">${res.perProject.length}</div><div class="u">${om==="seq"?"one at a time":om==="waves"?res.phases.length+" unlock waves":om==="single"?"all in one phase":"scheduled together"}</div></div>
     ${!res.sequenced&&!res.waved&&res.bottleneck?`<div class="metric"><div class="l">Bottleneck</div><div class="v" style="font-size:17px">${res.bottleneck}</div><div class="u">sets the ${res.partial?"partial plan":"finish"} time</div></div>`:""}
   </div>`;
   // Quick project controls (on/off, level range, mark done) — collapsed so the plan stays the hero.

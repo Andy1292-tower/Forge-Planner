@@ -972,7 +972,14 @@ function optimizeProjectTop(){
   const infeasItems=[...new Set([].concat(...phases.map(ph=>ph.infeasItems||[])))];
   const atRiskItems=[...new Set([].concat(...phases.map(ph=>ph.atRisk||[])))];
   const main=phases[0]||{plan:[],balance:[],rate:{},demandItems:[],bottleneck:null};
-  return {empty:false,mode:"project",sequenced:seq,waved,single,phases,perProject,gross,net,
+  // sequenced/waved/single describe the SHAPE of this solve and other renderers depend on that: with
+  // one project left there is nothing to sequence, so `seq` is false and every phase-shaped readout
+  // is right. The header copy is a different question — it tells the user what their Shopping-list
+  // toggles are set to, and "all projects together" is a lie when the toggle says one-at-a-time.
+  // Carry the raw settings alongside so results.js can word the header from them (see projOrderMode).
+  return {empty:false,mode:"project",sequenced:seq,waved,single,
+    orderSeqSetting:S.projectSeq!==false,orderGateSetting:S.projectGate!==false,
+    phases,perProject,gross,net,
     plan:main.plan,balance:main.balance,
     demandItems:(seq||waved)?ALLITEMS.filter(it=>net[it]>1e-9):main.demandItems,
     rate:main.rate,bottleneck:main.bottleneck,eta,unsat,blockedMined,infeasItems,atRiskItems,partial,feasible,
