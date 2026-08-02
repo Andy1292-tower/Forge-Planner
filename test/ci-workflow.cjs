@@ -30,13 +30,15 @@ function jobBlock(source, name) {
 function assertPlaywrightContract(source) {
   const playwrightJob = jobBlock(source, "playwright");
   assert.match(playwrightJob, /fail-fast: false/);
-  for (const lane of ["browser", "accessibility", "visual", "release"])
-    assert.match(playwrightJob, new RegExp(`- lane: ${lane}\\b`));
+  const lanes = Array.from(playwrightJob.matchAll(/^\s*- lane: (\S+)$/gm), match => match[1]);
+  assert.deepEqual(lanes, ["browser", "accessibility", "visual", "release"],
+    "the Playwright matrix must contain exactly the four required verification lanes");
   assert.match(playwrightJob, /playwright-\$\{\{ matrix\.lane \}\}-artifacts/);
 }
 
 function assertVerifyContract(source) {
   const verifyJob = jobBlock(source, "verify");
+  assert.match(verifyJob, /^    name: verify$/m);
   assert.match(verifyJob, /needs: \[node, playwright\]/);
   assert.match(verifyJob, /if: always\(\)/);
   assert.match(verifyJob, /needs\.node\.result/);
@@ -69,10 +71,16 @@ assertVerifyContract(workflow);
 assert.throws(() => assertPlaywrightContract(workflow.replace(
   "          - lane: visual\n            command: \"npm run test:visual\"\n", "")),
 "the contract must reject a workflow that omits a verification lane");
+assert.throws(() => assertPlaywrightContract(workflow.replace(
+  "          - lane: release\n            command: \"npm run test:release\"\n",
+  "          - lane: release\n            command: \"npm run test:release\"\n          - lane: smoke\n            command: \"npm run test:smoke\"\n")),
+"the contract must reject an extra verification lane");
 assert.throws(() => assertPlaywrightContract(workflow.replace("fail-fast: false", "fail-fast: true")),
   "the contract must reject fail-fast Playwright lanes");
 assert.throws(() => assertVerifyContract(workflow.replace(/(  verify:[\s\S]*?)if: always\(\)/, "$1if: success()")),
   "the contract must reject an aggregator that does not always run");
+assert.throws(() => assertVerifyContract(workflow.replace("    name: verify\n", "    name: all-checks\n")),
+  "the contract must reject a renamed required check");
 assert.throws(() => assertPlaywrightContract(workflow.replace(
   "name: playwright-${{ matrix.lane }}-artifacts", "name: playwright-artifacts")),
 "the contract must reject non-unique failure artifact names");
@@ -83,6 +91,8 @@ function visualUploadStep(source) {
 function assertVisualUploadContract(source) {
   const visualUpload = visualUploadStep(source);
   assert.ok(visualUpload, "the visual release-matrix upload step must exist");
+  assert.match(visualUpload[1], /if: always\(\) && matrix\.lane == 'visual'/,
+    "the visual release-matrix upload must always run only for the visual lane");
   assert.match(visualUpload[1], /if-no-files-found: error/,
     "a green visual lane must not silently omit release-matrix evidence");
 }
@@ -90,6 +100,12 @@ function assertVisualUploadContract(source) {
 assertVisualUploadContract(workflow);
 assert.throws(() => assertVisualUploadContract(workflow.replace("if-no-files-found: error", "if-no-files-found: ignore")),
   "the contract must reject relaxed visual-evidence uploads");
+assert.throws(() => assertVisualUploadContract(workflow.replace(
+  "if: always() && matrix.lane == 'visual'", "if: matrix.lane == 'visual'")),
+"the contract must reject a visual upload that does not always run");
+assert.throws(() => assertVisualUploadContract(workflow.replace(
+  "if: always() && matrix.lane == 'visual'", "if: always()")),
+"the contract must reject a visual upload that is not lane-scoped");
 
 const uploadBoundaryMutation = workflow
   .replace("if-no-files-found: error", "if-no-files-found: ignore")
