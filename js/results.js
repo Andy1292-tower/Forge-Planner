@@ -27,47 +27,7 @@ function projPlanAnchorHtml(){
   </div>`;
 }
 
-/* ---------- async solve via Web Worker ----------
-   The solve runs off the main thread so a long budget shows a spinner instead of freezing. Each
-   request gets an id; results from superseded requests are dropped. A new request terminates the
-   in-flight worker (true cancellation) rather than queuing behind it. Falls back to a synchronous
-   solve if Workers are unavailable (e.g. opened over file://) or the worker fails to start. */
-let _solveWorker=null,_solveReq=0,_solvePending=null,_workerBroken=false;
-function _spawnSolveWorker(){
-  const w=new Worker("js/solver.worker.js");
-  w.onmessage=ev=>{const d=ev.data||{};
-    if(d.reqId!==_solveReq)return;            // a newer solve superseded this one
-    hideSolveSpinner();const cb=_solvePending;_solvePending=null;
-    if(d.error){solveError(d.error);return;}
-    // Copy the worker's updated line-stability cache back to the main thread (issue #87 item 5): the
-    // worker is discarded after each solve, so the main thread owns the cache across solves.
-    if(d.res&&d.res.__stab&&typeof setLineStability==="function"){setLineStability(d.res.__stab);delete d.res.__stab;}
-    if(cb)cb(d.res);};
-  w.onerror=()=>{_workerBroken=true;try{w.terminate();}catch(e){}_solveWorker=null;
-    if(_solvePending){const cb=_solvePending;_solveSync(cb,_solveReq);}};
-  return w;
-}
-function solveAsync(cb){
-  const reqId=++_solveReq;_solvePending=cb;
-  showSolveSpinner();
-  if(_workerBroken||typeof Worker==="undefined"){_solveSync(cb,reqId);return;}
-  try{
-    if(_solveWorker)_solveWorker.terminate();   // cancel any in-flight solve
-    _solveWorker=_spawnSolveWorker();
-    const stab=(typeof getLineStability==="function")?getLineStability():null;
-    _solveWorker.postMessage({reqId,state:JSON.parse(JSON.stringify(S)),budget:Math.max(200,Math.min(60000,num(S.solveBudget)||2000)),stab});
-  }catch(e){_workerBroken=true;_solveSync(cb,reqId);}
-}
-// Synchronous fallback. The 0ms defer lets the spinner paint before the (briefly blocking) solve.
-function _solveSync(cb,reqId){
-  setTimeout(()=>{
-    if(reqId!==_solveReq)return;               // superseded while waiting
-    let res=null;try{res=optimize();}catch(e){solveError((e&&e.stack)||String(e));return;}
-    hideSolveSpinner();_solvePending=null;if(cb)cb(res);
-  },0);
-}
 function solveError(msg){
-  hideSolveSpinner();
   const el=document.getElementById("results"),stat=document.getElementById("solveStat");
   if(el){
     const notice=domElement("div","notice warn");
@@ -76,8 +36,6 @@ function solveError(msg){
   }
   if(stat)stat.textContent="";
 }
-function showSolveSpinner(){const o=document.getElementById("solveOverlay");if(o)o.hidden=false;}
-function hideSolveSpinner(){const o=document.getElementById("solveOverlay");if(o)o.hidden=true;}
 function resultMinedUsage(res){
   if(res&&Array.isArray(res.minedUsage))return res.minedUsage;
   // Adapter for cached/legacy results that predate the generic minedUsage shape.
@@ -158,7 +116,7 @@ function renderProjectResults(res,el,stat){
   _lastProjectRes=res;
   // Seed the plan-start anchor once, the first time a real plan exists (issue #87 item 1) — moved here
   // from the old modal's open handler now that the step plan is always on screen. Display anchor only.
-  if(S.planStart==null&&res&&!res.empty&&res.phases&&res.phases.length){S.planStart=Date.now();save();}
+  if(S.planStart==null&&res&&!res.empty&&res.phases&&res.phases.length){mutateState(st=>{st.planStart=Date.now();});save();}
   if(res.empty){
     // Distinguish "everything's done" from "nothing configured" (issue #87 item 2). When active
     // projects exist but are fully checked off, keep the Track-progress opener so the user can still
@@ -287,10 +245,15 @@ function renderResults(){
   if(typeof clearStaleUI==="function")clearStaleUI();   // results are about to reflect current inputs
   const el=document.getElementById("results");
   const stat=document.getElementById("solveStat");
-  if(S.mode==="manual"){renderManual(el,stat);return;}
+  if(S.mode==="manual"){solveService.cancel("Manual mode renders synchronously");renderManual(el,stat);return;}
   // Off the main thread: a long solve (the user's max-solve-time budget) shows a spinner instead
-  // of freezing. solveAsync ignores superseded solves, so only the latest request paints.
-  solveAsync(res=>{if(res)renderSolveResult(res,el,stat);});
+  // of freezing. The service owns cancellation and only delivers the accepted mode/revision.
+  const snapshot=JSON.parse(JSON.stringify(S));
+  const budget=Math.max(200,Math.min(60000,num(snapshot.solveBudget)||2000));
+  solveService.request({mode:snapshot.mode,stateRevision,budget,stateSnapshot:snapshot},(res,error)=>{
+    if(error){solveError(error);return;}
+    if(res)renderSolveResult(res,el,stat);
+  });
 }
 function renderSolveResult(res,el,stat){
   if(res.mode==="project"){renderProjectResults(res,el,stat);return;}

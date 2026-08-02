@@ -8,11 +8,14 @@
 importScripts("core.js", "fields.js", "state.js", "solver.js");
 
 self.onmessage = function (e) {
-  const { reqId, state, budget, stab } = e.data || {};
+  const { reqId, generation, mode, stateRevision, state, budget, stab } = e.data || {};
   try {
     if(!Number.isInteger(reqId)||reqId<0)throw new Error("Worker request id is invalid");
+    if(generation!==reqId)throw new Error("Worker generation is invalid");
+    if(!Number.isInteger(stateRevision)||stateRevision<0)throw new Error("Worker state revision is invalid");
     const checked=validateWorkerState(state);
     if(!checked.ok)throw new Error("Worker state rejected: "+checked.errors.join("; "));
+    if(mode!==checked.state.mode)throw new Error("Worker mode does not match the validated state");
     if(budget!==undefined&&budget!==checked.state.solveBudget)throw new Error("Worker budget does not match the validated state");
     if(stab!==null&&stab!==undefined){
       const stabilityErrors=[];
@@ -26,8 +29,8 @@ self.onmessage = function (e) {
     if (typeof setLineStability === "function") setLineStability(stab || {});
     const res = optimize();
     if (res && typeof getLineStability === "function") res.__stab = getLineStability();
-    self.postMessage({ reqId, res });
+    self.postMessage({ reqId, generation, mode, stateRevision, res });
   } catch (err) {
-    self.postMessage({ reqId, error: (err && err.stack) || String(err) });
+    self.postMessage({ reqId, generation, mode, stateRevision, error: (err && err.stack) || String(err) });
   }
 };

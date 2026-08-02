@@ -97,6 +97,7 @@
         <span class="stale-msg">Crafter line inputs changed — press Resimulate to update the plan below.</span>
         <button class="btn primary" id="btnResim">Resimulate</button>
       </div>
+      <div class="notice warn" id="solveFallback" role="status" aria-live="polite" hidden></div>
       <div class="results-wrap">
         <div class="body" id="results"></div>
         <div class="solve-overlay" id="solveOverlay" hidden>
@@ -259,6 +260,7 @@
 <script src="js/dom.js"></script>
 <script src="js/render.js"></script>
 <script src="js/solver.js"></script>
+<script src="js/solve-service.js"></script>
 <script src="js/results.js"></script>
 <script src="js/manual.js"></script>
 <script src="js/events.js"></script>

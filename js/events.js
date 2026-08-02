@@ -26,53 +26,55 @@ document.getElementById("btnResim").addEventListener("click",resimulate);
 
 document.getElementById("lines").addEventListener("change",e=>{
   const li=e.target.dataset.line;
-  if(li!==undefined){S.lines[+li].max=+e.target.value;markStale();}
+  if(li!==undefined){mutateState(st=>{st.lines[+li].max=+e.target.value;});markStale();}
 });
 document.getElementById("lines").addEventListener("input",e=>{
   const si=e.target.dataset.spx, ti=e.target.dataset.turbo;
-  if(si!==undefined){S.lines[+si].spx=num(e.target.value)||1;refreshLineNotes();markStale();}
-  if(ti!==undefined){S.lines[+ti].turbo=Math.max(0,num(e.target.value)||0);refreshLineNotes();markStale();}
+  if(si!==undefined){mutateState(st=>{st.lines[+si].spx=num(e.target.value)||1;});refreshLineNotes();markStale();}
+  if(ti!==undefined){mutateState(st=>{st.lines[+ti].turbo=Math.max(0,num(e.target.value)||0);});refreshLineNotes();markStale();}
 });
 document.getElementById("lines").addEventListener("keydown",e=>{
   if(e.key==="Enter"){e.preventDefault();resimulate();}
 });
 document.getElementById("lines").addEventListener("click",e=>{
   const d=e.target.dataset.del;
-  if(d!==undefined){if(S.lines.length>1){S.lines.splice(+d,1);S.manual.splice(+d,1);syncManual(S);renderLines();markStale();}}
+  if(d!==undefined&&S.lines.length>1){mutateState(st=>{st.lines.splice(+d,1);st.manual.splice(+d,1);syncManual(st);});renderLines();markStale();}
 });
 document.getElementById("btnAddLine").addEventListener("click",()=>{
-  S.lines.push({max:512,spx:1,turbo:0});syncManual(S);renderLines();markStale();
+  mutateState(st=>{st.lines.push({max:512,spx:1,turbo:0});syncManual(st);});renderLines();markStale();
 });
 
 document.getElementById("margin").addEventListener("input",e=>{
-  S.margin=num(e.target.value)||0;
+  mutateState(st=>{st.margin=num(e.target.value)||0;});
   document.getElementById("marginv").textContent=fmt(S.margin,1)+"%";
   scheduleSolve();
 });
 
 document.getElementById("maxTurbo").addEventListener("input",e=>{
-  S.maxTurbo=Math.max(0,num(e.target.value)||0);
+  mutateState(st=>{st.maxTurbo=Math.max(0,num(e.target.value)||0);});
   refreshLineNotes();markStale();
 });
 document.getElementById("dupe").addEventListener("input",e=>{
-  S.dupe=Math.max(0,num(e.target.value)||0);
+  mutateState(st=>{st.dupe=Math.max(0,num(e.target.value)||0);});
   markStale();
 });
 
 document.getElementById("targets").addEventListener("change",e=>{
   const tg=e.target.dataset.tg;
-  if(tg){S.targets[tg].on=e.target.checked;renderTargets();scheduleSolve();}
+  if(tg){mutateState(st=>{st.targets[tg].on=e.target.checked;});renderTargets();scheduleSolve();}
 });
 document.getElementById("targets").addEventListener("input",e=>{
   const w=e.target.dataset.w;
-  if(w){S.targets[w].w=+e.target.value;e.target.parentElement.querySelector(".pv").textContent=e.target.value;scheduleSolve();}
+  if(w){mutateState(st=>{st.targets[w].w=+e.target.value;});e.target.parentElement.querySelector(".pv").textContent=e.target.value;scheduleSolve();}
 });
 
 document.getElementById("recipes").addEventListener("input",e=>{
   const d=e.target.dataset;if(!d.res)return;
   const v=num(e.target.value);
-  if(d.fld==="baseT")S.baseTime[d.res]=(v==null||v<=0)?1:v;
-  else if(d.fld==="cost")S.prodCost[d.res][d.in][+d.lv]=v;
+  mutateState(st=>{
+    if(d.fld==="baseT")st.baseTime[d.res]=(v==null||v<=0)?1:v;
+    else if(d.fld==="cost")st.prodCost[d.res][d.in][+d.lv]=v;
+  });
   scheduleSolve();
 });
 
@@ -120,6 +122,7 @@ document.getElementById("fileImport").addEventListener("change",e=>{
   r.onload=()=>{
     const raw=String(r.result==null?"":r.result);let candidate;
     try{candidate=JSON.parse(raw);}catch(error){showStateRecovery(raw,"Could not read that file because it is not valid JSON.",f);return;}
+    solveService.cancel("Import is replacing accepted state");
     const result=applyImportedState(candidate,renderAll);
     if(!result.ok){showStateRecovery(raw,result.errors.join("; "),f);return;}
     dismissStateRecovery(false);flashSaved();
@@ -129,7 +132,7 @@ document.getElementById("fileImport").addEventListener("change",e=>{
 });
 document.getElementById("btnReset").addEventListener("click",()=>{
   if(confirm("Reset everything to defaults? This clears your entered stats."))
-    {commitState(defaults());renderAll();save();dismissStateRecovery(false);}
+    {solveService.cancel("Reset is replacing accepted state");commitState(defaults());renderAll();save();dismissStateRecovery(false);}
 });
 
 /* ---------- mode switch ---------- */
@@ -138,7 +141,7 @@ function renderModeSwitch(){
 }
 document.getElementById("modesw").addEventListener("click",e=>{
   const m=e.target.dataset.mode;if(!m||m===S.mode)return;
-  S.mode=m;renderModeSwitch();save();renderResults();
+  mutateState(st=>{st.mode=m;});renderModeSwitch();save();renderResults();
 });
 
 /* ---------- sell prices ---------- */
@@ -178,15 +181,14 @@ priceModal.addEventListener("click",e=>{if(e.target===priceModal)closePrices();}
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!priceModal.hidden)closePrices();});
 document.getElementById("priceClear").addEventListener("click",()=>{
   if(!confirm("Clear all sell prices?"))return;
-  [...RAWS,...PRODUCTS].forEach(it=>{S.sellPrice[it]=null;S.priceText[it]="";});
+  mutateState(st=>{[...RAWS,...PRODUCTS].forEach(it=>{st.sellPrice[it]=null;st.priceText[it]="";});});
   renderPrices();scheduleSolve();
 });
 document.getElementById("priceRows").addEventListener("input",e=>{
   const it=e.target.dataset.price;if(!it)return;
   const raw=e.target.value;
-  S.priceText[it]=raw;
   const v=parseGameNum(raw);
-  S.sellPrice[it]=v;
+  mutateState(st=>{st.priceText[it]=raw;st.sellPrice[it]=v;});
   const prev=document.querySelector(`[data-prev="${it}"]`);
   if(prev)prev.textContent=v!=null?"= "+fmt(v):(raw.trim()?"unrecognized":"");
   scheduleSolve();
@@ -207,14 +209,13 @@ forgieModal.addEventListener("click",e=>{if(e.target===forgieModal)closeForgie()
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!forgieModal.hidden)closeForgie();});
 document.getElementById("forgieClear").addEventListener("click",()=>{
   if(!confirm("Clear all Lil' Forgie supply rates?"))return;
-  [...RAWS,...PRODUCTS].forEach(it=>{S.forgie[it]=null;S.forgieText[it]="";});
+  mutateState(st=>{[...RAWS,...PRODUCTS].forEach(it=>{st.forgie[it]=null;st.forgieText[it]="";});});
   renderForgie();scheduleSolve();
 });
 document.getElementById("forgieRows").addEventListener("input",e=>{
   const it=e.target.dataset.forgie;if(!it)return;
   const raw=e.target.value;
-  S.forgieText[it]=raw;
-  S.forgie[it]=parseGameNum(raw);
+  mutateState(st=>{st.forgieText[it]=raw;st.forgie[it]=parseGameNum(raw);});
   scheduleSolve();
 });
 
@@ -244,7 +245,7 @@ document.getElementById("minedDone").addEventListener("click",closeMined);
 minedModal.addEventListener("click",e=>{if(e.target===minedModal)closeMined();});
 minedModal.addEventListener("input",e=>{
   const resource=e.target.dataset.minedIncome;if(!resource)return;
-  setMinedIncome(resource,e.target.value);
+  mutateState(()=>{setMinedIncome(resource,e.target.value);});
   renderMinedResources();scheduleSolve();
 });
 document.addEventListener("keydown",e=>{
@@ -272,7 +273,7 @@ document.getElementById("settingsDone").addEventListener("click",closeSettings);
 settingsModal.addEventListener("click",e=>{if(e.target===settingsModal)closeSettings();});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!settingsModal.hidden)closeSettings();});
 if(solveBudgetInput)solveBudgetInput.addEventListener("input",()=>{
-  S.solveBudget=Math.round(Math.max(0.2,Math.min(15,Number(solveBudgetInput.value)||2))*1000);
+  mutateState(st=>{st.solveBudget=Math.round(Math.max(0.2,Math.min(15,Number(solveBudgetInput.value)||2))*1000);});
   if(solveBudgetVal)solveBudgetVal.textContent=fmtBudget(S.solveBudget);save();});
 
 /* ---------- collapsible crafting-data panel ---------- */
@@ -325,7 +326,7 @@ function initCalib(){
   ["cbItem","cbComp","cbSpeed","cbSec"].forEach(id=>document.getElementById(id).addEventListener("input",recalc));
   apply.addEventListener("click",()=>{
     if(computed==null)return;
-    S.baseTime[it.value]=computed; save(); renderRecipes(); renderResults(); recalc();
+    mutateState(st=>{st.baseTime[it.value]=computed;}); save(); renderRecipes(); renderResults(); recalc();
   });
   recalc();
 }
@@ -426,7 +427,6 @@ function renderInv(){
   renderItemValueRows(box,S.inventoryText,S.inventory,"inv","0","");
 }
 function renderProjects(){
-  if(!S.projects)S.projects=[];
   const box=document.getElementById("projList");
   box.innerHTML=S.projects.length?S.projects.map((p,pi)=>projCard(p,pi)).join("")
     :`<div class="proj-mini" style="padding:6px 2px">No projects yet — add one to start building a schedule.</div>`;
@@ -435,8 +435,8 @@ function renderProjects(){
   renderInv();
   if(typeof renderCatalog==="function")renderCatalog();
 }
-document.getElementById("projSeqToggle").addEventListener("change",e=>{S.projectSeq=e.target.checked;renderProjects();save();scheduleSolve();});
-document.getElementById("projGateToggle").addEventListener("change",e=>{S.projectGate=!e.target.checked;save();scheduleSolve();});
+document.getElementById("projSeqToggle").addEventListener("change",e=>{mutateState(st=>{st.projectSeq=e.target.checked;});renderProjects();save();scheduleSolve();});
+document.getElementById("projGateToggle").addEventListener("change",e=>{mutateState(st=>{st.projectGate=!e.target.checked;});save();scheduleSolve();});
 
 /* ---------- project catalog (static, read-only source list) ---------- */
 const CATALOG=(typeof PROJECT_CATALOG!=="undefined"&&Array.isArray(PROJECT_CATALOG))?PROJECT_CATALOG:[];
@@ -445,10 +445,11 @@ const projectHasCat=catId=>(S.projects||[]).some(p=>p.catId===catId);
 function addCatalogProject(catId){
   const src=CATALOG.find(c=>c.catId===catId);
   if(!src||projectHasCat(catId))return;
-  S.projects.push({
-    id:newId(),catId:src.catId,name:src.name,description:src.description||"",
-    on:true,prio:null,from:1,to:src.levels.length||1,done:0,
-    levels:JSON.parse(JSON.stringify(src.levels)),_open:false
+  mutateState(st=>{st.projects.push({
+      id:newId(),catId:src.catId,name:src.name,description:src.description||"",
+      on:true,prio:null,from:1,to:src.levels.length||1,done:0,
+      levels:JSON.parse(JSON.stringify(src.levels)),_open:false
+    });
   });
   renderProjects();renderCatalog();save();scheduleSolve();
 }
@@ -485,49 +486,49 @@ document.getElementById("projDone").addEventListener("click",closeProjects);
 projModal.addEventListener("click",e=>{if(e.target===projModal)closeProjects();});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!projModal.hidden)closeProjects();});
 document.getElementById("projAdd").addEventListener("click",()=>{
-  S.projects.push({id:newId(),name:"New project",on:true,prio:null,from:1,to:1,done:0,levels:[{costs:[]}],_open:true});
+  mutateState(st=>{st.projects.push({id:newId(),name:"New project",on:true,prio:null,from:1,to:1,done:0,levels:[{costs:[]}],_open:true});});
   renderProjects();save();scheduleSolve();
 });
 document.getElementById("projClear").addEventListener("click",()=>{
   if(!(S.projects||[]).length)return;
   if(!confirm("Remove all projects from the shopping list? This clears every added catalog project and custom project."))return;
-  S.projects=[];
+  mutateState(st=>{st.projects=[];});
   renderProjects();save();scheduleSolve();
 });
 document.getElementById("projInvClear").addEventListener("click",()=>{
   if(!confirm("Clear all inventory amounts?"))return;
-  ALLITEMS.forEach(it=>{S.inventory[it]=null;S.inventoryText[it]="";});
+  mutateState(st=>{ALLITEMS.forEach(it=>{st.inventory[it]=null;st.inventoryText[it]="";});});
   renderInv();scheduleSolve();
 });
 document.getElementById("projList").addEventListener("click",e=>{
   const t=e.target,g=a=>t.getAttribute(a);
   let v;
-  if((v=g("data-ptoggle"))!=null){S.projects[+v]._open=!S.projects[+v]._open;renderProjects();return;}
-  if((v=g("data-pdel"))!=null){if(confirm("Delete this project?")){S.projects.splice(+v,1);renderProjects();save();scheduleSolve();}return;}
-  if((v=g("data-pdup"))!=null){const c=JSON.parse(JSON.stringify(S.projects[+v]));c.id=newId();c.name=(c.name||"Project")+" copy";c._open=true;S.projects.splice(+v+1,0,c);renderProjects();save();scheduleSolve();return;}
-  if((v=g("data-paddlvl"))!=null){const p=S.projects[+v];p.levels.push({costs:[]});p.to=p.levels.length;renderProjects();save();scheduleSolve();return;}
-  if((v=g("data-pdellvl"))!=null){const pi=+v,li=+g("data-li"),p=S.projects[pi];p.levels.splice(li,1);if(p.levels.length===0)p.levels.push({costs:[]});if(p.to>p.levels.length)p.to=p.levels.length;if(p.from>p.levels.length)p.from=p.levels.length;renderProjects();save();scheduleSolve();return;}
-  if((v=g("data-paddcost"))!=null){const pi=+v,li=+g("data-li");S.projects[pi].levels[li].costs.push({item:PRODUCTS[0],qty:null});renderProjects();save();scheduleSolve();return;}
-  if((v=g("data-cdel"))!=null){const[pi,li,ci]=v.split("_").map(Number);S.projects[pi].levels[li].costs.splice(ci,1);renderProjects();save();scheduleSolve();return;}
+  if((v=g("data-ptoggle"))!=null){mutateState(st=>{st.projects[+v]._open=!st.projects[+v]._open;});renderProjects();return;}
+  if((v=g("data-pdel"))!=null){if(confirm("Delete this project?")){mutateState(st=>{st.projects.splice(+v,1);});renderProjects();save();scheduleSolve();}return;}
+  if((v=g("data-pdup"))!=null){mutateState(st=>{const c=JSON.parse(JSON.stringify(st.projects[+v]));c.id=newId();c.name=(c.name||"Project")+" copy";c._open=true;st.projects.splice(+v+1,0,c);});renderProjects();save();scheduleSolve();return;}
+  if((v=g("data-paddlvl"))!=null){mutateState(st=>{const p=st.projects[+v];p.levels.push({costs:[]});p.to=p.levels.length;});renderProjects();save();scheduleSolve();return;}
+  if((v=g("data-pdellvl"))!=null){const pi=+v,li=+g("data-li");mutateState(st=>{const p=st.projects[pi];p.levels.splice(li,1);if(p.levels.length===0)p.levels.push({costs:[]});if(p.to>p.levels.length)p.to=p.levels.length;if(p.from>p.levels.length)p.from=p.levels.length;});renderProjects();save();scheduleSolve();return;}
+  if((v=g("data-paddcost"))!=null){const pi=+v,li=+g("data-li");mutateState(st=>{st.projects[pi].levels[li].costs.push({item:PRODUCTS[0],qty:null});});renderProjects();save();scheduleSolve();return;}
+  if((v=g("data-cdel"))!=null){const[pi,li,ci]=v.split("_").map(Number);mutateState(st=>{st.projects[pi].levels[li].costs.splice(ci,1);});renderProjects();save();scheduleSolve();return;}
   // +1/−1 level completion on a shopping-list card (issue #87 item 3) — clamped to the from→to span.
-  if((v=g("data-psinc"))!=null||(v=g("data-psdec"))!=null){const inc=g("data-psinc")!=null,p=S.projects[+v];if(!p)return;const {span}=projSpan(p);p.done=Math.max(0,Math.min(span,projDone(p)+(inc?1:-1)));renderProjects();save();scheduleSolve();return;}
+  if((v=g("data-psinc"))!=null||(v=g("data-psdec"))!=null){const inc=g("data-psinc")!=null,p=S.projects[+v];if(!p)return;mutateState(()=>{const {span}=projSpan(p);p.done=Math.max(0,Math.min(span,projDone(p)+(inc?1:-1)));});renderProjects();save();scheduleSolve();return;}
 });
 document.getElementById("projList").addEventListener("input",e=>{
   const t=e.target,g=a=>t.getAttribute(a);let v;
-  if((v=g("data-pname"))!=null){S.projects[+v].name=t.value;save();scheduleSolve();return;}
-  if((v=g("data-pfrom"))!=null){S.projects[+v].from=Math.max(1,Math.floor(num(t.value)||1));save();scheduleSolve();return;}
-  if((v=g("data-pto"))!=null){S.projects[+v].to=Math.max(1,Math.floor(num(t.value)||1));save();scheduleSolve();return;}
-  if((v=g("data-pprio"))!=null){const n=Math.floor(num(t.value));S.projects[+v].prio=(n>=1)?n:null;save();scheduleSolve();return;}
-  if((v=g("data-cqty"))!=null){const[pi,li,ci]=v.split("_").map(Number);S.projects[pi].levels[li].costs[ci].qty=parseGameNum(t.value);save();scheduleSolve();return;}
+  if((v=g("data-pname"))!=null){mutateState(st=>{st.projects[+v].name=t.value;});save();scheduleSolve();return;}
+  if((v=g("data-pfrom"))!=null){mutateState(st=>{st.projects[+v].from=Math.max(1,Math.floor(num(t.value)||1));});save();scheduleSolve();return;}
+  if((v=g("data-pto"))!=null){mutateState(st=>{st.projects[+v].to=Math.max(1,Math.floor(num(t.value)||1));});save();scheduleSolve();return;}
+  if((v=g("data-pprio"))!=null){const n=Math.floor(num(t.value));mutateState(st=>{st.projects[+v].prio=(n>=1)?n:null;});save();scheduleSolve();return;}
+  if((v=g("data-cqty"))!=null){const[pi,li,ci]=v.split("_").map(Number);mutateState(st=>{st.projects[pi].levels[li].costs[ci].qty=parseGameNum(t.value);});save();scheduleSolve();return;}
 });
 document.getElementById("projList").addEventListener("change",e=>{
   const t=e.target,g=a=>t.getAttribute(a);let v;
-  if((v=g("data-pon"))!=null){S.projects[+v].on=t.checked;save();scheduleSolve();return;}
-  if((v=g("data-citem"))!=null){const[pi,li,ci]=v.split("_").map(Number);S.projects[pi].levels[li].costs[ci].item=t.value;save();scheduleSolve();return;}
+  if((v=g("data-pon"))!=null){mutateState(st=>{st.projects[+v].on=t.checked;});save();scheduleSolve();return;}
+  if((v=g("data-citem"))!=null){const[pi,li,ci]=v.split("_").map(Number);mutateState(st=>{st.projects[pi].levels[li].costs[ci].item=t.value;});save();scheduleSolve();return;}
 });
 document.getElementById("invRows").addEventListener("input",e=>{
   const it=e.target.getAttribute("data-inv");if(!it)return;
-  S.inventoryText[it]=e.target.value;S.inventory[it]=parseGameNum(e.target.value);save();scheduleSolve();
+  mutateState(st=>{st.inventoryText[it]=e.target.value;st.inventory[it]=parseGameNum(e.target.value);});save();scheduleSolve();
 });
 
 /* ---------- Progress tracker modal ---------- */
@@ -579,7 +580,7 @@ function renderProgress(){
 function setProjDone(pid,newDone){
   const p=(S.projects||[]).find(x=>x.id===pid);if(!p)return;
   const {span}=projSpan(p);
-  p.done=Math.max(0,Math.min(span,Math.floor(newDone)));
+  mutateState(()=>{p.done=Math.max(0,Math.min(span,Math.floor(newDone)));});
   save();renderProgress();scheduleSolve();
 }
 const progModal=document.getElementById("progModal");
@@ -603,7 +604,7 @@ document.getElementById("progList").addEventListener("click",e=>{
 document.getElementById("progResetAll").addEventListener("click",()=>{
   if(!(S.projects||[]).some(p=>projDone(p)>0))return;
   if(!confirm("Reset completed-level progress on all projects?"))return;
-  (S.projects||[]).forEach(p=>{p.done=0;});
+  mutateState(st=>{(st.projects||[]).forEach(p=>{p.done=0;});});
   save();renderProgress();scheduleSolve();
 });
 
@@ -727,31 +728,31 @@ document.getElementById("results").addEventListener("input",e=>{
   // commit (change). Editing `from` must never touch `to` mid-keystroke (issue #87 item 4) —
   // reconciliation happens on read via projSpan()/projectDemand(). Skip the write while transiently
   // empty so backspacing doesn't coerce to 1; the commit re-render restores it.
-  if((v=t.getAttribute("data-spfrom"))!=null){const p=stepsProj(v);if(p&&t.value.trim()!==""){p.from=Math.max(1,Math.floor(num(t.value)||1));save();}return;}
-  if((v=t.getAttribute("data-spto"))!=null){const p=stepsProj(v);if(p&&t.value.trim()!==""){p.to=Math.max(1,Math.floor(num(t.value)||1));save();}return;}
+  if((v=t.getAttribute("data-spfrom"))!=null){const p=stepsProj(v);if(p&&t.value.trim()!==""){mutateState(()=>{p.from=Math.max(1,Math.floor(num(t.value)||1));});save();}return;}
+  if((v=t.getAttribute("data-spto"))!=null){const p=stepsProj(v);if(p&&t.value.trim()!==""){mutateState(()=>{p.to=Math.max(1,Math.floor(num(t.value)||1));});save();}return;}
 });
 document.getElementById("results").addEventListener("change",e=>{
   const t=e.target;if(!t||!t.getAttribute)return;let v;
   // Plan-start anchor: display-only, so repaint from cache (no solve).
-  if(t.id==="spStart"){const val=t.value;if(!val)S.planStart=null;else{const ms=new Date(val).getTime();if(!isNaN(ms))S.planStart=ms;}save();repaintProject();return;}
+  if(t.id==="spStart"){const val=t.value,ms=val?new Date(val).getTime():null;if(!val||!isNaN(ms))mutateState(st=>{st.planStart=ms;});save();repaintProject();return;}
   // Inline project controls — same fields as Shopping list / Track progress, kept in sync. These change
   // demand, so re-solve; doSolve() rebuilds #results (and thus the plan) right away.
-  if((v=t.getAttribute("data-spon"))!=null){const p=stepsProj(v);if(p){p.on=t.checked;save();doSolve();}return;}
+  if((v=t.getAttribute("data-spon"))!=null){const p=stepsProj(v);if(p){mutateState(()=>{p.on=t.checked;});save();doSolve();}return;}
   if(t.getAttribute("data-spfrom")!=null||t.getAttribute("data-spto")!=null){doSolve();return;}   // commit level edit
   // Manual-mode dropdowns also live inside #results (re-rendered each change)
   if(t.id==="manualPreset"){if(t.value)loadManualPreset(t.value);return;}
   const ri=t.getAttribute("data-mres");
-  if(ri!=null){const i=+ri;if(S.manual[i]){S.manual[i].job=t.value;if(S.manual[i].lvl>S.lines[i].max)S.manual[i].lvl=S.lines[i].max;}save();renderResults();return;}
+  if(ri!=null){const i=+ri;if(S.manual[i])mutateState(st=>{st.manual[i].job=t.value;if(st.manual[i].lvl>st.lines[i].max)st.manual[i].lvl=st.lines[i].max;});save();renderResults();return;}
   const lv=t.getAttribute("data-mlvl");
-  if(lv!=null){const i=+lv;if(S.manual[i])S.manual[i].lvl=+t.value;save();renderResults();return;}
+  if(lv!=null){const i=+lv;if(S.manual[i])mutateState(st=>{st.manual[i].lvl=+t.value;});save();renderResults();return;}
   const sl=t.getAttribute("data-msell");
-  if(sl!=null){const i=+sl;if(S.manual[i])S.manual[i].sell=t.checked;save();renderResults();return;}
+  if(sl!=null){const i=+sl;if(S.manual[i])mutateState(st=>{st.manual[i].sell=t.checked;});save();renderResults();return;}
 });
 document.getElementById("results").addEventListener("click",e=>{
   const cl=sel=>e.target.closest&&e.target.closest(sel);
   if(cl("#btnProgress")){openProgress();return;}
   // Plan-start "Now" — re-anchor the clock to the current moment (display only).
-  if(cl("#spNow")){S.planStart=Date.now();save();repaintProject();return;}
+  if(cl("#spNow")){mutateState(st=>{st.planStart=Date.now();});save();repaintProject();return;}
   // Persist a disclosure's open state across the next re-render. The native <details> toggle still
   // fires; at click time .open is the pre-toggle state, so the new state is its inverse.
   const sm=cl("summary[data-paneltoggle]");
@@ -761,12 +762,14 @@ document.getElementById("results").addEventListener("click",e=>{
   // projSpan/projDone helpers the tracker and solver read, so every view stays in sync.
   const inc=cl("[data-spinc]"),dec=cl("[data-spdec]");
   if(inc||dec){const p=stepsProj((inc||dec).getAttribute(inc?"data-spinc":"data-spdec"));if(!p)return;
-    const {span}=projSpan(p);p.done=Math.max(0,Math.min(span,projDone(p)+(inc?1:-1)));save();doSolve();return;}
+    mutateState(()=>{const {span}=projSpan(p);p.done=Math.max(0,Math.min(span,projDone(p)+(inc?1:-1)));});save();doSolve();return;}
   const cbtn=cl("[data-spcomplete]");
   if(cbtn){const p=stepsProj(cbtn.getAttribute("data-spcomplete"));if(!p)return;
-    const {span}=projSpan(p);p.done=projDone(p)>=span?0:span;save();doSolve();return;}   // toggle done/reopen
+    mutateState(()=>{const {span}=projSpan(p);p.done=projDone(p)>=span?0:span;});save();doSolve();return;}   // toggle done/reopen
   if(cl("#btnCopyManual")){copyPlanToManual(_lastItemsCreditsRes);return;}
   if(cl("#manualUpdate")){if(S.manualActiveId)updateManualPreset(S.manualActiveId);return;}
   if(cl("#manualSaveNew")){const name=(prompt("Name this setup:","")||"").trim();if(name)saveManualPreset(name);return;}
   if(cl("#manualDelPreset")){const sel=document.getElementById("manualPreset");const id=(sel&&sel.value)||S.manualActiveId;if(id&&confirm("Delete this saved setup?"))deleteManualPreset(id);return;}
 });
+
+window.addEventListener("pagehide",()=>solveService.cancel("Page teardown"));

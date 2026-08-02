@@ -351,11 +351,21 @@ function quarantineRejectedState(raw,reason){
   }catch(error){}
   return _activeStateRecovery;
 }
-function commitState(nextState){
-  S=nextState;
+function _acceptStateMutation(change){
+  let result;
+  if(typeof change==="function")result=change(S);
+  else{S=change;result=S;}
   stateRevision+=1;
-  return S;
+  return result===undefined?S:result;
 }
+function commitState(nextState){return _acceptStateMutation(nextState);}
+function mutateState(mutator){
+  if(typeof mutator!=="function")throw new TypeError("mutateState requires a mutation function");
+  return _acceptStateMutation(mutator);
+}
+// Persistence validation returns a fresh, normalized clone of the already accepted state. Adopting
+// that equivalent clone must not manufacture a second logical mutation/revision.
+function _adoptValidatedClone(nextState){S=nextState;return S;}
 function _readStorage(key){
   if(typeof localStorage==="undefined")return {ok:false,raw:null,error:"Local storage is unavailable"};
   try{return {ok:true,raw:localStorage.getItem(key)};}catch(error){return {ok:false,raw:null,error:(error&&error.message)||String(error)};}
@@ -401,7 +411,7 @@ function initializeState(render){
   if(recovery)quarantineRejectedState(recovery.raw,recovery.reason);
   else if(stored.ok){
     const persisted=_persistValidatedState(S,raw);
-    if(persisted.ok)commitState(persisted.state);
+    if(persisted.ok)_adoptValidatedClone(persisted.state);
   }
   return {state:S,recovery};
 }
@@ -423,21 +433,20 @@ function applyImportedState(candidate,render){
     try{render();}catch(rollbackError){}
     return {ok:false,errors:persisted.errors};
   }
-  commitState(persisted.state);
+  _adoptValidatedClone(persisted.state);
   return {ok:true,state:S,sourceVersion:validation.sourceVersion};
 }
 
 let savT;
 function save(){
-  const previousState=S,previousRaw=_readStorage(LSKEY).raw;
+  const previousRaw=_readStorage(LSKEY).raw;
   const persisted=_persistValidatedState(S,previousRaw);
   if(!persisted.ok){
-    S=previousState;
     const el=typeof document!=="undefined"?document.getElementById("saveind"):null;
     if(el)el.textContent="invalid value not saved";
     return false;
   }
-  commitState(persisted.state);flashSaved();return true;
+  _adoptValidatedClone(persisted.state);flashSaved();return true;
 }
 function flashSaved(){
   const el=typeof document!=="undefined"?document.getElementById("saveind"):null;if(!el)return;

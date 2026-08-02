@@ -295,9 +295,7 @@ test.describe("imported markup stays inert with CSP bypassed", () => {
 
     await expect(page.locator("#solveOverlay")).toBeHidden();
     await page.evaluate(value => {
-      if (_solveWorker) _solveWorker.terminate();
-      _solveReq++;
-      _solvePending = null;
+      solveService.cancel("security test renders a controlled error");
       solveError(value);
     }, message);
 

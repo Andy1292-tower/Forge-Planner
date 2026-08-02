@@ -55,40 +55,41 @@ function manualResult(){
 // dedicated the factory to is flagged for sale; items mode has no such concept, so sell starts off.
 function copyPlanToManual(res){
   if(!res||!res.plan)return;
-  S.manual=res.plan.map((p,i)=>{
-    const j=p.job||{}, cap=(S.lines[i]&&S.lines[i].max)||1;
-    if(j.kind==="idle"||!j.res)return {job:"Idle",lvl:cap,sell:false};
-    return {job:j.res,lvl:j.lvl||cap,sell:res.mode==="credits"&&j.res===res.bestItem};
+  mutateState(st=>{
+    st.manual=res.plan.map((p,i)=>{
+      const j=p.job||{}, cap=(st.lines[i]&&st.lines[i].max)||1;
+      if(j.kind==="idle"||!j.res)return {job:"Idle",lvl:cap,sell:false};
+      return {job:j.res,lvl:j.lvl||cap,sell:res.mode==="credits"&&j.res===res.bestItem};
+    });
+    syncManual(st);
+    st.mode="manual";
   });
-  syncManual(S);
-  S.mode="manual";
   if(typeof renderModeSwitch==="function")renderModeSwitch();
   save();renderResults();
 }
 /* ---- saved manual setups (named presets of the per-line job/level/sell) ---- */
 function saveManualPreset(name){
-  syncManual(S);
-  const config=S.manual.map(m=>({job:m.job,lvl:m.lvl,sell:!!m.sell}));
-  const id=newId();
-  if(!Array.isArray(S.manualSaved))S.manualSaved=[];
-  S.manualSaved.push({id,name,config});
-  S.manualActiveId=id;save();renderResults();
+  mutateState(st=>{
+    syncManual(st);
+    const config=st.manual.map(m=>({job:m.job,lvl:m.lvl,sell:!!m.sell}));
+    const id=newId();
+    if(!Array.isArray(st.manualSaved))st.manualSaved=[];
+    st.manualSaved.push({id,name,config});
+    st.manualActiveId=id;
+  });
+  save();renderResults();
 }
 function loadManualPreset(id){
   const p=(S.manualSaved||[]).find(x=>x.id===id);if(!p)return;
-  S.manual=p.config.map(c=>({job:c.job,lvl:c.lvl,sell:!!c.sell}));
-  S.manualActiveId=id;syncManual(S);save();renderResults();
+  mutateState(st=>{st.manual=p.config.map(c=>({job:c.job,lvl:c.lvl,sell:!!c.sell}));st.manualActiveId=id;syncManual(st);});save();renderResults();
 }
 // Overwrite an existing saved setup with the current line config (keeps its id + name).
 function updateManualPreset(id){
-  const p=(S.manualSaved||[]).find(x=>x.id===id);if(!p)return;
-  syncManual(S);
-  p.config=S.manual.map(m=>({job:m.job,lvl:m.lvl,sell:!!m.sell}));
-  S.manualActiveId=id;save();renderResults();
+  if(!(S.manualSaved||[]).some(x=>x.id===id))return;
+  mutateState(st=>{const p=st.manualSaved.find(x=>x.id===id);syncManual(st);p.config=st.manual.map(m=>({job:m.job,lvl:m.lvl,sell:!!m.sell}));st.manualActiveId=id;});save();renderResults();
 }
 function deleteManualPreset(id){
-  S.manualSaved=(S.manualSaved||[]).filter(p=>p.id!==id);
-  if(S.manualActiveId===id)S.manualActiveId=null;
+  mutateState(st=>{st.manualSaved=(st.manualSaved||[]).filter(p=>p.id!==id);if(st.manualActiveId===id)st.manualActiveId=null;});
   save();renderResults();
 }
 function renderManualPresetBar(container,saved,active){
@@ -109,7 +110,6 @@ function renderManualPresetBar(container,saved,active){
   container.replaceChildren(...controls);
 }
 function renderManual(el,stat){
-  syncManual(S);
   const res=manualResult();
   let html=`<div class="notice info"><b>Manual mode.</b> Assign each line a resource and a compression level by hand. The <b>balance</b> table below shows whether every input is produced fast enough to sustain the setup — a negative surplus (<b>short</b>) means that input runs dry. Compression is capped at each line's max.</div>`;
   // saved-setup bar: name the current layout, then swap between presets at will
