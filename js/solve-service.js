@@ -1,14 +1,26 @@
 "use strict";
 
+// Only planStart and a Project card's disclosure state are display-only. The Worker receives this
+// exact normalized snapshot, and the same serialization defines whether an in-flight solve is still
+// authoritative after accepted UI state changes.
+function solveStateSnapshot(state){
+  const snapshot=JSON.parse(JSON.stringify(state||{}));
+  delete snapshot.planStart;
+  if(Array.isArray(snapshot.projects))snapshot.projects.forEach(project=>{if(project&&typeof project==="object")delete project._open;});
+  return snapshot;
+}
+function solveStateKey(state){return JSON.stringify(solveStateSnapshot(state));}
+
 /* One authority owns asynchronous solve generations, the Worker, fallback timer, callback, and
  * overlay. Callers provide the exact accepted-state revision and snapshot they want solved; a
- * completion is delivered only while that mode/revision is still current. */
+ * completion is delivered only while that mode/solve-equivalent state is still current. */
 const solveService=(()=>{
   const MAX_FAILURES=3;
   const RETRY_BASE_MS=250;
   let generation=0;
   let expectedMode=null;
   let expectedRevision=null;
+  let expectedKey=null;
   let callback=null;
   let worker=null;
   let workerBusy=false;
@@ -17,6 +29,8 @@ const solveService=(()=>{
   let retryAfter=0;
   let fallbackActive=false;
   let lastReason="";
+  const defaultWorkerFactory=()=>new Worker("js/solver.worker.v2.js");
+  let workerFactory=defaultWorkerFactory;
 
   function overlay(show){
     const el=document.getElementById("solveOverlay");if(el)el.hidden=!show;
@@ -40,9 +54,9 @@ const solveService=(()=>{
     if(fallbackTimer!==null){clearTimeout(fallbackTimer);fallbackTimer=null;}
   }
   function isCurrent(requestGeneration){
-    return requestGeneration===generation&&expectedMode===S.mode&&expectedRevision===stateRevision;
+    return requestGeneration===generation&&expectedMode===S.mode&&expectedKey===solveStateKey(S);
   }
-  function clearRequest(){callback=null;expectedMode=null;expectedRevision=null;clearFallbackTimer();}
+  function clearRequest(){callback=null;expectedMode=null;expectedRevision=null;expectedKey=null;clearFallbackTimer();}
   function cancel(reason){
     generation+=1;
     lastReason=String(reason||"cancelled");
@@ -58,6 +72,7 @@ const solveService=(()=>{
     callback=null;
     expectedMode=null;
     expectedRevision=null;
+    expectedKey=null;
     overlay(false);
     if(done)done(result,error||null);
   }
@@ -105,7 +120,15 @@ const solveService=(()=>{
       workerFailed(owned,generation,(event&&event.message)||"Worker failed");
     };
   }
-  function shouldTryWorker(){return typeof Worker!=="undefined"&&Date.now()>=retryAfter;}
+  function shouldTryWorker(){return (workerFactory!==defaultWorkerFactory||typeof Worker!=="undefined")&&Date.now()>=retryAfter;}
+  function setWorkerFactory(factory){
+    const next=factory==null?defaultWorkerFactory:factory;
+    if(typeof next!=="function")throw new TypeError("solveService Worker factory must be a function or null");
+    if(next===workerFactory)return status();
+    cancel("Solver Worker factory changed");
+    workerFactory=next;
+    return status();
+  }
   function request(options,done){
     const mode=options&&options.mode;
     const revision=options&&options.stateRevision;
@@ -114,10 +137,15 @@ const solveService=(()=>{
     if(typeof mode!=="string"||!Number.isInteger(revision)||!stateSnapshot||typeof done!=="function"){
       throw new TypeError("solveService.request requires mode, stateRevision, stateSnapshot, and callback");
     }
+    const dispatchedState=solveStateSnapshot(stateSnapshot);
+    const stateKey=JSON.stringify(dispatchedState);
+    if(options.solveKey!==undefined&&options.solveKey!==stateKey){
+      throw new TypeError("solveService.request solveKey must describe the dispatched state snapshot");
+    }
 
     const requestGeneration=++generation;
     clearFallbackTimer();
-    callback=done;expectedMode=mode;expectedRevision=revision;
+    callback=done;expectedMode=mode;expectedRevision=revision;expectedKey=stateKey;
     overlay(true);
 
     // optimize() is synchronous inside the Worker. Superseding busy work requires termination;
@@ -129,12 +157,12 @@ const solveService=(()=>{
     }
 
     try{
-      if(!worker){worker=new Worker("js/solver.worker.v2.js");bindWorker(worker);}
+      if(!worker){worker=workerFactory();bindWorker(worker);}
       workerBusy=true;
       const stabilitySnapshot=(typeof getLineStability==="function")?JSON.parse(JSON.stringify(getLineStability()||{})):{};
       worker.postMessage({
         reqId:requestGeneration,generation:requestGeneration,mode,stateRevision:revision,
-        state:stateSnapshot,budget,stab:stabilitySnapshot
+        state:dispatchedState,budget,stab:stabilitySnapshot
       });
     }catch(error){workerFailed(worker,requestGeneration,(error&&error.message)||String(error));}
     return requestGeneration;
@@ -142,10 +170,12 @@ const solveService=(()=>{
   function status(){
     return {
       generation,active:callback!==null,mode:expectedMode,stateRevision:expectedRevision,
+      solveStateOwned:expectedKey!==null,
+      current:callback!==null&&isCurrent(generation),
       workerOwned:worker!==null,workerBusy,workerFailures,fallbackActive,
       retryInMs:Math.max(0,retryAfter-Date.now()),lastReason
     };
   }
 
-  return {request,cancel,status};
+  return {request,cancel,status,setWorkerFactory};
 })();

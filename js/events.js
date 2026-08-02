@@ -1,19 +1,47 @@
 "use strict";
 /* ---------- EVENTS ---------- */
 let renderT;
+let persistT=null;
+let persistedRevision=-1;
+function stateMatchesPersisted(){
+  try{return typeof localStorage!=="undefined"&&localStorage.getItem(LSKEY)===JSON.stringify(S);}
+  catch(error){return false;}
+}
+function persistNow(){
+  if(persistT!==null){clearTimeout(persistT);persistT=null;}
+  const revision=stateRevision;
+  if(persistedRevision===revision||stateMatchesPersisted()){persistedRevision=revision;return true;}
+  const persisted=save();
+  if(persisted!==false)persistedRevision=revision;
+  return persisted;
+}
+function schedulePersist(){
+  if(persistedRevision===stateRevision||stateMatchesPersisted()){
+    persistedRevision=stateRevision;
+    if(persistT!==null){clearTimeout(persistT);persistT=null;}
+    return;
+  }
+  if(persistT!==null)clearTimeout(persistT);
+  persistT=setTimeout(()=>{persistT=null;persistNow();},100);
+}
+function flushPersist(){
+  if(persistT===null)return true;
+  clearTimeout(persistT);persistT=null;
+  return persistNow();
+}
 function hasInvalidFieldDraft(){
   return [...document.querySelectorAll('[aria-invalid="true"]')].some(input=>input.offsetParent!==null);
 }
 function doSolve(){
   renderT=null;
   if(hasInvalidFieldDraft())return false;
-  if(save()===false)return false;
+  if(persistNow()===false)return false;
   renderResults();return true;
 }
 // Debounce the (potentially heavy) re-solve: while typing, wait until the user pauses;
 // leaving a field, pressing Enter, or making a selection flushes it immediately. State is
 // still captured on every keystroke (handlers update S synchronously), so nothing is lost.
-function scheduleSolve(){clearTimeout(renderT);renderT=setTimeout(doSolve,500);}
+function scheduleSolve(){schedulePersist();clearTimeout(renderT);renderT=setTimeout(doSolve,500);}
 function flushSolve(){if(renderT){clearTimeout(renderT);doSolve();}}
 document.addEventListener("change",e=>{if(e.target&&e.target.matches&&e.target.matches("input,select")&&e.target.getAttribute("aria-invalid")!=="true")flushSolve();});
 document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target&&e.target.matches&&e.target.matches("input")&&e.target.getAttribute("aria-invalid")!=="true")flushSolve();});
@@ -43,7 +71,7 @@ function showStale(on){
   const res=document.getElementById("results");if(res)res.classList.toggle("stale",on);
 }
 function clearStaleUI(){showStale(false);}
-function markStale(){clearTimeout(renderT);renderT=null;save();showStale(true);}
+function markStale(){clearTimeout(renderT);renderT=null;persistNow();showStale(true);}
 function resimulate(){doSolve();}   // doSolve→renderResults repaints and clears the stale UI
 document.getElementById("btnResim").addEventListener("click",resimulate);
 
@@ -561,7 +589,7 @@ document.getElementById("projInvClear").addEventListener("click",()=>{
 document.getElementById("projList").addEventListener("click",e=>{
   const t=e.target,g=a=>t.getAttribute(a);
   let v;
-  if((v=g("data-ptoggle"))!=null){mutateState(st=>{st.projects[+v]._open=!st.projects[+v]._open;});renderProjects();const disclosure=document.querySelector(`[data-ptoggle="${v}"]`);if(disclosure)disclosure.focus();return;}
+  if((v=g("data-ptoggle"))!=null){mutateState(st=>{st.projects[+v]._open=!st.projects[+v]._open;});schedulePersist();renderProjects();const disclosure=document.querySelector(`[data-ptoggle="${v}"]`);if(disclosure)disclosure.focus();return;}
   if((v=g("data-pdel"))!=null){if(confirm("Delete this project?")){mutateState(st=>{st.projects.splice(+v,1);});renderProjects();save();scheduleSolve();}return;}
   if((v=g("data-pdup"))!=null){mutateState(st=>{const c=JSON.parse(JSON.stringify(st.projects[+v]));c.id=newId();c.name=(c.name||"Project")+" copy";c._open=true;st.projects.splice(+v+1,0,c);});renderProjects();save();scheduleSolve();return;}
   if((v=g("data-paddlvl"))!=null){mutateState(st=>{const p=st.projects[+v];p.levels.push({costs:[]});p.to=p.levels.length;});renderProjects();save();scheduleSolve();return;}
@@ -616,10 +644,14 @@ function renderProgress(){
   }
   let totalLv=0,doneLv=0;
   active.forEach(p=>{const {span}=projSpan(p);totalLv+=span;doneLv+=projDone(p);});
-  const res=optimizeProjectTop();
+  const currentKey=solveStateKey(S);
+  const current=_lastProjectRes&&_lastProjectKey===currentKey;
+  const status=solveService.status();
+  const updating=!current&&(renderT!=null||(status.active&&status.current&&status.mode==="project"));
+  const res=current?_lastProjectRes:null;
   const remLv=totalLv-doneLv;
   const pct=totalLv?Math.round(doneLv/totalLv*100):0;
-  const etaTxt=(res&&!res.empty&&remLv>0)?fmtDuration(res.eta):(remLv>0?"—":"all done 🎉");
+  const etaTxt=(res&&!res.empty&&remLv>0)?fmtDuration(res.eta):(remLv>0?(updating?"updating…":"out of date — Resimulate"):"all done 🎉");
   sum.innerHTML=`
     <div class="prog-bar-wrap"><div class="prog-bar" style="width:${pct}%"></div></div>
     <div class="prog-metrics">
@@ -652,7 +684,7 @@ function setProjDone(pid,newDone){
   const p=(S.projects||[]).find(x=>x.id===pid);if(!p)return;
   const {span}=projSpan(p);
   mutateState(()=>{p.done=Math.max(0,Math.min(span,Math.floor(newDone)));});
-  save();renderProgress();scheduleSolve();
+  persistNow();scheduleSolve();renderProgress();
 }
 const progressDialog=dialogController.register({root:document.getElementById("progModal"),panel:document.querySelector("#progModal .modal"),opener:null,initialFocus:()=>document.getElementById("progDone"),onOpen:renderProgress});
 function openProgress(invoker){progressDialog.open(invoker);}
@@ -672,7 +704,7 @@ document.getElementById("progResetAll").addEventListener("click",()=>{
   if(!(S.projects||[]).some(p=>projDone(p)>0))return;
   if(!confirm("Reset completed-level progress on all projects?"))return;
   mutateState(st=>{(st.projects||[]).forEach(p=>{p.done=0;});});
-  save();renderProgress();scheduleSolve();
+  persistNow();scheduleSolve();renderProgress();
 });
 
 /* ---------- Step-by-step plan modal ---------- */
@@ -840,4 +872,9 @@ document.getElementById("results").addEventListener("click",e=>{
   if(cl("#manualDelPreset")){const sel=document.getElementById("manualPreset");const id=(sel&&sel.value)||S.manualActiveId;if(id&&confirm("Delete this saved setup?"))deleteManualPreset(id);return;}
 });
 
-window.addEventListener("pagehide",()=>solveService.cancel("Page teardown"));
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")flushPersist();});
+window.addEventListener("pagehide",()=>{
+  flushPersist();
+  if(renderT!=null){clearTimeout(renderT);renderT=null;}
+  solveService.cancel("Page teardown");
+});

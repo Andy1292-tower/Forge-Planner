@@ -110,6 +110,11 @@ function lifecycleHarness() {
       delete context.__mode;
       delete context.__revision;
     },
+    mutateCurrent(mutator) {
+      context.__mutator = mutator;
+      vm.runInContext("globalThis.__mutator(S); stateRevision += 1", context);
+      delete context.__mutator;
+    },
     flushTimers() {
       while (timers.size) {
         const pending = [...timers.values()];
@@ -123,6 +128,18 @@ function lifecycleHarness() {
       context.__reason = reason;
       const value = vm.runInContext("solveService.cancel(globalThis.__reason)", context);
       delete context.__reason;
+      return value;
+    },
+    setWorkerFactory(factory) {
+      context.__factory = factory;
+      const value = vm.runInContext("solveService.setWorkerFactory(globalThis.__factory)", context);
+      delete context.__factory;
+      return value;
+    },
+    snapshot(state) {
+      context.__state = state;
+      const value = JSON.parse(vm.runInContext("JSON.stringify(solveStateSnapshot(globalThis.__state))", context));
+      delete context.__state;
       return value;
     },
     status() { return vm.runInContext("solveService.status()", context); },
@@ -349,6 +366,254 @@ test("superseding active synchronous fallback clears its timer and callback", ()
 
   assert.deepEqual(painted, ["sync-fallback"]);
   assert.equal(harness.status().generation, 2);
+});
+
+test("display-only Project mutations keep an in-flight solve authoritative", () => {
+  const harness = lifecycleHarness();
+  const painted = [];
+  const options = {
+    mode: "project",
+    stateRevision: 1,
+    budget: 200,
+    stateSnapshot: {
+      mode: "project",
+      solveBudget: 200,
+      planStart: 1_000,
+      projects: [{ id: "p1", name: "Alpha", _open: false, levels: [{ costs: [] }] }],
+    },
+  };
+  harness.callRequest(options, result => painted.push(result.marker));
+  const worker = harness.workers[0];
+  assert.equal(Object.prototype.hasOwnProperty.call(worker.messages[0].state, "planStart"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(worker.messages[0].state.projects[0], "_open"), false);
+
+  harness.mutateCurrent(state => {
+    state.planStart = 2_000;
+    state.projects[0]._open = true;
+  });
+  assert.equal(harness.status().current, true);
+  worker.emitMessage(workerResponse(worker, { res: { mode: "project", marker: "accepted" } }));
+
+  assert.deepEqual(painted, ["accepted"]);
+  assert.equal(harness.status().active, false);
+  assert.equal(worker.terminated, false);
+});
+
+test("the dispatched solve snapshot removes only documented display state", () => {
+  const harness = lifecycleHarness();
+  const original = {
+    mode: "project",
+    planStart: 1_000,
+    projects: [{ id: "p1", _open: true, done: 2, levels: [{ costs: [{ item: "Frames", qty: 3 }] }] }],
+    nested: { keep: true },
+  };
+  assert.deepEqual(harness.snapshot(original), {
+    mode: "project",
+    projects: [{ id: "p1", done: 2, levels: [{ costs: [{ item: "Frames", qty: 3 }] }] }],
+    nested: { keep: true },
+  });
+  assert.equal(original.planStart, 1_000, "snapshotting must not mutate accepted state");
+  assert.equal(original.projects[0]._open, true);
+});
+
+test("a solver-relevant mutation rejects an in-flight solve even when mode is unchanged", () => {
+  const harness = lifecycleHarness();
+  const painted = [];
+  const options = request("project", 1, "before");
+  harness.callRequest(options, result => painted.push(result.marker));
+  const worker = harness.workers[0];
+
+  harness.mutateCurrent(state => { state.marker = "after"; });
+  assert.equal(harness.status().current, false);
+  worker.emitMessage(workerResponse(worker, { res: { mode: "project", marker: "stale" } }));
+
+  assert.deepEqual(painted, []);
+  assert.equal(worker.terminated, true);
+  assert.equal(harness.status().active, false);
+});
+
+test("changing the Worker factory releases the owned Worker before a controlled slow solve", () => {
+  const harness = lifecycleHarness();
+  const painted = [];
+  harness.callRequest(request("items", 1, "default"), result => painted.push(result.marker));
+  const owned = harness.workers[0];
+  owned.emitMessage(workerResponse(owned, { res: { mode: "items", marker: "default" } }));
+
+  const controlled = {
+    messages: [],
+    terminated: false,
+    postMessage(message) { this.messages.push(message); },
+    terminate() { this.terminated = true; },
+  };
+  harness.setWorkerFactory(() => controlled);
+  assert.equal(owned.terminated, true);
+  assert.equal(owned.releaseCalls, 1);
+
+  harness.callRequest(request("items", 2, "controlled"), result => painted.push(result.marker));
+  assert.equal(controlled.messages.length, 1);
+  assert.deepEqual(painted, ["default"], "the controlled solve remains deliberately pending");
+  controlled.onmessage({ data: workerResponse(controlled, { res: { mode: "items", marker: "controlled" } }) });
+  assert.deepEqual(painted, ["default", "controlled"]);
+  assert.equal(harness.status().solveStateOwned, false,
+    "completion must release every request-currentness field with the callback");
+});
+
+function schedulerHarness() {
+  const source = fs.readFileSync(path.join(root, "js", "events.js"), "utf8");
+  const boundary = source.indexOf("function readFieldDraft");
+  assert.ok(boundary > 0, "event scheduler remains isolated above field parsing");
+  const timers = new Map();
+  let nextTimer = 1;
+  let now = 0;
+  let saves = 0;
+  let renders = 0;
+  let requests = 0;
+  let cancels = 0;
+  const lifecycle = [];
+  const documentListeners = new Map();
+  const windowListeners = new Map();
+  const context = {
+    console,
+    stateRevision: 1,
+    S: { mode: "items" },
+    LSKEY: "test-state",
+    localStorage: {
+      getItem(key) { return key === "test-state" ? this.raw || null : null; },
+      setItem(key, value) { if(key === "test-state")this.raw = String(value); },
+    },
+    document: {
+      querySelectorAll() { return []; },
+      visibilityState: "visible",
+      addEventListener(type, callback) { documentListeners.set(type, callback); },
+    },
+    window: {
+      addEventListener(type, callback) { windowListeners.set(type, callback); },
+    },
+    save() { saves += 1;lifecycle.push("save");context.localStorage.setItem("test-state", JSON.stringify(context.S));return true; },
+    renderResults() { renders += 1; },
+    solveService: {
+      request() { requests += 1; },
+      cancel() { cancels += 1;lifecycle.push("cancel"); },
+    },
+    setTimeout(callback, delay = 0) {
+      const id = nextTimer++;
+      timers.set(id, { callback, due: now + delay });
+      return id;
+    },
+    clearTimeout(id) { timers.delete(id); },
+  };
+  vm.createContext(context);
+  vm.runInContext(source.slice(0, boundary), context, { filename: "events-schedulers.js" });
+  const lifecycleStart = source.indexOf('document.addEventListener("visibilitychange"');
+  assert.ok(lifecycleStart > boundary, "page lifecycle handlers remain registered at the event boundary");
+  vm.runInContext(source.slice(lifecycleStart), context, { filename: "events-page-lifecycle.js" });
+  return {
+    mutate() { context.stateRevision += 1; },
+    legacySave() { return context.save(); },
+    scheduleSolve() { vm.runInContext("scheduleSolve()", context); },
+    persistNow() { return vm.runInContext("persistNow()", context); },
+    pagehide() { windowListeners.get("pagehide")(); },
+    hide() { context.document.visibilityState = "hidden";documentListeners.get("visibilitychange")(); },
+    advance(ms) {
+      now += ms;
+      while (true) {
+        const due = [...timers.entries()].filter(([, timer]) => timer.due <= now);
+        if (!due.length) break;
+        due.forEach(([id]) => timers.delete(id));
+        due.forEach(([, timer]) => timer.callback());
+      }
+    },
+    counts() { return { saves, renders, requests, cancels }; },
+    lifecycle() { return lifecycle.slice(); },
+  };
+}
+
+test("the persistence debounce saves accepted state before the solve debounce", () => {
+  const harness = schedulerHarness();
+  harness.mutate();
+  harness.scheduleSolve();
+  harness.advance(100);
+
+  assert.deepEqual(harness.counts(), { saves: 1, renders: 0, requests: 0, cancels: 0 });
+});
+
+test("an immediate persistence flush cancels the delayed duplicate write", () => {
+  const harness = schedulerHarness();
+  harness.mutate();
+  harness.scheduleSolve();
+  assert.equal(harness.persistNow(), true);
+  harness.advance(100);
+  assert.deepEqual(harness.counts(), { saves: 1, renders: 0, requests: 0, cancels: 0 });
+  harness.advance(400);
+  assert.deepEqual(harness.counts(), { saves: 1, renders: 1, requests: 0, cancels: 0 });
+});
+
+test("a direct legacy save is recognized before persistence schedules a duplicate", () => {
+  const harness = schedulerHarness();
+  harness.mutate();
+  assert.equal(harness.legacySave(), true);
+  harness.scheduleSolve();
+  harness.advance(100);
+  assert.deepEqual(harness.counts(), { saves: 1, renders: 0, requests: 0, cancels: 0 });
+});
+
+test("pagehide flushes persistence, clears delayed solving, then cancels solve ownership", () => {
+  const harness = schedulerHarness();
+  harness.mutate();
+  harness.scheduleSolve();
+  harness.pagehide();
+  harness.advance(600);
+
+  assert.deepEqual(harness.lifecycle(), ["save", "cancel"]);
+  assert.deepEqual(harness.counts(), { saves: 1, renders: 0, requests: 0, cancels: 1 });
+});
+
+test("visibility hiding flushes persistence without cancelling or changing scheduled solve work", () => {
+  const harness = schedulerHarness();
+  harness.mutate();
+  harness.scheduleSolve();
+  harness.hide();
+  assert.deepEqual(harness.counts(), { saves: 1, renders: 0, requests: 0, cancels: 0 });
+  harness.advance(500);
+  assert.deepEqual(harness.counts(), { saves: 1, renders: 1, requests: 0, cancels: 0 });
+});
+
+test("opening Progress never invokes the synchronous Project optimizer", () => {
+  const source = fs.readFileSync(path.join(root, "js", "events.js"), "utf8");
+  const start = source.indexOf("function projSpan");
+  const end = source.indexOf("function setProjDone", start);
+  assert.ok(start >= 0 && end > start, "Progress renderer remains extractable for lifecycle coverage");
+  const elements = {
+    progList: { innerHTML: "" },
+    progSummary: { innerHTML: "" },
+  };
+  let optimizeCalls = 0;
+  const state = {
+    mode: "project",
+    projects: [{ id: "p1", name: "Alpha", on: true, from: 1, to: 1, done: 0, levels: [{ costs: [] }] }],
+  };
+  const renderProgress = Function(
+    "S", "document", "num", "fmtDuration", "htmlAttribute", "htmlText", "optimizeProjectTop",
+    "_lastProjectRes", "_lastProjectKey", "solveStateKey", "renderT", "solveService",
+    `${source.slice(start, end)};return renderProgress;`
+  )(
+    state,
+    { getElementById(id) { return elements[id] || null; } },
+    Number,
+    value => `${value}h`,
+    String,
+    String,
+    () => { optimizeCalls += 1; return { mode: "project", empty: false, feasible: true, eta: 3 }; },
+    { mode: "project", empty: false, feasible: true, eta: 3 },
+    "stale-key",
+    value => JSON.stringify(value),
+    undefined,
+    { status() { return { active: false }; } }
+  );
+
+  renderProgress();
+  assert.equal(optimizeCalls, 0);
+  assert.match(elements.progSummary.innerHTML, /out of date/i);
 });
 
 function stateHarness() {

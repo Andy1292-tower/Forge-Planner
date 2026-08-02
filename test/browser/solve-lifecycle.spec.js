@@ -59,6 +59,40 @@ async function emitWorkerError(page, workerIndex, message = "controlled Worker f
   }, { workerIndex, message });
 }
 
+async function installFactoryWorker(page) {
+  await page.evaluate(() => {
+    window.__factoryWorkers = [];
+    class FactoryWorker {
+      constructor() {
+        this.messages = [];
+        this.terminated = false;
+        window.__factoryWorkers.push(this);
+      }
+      postMessage(message) { this.messages.push(structuredClone(message)); }
+      terminate() { this.terminated = true; }
+    }
+    solveService.setWorkerFactory(() => new FactoryWorker());
+  });
+}
+
+async function waitForFactoryWorkers(page, count) {
+  await expect.poll(() => page.evaluate(() => window.__factoryWorkers.length)).toBe(count);
+}
+
+async function emitFactoryWorkerMessage(page, workerIndex, messageIndex, result) {
+  await page.evaluate(({ workerIndex, messageIndex, result }) => {
+    const worker = window.__factoryWorkers[workerIndex];
+    const sent = worker.messages[messageIndex];
+    worker.onmessage({ data: {
+      reqId: sent.reqId,
+      generation: sent.generation,
+      mode: sent.mode,
+      stateRevision: sent.stateRevision,
+      res: result,
+    } });
+  }, { workerIndex, messageIndex, result });
+}
+
 async function revision(page) {
   return page.evaluate(() => eval("stateRevision"));
 }
@@ -268,6 +302,11 @@ test("page teardown fully cancels the owned Worker and overlay", async ({ page }
   await waitForWorkers(page, 1);
   await expect(page.locator("#solveOverlay")).toHaveJSProperty("hidden", false);
 
+  await page.evaluate(() => {
+    mutateState(state => { state.targets.Frames.w = 2; });
+    scheduleSolve();
+  });
+
   await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide")));
 
   expect(await page.evaluate(() => window.__controlledWorkers[0].terminated)).toBe(true);
@@ -275,4 +314,78 @@ test("page teardown fully cancels the owned Worker and overlay", async ({ page }
     .toEqual([await page.evaluate(() => window.__controlledWorkers[0].url)]);
   expect(await page.evaluate(() => solveService.status().active)).toBe(false);
   await expect(page.locator("#solveOverlay")).toHaveJSProperty("hidden", true);
+  await page.waitForTimeout(650);
+  expect(await page.evaluate(() => window.__controlledWorkers.length)).toBe(1);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("forgePlannerState_v3")).targets.Frames.w)).toBe(2);
+});
+
+test("Progress consumes the authoritative cache and shares one slow factory solve with the main panel", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await expect(page.locator("#solveOverlay")).toHaveJSProperty("hidden", true, { timeout: 15_000 });
+  await page.evaluate(() => {
+    const source = PROJECT_CATALOG[0];
+    mutateState(state => {
+      state.mode = "project";
+      state.projects = [{
+        id: "factory-progress",
+        catId: source.catId,
+        name: source.name,
+        description: source.description || "",
+        on: true,
+        prio: null,
+        from: 1,
+        to: source.levels.length,
+        done: 0,
+        levels: JSON.parse(JSON.stringify(source.levels)),
+        _open: false,
+      }];
+    });
+    save();
+    renderModeSwitch();
+    renderResults();
+  });
+  await expect(page.locator("#solveOverlay")).toHaveJSProperty("hidden", true, { timeout: 15_000 });
+  await expect(page.locator("#btnProgress")).toBeVisible();
+
+  const controlledResult = await page.evaluate(() => structuredClone(eval("_lastProjectRes")));
+  await installFactoryWorker(page);
+  await page.evaluate(() => {
+    window.__mainThreadProjectOptimizations = 0;
+    optimizeProjectTop = function forbiddenProgressOptimization() {
+      window.__mainThreadProjectOptimizations += 1;
+      throw new Error("Progress must not optimize on the main thread");
+    };
+  });
+
+  await page.locator("#btnProgress").click();
+  await expect(page.locator("#progSummary")).not.toContainText("out of date");
+  await page.locator("#progList .prog-lvl").first().click();
+  expect(await page.evaluate(() => S.projects[0].done)).toBe(1);
+  await expect(page.locator("#progSummary")).toContainText("updating");
+  await waitForFactoryWorkers(page, 1);
+  expect(await page.evaluate(() => window.__factoryWorkers[0].messages.length)).toBe(1);
+
+  await page.evaluate(() => {
+    mutateState(state => {
+      state.planStart = 2_000;
+      state.projects[0]._open = !state.projects[0]._open;
+    });
+    schedulePersist();
+  });
+  await emitFactoryWorkerMessage(page, 0, 0, controlledResult);
+
+  await expect(page.locator("#solveOverlay")).toHaveJSProperty("hidden", true);
+  await expect(page.locator("#progSummary")).not.toContainText(/updating|out of date/i);
+  await expect(page.locator("#solveStat")).toContainText(/Plan updated|Schedule blocked/);
+  expect(await page.evaluate(() => window.__mainThreadProjectOptimizations)).toBe(0);
+  expect(await page.evaluate(() => window.__factoryWorkers.length)).toBe(1);
+
+  await page.getByRole("button", { name: "Done reviewing progress", exact: true }).click();
+  await page.locator("[data-spx=\"0\"]").fill("51.25");
+  await page.locator("#btnProgress").click();
+  await expect(page.locator("#progSummary")).toContainText("out of date");
+  await page.waitForTimeout(650);
+  expect(await page.evaluate(() => window.__factoryWorkers.length)).toBe(1);
+  expect(await page.evaluate(() => window.__factoryWorkers[0].messages.length)).toBe(1);
+  expect(await page.evaluate(() => window.__mainThreadProjectOptimizations)).toBe(0);
 });

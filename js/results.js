@@ -1,6 +1,7 @@
 "use strict";
 /* ---------- RENDER: results ---------- */
 let _lastProjectRes=null;
+let _lastProjectKey=null;
 let _lastItemsCreditsRes=null;   // items/credits solve result, cached so "Copy to Manual" has something to read
 // The step-by-step plan is now the main Project-mode panel (was a modal). These two flags persist the
 // state of its collapsible sections across the frequent #results re-renders (every solve rebuilds the
@@ -195,6 +196,8 @@ function projectStabilityHtml(res){
 }
 function renderProjectResults(res,el,stat){
   _lastProjectRes=res;
+  const progress=document.getElementById("progModal");
+  if(progress&&!progress.hidden&&typeof renderProgress==="function")renderProgress();
   const scheduleExecutable=!!(res&&res.feasible&&res.lpFeasible&&res.scheduleValidation&&res.scheduleValidation.ok);
   // Seed the plan-start anchor once, the first time a real plan exists (issue #87 item 1) — moved here
   // from the old modal's open handler now that the step plan is always on screen. Display anchor only.
@@ -351,15 +354,19 @@ function renderResults(){
   if(S.mode==="manual"){solveService.cancel("Manual mode renders synchronously");renderManual(el,stat);return;}
   // Off the main thread: a long solve (the user's max-solve-time budget) shows a spinner instead
   // of freezing. The service owns cancellation and only delivers the accepted mode/revision.
-  const snapshot=JSON.parse(JSON.stringify(S));
+  const snapshot=solveStateSnapshot(S);
+  const solveKey=solveStateKey(snapshot);
   const budget=boundedPersistedField("solveBudget",snapshot.solveBudget,2000,200,60000,true);
-  solveService.request({mode:snapshot.mode,stateRevision,budget,stateSnapshot:snapshot},(res,error)=>{
+  solveService.request({mode:snapshot.mode,stateRevision,budget,stateSnapshot:snapshot,solveKey},(res,error)=>{
     if(error){solveError(error);return;}
-    if(res)renderSolveResult(res,el,stat);
+    if(res)renderSolveResult(res,el,stat,solveKey);
   });
 }
-function renderSolveResult(res,el,stat){
-  if(res.mode==="project"){renderProjectResults(res,el,stat);return;}
+function renderSolveResult(res,el,stat,solveKey){
+  if(res.mode==="project"){
+    if(typeof solveKey==="string")_lastProjectKey=solveKey;
+    renderProjectResults(res,el,stat);return;
+  }
   _lastItemsCreditsRes=res;
   // nudge toward Sell prices when credits mode is selected but no prices exist yet
   if(typeof setPricePoke==="function")setPricePoke(res.mode==="credits"&&![...RAWS,...PRODUCTS].some(it=>(num(S.sellPrice[it])||0)>0));
