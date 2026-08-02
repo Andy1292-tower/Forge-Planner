@@ -144,10 +144,10 @@ function projOrderMode(res){
 }
 function projOrderHeader(res){
   switch(projOrderMode(res)){
-    case "seq":return 'Order: <b style="color:var(--ink2)">one project at a time</b> — unlocks first, then order numbers, then estimated completion time. Change in Shopping list.';
-    case "single":return 'Order: <b style="color:var(--ink2)">all projects in one phase</b> — unlock ordering off. Change in Shopping list.';
-    case "waves":return 'Order: <b style="color:var(--ink2)">all together, in unlock waves</b> — material unlocks first, then the rest. Change in Shopping list.';
-    default:return 'Order: <b style="color:var(--ink2)">all projects together</b> in one shared '+(res.projLineMode==="static"?'set &amp; forget':'line-switching')+' schedule. Change in Shopping list.';
+    case "seq":return 'Order: <b style="color:var(--ink2)">one project at a time</b> — unlocks first, then order numbers, then estimated completion time. Change this in the <b>Projects</b> tab of <b>Projects+Prices</b>.';
+    case "single":return 'Order: <b style="color:var(--ink2)">all projects in one phase</b> — unlock ordering off. Change this in the <b>Projects</b> tab of <b>Projects+Prices</b>.';
+    case "waves":return 'Order: <b style="color:var(--ink2)">all together, in unlock waves</b> — material unlocks first, then the rest. Change this in the <b>Projects</b> tab of <b>Projects+Prices</b>.';
+    default:return 'Order: <b style="color:var(--ink2)">all projects together</b> in one shared '+(res.projLineMode==="static"?'set &amp; forget':'line-switching')+' schedule. Change this in the <b>Projects</b> tab of <b>Projects+Prices</b>.';
   }
 }
 function projLineModeHtml(res){
@@ -194,7 +194,7 @@ function projectStabilityHtml(res){
     return `<section class="notice warn project-stability-summary" aria-label="Line-job policy comparison">
       <b>Current line jobs retained.</b> A safe full comparison is unavailable, so no speed or throughput switch is recommended here. ${state} ${alternative}
       ${names?`<div style="margin-top:7px"><b>Affected phase${phaseRows.length===1?"":"s"}:</b> ${names}</div>`:""}
-      <div style="margin-top:7px">Use the always-available <b>Line-job policy</b> selector in Shopping list only if you deliberately want to override this.</div>
+      <div style="margin-top:7px">Use the always-available <b>Line-job policy</b> selector in <b>Projects+Prices</b> only if you deliberately want to override this.</div>
     </section>`;
   }
   const fmtPct=value=>Number.isFinite(value)?Number(value).toFixed(2)+"%":"—";
@@ -255,11 +255,13 @@ function renderProjectResults(res,el,stat){
         <div class="proj-mini" style="font-size:11.5px">Every ticked project is complete.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn primary" id="btnProgress">Track progress</button>
+          <button class="btn ghost" type="button" data-open-projects>Edit projects</button>
         </div></div>
-        <div class="notice info"><b>All projects complete 🎉</b> Nothing left to craft. Open <b>Track progress</b> to review or reopen a level, or add a new project in the <b>Shopping list</b>.</div>`;
+        <div class="notice info"><b>All projects complete 🎉</b> Nothing left to craft. Open <b>Track progress</b> to review or reopen a level, or use <b>Edit projects</b> to add another project in <b>Projects+Prices</b>.</div>`;
       stat.textContent="Plan updated. All selected projects are complete.";return;
     }
-    el.innerHTML=`<div class="notice info">No project demand yet. Open <b>Shopping list</b>, add a project with item costs, tick it <b>on</b>, then come back. Enter your current <b>inventory</b> there too — it's subtracted from what you need to craft.</div>`;
+    el.innerHTML=`<div class="notice info">No project demand yet. Add a project with item costs in <b>Projects+Prices</b>, tick it <b>on</b>, then come back. Enter your current <b>inventory</b> there too — it's subtracted from what you need to craft.
+      <div style="margin-top:10px"><button class="btn primary" type="button" data-open-projects>Edit projects</button></div></div>`;
     stat.textContent="Plan updated. No project demand selected.";return;
   }
   let html="";
@@ -316,7 +318,7 @@ function renderProjectResults(res,el,stat){
     ${!res.sequenced&&!res.waved&&res.bottleneck?`<div class="metric"><div class="l">Bottleneck</div><div class="v" style="font-size:17px">${res.bottleneck}</div><div class="u">${scheduleExecutable?`sets the ${res.partial?"partial plan":"finish"} time`:"analytical LP bottleneck only"}</div></div>`:""}
   </div>`;
   // Quick project controls (on/off, level range, mark done) — collapsed so the plan stays the hero.
-  // Same fields as Shopping list / Track progress, kept in sync; wired via delegated #results handlers.
+  // Same fields as Projects+Prices / Track progress, kept in sync; wired via delegated #results handlers.
   const adj=stepsProjControls();
   if(adj)html+=`<details class="cat-panel" ${_projAdjustOpen?"open":""}><summary data-paneltoggle="adjust"><span class="cat-sum-lbl">Adjust project levels &amp; completion</span><span class="cat-sum-meta">on/off · levels · mark done</span></summary><div class="panel-pad">${adj}</div></details>`;
   // ── The step-by-step plan: the main event ──

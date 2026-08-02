@@ -956,6 +956,8 @@ document.getElementById("results").addEventListener("change",e=>{
 document.getElementById("results").addEventListener("click",e=>{
   const cl=sel=>e.target.closest&&e.target.closest(sel);
   if(cl("#btnProgress")){openProgress(cl("#btnProgress"));return;}
+  const projectEditor=cl("[data-open-projects]");
+  if(projectEditor){openProjects(projectEditor);return;}
   const lineMode=cl("[data-linemode]");
   if(lineMode){setProjectLineMode(lineMode.getAttribute("data-linemode"));return;}
   // Plan-start "Now" — re-anchor the clock to the current moment (display only).

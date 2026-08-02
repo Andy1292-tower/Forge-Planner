@@ -140,28 +140,36 @@ for (const selected of inputTabs) {
   });
 }
 
-for (const route of [
-  { name: "Sell prices", call: "openPrices", tab: "Sell prices", initial: '#priceRows [data-price="Glass"]' },
-  { name: "Projects", call: "openProjects", tab: "Projects", initial: "#projSeqToggle" },
-]) {
-  test(`${route.name} compatibility callers route the consolidated dialog and restore their visible invoker`, async ({ page }) => {
-    // Break caught: a legacy context caller opens whichever tab was last used or returns focus to the header instead of its own action.
-    await page.goto("/", { waitUntil: "domcontentloaded" });
-    await page.evaluate(({ call, name }) => {
-      const invoker = document.createElement("button");
-      invoker.id = `context-${call}`;
-      invoker.textContent = `Edit ${name}`;
-      invoker.addEventListener("click", () => window[call](invoker));
-      document.querySelector("main").prepend(invoker);
-    }, route);
-    const invoker = page.locator(`#context-${route.call}`);
-    await invoker.click();
-    await expect(page.getByRole("tab", { name: route.tab, exact: true })).toHaveAttribute("aria-selected", "true");
-    await expect(page.locator(route.initial)).toBeFocused();
-    await page.locator("#inputsDone").click();
-    await expect(invoker).toBeFocused();
-  });
-}
+test("empty Project results open the real Projects editor and restore focus to their visible action", async ({ page }) => {
+  // Break caught: the empty state tells the user to edit projects but provides no working context action, or closing returns focus to the header.
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Project plan", exact: true }).click();
+  const invoker = page.locator('#results [data-open-projects]');
+  await expect(invoker).toBeVisible();
+  await expect(invoker).toHaveAccessibleName("Edit projects");
+  await invoker.click();
+  await expect(page.getByRole("tab", { name: "Projects", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#projSeqToggle")).toBeFocused();
+  await page.locator("#inputsDone").click();
+  await expect(invoker).toBeFocused();
+});
+
+test("completed Project results retain the real Projects editor beside progress and restore its focus", async ({ page }) => {
+  // Break caught: completing every configured project removes the only direct path for adding or editing another project.
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await openInputsTab(page, "Projects");
+  await page.getByRole("button", { name: "+ New custom project", exact: true }).click();
+  await page.locator("#inputsDone").click();
+  await page.getByRole("button", { name: "Project plan", exact: true }).click();
+  await expect(page.getByText("All projects complete 🎉", { exact: false })).toBeVisible();
+  const invoker = page.locator('#results [data-open-projects]');
+  await expect(invoker).toBeVisible();
+  await expect(invoker).toHaveAccessibleName("Edit projects");
+  await invoker.click();
+  await expect(page.getByRole("tab", { name: "Projects", exact: true })).toHaveAttribute("aria-selected", "true");
+  await page.locator("#inputsDone").click();
+  await expect(invoker).toBeFocused();
+});
 
 test("the Credits nudge forces Sell prices without overwriting the prior direct-open tab", async ({ page }) => {
   // Break caught: the nudge opens Projects, or its temporary route permanently destroys the user's last-used Projects context.

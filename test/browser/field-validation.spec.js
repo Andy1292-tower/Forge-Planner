@@ -371,7 +371,10 @@ test("case-distinct project IDs keep Projects-tab and inline feedback uniquely o
 test("base time, recipe cost, and calibration share validation without fallback coercion", async ({ page }) => {
   await observeWorkers(page);
   await loadPlanner(page);
-  await page.getByRole("button", { name: "Crafting data" }).click();
+  const recipeToggle = page.locator("#recipeToggle");
+  await recipeToggle.click();
+  await expect(recipeToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator("#recipeBody")).toBeVisible();
 
   const base = page.getByRole("spinbutton", { name: "Glass base time at 1x in seconds" });
   await base.fill("90");
