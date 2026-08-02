@@ -39,7 +39,7 @@ No browser, Chrome, GUI, or persistent preview was launched locally.
 
 | Gate | Result |
 | --- | --- |
-| `npm test` | 27/27 test scripts passed |
+| `npm test` | 28/28 test scripts passed |
 | Golden parity | 16 ok, 0 improved, 0 failed |
 | Catalog contract | 11/11 passed, including sparse/custom-prototype/accessor prerequisite mutations |
 | Current state schema | 49/49 passed, including legacy/current/future, recovery, rollback, limits, and revision ownership |
@@ -60,6 +60,8 @@ Playwright collection was parsed without launching a browser or server:
 | Cold/warm release upgrade | 4 tests |
 
 The lanes are non-overlapping. The visual lane contains 13 exact release-matrix cases at 1440×900, 1024×768, 900×760, 881×900, 880×900, 768×1024, 640×900, 561×900, 560×900, 430×932, 390×844, 375×812, and 320×568.
+
+Feature branches run this full suite through `pull_request` only; the `push` trigger is limited to `main`. This prevents one branch update from launching duplicate Chromium matrices while retaining post-merge verification.
 
 Each viewport covers all four modes and all six registered semantic dialogs: 130 mode/dialog states plus 13 sparse Crafting-data states. Assertions cover document overflow, result inset, title/tab/status containment, persistent label/control collisions, named table scrollers, Project identity width, dialog action reachability/scroll ownership, and sparse-card width. CI must also retain four representative screenshots: 1440 Items, 880 Project, 390 Shopping list, and 320 Manual. Missing evidence fails the workflow.
 

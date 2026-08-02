@@ -19,7 +19,7 @@ Focused RED harnesses reproduced all three prior defects. The repaired harness p
 
 ### Local verification
 
-- `npm test`: 27/27 scripts
+- `npm test`: 28/28 scripts, including the CI trigger/lane/evidence contract
 - parity: 16/16
 - static graph: 11/11
 - permanent Worker compatibility: 3/3

@@ -7,6 +7,7 @@ const { spawnSync } = require("child_process");
 // while test/parity.cjs is exercised through run-parity.cjs with its golden snapshot.
 const tests = [
   "test/catalog-validation.cjs",
+  "test/ci-workflow.cjs",
   "test/check-classifier.cjs",
   "test/craftdata.cjs",
   "test/credits-contract.cjs",
