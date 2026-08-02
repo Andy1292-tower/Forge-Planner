@@ -146,9 +146,8 @@ test("required line/global drafts preserve the last accepted state and storage a
   await page.evaluate(() => { S.dupe = 101; });
   const postsBeforeRejectedState = await workerPostCount(page);
   await page.getByRole("button", { name: "Resimulate" }).click();
-  await expect.poll(() => workerPostCount(page)).toBe(postsBeforeRejectedState + 1);
-  expect(await page.evaluate(() => window.__fieldValidationWorkerPosts.at(-1).state.dupe)).toBe(101);
-  await expect(page.locator("#results")).toContainText("Worker state rejected");
+  await page.waitForTimeout(650);
+  expect(await workerPostCount(page)).toBe(postsBeforeRejectedState);
   expect((await stored(page)).state.dupe).toBe(25);
   await page.evaluate(() => { S.dupe = 25; });
 });

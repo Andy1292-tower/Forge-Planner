@@ -582,7 +582,7 @@ test("changing the Worker factory releases the owned Worker before a controlled 
     "completion must release every request-currentness field with the callback");
 });
 
-function schedulerHarness() {
+function schedulerHarness(options = {}) {
   const source = fs.readFileSync(path.join(root, "js", "events.js"), "utf8");
   const boundary = source.indexOf("function readFieldDraft");
   assert.ok(boundary > 0, "event scheduler remains isolated above field parsing");
@@ -594,12 +594,13 @@ function schedulerHarness() {
   let requests = 0;
   let cancels = 0;
   const lifecycle = [];
+  const validateSave = options.validateSave || (() => true);
   const documentListeners = new Map();
   const windowListeners = new Map();
   const context = {
     console,
     stateRevision: 1,
-    S: { mode: "items" },
+    S: { mode: "items", dupe: 25 },
     LSKEY: "test-state",
     localStorage: {
       getItem(key) { return key === "test-state" ? this.raw || null : null; },
@@ -613,7 +614,13 @@ function schedulerHarness() {
     window: {
       addEventListener(type, callback) { windowListeners.set(type, callback); },
     },
-    save() { saves += 1;lifecycle.push("save");context.localStorage.setItem("test-state", JSON.stringify(context.S));return true; },
+    save() {
+      saves += 1;
+      lifecycle.push("save");
+      if (!validateSave(context.S)) return false;
+      context.localStorage.setItem("test-state", JSON.stringify(context.S));
+      return true;
+    },
     renderResults() { renders += 1; },
     solveService: {
       request() { requests += 1; },
@@ -633,9 +640,15 @@ function schedulerHarness() {
   vm.runInContext(source.slice(lifecycleStart), context, { filename: "events-page-lifecycle.js" });
   return {
     mutate() { context.stateRevision += 1; },
+    corruptWithoutRevision(mutator) {
+      context.__mutator = mutator;
+      vm.runInContext("globalThis.__mutator(S)", context);
+      delete context.__mutator;
+    },
     legacySave() { return context.save(); },
     scheduleSolve() { vm.runInContext("scheduleSolve()", context); },
     persistNow() { return vm.runInContext("persistNow()", context); },
+    doSolve() { return vm.runInContext("doSolve()", context); },
     pagehide() { windowListeners.get("pagehide")(); },
     hide() { context.document.visibilityState = "hidden";documentListeners.get("visibilitychange")(); },
     advance(ms) {
@@ -649,6 +662,8 @@ function schedulerHarness() {
     },
     counts() { return { saves, renders, requests, cancels }; },
     lifecycle() { return lifecycle.slice(); },
+    revision() { return context.stateRevision; },
+    storedState() { return JSON.parse(context.localStorage.raw); },
   };
 }
 
@@ -679,6 +694,24 @@ test("a direct legacy save is recognized before persistence schedules a duplicat
   harness.scheduleSolve();
   harness.advance(100);
   assert.deepEqual(harness.counts(), { saves: 1, renders: 0, requests: 0, cancels: 0 });
+});
+
+test("doSolve revalidates changed state bytes even when the revision counter is unchanged", () => {
+  // Break caught: revision-only persistence dedup lets an out-of-band invalid mutation reach
+  // renderResults (and therefore Worker dispatch) without save() validating the current bytes.
+  const harness = schedulerHarness({
+    validateSave(state) { return state.dupe >= 0 && state.dupe <= 100; },
+  });
+  assert.equal(harness.persistNow(), true);
+  assert.deepEqual(harness.storedState(), { mode: "items", dupe: 25 });
+  const persistedRevision = harness.revision();
+
+  harness.corruptWithoutRevision(state => { state.dupe = 101; });
+  assert.equal(harness.revision(), persistedRevision);
+  assert.equal(harness.doSolve(), false);
+
+  assert.deepEqual(harness.counts(), { saves: 2, renders: 0, requests: 0, cancels: 0 });
+  assert.deepEqual(harness.storedState(), { mode: "items", dupe: 25 });
 });
 
 test("pagehide flushes persistence, clears delayed solving, then cancels solve ownership", () => {

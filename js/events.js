@@ -10,7 +10,7 @@ function stateMatchesPersisted(){
 function persistNow(){
   if(persistT!==null){clearTimeout(persistT);persistT=null;}
   const revision=stateRevision;
-  if(persistedRevision===revision||stateMatchesPersisted()){persistedRevision=revision;return true;}
+  if(stateMatchesPersisted()){persistedRevision=revision;return true;}
   const persisted=save();
   if(persisted!==false)persistedRevision=revision;
   return persisted;
