@@ -594,9 +594,9 @@ function gelLoadoutPruneBounds(upperBound,additions){
   const finalTie=GEL_LOADOUT_ABS_EPS+GEL_LOADOUT_REL_EPS*publicMagnitude;
   return {publicMagnitude,exactMagnitude,gamma,roundDrift,finalTie,
     decisiveGap:finalTie+roundDrift,
-    // Requiring the full drift is deliberately stricter than merely allowing a reversal inside
-    // the final Gel tie. It makes far-cost dominance safe without estimating a future tie width.
-    farGelAdvantage:roundDrift};
+    // Requiring the full drift prevents a stored ordering from reversing after recomputation.
+    // This is stricter than allowing a reversal inside a future final tie whose size is unknown.
+    orderAdvantage:roundDrift};
 }
 function gelLoadoutStableSum(values){
   // Positive rates are summed low-to-high. The value multiset—not its physical-ID assignment—now
@@ -605,17 +605,22 @@ function gelLoadoutStableSum(values){
 }
 function gelLoadoutPruneGroup(candidates,gelBounds,vespBounds){
   candidates.sort((a,b)=>a.vespHr-b.vespHr||b.gelHr-a.gelHr||gelLoadoutChoiceCompare(a,b));
-  const next=[];let maxGel=-Infinity,maxFarGel=-Infinity,farIndex=0;
+  const next=[];let maxOrderSafeGel=-Infinity,maxFarGel=-Infinity,orderIndex=0,farIndex=0;
   candidates.forEach((candidate,index)=>{
-    // vespium order makes both dominance queries monotone. Equality stays retained: only a gap
-    // strictly outside the decisive interval is safe before the final staged tie calculation.
+    // Stored Vespium order can reverse when stable sums are rebuilt with a common suffix. The
+    // ordinary Gel-dominance query therefore sees only predecessors whose cost lead covers that
+    // full drift. Equality at this safety margin is sufficient and both query cursors are monotone.
+    while(orderIndex<index&&
+      candidate.vespHr-candidates[orderIndex].vespHr>=vespBounds.orderAdvantage){
+      maxOrderSafeGel=Math.max(maxOrderSafeGel,candidates[orderIndex].gelHr);orderIndex++;
+    }
+    // The far-cost query still requires a strict crossing of the decisive Vespium interval.
     while(farIndex<index&&candidate.vespHr-candidates[farIndex].vespHr>vespBounds.decisiveGap){
       maxFarGel=Math.max(maxFarGel,candidates[farIndex].gelHr);farIndex++;
     }
-    const pruned=maxGel>candidate.gelHr+gelBounds.decisiveGap||
-      maxFarGel>=candidate.gelHr+gelBounds.farGelAdvantage;
+    const pruned=maxOrderSafeGel>candidate.gelHr+gelBounds.decisiveGap||
+      maxFarGel>=candidate.gelHr+gelBounds.orderAdvantage;
     if(!pruned)next.push(candidate);
-    maxGel=Math.max(maxGel,candidate.gelHr);
   });
   return next;
 }

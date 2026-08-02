@@ -155,3 +155,30 @@ The widened intervals did not materially change the bounded 12-line performance 
 - 12-line all-priced Credits: `36` bounded Gel seed calls in `697ms`
 
 Fix-round focused syntax, exact-helper, mined-render, mined-solver, mined-mode, static-build, project-transient, stability, scale, and parity checks passed. The full non-browser release gate was then rerun. No browser was launched; no cutoff or threshold was weakened; and the frozen Worker, compatibility, build, and golden files remain unchanged with the hashes recorded above.
+
+## Fix round 3: stable-sum Vespium order
+
+The third formal proof pass found that stored Vespium sorting alone was insufficient for ordinary Gel dominance. Let `h = 2^-53`. Ascending stable sums give both prefix A `[1,h]` and prefix B `[1]` the stored value `1`. After recomputing with the same suffix `[h]`, A becomes `1 + 2^-52` while B remains `1`. At a strict budget of `1`, A is then infeasible and B is feasible. If A had a decisive stored Gel lead, the prior global-maximum Gel query discarded B before seeing that suffix.
+
+The frozen RED test on `a7dc5e5` reproduced that abstraction failure directly: two equal stored-Vespium states were reduced to one (`actual 1`, `expected 2`) even though the independently constructed common suffix reverses their budget relationship.
+
+The frontier scan now maintains two separate monotone queries inside each compatible rank-signature partition:
+
+- `maxOrderSafeGel` contains only predecessors whose stored Vespium lead is at least `vespBounds.orderAdvantage`. The ordinary decisive-Gel branch can use only this set, so its dominating state is guaranteed not to become more expensive after stable-sum recomputation.
+- `maxFarGel` retains the existing stricter far-cost rule: the Vespium gap must cross `vespBounds.decisiveGap`, and the cheaper predecessor must also meet the Gel `orderAdvantage` before it can dominate.
+- `orderAdvantage` is the full conservative `roundDrift` from fix round 2. The same dimension-neutral field protects Vespium order in the ordinary branch and Gel order in the far-cost branch.
+- Equality at the order-safety margin may prune; a lead strictly below it retains the candidate. Equal stored Vespium necessarily retains both whenever the production order margin is positive.
+
+New proof coverage freezes the exact half-ULP construction and checks all three order-margin boundaries: equal stored Vespium, exact safe lead, and a representable lead strictly below the margin. Every prior assignment-order, four-path interval, 64-addition, rank-signature, exhaustive-oracle, 4096-subset, strict-budget, UI ownership, and bounded-seed test remains active.
+
+The additional monotone query remains inside the five-second exact-helper guard. Final fix-round timings were:
+
+- 5 mixed lines, forward / reverse / low: `9 / 6 / 6ms`
+- 7 mixed lines: `33 / 27 / 28ms`
+- 8 mixed lines: `63 / 72 / 61ms`
+- 10 mixed lines: `233 / 234 / 220ms`
+- 12 mixed lines: `764 / 817 / 749ms`
+- 12 identical max-512 lines: `40ms`
+- 12-line all-priced Credits: `36` bounded Gel seed calls in `701ms`
+
+Fix-round focused syntax, exact-helper, mined-render, mined-solver, mined-mode, static-build, project-transient, stability, scale, and parity checks passed. The full non-browser release gate was then rerun. No browser was launched, and no cutoff, objective threshold, frozen Worker, compatibility endpoint, build script, or golden fixture changed.

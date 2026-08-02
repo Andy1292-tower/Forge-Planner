@@ -119,10 +119,34 @@ const runner = `
   console.log("PASS equality is tight and ULP-scale");
 
   const pruneState=(id,gelHr,vespHr)=>({gelHr,vespHr,choices:[{row:{__i:id},L:1}]});
-  const unitGelBounds={decisiveGap:1,farGelAdvantage:0};
-  const wideGelBounds={decisiveGap:100,farGelAdvantage:1};
-  const unitVespBounds={decisiveGap:5,farGelAdvantage:0};
-  const wideVespBounds={decisiveGap:100,farGelAdvantage:0};
+  const unitGelBounds={decisiveGap:1,orderAdvantage:0};
+  const wideGelBounds={decisiveGap:100,orderAdvantage:1};
+  const unitVespBounds={decisiveGap:5,orderAdvantage:0};
+  const wideVespBounds={decisiveGap:100,orderAdvantage:0};
+  const halfUlp=2**-53;
+  const reversalPrefixA=stablePositiveSum([1,halfUlp]);
+  const reversalPrefixB=stablePositiveSum([1]);
+  assert.equal(reversalPrefixA,reversalPrefixB,
+    "the stable-sum counterexample must begin with equal stored Vespium prefixes");
+  assert.equal(stablePositiveSum([1,halfUlp,halfUlp]),1+2**-52,
+    "two half-ULP rates must become one visible ULP when the common suffix is recomputed");
+  assert.equal(stablePositiveSum([1,halfUlp]),1,
+    "the same common suffix must leave the shorter multiset rounded to one");
+  const reversalGelBounds={decisiveGap:1,orderAdvantage:0};
+  const reversalVespBounds={decisiveGap:100,orderAdvantage:Number.EPSILON};
+  assert.equal(gelLoadoutPruneCandidates([
+    pruneState(0,12,reversalPrefixA),pruneState(1,10,reversalPrefixB)
+  ],reversalGelBounds,reversalVespBounds).length,2,
+  "equal stored Vespium must not enable decisive-Gel pruning when a common suffix can reverse cost order");
+  const unitOrderVespBounds={decisiveGap:100,orderAdvantage:1};
+  assert.equal(gelLoadoutPruneCandidates([
+    pruneState(0,11+Number.EPSILON*8,0),pruneState(1,10,1)
+  ],unitGelBounds,unitOrderVespBounds).length,1,
+  "a Vespium lead exactly at the safe order margin may enable decisive-Gel pruning");
+  assert.equal(gelLoadoutPruneCandidates([
+    pruneState(0,11+Number.EPSILON*8,0),pruneState(1,10,1-Number.EPSILON*2)
+  ],unitGelBounds,unitOrderVespBounds).length,2,
+  "a Vespium lead strictly below the safe order margin must retain the lower-Gel state");
   assert.equal(gelLoadoutPruneCandidates(
     [pruneState(0,11,0),pruneState(1,10,0)],unitGelBounds,wideVespBounds).length,2,
     "a Gel gap exactly at the prune envelope must be retained");
@@ -151,13 +175,13 @@ const runner = `
     "decisive dominance must include both the public final tie and recomputation drift");
   assert.ok(bounds64.roundDrift>bounds64.finalTie,
     "64 recomputed additions must expose round drift wider than the final public tie band");
-  assert.ok(bounds64.farGelAdvantage>=bounds64.roundDrift,
+  assert.ok(bounds64.orderAdvantage>=bounds64.roundDrift,
     "far-cost pruning must require enough Gel advantage to prevent worst-case order reversal");
   assert.equal(gelLoadoutPruneCandidates([
     pruneState(0,1e16,0),pruneState(1,1e16,1)
-  ],bounds64,{decisiveGap:0,farGelAdvantage:0}).length,2,
+  ],bounds64,{decisiveGap:0,orderAdvantage:0}).length,2,
   "far-cost pruning must retain equal stored Gel when 64-addition recomputation can reverse its order");
-  console.log("PASS prune intervals retain strict boundaries and 64-addition Gel-order uncertainty");
+  console.log("PASS prune intervals retain stable-sum cost order, strict boundaries, and 64-addition Gel uncertainty");
 
   S.lines=[{max:1,spx:6,turbo:0},{max:1,spx:4,turbo:0},{max:1,spx:4,turbo:0}];
   const budget=4498594189315839;
@@ -291,7 +315,7 @@ const runner = `
 
   const signatureA=pruneState(0,12,4),signatureB=pruneState(1,10,5);
   signatureA.rankSignature="2";signatureB.rankSignature="0";
-  const zeroPruneBounds={decisiveGap:0,farGelAdvantage:0};
+  const zeroPruneBounds={decisiveGap:0,orderAdvantage:0};
   assert.equal(gelLoadoutPruneCandidates(
     [signatureA,signatureB],zeroPruneBounds,zeroPruneBounds,state=>state.rankSignature).length,2,
     "numeric dominance must not cross different remaining-profile rank signatures");
