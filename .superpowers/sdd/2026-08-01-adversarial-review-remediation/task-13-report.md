@@ -44,7 +44,7 @@ The direct-save regression proves a legacy `save()` followed by `scheduleSolve()
 
 ### Solve-equivalent currentness and Progress
 
-`solveStateSnapshot()` clones the exact dispatched state and removes only display-only `planStart` and every Project's `_open`; `solveStateKey()` serializes that solve-equivalent snapshot. The Worker receives that sanitized snapshot. `solveService` uses the same key at its in-flight currentness boundary, while still validating the Worker's echoed request mode/revision. Display-only mutations therefore keep a slow solve authoritative, while every solver-relevant mutation rejects it. Request completion and cancellation clear the owned key with all other request fields.
+`solveStateSnapshot()` clones the exact accepted state for dispatch. `solveStateKey()` separately removes display-only `planStart` and every Project's `_open`, then canonically serializes the solve-equivalent snapshot. The Worker receives the complete clone so its ingress can use the same strict schema boundary as import and persistence. `solveService` uses the projected key at its in-flight currentness boundary, while still validating the Worker's echoed request mode/revision. Display-only mutations therefore keep a slow solve authoritative, while every solver-relevant mutation rejects it. Request completion and cancellation clear the owned key with all other request fields.
 
 Project results are cached with the dispatched solve key. `renderProgress()` no longer calls `optimizeProjectTop()`. A current cache is consumed immediately; a completion edit persists, schedules the existing normal Project solve before repaint, and shows `updating…` while the key is stale. A stale result with no scheduled/active Project solve shows `out of date — Resimulate`, including after a crafter-line edit, and opening Progress never starts a second request. The one authoritative result updates the main Project panel and refreshes an already-open Progress dialog.
 
@@ -87,3 +87,12 @@ No permanent Worker endpoint, historical request fixture, or parity golden was e
 The final self-review explicitly confirmed: accepted GUI mutation durability; full `expectedKey` cleanup; correct handling of `renderT`'s initial `undefined` sentinel; and reconciliation of direct legacy `save()` call sites without duplicate writes. The factory default still owns exactly one static-builder constructor seam, both permanent Worker endpoints remain byte-identical, and no UI checkpoint file was changed.
 
 No known Node-side blocker or unresolved Task 13 issue remains. The authored teardown/reload, hidden-page, slow-factory, open-Progress refresh, and explicit-Resimulate flows remain CI-only because local browser execution is prohibited.
+
+## Pull-request CI correction
+
+The first full PR browser run exposed two Task 13 integration defects that the original isolated lifecycle harness did not cross-check against startup validation or the real Worker schema boundary:
+
+- the dispatched projection omitted the required current-schema `planStart` key, so the Worker rejected ordinary requests before optimization;
+- raw `JSON.stringify` treated property insertion order as solver state, so startup's semantically identical post-render validated clone canceled the already-dispatched initial solve.
+
+The repaired boundary dispatches a complete accepted-state clone and derives a separate canonical key that sorts object keys, preserves array order, and omits only `planStart` and Project `_open`. A real-schema dispatch regression and an exact startup validate/adopt regression now cover both failures. Two direct Blob Worker fixtures were also corrected to omit optional `catId` rather than submit an invalid blank ID. Focused RED was `2/24`; repaired solve-lifecycle coverage is `24/24`, and the full local suite is `28/28` scripts. Browser confirmation remains the refreshed PR CI gate.

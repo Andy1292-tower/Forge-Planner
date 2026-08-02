@@ -408,7 +408,7 @@ test("the generated current Blob Worker keeps Project stability writes selected 
       state.mode = "project";state.dupe = 0;state.margin = 0;
       state.projectSeq = false;state.projectGate = false;state.projectStability = policy;
       state.lines = JSON.parse(JSON.stringify(lines));
-      state.projects = [{ id: "frames-project", name: "Frames plan", catId: "", on: true,
+      state.projects = [{ id: "frames-project", name: "Frames plan", on: true,
         from: 1, to: 1, done: 0, prio: null, levels: [{ costs: [
           { item: "Frames", qty: frames }, { item: "Bricks", qty: 5000 },
           { item: "Glass", qty: 4000 }, { item: "Rods", qty: 3000 },
@@ -529,7 +529,7 @@ test("the planner serves, solves in its Worker, and opens every planning mode", 
       {max:64,spx:20,turbo:0},{max:64,spx:18,turbo:0},{max:32,spx:16,turbo:0},
       {max:16,spx:14,turbo:0},{max:8,spx:12,turbo:0},
     ];
-    state.projects = [{ id: "smoke-project", name: "Worker Project", catId: "", on: true,
+    state.projects = [{ id: "smoke-project", name: "Worker Project", on: true,
       from: 1, to: 1, done: 0, prio: null, levels: [{ costs: [{ item: "Frames", qty: 10_000 }] }] }];
     normalize(state);syncManual(state);
     const worker = __forgeCreateSolverWorker();

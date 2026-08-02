@@ -24,7 +24,7 @@ The already-released Task 11A checkpoint remains the UI composition for this pas
 | Area | Release-candidate behavior |
 | --- | --- |
 | State/import | Versioned strict validation, transactional import/render/persistence, previous-good backup, rejected-save download/recovery, bounded collections and strings, and inert rendering of imported text. |
-| Solve lifecycle | One generation/mode/solve-state authority owns Worker requests, cancellation, stale-result rejection, fallback, and overlay state. Display-only Project disclosure/clock changes do not invalidate an otherwise authoritative solve. |
+| Solve lifecycle | One generation/mode/solve-state authority owns Worker requests, cancellation, stale-result rejection, fallback, and overlay state. The Worker receives a complete strictly validated clone; its separate canonical equivalence key ignores object insertion order and display-only Project disclosure/clock changes. |
 | Project execution | Displayed schedules are exact-replay checked against carried inventory, warm-ups, external pre-produced Bits, mined budgets, and switch boundaries. Blocked analytical output is not presented as execution guidance. |
 | Optimizer trust | Exact Gel capacity through the supported exact UI boundary, bounded/estimated larger-factory copy, winner-owned Credits warnings, shared Credits deadlines, and visible full-run stability tradeoffs. |
 | PR #94 | Set & forget persists through schema validation and uses the current executable replay, inventory, mined-resource, stability, and shared-deadline contracts. Certified static incumbents survive interrupted recovery attempts. |
@@ -43,6 +43,7 @@ No browser, Chrome, GUI, or persistent preview was launched locally.
 | Golden parity | 16 ok, 0 improved, 0 failed |
 | Catalog contract | 11/11 passed, including sparse/custom-prototype/accessor prerequisite mutations |
 | Current state schema | 49/49 passed, including legacy/current/future, recovery, rollback, limits, and revision ownership |
+| Solve lifecycle | 24/24 passed, including real Worker-schema dispatch and startup validate/adopt currentness |
 | Set & forget focused contract | 36/36 passed |
 | Static asset graph | 11/11 passed |
 | Permanent Worker compatibility | 3/3 passed; original fence and v2 compatibility endpoint remain byte locked |

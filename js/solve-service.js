@@ -1,15 +1,24 @@
 "use strict";
 
-// Only planStart and a Project card's disclosure state are display-only. The Worker receives this
-// exact normalized snapshot, and the same serialization defines whether an in-flight solve is still
-// authoritative after accepted UI state changes.
+// The Worker receives a complete accepted-state clone so the shared schema boundary can validate it.
+// Only planStart and a Project card's disclosure state are removed from the separate equivalence key
+// that decides whether an in-flight solve remains authoritative after accepted UI state changes.
 function solveStateSnapshot(state){
-  const snapshot=JSON.parse(JSON.stringify(state||{}));
+  return JSON.parse(JSON.stringify(state||{}));
+}
+function canonicalSolveJson(value){
+  if(Array.isArray(value))return "["+value.map(canonicalSolveJson).join(",")+"]";
+  if(value&&typeof value==="object"){
+    return "{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+canonicalSolveJson(value[key])).join(",")+"}";
+  }
+  return JSON.stringify(value);
+}
+function solveStateKey(state){
+  const snapshot=solveStateSnapshot(state);
   delete snapshot.planStart;
   if(Array.isArray(snapshot.projects))snapshot.projects.forEach(project=>{if(project&&typeof project==="object")delete project._open;});
-  return snapshot;
+  return canonicalSolveJson(snapshot);
 }
-function solveStateKey(state){return JSON.stringify(solveStateSnapshot(state));}
 
 /* One authority owns asynchronous solve generations, the Worker, fallback timer, callback, and
  * overlay. Callers provide the exact accepted-state revision and snapshot they want solved; a
@@ -138,7 +147,7 @@ const solveService=(()=>{
       throw new TypeError("solveService.request requires mode, stateRevision, stateSnapshot, and callback");
     }
     const dispatchedState=solveStateSnapshot(stateSnapshot);
-    const stateKey=JSON.stringify(dispatchedState);
+    const stateKey=solveStateKey(dispatchedState);
     if(options.solveKey!==undefined&&options.solveKey!==stateKey){
       throw new TypeError("solveService.request solveKey must describe the dispatched state snapshot");
     }

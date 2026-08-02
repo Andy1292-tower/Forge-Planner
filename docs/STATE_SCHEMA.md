@@ -30,7 +30,7 @@ Despite the historical storage-key suffix, `schemaVersion` inside the JSON is th
 | `inventory`, `inventoryText` | Current ordinary-item stock plus display drafts. |
 | `projectSeq`, `projectGate` | Project ordering and one-phase choices. |
 | `projectStability`, `projLineMode` | Prefer-current versus re-optimize policy, and line-switching versus set-and-forget scheduling. |
-| `planStart` | Optional epoch-millisecond display anchor for Project clock times. It does not change elapsed solve durations. |
+| `planStart` | Required current-schema key containing a nullable epoch-millisecond display anchor for Project clock times. It does not change elapsed solve durations. |
 | `manual[]` | Current Manual-mode job, compression, and sell flag for each line. |
 | `manualSaved[]`, `manualActiveId` | Named Manual presets and the selected preset ID. |
 
@@ -78,6 +78,6 @@ When adding schema `3` or later, update defaults and `FIELD_SCHEMA`, add an expl
 
 ## Not persisted in the build
 
-Solver results, active Worker requests, generation tokens, solve overlays, active dialog/focus state, and the internal line-job stability cache are runtime-only. Project card `_open` is intentionally persisted, but it is display-only and omitted from solve equivalence/Worker snapshots. The chosen stability policy is persisted; the cached prior assignment is not.
+Solver results, active Worker requests, generation tokens, solve overlays, active dialog/focus state, and the internal line-job stability cache are runtime-only. Project card `_open` is intentionally persisted, but it and `planStart` are display-only and omitted from solve equivalence. The Worker receives a complete cloned accepted state so it can use the same strict schema boundary as import and persistence; the optimizer does not consume those display-only values. The chosen stability policy is persisted; the cached prior assignment is not.
 
 Planner state is local-first. The shipped app has no planner backend or analytics payload. It still loads a font stylesheet and font files from Google Fonts, so a browser makes ordinary third-party font requests; planner state is not placed in those request URLs or bodies.

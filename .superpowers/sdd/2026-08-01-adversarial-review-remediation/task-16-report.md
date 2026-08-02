@@ -10,6 +10,14 @@ Task 16 is locally complete on `codex/adversarial-remediation-continuation-v2`; 
 
 Focused RED harnesses reproduced all three prior defects. The repaired harness passed 3/3, and an independent source/spec review found no Critical, Important, or Minor issue.
 
+### First PR-run corrections
+
+- A real Worker-boundary regression proved the solve payload must remain a complete schema-valid accepted-state clone; only the separate equivalence key omits display-only `planStart` and Project `_open`.
+- An exact startup validate/adopt regression reproduced a semantically identical state canceling its initial solve because raw JSON serialization depended on object insertion order. Solve keys now sort object keys recursively while preserving array order.
+- Two direct Blob Worker fixtures now model custom projects correctly by omitting optional `catId` instead of supplying the invalid value `""`.
+
+The focused RED run failed `2/24`; the repaired lifecycle passes `24/24`. The full local suite again passes `28/28` scripts. The replacement PR browser run remains the authoritative rendered gate.
+
 ### Release matrix
 
 - 13 exact viewport pairs, four modes, all six registered semantic dialogs, and sparse Crafting-data cards.

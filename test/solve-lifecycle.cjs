@@ -142,7 +142,82 @@ function lifecycleHarness() {
       delete context.__state;
       return value;
     },
+    key(state) {
+      context.__state = state;
+      const value = vm.runInContext("solveStateKey(globalThis.__state)", context);
+      delete context.__state;
+      return value;
+    },
     status() { return vm.runInContext("solveService.status()", context); },
+  };
+}
+
+function schemaDispatchHarness() {
+  const messages = [];
+  const elements = {
+    solveOverlay: new FakeElement(),
+    solveFallback: new FakeElement(),
+    results: new FakeElement(),
+    solveStat: new FakeElement(),
+  };
+  class CapturingWorker {
+    postMessage(message) { messages.push(message); }
+    terminate() {}
+  }
+  const context = {
+    console,
+    JSON,
+    Math,
+    Number,
+    Object,
+    String,
+    Date,
+    Worker: CapturingWorker,
+    document: { getElementById(id) { return elements[id] || null; } },
+    getLineStability() { return {}; },
+    setLineStability() {},
+    optimize() { return { mode: "items" }; },
+    setTimeout() { return 1; },
+    clearTimeout() {},
+  };
+  vm.createContext(context);
+  for (const relative of ["js/core.js", "js/fields.js", "js/state.js", "js/solve-service.js"]) {
+    const file = path.join(root, relative);
+    vm.runInContext(fs.readFileSync(file, "utf8"), context, { filename: file });
+  }
+  vm.runInContext(`
+    normalize(S);
+    S.schemaVersion = CURRENT_SCHEMA_VERSION;
+    S.mode = "project";
+    S.planStart = 1000;
+    S.projects = [{
+      id: "dispatch-project", name: "Dispatch project", on: true, prio: null,
+      from: 1, to: 1, done: 0, levels: [{ costs: [{ item: "Frames", qty: 1 }] }], _open: true
+    }];
+    solveService.request({
+      mode: S.mode,
+      stateRevision,
+      budget: S.solveBudget,
+      stateSnapshot: S,
+      solveKey: solveStateKey(S)
+    }, () => {});
+  `, context);
+  return {
+    messages,
+    adoptValidatedClone() {
+      return vm.runInContext(`(() => {
+        const checked = validateAndMigrate(S);
+        if (!checked.ok) return checked;
+        _adoptValidatedClone(checked.state);
+        return { ok: true, current: solveService.status().current };
+      })()`, context);
+    },
+    validateDispatched() {
+      context.__message = messages[0];
+      const result = vm.runInContext("validateWorkerState(globalThis.__message.state)", context);
+      delete context.__message;
+      return result;
+    },
   };
 }
 
@@ -384,8 +459,8 @@ test("display-only Project mutations keep an in-flight solve authoritative", () 
   };
   harness.callRequest(options, result => painted.push(result.marker));
   const worker = harness.workers[0];
-  assert.equal(Object.prototype.hasOwnProperty.call(worker.messages[0].state, "planStart"), false);
-  assert.equal(Object.prototype.hasOwnProperty.call(worker.messages[0].state.projects[0], "_open"), false);
+  assert.equal(worker.messages[0].state.planStart, 1_000);
+  assert.equal(worker.messages[0].state.projects[0]._open, false);
 
   harness.mutateCurrent(state => {
     state.planStart = 2_000;
@@ -399,7 +474,55 @@ test("display-only Project mutations keep an in-flight solve authoritative", () 
   assert.equal(worker.terminated, false);
 });
 
-test("the dispatched solve snapshot removes only documented display state", () => {
+test("the real Worker boundary receives a complete schema-valid solve snapshot", () => {
+  // Break caught: using the solve-key projection as the dispatch payload strips required persisted fields.
+  const harness = schemaDispatchHarness();
+  assert.equal(harness.messages.length, 1);
+  const dispatched = harness.messages[0].state;
+  assert.equal(dispatched.planStart, 1_000);
+  assert.equal(dispatched.projects[0]._open, true);
+  const checked = harness.validateDispatched();
+  assert.equal(checked.ok, true, checked.errors && checked.errors.join("; "));
+});
+
+test("adopting a schema-equivalent validated clone keeps the initial solve authoritative", () => {
+  // Startup renders once, then persistence adopts validation's fresh clone. Object insertion order
+  // is not solver state and must not make that already-dispatched request stale.
+  const harness = schemaDispatchHarness();
+  const adopted = harness.adoptValidatedClone();
+  assert.equal(adopted.ok, true, adopted.errors && adopted.errors.join("; "));
+  assert.equal(adopted.current, true);
+});
+
+test("solve equivalence ignores object insertion order but preserves array order", () => {
+  const harness = lifecycleHarness();
+  const first = {
+    mode: "project",
+    nested: { alpha: 1, beta: 2 },
+    projects: [
+      { id: "p1", _open: false, levels: [{ costs: [{ item: "Frames", qty: 1 }] }] },
+      { id: "p2", _open: true, levels: [{ costs: [{ item: "Bricks", qty: 2 }] }] },
+    ],
+  };
+  const reorderedObjects = {
+    projects: [
+      { levels: [{ costs: [{ qty: 1, item: "Frames" }] }], _open: true, id: "p1" },
+      { levels: [{ costs: [{ qty: 2, item: "Bricks" }] }], id: "p2", _open: false },
+    ],
+    nested: { beta: 2, alpha: 1 },
+    mode: "project",
+  };
+  const reorderedProjects = {
+    mode: "project",
+    nested: { alpha: 1, beta: 2 },
+    projects: [...first.projects].reverse(),
+  };
+
+  assert.equal(harness.key(first), harness.key(reorderedObjects));
+  assert.notEqual(harness.key(first), harness.key(reorderedProjects));
+});
+
+test("the dispatched solve snapshot preserves complete accepted state", () => {
   const harness = lifecycleHarness();
   const original = {
     mode: "project",
@@ -409,7 +532,8 @@ test("the dispatched solve snapshot removes only documented display state", () =
   };
   assert.deepEqual(harness.snapshot(original), {
     mode: "project",
-    projects: [{ id: "p1", done: 2, levels: [{ costs: [{ item: "Frames", qty: 3 }] }] }],
+    planStart: 1_000,
+    projects: [{ id: "p1", _open: true, done: 2, levels: [{ costs: [{ item: "Frames", qty: 3 }] }] }],
     nested: { keep: true },
   });
   assert.equal(original.planStart, 1_000, "snapshotting must not mutate accepted state");
