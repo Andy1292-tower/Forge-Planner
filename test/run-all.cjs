@@ -8,6 +8,7 @@ const { spawnSync } = require("child_process");
 const tests = [
   "test/check-classifier.cjs",
   "test/craftdata.cjs",
+  "test/credits-contract.cjs",
   "test/forgieproject.cjs",
   "test/gate.cjs",
   "test/gel-loadout-exact.cjs",

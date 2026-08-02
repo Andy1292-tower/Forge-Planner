@@ -54,11 +54,11 @@ function manualResult(){
 // point (issue #85), instead of recreating it by hand. In credits mode the item the solver
 // dedicated the factory to is flagged for sale; items mode has no such concept, so sell starts off.
 function copyPlanToManual(res){
-  if(!res||!res.plan)return;
+  if(!res||!Array.isArray(res.plan)||!res.plan.some(p=>p&&p.job&&p.job.kind!=="idle"&&ALLITEMS.includes(p.job.res)))return;
   mutateState(st=>{
     st.manual=res.plan.map((p,i)=>{
-      const j=p.job||{}, cap=(st.lines[i]&&st.lines[i].max)||1;
-      if(j.kind==="idle"||!j.res)return {job:"Idle",lvl:cap,sell:false};
+      const j=(p&&p.job)||{}, cap=(st.lines[i]&&st.lines[i].max)||1;
+      if(j.kind==="idle"||!ALLITEMS.includes(j.res))return {job:"Idle",lvl:cap,sell:false};
       return {job:j.res,lvl:j.lvl||cap,sell:res.mode==="credits"&&j.res===res.bestItem};
     });
     syncManual(st);

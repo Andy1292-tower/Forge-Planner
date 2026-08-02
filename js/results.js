@@ -303,20 +303,25 @@ function renderSolveResult(res,el,stat){
   _lastItemsCreditsRes=res;
   // nudge toward Sell prices when credits mode is selected but no prices exist yet
   if(typeof setPricePoke==="function")setPricePoke(res.mode==="credits"&&![...RAWS,...PRODUCTS].some(it=>(num(S.sellPrice[it])||0)>0));
-  if(res.empty){el.innerHTML=`<div class="notice info">Select one or more outputs on the left to optimize — or switch to <b>Max credits/hr</b> mode to auto-search the most profitable mix.</div>`;stat.textContent="Plan updated. No outputs selected.";return;}
+  if(res.empty){el.innerHTML=`<div class="notice info">Select one or more outputs on the left to optimize — or switch to <b>Max credits/hr</b> mode to find the best dedicated sell plan.</div>`;stat.textContent="Plan updated. No outputs selected.";return;}
   let html="";
   if(res.mode==="credits"){
-    html+=`<div class="notice info"><b>Credits mode.</b> Ignores the output checkboxes &amp; priorities. For each item with a <b>Sell price</b>, it works out the most your lines can produce per hour if the whole factory is dedicated to it, then picks the single highest-earning item.</div>`;
+    html+=`<div class="notice info"><b>Credits mode.</b> Ignores the output checkboxes &amp; priorities. It compares one dedicated whole-factory plan for each item with a <b>Sell price</b>, then shows the highest-earning plan found.</div>`;
   }
   if(res.issues.length){
     html+=`<div class="notice warn"><b>Missing data:</b><br>${res.issues.join("<br>")}</div>`;
   }
   const anyOut=res.mode==="credits"?res.credits>1e-6:Object.values(res.out).some(v=>v>1e-6);
-  if(!anyOut&&!res.issues.length){
+  if(!anyOut&&!res.issues.length&&(res.mode!=="credits"||res.searchExhaustive===true)){
     html+=`<div class="notice warn">No sustainable plan found with the current lines and data. Try raising a line's max compression, adding a line, entering duplication %, or check your input costs${res.mode==="credits"?" and sell prices":""}.</div>`;
   }
-  if(res.capped){
-    html+=`<div class="notice info" style="font-size:11.5px">Large search space — this is the best plan found within the time budget. It's almost certainly optimal (the heuristic and exact search agree in testing), just not exhaustively proven.</div>`;
+  if(res.mode==="credits"&&res.allCandidatesEvaluated===false){
+    const skipped=(res.ranking||[]).filter(candidate=>!candidate.evaluated).map(candidate=>candidate.item);
+    html+=`<div class="notice warn" style="font-size:11.5px"><b>Comparison incomplete.</b> The time limit was reached before a baseline could be completed for <b>${skipped.join(", ")||"one or more priced items"}</b>. Any winner shown is only the best among evaluated items.</div>`;
+  }else if(res.mode==="credits"&&res.searchExhaustive===false){
+    html+=`<div class="notice info" style="font-size:11.5px"><b>Best found, not proven best.</b> Every priced item received a bounded baseline, but deeper search reached its limit for at least one candidate.</div>`;
+  }else if(res.mode!=="credits"&&res.capped){
+    html+=`<div class="notice info" style="font-size:11.5px">Large search space — this is the best plan found within the time budget, but the search did not finish an exhaustive proof.</div>`;
   }
   if(res.usesMargin){
     html+=`<div class="notice info"><b>May-work plan.</b> This uses your ${fmt(res.tol*100,1)}% margin — one or more inputs runs a small paper shortfall (see balance below). Likely fine if it's inside your game's rounding/duplication slack, but not strictly guaranteed.</div>`;
@@ -336,22 +341,26 @@ function renderSolveResult(res,el,stat){
   // credits ranking — every sellable item compared head to head
   if(res.mode==="credits"&&res.ranking&&res.ranking.length){
     html+=`<div class="subhead">If you dedicate the factory to…</div>
-      <table><thead><tr><th>Item</th><th class="num">Max output /hr</th><th class="num">Sell price</th><th class="num">Credits /hr</th></tr></thead><tbody>`;
+      <table><thead><tr><th>Item</th><th class="num">Output /hr</th><th class="num">Sell price</th><th class="num">Credits /hr</th></tr></thead><tbody>`;
     res.ranking.forEach((c,i)=>{
-      const win=i===0&&c.credits>1e-9;
-      const note=c.feasible?"":'<span style="color:var(--ink3);font-size:10.5px"> — no sustainable plan</span>';
+      const win=i===0&&c.evaluated!==false&&c.credits>1e-9;
+      const note=c.evaluated===false?'<span style="color:var(--ink3);font-size:10.5px"> — not evaluated</span>':
+        (c.feasible?(c.usesMargin?'<span style="color:var(--amber);font-size:10.5px"> — may-work</span>':""):
+          `<span style="color:var(--ink3);font-size:10.5px"> — ${c.capped?"no plan found in bounded search":"no sustainable plan"}</span>`);
+      const outCell=c.evaluated===false?"—":disp(c.out),creditsCell=c.evaluated===false?"—":disp(c.credits);
       html+=`<tr${win?' style="background:rgba(210,129,58,.10)"':''}>
         <td>${win?'★ ':''}${c.item}${note}</td>
-        <td class="num">${disp(c.out)}</td>
+        <td class="num">${outCell}</td>
         <td class="num mono" style="color:var(--ink2)">${c.price>0?disp(c.price):"—"}</td>
-        <td class="num" style="color:${win?'var(--amber)':'var(--ink)'};font-weight:${win?'700':'400'}">${disp(c.credits)}</td></tr>`;
+        <td class="num" style="color:${win?'var(--amber)':'var(--ink)'};font-weight:${win?'700':'400'}">${creditsCell}</td></tr>`;
     });
     html+=`</tbody></table>`;
   }
   // plan table
+  const canCopy=(res.plan||[]).some(row=>row&&row.job&&row.job.kind!=="idle"&&ALLITEMS.includes(row.job.res));
   html+=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:16px 0 8px">
-    <div class="subhead" style="margin:0">Line assignment</div>
-    <button class="btn ghost" id="btnCopyManual" title="Copy this plan into Manual mode so you can fine-tune it by hand">Copy to Manual</button>
+    <div class="subhead" style="margin:0">Line assignment</div>${canCopy?`
+    <button class="btn ghost" id="btnCopyManual" title="Copy this plan into Manual mode so you can fine-tune it by hand">Copy to Manual</button>`:""}
   </div>
     <table><thead><tr><th>Line</th><th>Cap</th><th>Job</th><th>Lvl</th>
       <th class="num">~s/craft</th><th class="num">Output /hr</th><th>Consumes /hr</th></tr></thead><tbody>`;
@@ -425,6 +434,8 @@ function renderSolveResult(res,el,stat){
     html+=`<div class="notice info" style="font-size:11.5px">${resource} income is set, but this plan puts <b>0</b> lines on <b>${crafts}</b>, so it uses none of that mined income.</div>`;
   });
   el.innerHTML=html;
-  stat.textContent="Plan updated. Solved in "+res.ms.toFixed(1)+" ms";
+  stat.textContent=res.mode==="credits"&&res.allCandidatesEvaluated===false
+    ?"Comparison stopped at the time limit; some priced items were not evaluated."
+    :"Plan updated. Solved in "+res.ms.toFixed(1)+" ms";
 }
 function invName(resIndex,idx){for(const k in resIndex)if(resIndex[k]===idx)return k;return "";}

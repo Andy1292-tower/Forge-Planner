@@ -200,6 +200,130 @@ self.onmessage = function () {
   expect(requestCounts["/js/solver.worker.v2.js"] || 0).toBe(0);
 });
 
+test("the generated current Blob Worker preserves Credits warning ownership", async ({ page }) => {
+  await isolateRequestCounts(page);
+  const workerScriptRequests = [];
+  page.on("request", request => {
+    const url = new URL(request.url());
+    if ((url.protocol === "http:" || url.protocol === "https:") &&
+      url.origin === "http://127.0.0.1:4173" &&
+      (request.resourceType() === "worker" || /\/js\/solver\.worker(?:\.v2)?\.js$/.test(url.pathname))) {
+      workerScriptRequests.push(url.pathname);
+    }
+  });
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const response = await page.evaluate(async () => {
+    const state = defaults();
+    state.mode = "credits";
+    state.margin = 20;
+    [...RAWS, ...PRODUCTS].forEach(item => { state.sellPrice[item] = null; });
+    state.sellPrice.Bits = 1;
+    state.sellPrice.Glass = 1;
+    state.solveBudget = 2_000;
+    normalize(state);
+    syncManual(state);
+    const worker = __forgeCreateSolverWorker();
+    const release = () => { if (typeof worker.__forgeRelease === "function") worker.__forgeRelease(); };
+    try {
+      return await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("Credits Worker contract probe timed out")), 10_000);
+        worker.onmessage = event => { clearTimeout(timeout);resolve(event.data); };
+        worker.onerror = event => { clearTimeout(timeout);reject(new Error(event.message || "Credits Worker contract probe failed")); };
+        worker.postMessage({ reqId: 992, generation: 992, mode: "credits", stateRevision: 1,
+          state, budget: state.solveBudget, stab: {} });
+      });
+    } finally {
+      release();
+      worker.terminate();
+    }
+  });
+  const requestCounts = await page.evaluate(async () => {
+    const response = await fetch("/__test/request-counts", { cache: "no-store" });
+    return response.json();
+  });
+
+  expect(response).toMatchObject({ reqId: 992, generation: 992, mode: "credits", stateRevision: 1 });
+  expect(response.error).toBeUndefined();
+  const result = response.res;
+  const bits = result.ranking.find(candidate => candidate.item === "Bits");
+  const glass = result.ranking.find(candidate => candidate.item === "Glass");
+  expect(result.bestItem).toBe("Bits");
+  expect(result.usesMargin).toBe(false);
+  expect(result.capped).toBe(bits.capped);
+  expect(result.allCandidatesEvaluated).toBe(true);
+  expect(typeof result.deadlineReached).toBe("boolean");
+  expect(typeof result.searchExhaustive).toBe("boolean");
+  expect(bits).toMatchObject({ usesMargin: false, evaluated: true });
+  expect(glass).toMatchObject({ usesMargin: true, evaluated: true });
+  expect(result.ranking.every(candidate =>
+    typeof candidate.capped === "boolean" && typeof candidate.ms === "number"
+  )).toBe(true);
+  expect(workerScriptRequests, "the current Credits Blob Worker must not fetch a Worker script").toEqual([]);
+  expect(requestCounts["/js/solver.worker.js"] || 0).toBe(0);
+  expect(requestCounts["/js/solver.worker.v2.js"] || 0).toBe(0);
+});
+
+test("the generated current Blob Worker honors the shared Credits deadline", async ({ page }) => {
+  await isolateRequestCounts(page);
+  const workerScriptRequests = [];
+  page.on("request", request => {
+    const url = new URL(request.url());
+    if ((url.protocol === "http:" || url.protocol === "https:") &&
+      url.origin === "http://127.0.0.1:4173" &&
+      (request.resourceType() === "worker" || /\/js\/solver\.worker(?:\.v2)?\.js$/.test(url.pathname))) {
+      workerScriptRequests.push(url.pathname);
+    }
+  });
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const probe = await page.evaluate(async () => {
+    const state = defaults();
+    state.mode = "credits";
+    state.lines = [512, 512, 256, 128, 64, 64, 32, 512, 128, 64, 256, 32]
+      .map((max, index) => ({ max, spx: 40 + (index * 7 % 13), turbo: 0 }));
+    ALLITEMS.forEach(item => { state.sellPrice[item] = 1; });
+    state.solveBudget = 200;
+    normalize(state);
+    syncManual(state);
+    const worker = __forgeCreateSolverWorker();
+    const release = () => { if (typeof worker.__forgeRelease === "function") worker.__forgeRelease(); };
+    const started = performance.now();
+    try {
+      const response = await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("bounded Credits Worker probe timed out")), 10_000);
+        worker.onmessage = event => { clearTimeout(timeout);resolve(event.data); };
+        worker.onerror = event => { clearTimeout(timeout);reject(new Error(event.message || "bounded Credits Worker probe failed")); };
+        worker.postMessage({ reqId: 993, generation: 993, mode: "credits", stateRevision: 2,
+          state, budget: state.solveBudget, stab: {} });
+      });
+      return { response, elapsed: performance.now() - started, catalog: ALLITEMS.slice() };
+    } finally {
+      release();
+      worker.terminate();
+    }
+  });
+  const requestCounts = await page.evaluate(async () => {
+    const response = await fetch("/__test/request-counts", { cache: "no-store" });
+    return response.json();
+  });
+
+  expect(probe.response).toMatchObject({ reqId: 993, generation: 993, mode: "credits", stateRevision: 2 });
+  expect(probe.response.error).toBeUndefined();
+  expect(probe.elapsed, "a 200ms solve should return with only loose Worker/startup overhead").toBeLessThan(2_500);
+  const result = probe.response.res;
+  expect(result.ranking.map(candidate => candidate.item).sort()).toEqual(probe.catalog.slice().sort());
+  expect(result.deadlineReached).toBe(true);
+  expect(result.searchExhaustive).toBe(false);
+  expect(!result.allCandidatesEvaluated || result.ranking.some(candidate => candidate.capped)).toBe(true);
+  expect(result.ranking.every(candidate =>
+    typeof candidate.evaluated === "boolean" && typeof candidate.capped === "boolean" && typeof candidate.ms === "number"
+  )).toBe(true);
+  expect(workerScriptRequests, "the bounded current Credits Blob Worker must not fetch a Worker script").toEqual([]);
+  expect(requestCounts["/js/solver.worker.js"] || 0).toBe(0);
+  expect(requestCounts["/js/solver.worker.v2.js"] || 0).toBe(0);
+});
+
 test("the planner serves, solves in its Worker, and opens every planning mode", async ({ page }) => {
   const consoleErrors = [];
   const pageErrors = [];

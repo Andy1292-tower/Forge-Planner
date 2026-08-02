@@ -120,6 +120,39 @@ function lineRows(){return S.lines.map((ln,i)=>({__i:i,max:ln.max,spx:ln.spx,tur
 const sortedLines=()=>lineRows().map(ln=>({orig:ln.__i,max:ln.max,sp:lineSpeed(ln),dp:dupeMult()})).sort((a,b)=>a.max-b.max||a.sp-b.sp||a.dp-b.dp);
 const forgieHr=r=>num(S.forgie&&S.forgie[r])||0;
 
+// One solve control owns one absolute deadline. Credits shares the same instance across every
+// candidate, so starting a new candidate can never restart the user's clock. The optional hooks are
+// direct-source test seams: they are never persisted or posted through the Worker protocol.
+function makeSolveControl(timeBudget,options){
+  const opts=options||{},clock=typeof opts.now==="function"?opts.now:()=>performance.now();
+  const observer=typeof opts.onCheckpoint==="function"?opts.onCheckpoint:null;
+  const budget=Math.max(0,Number(timeBudget)||0),workLimit=Number.isFinite(opts.workLimit)?Math.max(0,Math.floor(opts.workLimit)):Infinity;
+  let lastNow=Number(clock());if(!Number.isFinite(lastNow))lastNow=0;
+  const startedAt=lastNow,deadline=startedAt+budget;
+  let work=0,stopped=false,deadlineReached=false,reason=null;
+  const emit=event=>{if(observer)observer(event);};
+  const readNow=()=>{let value=Number(clock());if(!Number.isFinite(value))value=lastNow;if(value<lastNow)value=lastNow;lastNow=value;return value;};
+  const checkpoint=(label,cost)=>{
+    if(stopped)return false;
+    const units=Math.max(1,Math.floor(Number(cost)||1));
+    if(work+units>workLimit){stopped=true;deadlineReached=true;reason="work";emit({type:"stopped",label,reason,work,elapsed:lastNow-startedAt});return false;}
+    work+=units;
+    const now=readNow();
+    if(now>=deadline){stopped=true;deadlineReached=true;reason="deadline";emit({type:"stopped",label,reason,work,elapsed:now-startedAt});return false;}
+    emit({type:"checkpoint",label,work,elapsed:now-startedAt});return true;
+  };
+  const event=(type,data)=>emit(Object.assign({type,work,elapsed:lastNow-startedAt},data||{}));
+  const refreshDeadline=()=>{
+    if(deadlineReached)return true;
+    const now=readNow();
+    if(now>=deadline){stopped=true;deadlineReached=true;reason="deadline";emit({type:"stopped",label:"result-finalize",reason,work,elapsed:now-startedAt});}
+    return deadlineReached;
+  };
+  return {__forgeSolveControl:true,startedAt,deadline,checkpoint,event,readNow,
+    elapsed:()=>Math.max(0,lastNow-startedAt),work:()=>work,
+    isStopped:()=>stopped,deadlineReached:refreshDeadline,reason:()=>reason};
+}
+
 // Core solver: weighted max-min throughput for a set of product targets over their input
 // chain. Priority weights set the desired output RATIO. Each line has a duplication chance
 // (output ×(1+dup), input cost unchanged) and a margin tolerance allows a small paper
@@ -128,7 +161,17 @@ const forgieHr=r=>num(S.forgie&&S.forgie[r])||0;
 // Finally, a tie-break pass minimises total input shortfall among plans tied on the
 // objective, so a deficit the targets can't use (free to close from surplus feeders) gets
 // closed instead of left on the margin as a phantom "may-work" plan.
-function solveCore(targets,w,relProds,relRaws,timeBudget){
+function solveCore(targets,w,relProds,relRaws,timeBudget,options){
+  const opts=options||{},control=opts.control&&opts.control.__forgeSolveControl?opts.control:makeSolveControl(timeBudget,opts);
+  const solveStarted=control.readNow();
+  const localWorkStart=control.work(),localWorkLimit=Number.isFinite(opts.localWorkLimit)?Math.max(0,Math.floor(opts.localWorkLimit)):Infinity;
+  let interrupted=false,localLimitReached=false;
+  const keepGoing=label=>{
+    if(control.work()-localWorkStart>=localWorkLimit){
+      interrupted=true;localLimitReached=true;control.event("local-work-limit",{label});return false;
+    }
+    if(control.checkpoint(label))return true;interrupted=true;return false;
+  };
   // Each mined resource joins only when its craft is in the chain and it has a positive budget.
   // Its produced>=consumed balance then enforces that resource's burn independently.
   const mined=activeMinedResources(relProds);
@@ -176,7 +219,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   let best={score:0,choice:new Array(N).fill(0),produced:new Float64Array(R),consumed:new Float64Array(R)};
   const EPS=1e-9;
 
-  let nodes=0;let capped=false;const tStart=performance.now();let tLastGain=tStart;
+  let nodes=0;let capped=false;const tStart=solveStarted;let tLastGain=tStart;
   // The budget is a ceiling, not a target: stop once the incumbent has gone this long without
   // improving, so a converged solve takes the same wall-time whether the budget is 1s or 15s
   // (the user's complaint). The window is fixed, not budget-scaled — it only needs to exceed the
@@ -206,10 +249,13 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   // — produce an input, OR drop a craft to a cheaper/lower level) that cuts the shortfall most.
   function repair(ch){
     for(let guard=0;guard<6*N+40;guard++){
+      if(!keepGoing("repair-pass"))return null;
       evalChoice(ch);const D=totalDeficit();if(D<=1e-7)break;
       let bI=-1,bJ=-1,bRed=1e-12;
       for(let i=0;i<N;i++){const old=ch[i],js=lineJobs[i];
-        for(let k=0;k<js.length;k++){if(k===old)continue;ch[i]=k;evalChoice(ch);const red=D-totalDeficit();if(red>bRed){bRed=red;bI=i;bJ=k;}}
+        for(let k=0;k<js.length;k++){if(k===old)continue;
+          if(!keepGoing("repair-job")){ch[i]=old;evalChoice(ch);return null;}
+          ch[i]=k;evalChoice(ch);const red=D-totalDeficit();if(red>bRed){bRed=red;bI=i;bJ=k;}}
         ch[i]=old;evalChoice(ch);}
       if(bI<0)break;ch[bI]=bJ;
     }
@@ -219,9 +265,12 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   function climb(ch){
     let cur=scoreNow();
     for(let pass=0;pass<N+3;pass++){
+      if(!keepGoing("climb-pass"))return null;
       let improved=false;
       for(let i=0;i<N;i++){const old=ch[i];let bk=old,bs=cur;
-        const js=lineJobs[i];for(let k=0;k<js.length;k++){if(k===old)continue;ch[i]=k;evalChoice(ch);if(feasibleNow()){const s=scoreNow();if(s>bs+EPS){bs=s;bk=k;}}}
+        const js=lineJobs[i];for(let k=0;k<js.length;k++){if(k===old)continue;
+          if(!keepGoing("climb-job")){ch[i]=old;evalChoice(ch);return null;}
+          ch[i]=k;evalChoice(ch);if(feasibleNow()){const s=scoreNow();if(s>bs+EPS){bs=s;bk=k;}}}
         ch[i]=bk;if(bk!==old){cur=bs;improved=true;}else evalChoice(ch);
       }
       if(!improved)break;
@@ -229,7 +278,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
     return cur;
   }
   // full local optimisation from a starting choice; returns its score or null if infeasible
-  function localOpt(ch){if(!repair(ch))return null;const sc=climb(ch);evalChoice(ch);return feasibleNow()?sc:null;}
+  function localOpt(ch){const repaired=repair(ch);if(repaired!==true)return null;const sc=climb(ch);if(sc==null)return null;evalChoice(ch);return feasibleNow()?sc:null;}
   // Tie-break: among plans that match the optimal objective, prefer the one with the least
   // total input shortfall. The objective only counts net TARGET output, so a deficit the
   // targets can't consume (e.g. a feeder running on the 1.5% margin while its raw sits in
@@ -240,9 +289,12 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   function minDeficitAtScore(ch,targetScore){
     evalChoice(ch);let curD=totalDeficit();
     for(let pass=0;pass<N+3&&curD>1e-7;pass++){
+      if(!keepGoing("deficit-pass"))return null;
       let improved=false;
       for(let i=0;i<N;i++){const old=ch[i],js=lineJobs[i];let bk=old,bD=curD;
-        for(let k=0;k<js.length;k++){if(k===old)continue;ch[i]=k;evalChoice(ch);
+        for(let k=0;k<js.length;k++){if(k===old)continue;
+          if(!keepGoing("deficit-job")){ch[i]=old;evalChoice(ch);return null;}
+          ch[i]=k;evalChoice(ch);
           if(feasibleNow()&&scoreNow()>=targetScore-EPS){const d=totalDeficit();if(d<bD-1e-9){bD=d;bk=k;}}}
         ch[i]=bk;evalChoice(ch);if(bk!==old){curD=bD;improved=true;}}
       if(!improved)break;
@@ -250,15 +302,74 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
     return ch;
   }
   let _rng=0x2545f491>>>0;const rnd=()=>{_rng^=_rng<<13;_rng^=_rng>>>17;_rng^=_rng<<5;_rng>>>=0;return _rng/4294967296;};
+  function finishCoreResult(){
+    // Distinguish a failed in-work checkpoint from the deadline first being observed while the
+    // completed result is serialized. The latter remains valid, but is capped and stops later work.
+    const workInterrupted=control.isStopped();
+    const deadlineReached=control.deadlineReached();if(deadlineReached)capped=true;
+    let usesMargin=false;for(let r=0;r<R;r++)if(best.produced[r]<best.consumed[r]-1e-6)usesMargin=true;
+    const forgie={};resources.forEach((r,i)=>forgie[r]=baseArr[i]*3600);
+    return {best,sorted,lineJobs,resources,resIndex,R,N,tIdx,tol,capped,usesMargin,issues,forgie,
+      feasible:best.score>1e-9,interrupted:workInterrupted,localLimitReached,ms:Math.max(0,control.elapsed()-(solveStarted-control.startedAt))};
+  }
+  function targetChoice(res){const ch=new Array(N);for(let i=0;i<N;i++){const bj=bestJobFor(i,res);ch[i]=bj>=0?bj:idleIdx(i);}return ch;}
+  function choiceFromPlan(plan){
+    if(!Array.isArray(plan))return null;
+    const byLine={};plan.forEach(row=>{if(row&&row.line!=null)byLine[row.line-1]=row.job;});
+    const ch=new Array(N);
+    for(let i=0;i<N;i++){
+      const job=byLine[sorted[i].orig];let pick=idleIdx(i);
+      if(job&&job.kind!=="idle"){
+        const found=lineJobs[i].findIndex(candidate=>candidate.kind===job.kind&&candidate.res===job.res&&candidate.lvl===job.lvl);
+        if(found>=0)pick=found;
+      }
+      ch[i]=pick;
+    }
+    return ch;
+  }
+
+  // The Credits comparison first gives every priced product the same finite constructive baseline:
+  // a zero-output idle lower bound plus one target-dedicated seed (and one bounded Gel loadout seed
+  // for Gel), under a deterministic per-product work cap. It deliberately skips LP, randomized
+  // seeds, ILS and DFS. Reaching the local cap keeps the valid idle/best-completed lower bound;
+  // only the shared absolute deadline discards the partial candidate and leaves later rows unevaluated.
+  if(opts.baselineOnly){
+    curTol=tol;capped=true;
+    if(!keepGoing("baseline-product-start"))return finishCoreResult();
+    const idleChoice=new Array(N);for(let i=0;i<N;i++)idleChoice[i]=idleIdx(i);
+    evalChoice(idleChoice);const idleScore=feasibleNow()?scoreNow():0;
+    best={score:idleScore,choice:idleChoice.slice(),produced:produced.slice(),consumed:consumed.slice()};
+    let baselineInc={sc:idleScore,ch:idleChoice.slice()};
+    const baselineSeed=ch=>{const sc=localOpt(ch);if(sc!=null&&!interrupted&&(!baselineInc||sc>baselineInc.sc))baselineInc={sc,ch:ch.slice()};};
+    if(targets.length===1&&targets[0]===GEL&&resIndex[VESP]!=null&&minedBudgetHr(VESP)>0){
+      const byOrig={};sorted.forEach((line,index)=>byOrig[line.orig]=index);
+      const loadout=gelSeedLoadout(lineRows(),minedBudgetHr(VESP),{checkpoint:keepGoing});
+      if(loadout.interrupted)interrupted=true;
+      else{const gelChoice=new Array(N);for(let i=0;i<N;i++)gelChoice[i]=idleIdx(i);
+        loadout.perLine.forEach(row=>{const i=byOrig[row.__i];if(i==null)return;
+          const job=lineJobs[i].findIndex(candidate=>candidate.kind==="craft"&&candidate.res===GEL&&candidate.lvl===row.L);if(job>=0)gelChoice[i]=job;});
+        baselineSeed(gelChoice);}
+    }
+    if(!interrupted)baselineSeed(targetChoice(tIdx[0]));
+    if(baselineInc&&!interrupted){
+      const ch=baselineInc.ch;evalChoice(ch);best={score:scoreNow(),choice:ch.slice(),produced:produced.slice(),consumed:consumed.slice()};
+      if(best.score>EPS&&N>0){const balanced=minDeficitAtScore(best.choice.slice(),best.score);
+        if(balanced&&!interrupted){evalChoice(balanced);best={score:scoreNow(),choice:balanced.slice(),produced:produced.slice(),consumed:consumed.slice()};}}
+    }
+    if(!interrupted)keepGoing("baseline-product-complete");
+    return finishCoreResult();
+  }
 
   function dfs(i,prevIdx){
-    if(((++nodes)&8191)===0){const _n=performance.now();if(_n-tStart>timeBudget||_n-tLastGain>convergeWindow)capped=true;}
+    nodes++;
+    if(!keepGoing("dfs-node")){capped=true;return;}
+    const _n=control.readNow();if(_n-tLastGain>convergeWindow)capped=true;
     if(capped)return;
     if(i===N){
       for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac(r)-1e-7)return;
       let sc=Infinity;
       for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]];sc=Math.min(sc,net/w[k]);}
-      if(sc>best.score+EPS){best={score:sc,choice:choice.slice(),produced:produced.slice(),consumed:consumed.slice()};tLastGain=performance.now();}
+      if(sc>best.score+EPS){best={score:sc,choice:choice.slice(),produced:produced.slice(),consumed:consumed.slice()};tLastGain=control.readNow();}
       return;
     }
     // feasibility prune: any resource whose current shortfall can't be covered by remaining lines kills this branch
@@ -287,13 +398,16 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   // miss them at scale, which the old line-reservation sweep used to paper over by decomposing.
   function lpRelax(){
     const offs=[];let nv=0;
-    for(let i=0;i<N;i++){offs.push(nv);nv+=lineJobs[i].length;}
+    for(let i=0;i<N;i++){if(!keepGoing("lp-offset"))return {interrupted:true};offs.push(nv);nv+=lineJobs[i].length;}
     const zc=nv,n=nv+1,A=[],b=[];
-    for(let i=0;i<N;i++){const row=new Float64Array(n);for(let j=0;j<lineJobs[i].length;j++)row[offs[i]+j]=1;A.push(row);b.push(1);}
+    for(let i=0;i<N;i++){if(!keepGoing("lp-line-row"))return {interrupted:true};const row=new Float64Array(n);for(let j=0;j<lineJobs[i].length;j++)row[offs[i]+j]=1;A.push(row);b.push(1);}
     const tw={};targets.forEach((t,k)=>tw[tIdx[k]]=w[k]);
     for(let r=0;r<R;r++){
+      if(!keepGoing("lp-resource-row"))return {interrupted:true};
       const row=new Float64Array(n);
-      for(let i=0;i<N;i++)for(let j=0;j<lineJobs[i].length;j++){const job=lineJobs[i][j],sp=spEff[i][j],dp=sorted[i].dp;let net=0;
+      for(let i=0;i<N;i++)for(let j=0;j<lineJobs[i].length;j++){
+        if(!keepGoing("lp-job-coefficient"))return {interrupted:true};
+        const job=lineJobs[i][j],sp=spEff[i][j],dp=sorted[i].dp;let net=0;
         for(const[rr,a]of job.prod)if(rr===r)net+=a*sp*dp;
         for(const[rr,a]of job.cons)if(rr===r)net-=a*sp;
         if(net)row[offs[i]+j]=-net;}
@@ -301,18 +415,19 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
       A.push(row);b.push(baseArr[r]);
     }
     const c=new Float64Array(n);c[zc]=1;
-    const sol=lpMaximize(c,A,b);
+    const sol=lpMaximize(c,A,b,control);
     if(!sol.x)return null;
     const choice=new Array(N),frac=[];
     for(let i=0;i<N;i++){let bj=0,bf=-1;const fr=new Array(lineJobs[i].length);
       for(let j=0;j<lineJobs[i].length;j++){const f=sol.x[offs[i]+j]||0;fr[j]=f>0?f:0;if(f>bf){bf=f;bj=j;}}
       choice[i]=bj;frac.push(fr);}
-    return {z:sol.x[zc]||0,choice,frac};
+    return {z:sol.x[zc]||0,choice,frac,complete:sol.complete!==false,interrupted:!!sol.interrupted};
   }
   // multi-start local search: diversified roundings of the LP relaxation + one seed per target,
   // then iterated local search. Pure argmax rounding flattens lines the LP split between Gel and a
   // target and loses a lot, so we also draw several randomized roundings weighted by the LP fractions.
   const lp=N>0?lpRelax():null;
+  if(interrupted){capped=true;return finishCoreResult();}
   // Two-pass margin search for monotonicity (issue #60). A plan feasible with NO margin is feasible
   // at ANY margin with the same objective, so we solve strict (tol=0) first, then seed the relaxed
   // pass with that strict optimum — the margin result can only match or beat the no-margin result,
@@ -320,19 +435,21 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   // share the wall-clock budget (tStart is global); each gets a fresh convergence window and
   // incumbent so an easy factory still has time left to exploit the margin.
   const stages=tol>0?[0,tol]:[tol];
-  let carry=null;
+  let carry=choiceFromPlan(opts.initialPlan),finalExhaustive=false;
   for(let si=0;si<stages.length;si++){
-  curTol=stages[si];capped=false;tLastGain=performance.now();
+  if(!keepGoing("margin-stage"))break;
+  curTol=stages[si];capped=false;tLastGain=control.readNow();
   let inc=null;
-  const trySeed=ch=>{const c=ch.slice();const sc=localOpt(c);if(sc!=null&&(!inc||sc>inc.sc)){inc={sc,ch:c.slice()};tLastGain=performance.now();}};
+  const trySeed=ch=>{if(!ch||interrupted||!keepGoing("seed-start"))return false;const c=ch.slice();const sc=localOpt(c);
+    if(sc!=null&&!interrupted&&(!inc||sc>inc.sc)){inc={sc,ch:c.slice()};tLastGain=control.readNow();}return !interrupted;};
   if(carry)trySeed(carry);   // strict optimum seeds the relaxed pass -> never drops below no-margin
   // The seed set is fixed (budget-independent) on purpose: the ilsT/DFS caps are measured from the
   // solve start, so seeds just consume part of the budget rather than extending it — and a fixed set
   // keeps the search trajectory monotonic in budget (more time never yields a worse plan).
-  if(lp&&lp.z>EPS){
+  if(!interrupted&&lp&&lp.z>EPS){
     trySeed(lp.choice);
-    for(let t=0;t<16;t++){const ch=new Array(N);
-      for(let i=0;i<N;i++){const fr=lp.frac[i];let s=0;for(let j=0;j<fr.length;j++)s+=fr[j];
+    for(let t=0;t<16&&!interrupted;t++){if(!keepGoing("lp-random-seed"))break;const ch=new Array(N);
+      for(let i=0;i<N&&!interrupted;i++){if(!keepGoing("lp-random-line"))break;const fr=lp.frac[i];let s=0;for(let j=0;j<fr.length;j++)s+=fr[j];
         let x=rnd()*(s>1e-12?s:1),pick=lp.choice[i];
         for(let j=0;j<fr.length;j++){x-=fr[j];if(x<=0){pick=j;break;}}
         ch[i]=pick;}
@@ -342,11 +459,13 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   // heuristic, and let localOpt fill the rest. This helper is seed-only: unlike the exact modal
   // capacity calculation, it makes no maximum claim and stays cheap across prefixes/candidates.
   const gelBudgetHr=minedBudgetHr(VESP);
-  if(resIndex[VESP]!=null&&gelBudgetHr>0){
+  if(!interrupted&&resIndex[VESP]!=null&&gelBudgetHr>0){
     const o2s={};sorted.forEach((s,i)=>o2s[s.orig]=i);
     const ranked=lineRows().sort((a,b)=>gelOutHr(b,b.max)-gelOutHr(a,a.max));
     for(let k=1;k<=ranked.length;k++){
-      const lo=gelSeedLoadout(ranked.slice(0,k),gelBudgetHr);
+      if(!keepGoing("gel-prefix"))break;
+      const lo=gelSeedLoadout(ranked.slice(0,k),gelBudgetHr,control);
+      if(lo.interrupted){interrupted=true;break;}
       if(!lo.perLine.length)continue;
       const ch=new Array(N);for(let i=0;i<N;i++)ch[i]=idleIdx(i);
       lo.perLine.forEach(pl=>{const i=o2s[pl.__i];if(i==null)return;
@@ -360,7 +479,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
   // line->role assignments (rest = target at an efficient level) and localOpt each. Bounded by a
   // fixed count, so it stays deterministic (monotonic in budget) and within the seed budget; full
   // coverage for up to ~8 lines / 3 feeders, a deterministic prefix beyond that.
-  if(lp&&targets.length===1){
+  if(!interrupted&&lp&&targets.length===1){
     const tgt=tIdx[0],tgtRes=resources[tgt];
     const arg=[];for(let i=0;i<N;i++){let bj=0,bf=-1;const fr=lp.frac[i];for(let j=0;j<fr.length;j++)if(fr[j]>bf){bf=fr[j];bj=j;}arg.push(lineJobs[i][bj]);}
     const feeders=[...new Set(arg.filter(j=>j&&j.kind!=="idle"&&j.res!==tgtRes).map(j=>j.res))];
@@ -369,7 +488,8 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
     if(feeders.length&&feeders.length<=4){
       let tried=0;const cap=350;
       const rec=(fi,used)=>{
-        if(tried>=cap)return;
+        if(tried>=cap||interrupted)return;
+        if(!keepGoing("role-enumeration"))return;
         if(fi===feeders.length){const ch=new Array(N);for(let i=0;i<N;i++)ch[i]=tgtSeed(i);
           for(let k=0;k<feeders.length;k++){const bj=roleJob(used[k],feeders[k]);if(bj>=0)ch[used[k]]=bj;}
           trySeed(ch);tried++;return;}
@@ -378,7 +498,12 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
       rec(0,[]);
     }
   }
-  targets.map(t=>resIndex[t]).forEach(res=>{const ch=new Array(N);for(let i=0;i<N;i++){const bj=bestJobFor(i,res);ch[i]=bj>=0?bj:idleIdx(i);}const sc=localOpt(ch);if(sc!=null&&(!inc||sc>inc.sc)){inc={sc,ch:ch.slice()};tLastGain=performance.now();}});
+  const targetResources=targets.map(t=>resIndex[t]);
+  for(let ti=0;ti<targetResources.length&&!interrupted;ti++){
+    if(!keepGoing("target-seed"))break;
+    const ch=targetChoice(targetResources[ti]),sc=localOpt(ch);
+    if(sc!=null&&!interrupted&&(!inc||sc>inc.sc)){inc={sc,ch:ch.slice()};tLastGain=control.readNow();}
+  }
   if(inc&&N>0){
     // ILS gets the bulk of the budget so accuracy scales with the user's max-time setting: at high
     // line counts the exact DFS caps out without beating the heuristic, so perturbing the incumbent
@@ -387,28 +512,31 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
     // ILS uses an iteration-based stagnation cutoff (not wall-clock): stopping at a fixed iteration
     // is budget-independent, which keeps the result monotonic in budget. The single-target case
     // (each credits item) converges in a handful of iterations, so it gets a much smaller limit.
-    const ilsT=timeBudget*0.8,stagLimit=targets.length>1?8000:1200;let stag=0;
-    for(let it=0;it<2000000;it++){
-      if(performance.now()-tStart>ilsT||stag>stagLimit)break;
+    const stagLimit=targets.length>1?8000:1200;let stag=0;
+    for(let it=0;it<2000000&&!interrupted;it++){
+      if(stag>stagLimit||!keepGoing("ils-iteration"))break;
       const ch=inc.ch.slice();const k=1+((rnd()*2)|0);
-      for(let m=0;m<=k;m++){const li=(rnd()*N)|0,js=lineJobs[li];ch[li]=(rnd()*js.length)|0;}
-      const sc=localOpt(ch);if(sc!=null&&sc>inc.sc+EPS){inc={sc,ch:ch.slice()};stag=0;tLastGain=performance.now();}else stag++;
+      for(let m=0;m<=k;m++){if(!keepGoing("ils-perturb"))break;const li=(rnd()*N)|0,js=lineJobs[li];ch[li]=(rnd()*js.length)|0;}
+      if(interrupted)break;
+      const sc=localOpt(ch);if(sc!=null&&!interrupted&&sc>inc.sc+EPS){inc={sc,ch:ch.slice()};stag=0;tLastGain=control.readNow();}else if(!interrupted)stag++;
     }
     evalChoice(inc.ch);best={score:scoreNow(),choice:inc.ch.slice(),produced:produced.slice(),consumed:consumed.slice()};
   }
+  if(interrupted){capped=true;break;}
   produced.set(baseArr);consumed.fill(0);
   // LP z bounds the integer optimum; if the incumbent already reaches it, the search is done.
-  if(!(lp&&best.score>=lp.z-1e-6*Math.max(1,lp.z)))dfs(0,0);
+  let stageExhaustive=!!(lp&&lp.complete&&curTol===0&&best.score>=lp.z-1e-6*Math.max(1,lp.z));
+  if(!stageExhaustive){dfs(0,0);stageExhaustive=!capped&&!interrupted;}
   // balance any free deficit out of the now-optimal plan (keeps the objective, trims the margin use)
-  if(best.score>EPS&&N>0){
+  if(!interrupted&&best.score>EPS&&N>0){
     const ch=minDeficitAtScore(best.choice.slice(),best.score);
-    evalChoice(ch);best={score:scoreNow(),choice:ch.slice(),produced:produced.slice(),consumed:consumed.slice()};
+    if(ch&&!interrupted){evalChoice(ch);best={score:scoreNow(),choice:ch.slice(),produced:produced.slice(),consumed:consumed.slice()};}
   }
+  if(si===stages.length-1)finalExhaustive=stageExhaustive&&!interrupted;
   carry=best.choice.slice();   // hand this pass's optimum to the next (relaxed) pass as a floor
   }
-  let usesMargin=false;for(let r=0;r<R;r++)if(best.produced[r]<best.consumed[r]-1e-6)usesMargin=true;
-  const forgie={};resources.forEach((r,i)=>forgie[r]=baseArr[i]*3600);
-  return {best,sorted,lineJobs,resources,resIndex,R,N,tIdx,tol,capped,usesMargin,issues,forgie,feasible:best.score>1e-9,ms:performance.now()-tStart};
+  capped=!finalExhaustive;
+  return finishCoreResult();
 }
 
 function minedUsageFromItemPlan(plan){
@@ -452,23 +580,27 @@ function idlePlan(){
   sortedLines().forEach(s=>{plan[s.orig]={line:s.orig+1,max:s.max,spx:s.sp,dup:(s.dp-1)*100,sp:s.sp,dp:s.dp,job:{kind:"idle",res:null,lvl:null,prod:[],cons:[]}};});
   return plan;
 }
+function creditsRefinementIsNondecreasing(prior,refined){return !!prior&&!!refined&&refined.credits>=prior.credits;}
 // Dedicate every line to producing one raw material (raws have no inputs).
-function solveRaw(Rw){
+function solveRaw(Rw,control){
   let total=0;const plan=[];const resIndex={[Rw]:0};
-  sortedLines().forEach(s=>{
+  const lines=sortedLines();
+  for(let si=0;si<lines.length;si++){const s=lines[si];
+    if(control&&!control.checkpoint("raw-line"))return {item:Rw,kind:"raw",out:0,plan:null,balance:null,resIndex,capped:false,feasible:false,interrupted:true};
     const allowed=LEVELS.filter(L=>L<=s.max);let bst=null;
     // pick the level that maximises floored output (effective speed capped at the cycle time)
-    allowed.forEach(L=>{const t=craftTime(Rw,L);if(t>0){const out=(L/t)*(s.sp>t?t:s.sp);if(!bst||out>bst.out)bst={rate:L/t,L,t,out};}});
+    for(let li=0;li<allowed.length;li++){if(control&&!control.checkpoint("raw-level"))return {item:Rw,kind:"raw",out:0,plan:null,balance:null,resIndex,capped:false,feasible:false,interrupted:true};
+      const L=allowed[li],t=craftTime(Rw,L);if(t>0){const out=(L/t)*(s.sp>t?t:s.sp);if(!bst||out>bst.out)bst={rate:L/t,L,t,out};}}
     const job=bst?{kind:"produce",res:Rw,lvl:bst.L,ct:bst.t,prod:[[0,bst.rate]],cons:[]}:{kind:"idle",res:null,lvl:null,prod:[],cons:[]};
     if(bst)total+=bst.out*s.dp;
     plan[s.orig]={line:s.orig+1,max:s.max,spx:s.sp,dup:(s.dp-1)*100,sp:s.sp,dp:s.dp,job};
-  });
+  }
   const fHr=forgieHr(Rw);   // Lil' Forgie (+ any reserved) free supply of this raw
   const lineOut=total*3600, out=lineOut+fHr;
-  return {item:Rw,kind:"raw",out,plan,balance:[{res:Rw,prod:lineOut,forgie:fHr,cons:0}],resIndex,capped:false,feasible:out>1e-9};
+  return {item:Rw,kind:"raw",out,plan,balance:[{res:Rw,prod:lineOut,forgie:fHr,cons:0}],resIndex,capped:false,feasible:out>1e-9,interrupted:false};
 }
 
-function optimizeInner(timeBudget){
+function optimizeInner(timeBudget,testOptions){
   // Budgets are an anytime CAP, not a fixed wait: solveCore returns the moment its branch-and-
   // bound completes, so an easy plan finishes in tens of ms and never hits this. The cap only
   // bounds the worst case for a genuinely hard factory — and it must leave a slow phone enough
@@ -486,42 +618,95 @@ function optimizeInner(timeBudget){
     if(targets.length===0)return {empty:true,mode};
     const w=targets.map(it=>S.targets[it].w);
     const rc=relevantChain(targets);
-    const t0=performance.now();
-    const sr=solveCore(targets,w,rc.prods,rc.raws,itemsBudget);
+    const itemControl=makeSolveControl(itemsBudget,testOptions),t0=itemControl.readNow();
+    const sr=solveCore(targets,w,rc.prods,rc.raws,itemsBudget,{control:itemControl});
     const {plan,balance,minedUsage,gelReserved}=planFrom(sr);
     const out={};targets.forEach((t,k)=>{out[t]=sr.feasible?(sr.best.produced[sr.tIdx[k]]-sr.best.consumed[sr.tIdx[k]])*3600:0;});
     const objective=sr.feasible?Math.min(...targets.map((t,k)=>(out[t]||0)/w[k])):0;
-    return {empty:false,mode,issues:sr.issues,plan,balance,minedUsage,gelReserved,out,resIndex:sr.resIndex,targets,objective,tol:sr.tol,usesMargin:sr.usesMargin,feasible:sr.feasible,capped:sr.capped,ms:performance.now()-t0};
+    return {empty:false,mode,issues:sr.issues,plan,balance,minedUsage,gelReserved,out,resIndex:sr.resIndex,targets,objective,tol:sr.tol,usesMargin:sr.usesMargin,feasible:sr.feasible,capped:sr.capped,ms:Math.max(0,itemControl.readNow()-t0)};
   }
-  // credits: the optimum is always mono-product — dedicate the whole factory to ONE item.
-  // So just compute each priced item's max output/hr × its price and take the winner.
-  const t0=performance.now();
-  const pricedP=PRODUCTS.filter(p=>(num(S.sellPrice&&S.sellPrice[p])||0)>0);
-  const pricedR=RAWS.filter(r=>(num(S.sellPrice&&S.sellPrice[r])||0)>0);
-  const issues=[];let capped=false,usesMargin=false;
-  if(pricedP.length+pricedR.length===0)issues.push("No sell prices entered. Open the “Sell prices” button and add at least one.");
-  const evalP=pricedP,evalR=pricedR;
-  const budgetEach=Math.max(25,Math.floor(credBudget/Math.max(1,evalP.length)));
-  const cand=[];
-  evalP.forEach(P=>{
-    const price=num(S.sellPrice[P])||0;
-    const ins=RECIPE[P].inputs;
-    const hasCost=LEVELS.some(L=>ins.every(k=>S.prodCost[P][k][L]!=null&&!isNaN(S.prodCost[P][k][L])));
-    if(!hasCost){issues.push("No material cost entered for "+P+" — can't price it.");cand.push({item:P,kind:"product",out:0,price,credits:0,plan:null,balance:null,minedUsage:[],resIndex:{},feasible:false});return;}
-    const rc=relevantChain([P]);
-    const sr=solveCore([P],[1],rc.prods,rc.raws,budgetEach);
-    if(sr.capped)capped=true;if(sr.usesMargin)usesMargin=true;
-    const {plan,balance,minedUsage,gelReserved}=planFrom(sr);
-    const out=sr.feasible?(sr.best.produced[sr.resIndex[P]]-sr.best.consumed[sr.resIndex[P]])*3600:0;
-    cand.push({item:P,kind:"product",out,price,credits:out*price,plan,balance,minedUsage,gelReserved,resIndex:sr.resIndex,feasible:sr.feasible});
-  });
-  evalR.forEach(Rw=>{const s=solveRaw(Rw);const price=num(S.sellPrice[Rw])||0;cand.push({item:Rw,kind:"raw",out:s.out,price,credits:s.out*price,plan:s.plan,balance:s.balance,minedUsage:[],resIndex:s.resIndex,feasible:s.feasible});});
-  cand.sort((a,b)=>b.credits-a.credits);
-  const top=cand[0];
+  // Credits is intentionally a dedicated-item comparison: each priced item gets a whole-factory
+  // plan, then those plans are ranked. It is not a theorem that a mixed-sales factory is inferior.
+  // One shared control covers the complete comparison. Every item gets a finite deterministic
+  // baseline in catalog order before any product receives deeper refinement.
+  const control=makeSolveControl(credBudget,testOptions),t0=control.readNow();
+  const priced=ALLITEMS.filter(item=>(num(S.sellPrice&&S.sellPrice[item])||0)>0);
+  const baselineWorkLimit=Math.max(4000,(S.lines||[]).length*2000);
+  const issues=[],cand=[];
+  const addIssues=found=>(found||[]).forEach(issue=>{if(!issues.includes(issue))issues.push(issue);});
+  if(!priced.length)issues.push("No sell prices entered. Open the “Sell prices” button and add at least one.");
+  const unevaluated=item=>({item,kind:RAWS.includes(item)?"raw":"product",out:0,price:num(S.sellPrice[item])||0,credits:0,
+    plan:null,balance:null,minedUsage:[],gelReserved:null,resIndex:{},feasible:false,usesMargin:false,capped:false,evaluated:false,ms:0});
+  const fromCore=(item,sr,ms,cappedOverride)=>{
+    const built=planFrom(sr),out=sr.feasible?(sr.best.produced[sr.resIndex[item]]-sr.best.consumed[sr.resIndex[item]])*3600:0;
+    const price=num(S.sellPrice[item])||0;
+    return {item,kind:"product",out,price,credits:out*price,plan:built.plan,balance:built.balance,minedUsage:built.minedUsage,
+      gelReserved:built.gelReserved,resIndex:sr.resIndex,feasible:sr.feasible,usesMargin:!!sr.usesMargin,
+      capped:cappedOverride==null?!!sr.capped:!!cappedOverride,evaluated:true,ms};
+  };
+  let baselineBroken=false;
+  for(let pi=0;pi<priced.length;pi++){
+    const item=priced[pi],price=num(S.sellPrice[item])||0;
+    if(baselineBroken||control.isStopped()||!control.checkpoint("credits-baseline-candidate")){
+      baselineBroken=true;cand.push(unevaluated(item));continue;
+    }
+    control.event("baseline-start",{item});const start=control.readNow();let candidate=null;
+    if(RAWS.includes(item)){
+      const raw=solveRaw(item,control);
+      if(!raw.interrupted&&control.checkpoint("credits-baseline-complete"))candidate={item,kind:"raw",out:raw.out,price,credits:raw.out*price,
+        plan:raw.plan,balance:raw.balance,minedUsage:[],gelReserved:null,resIndex:raw.resIndex,feasible:raw.feasible,
+        usesMargin:false,capped:false,evaluated:true,ms:Math.max(0,control.readNow()-start)};
+    }else{
+      const ins=RECIPE[item].inputs;
+      const hasCost=LEVELS.some(L=>ins.every(k=>S.prodCost[item][k][L]!=null&&!isNaN(S.prodCost[item][k][L])));
+      if(!hasCost){
+        issues.push("No material cost entered for "+item+" — only passive output can be priced.");
+        if(control.checkpoint("credits-baseline-complete")){const out=forgieHr(item),resIndex={[item]:0};candidate={item,kind:"product",out,price,credits:out*price,
+          plan:idlePlan(),balance:[{res:item,prod:0,forgie:out,cons:0}],minedUsage:[],gelReserved:null,resIndex,feasible:out>1e-9,
+          usesMargin:false,capped:false,evaluated:true,ms:Math.max(0,control.readNow()-start)};}
+      }else{
+        const rc=relevantChain([item]);
+        const sr=solveCore([item],[1],rc.prods,rc.raws,credBudget,{control,baselineOnly:true,localWorkLimit:baselineWorkLimit});
+        addIssues(sr.issues);
+        if(!sr.interrupted)candidate=fromCore(item,sr,Math.max(0,control.readNow()-start),true);
+      }
+    }
+    if(!candidate){baselineBroken=true;cand.push(unevaluated(item));continue;}
+    cand.push(candidate);control.event("baseline-complete",{item});
+  }
+
+  // Refine only after the complete baseline pass. A refinement interrupted by the root deadline is
+  // discarded; the already-complete baseline remains selectable and later candidates stay intact.
+  if(!baselineBroken&&!control.isStopped()){
+    for(let pi=0;pi<cand.length;pi++){
+      const prior=cand[pi];if(prior.kind!=="product"||!prior.evaluated||!prior.capped)continue;
+      if(!control.checkpoint("credits-refinement-candidate"))break;
+      control.event("refinement-start",{item:prior.item});const start=control.readNow();
+      const rc=relevantChain([prior.item]);
+      const sr=solveCore([prior.item],[1],rc.prods,rc.raws,credBudget,{control,initialPlan:prior.plan});
+      addIssues(sr.issues);
+      const spent=Math.max(0,control.readNow()-start);
+      if(sr.interrupted){prior.ms+=spent;break;}
+      const refined=fromCore(prior.item,sr,prior.ms+spent,null);
+      if(creditsRefinementIsNondecreasing(prior,refined))Object.assign(prior,refined);
+      else prior.ms+=spent;
+      control.event("refinement-complete",{item:prior.item});
+      if(control.isStopped())break;
+    }
+  }
+  const order=new Map(ALLITEMS.map((item,index)=>[item,index]));
+  cand.sort((a,b)=>{const evaluated=Number(b.evaluated)-Number(a.evaluated);if(evaluated)return evaluated;
+    if(a.credits!==b.credits)return a.credits>b.credits?-1:1;
+    return order.get(a.item)-order.get(b.item);});
+  const allCandidatesEvaluated=cand.every(candidate=>candidate.evaluated);
+  const deadlineReached=control.deadlineReached();
+  const searchExhaustive=allCandidatesEvaluated&&cand.every(candidate=>!candidate.capped);
+  const top=cand.find(candidate=>candidate.evaluated);
   const feasible=!!top&&top.credits>1e-9;
   return {empty:false,mode,issues,ranking:cand,bestItem:feasible?top.item:null,credits:feasible?top.credits:0,objective:feasible?top.credits:0,
     plan:feasible?top.plan:idlePlan(),balance:feasible?top.balance:[],minedUsage:feasible?top.minedUsage:[],gelReserved:feasible?top.gelReserved:null,resIndex:feasible?top.resIndex:{},
-    tol:Math.max(0,Math.min(50,num(S.margin)||0))/100,usesMargin,feasible,capped,ms:performance.now()-t0};
+    tol:Math.max(0,Math.min(50,num(S.margin)||0))/100,usesMargin:!!(feasible&&top.usesMargin),feasible,capped:!!(feasible&&top.capped),
+    allCandidatesEvaluated,deadlineReached,searchExhaustive,ms:Math.max(0,control.elapsed()-(t0-control.startedAt))};
 }
 
 /* ---------- Gel loadout ----------
@@ -533,23 +718,25 @@ function gelVespHr(row,L){const sp=lineSpeed(row),ct=craftTime(GEL,L);return ct>
 // Cheap reservation seed for solveCore. It deliberately makes no optimality claim: each candidate
 // solve invokes this across ranked-line prefixes (and Credits repeats those solves), so bounded work
 // belongs here while exact `gelLoadout` remains reserved for capacity claims.
-function gelSeedLoadout(rows,vespBudgetHr){
+function gelSeedLoadout(rows,vespBudgetHr,control){
   if(!(vespBudgetHr>0)||!rows.length)return {gelHr:0,vespHr:0,perLine:[]};
   const levelsFor=rows.map(row=>[0,...LEVELS.filter(L=>L<=(row.max||0))]);   // [off, 1×, 2×, …]
   const cur=rows.map(()=>0);   // chosen level index per line (0 = off)
   let spent=0,gel=0;
   for(;;){
+    if(control&&!control.checkpoint("gel-seed-step"))return {gelHr:0,vespHr:0,perLine:[],interrupted:true};
     let bI=-1,bIdx=-1,bEff=-1,bDv=0,bDg=0;
-    rows.forEach((row,ri)=>{
+    for(let ri=0;ri<rows.length;ri++){const row=rows[ri];
+      if(control&&!control.checkpoint("gel-seed-line"))return {gelHr:0,vespHr:0,perLine:[],interrupted:true};
       const lv=levelsFor[ri],ci=cur[ri];
-      if(ci+1>=lv.length)return;   // already at this line's cap
+      if(ci+1>=lv.length)continue;   // already at this line's cap
       const Lnow=lv[ci],Lnext=lv[ci+1];
       const dv=gelVespHr(row,Lnext)-(Lnow?gelVespHr(row,Lnow):0);
       const dg=gelOutHr(row,Lnext)-(Lnow?gelOutHr(row,Lnow):0);
-      if(dv<=1e-9||dg<=0||spent+dv>vespBudgetHr+1e-6)return;   // no gain, or doesn't fit the budget
+      if(dv<=1e-9||dg<=0||spent+dv>vespBudgetHr+1e-6)continue;   // no gain, or doesn't fit the budget
       const eff=dg/dv;
       if(eff>bEff){bEff=eff;bI=ri;bIdx=ci+1;bDv=dv;bDg=dg;}
-    });
+    }
     if(bI<0)break;
     cur[bI]=bIdx;spent+=bDv;gel+=bDg;
   }
@@ -729,25 +916,35 @@ function chainMinedBlockers(item,seen){
   return [...new Set(out)];
 }
 // Dense single-phase simplex. Maximize c·x s.t. A x <= b (b>=0), x>=0. Bland's rule (no cycling).
-function lpMaximize(c,A,b){
+function lpMaximize(c,A,b,control){
   const m=A.length,n=c.length,W=n+m+1;
   const T=[];
-  for(let i=0;i<m;i++){const row=new Float64Array(W);for(let j=0;j<n;j++)row[j]=A[i][j];row[n+i]=1;row[W-1]=b[i];T.push(row);}
+  for(let i=0;i<m;i++){
+    if(control&&!control.checkpoint("lp-tableau-row",Math.max(1,n)))return {x:null,interrupted:true,complete:false};
+    const row=new Float64Array(W);for(let j=0;j<n;j++)row[j]=A[i][j];row[n+i]=1;row[W-1]=b[i];T.push(row);
+  }
   const obj=new Float64Array(W);for(let j=0;j<n;j++)obj[j]=-c[j];T.push(obj);
   const basis=[];for(let i=0;i<m;i++)basis.push(n+i);
+  let complete=false;
   for(let it=0;it<20000;it++){
+    // A simplex pivot is atomic: check before mutating its row/tableau so cancellation can never
+    // expose a half-pivoted solution. The work charge reflects the dense row update.
+    if(control&&!control.checkpoint("lp-pivot",Math.max(1,W*(m+1)))){
+      const x=new Float64Array(n);for(let i=0;i<m;i++)if(basis[i]<n)x[basis[i]]=T[i][W-1];
+      return {x,interrupted:true,complete:false};
+    }
     let piv=-1;for(let j=0;j<n+m;j++){if(T[m][j]<-1e-9){piv=j;break;}}   // entering (Bland)
-    if(piv<0)break;
+    if(piv<0){complete=true;break;}
     let leave=-1,best=Infinity;
     for(let i=0;i<m;i++){const a=T[i][piv];if(a>1e-9){const r=T[i][W-1]/a;if(r<best-1e-12||(Math.abs(r-best)<1e-12&&(leave<0||basis[i]<basis[leave]))){best=r;leave=i;}}}
-    if(leave<0)return {x:null,unbounded:true};
+    if(leave<0)return {x:null,unbounded:true,complete:true};
     const prow=T[leave],pv=prow[piv];
     for(let j=0;j<W;j++)prow[j]/=pv;
     for(let i=0;i<=m;i++){if(i===leave)continue;const f=T[i][piv];if(Math.abs(f)>1e-12){const ri=T[i];for(let j=0;j<W;j++)ri[j]-=f*prow[j];}}
     basis[leave]=piv;
   }
   const x=new Float64Array(n);for(let i=0;i<m;i++)if(basis[i]<n)x[basis[i]]=T[i][W-1];
-  return {x};
+  return {x,complete};
 }
 // Assemble the makespan LP (A x <= b, maximize c·x) from a job-variable list. Split out of
 // projectSchedule so the stability pass (issue #87 item 5) can rebuild it over a pinned subset of the
