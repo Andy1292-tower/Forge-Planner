@@ -215,6 +215,7 @@ test("the generated current Blob Worker preserves Credits warning ownership", as
   await page.goto("/", { waitUntil: "domcontentloaded" });
   const response = await page.evaluate(async () => {
     const state = defaults();
+    state.schemaVersion = CURRENT_SCHEMA_VERSION;
     state.mode = "credits";
     state.margin = 20;
     [...RAWS, ...PRODUCTS].forEach(item => { state.sellPrice[item] = null; });
@@ -279,6 +280,7 @@ test("the generated current Blob Worker honors the shared Credits deadline", asy
   await page.goto("/", { waitUntil: "domcontentloaded" });
   const probe = await page.evaluate(async () => {
     const state = defaults();
+    state.schemaVersion = CURRENT_SCHEMA_VERSION;
     state.mode = "credits";
     state.lines = [512, 512, 256, 128, 64, 64, 32, 512, 128, 64, 256, 32]
       .map((max, index) => ({ max, spx: 40 + (index * 7 % 13), turbo: 0 }));
