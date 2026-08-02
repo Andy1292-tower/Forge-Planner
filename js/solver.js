@@ -329,15 +329,20 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,tolOverride){
   // share the wall-clock budget (tStart is global); each gets a fresh convergence window and
   // incumbent so an easy factory still has time left to exploit the margin.
   const stages=tol>0?[0,tol]:[tol];
-  let carry=null;
+  let carry=null,seeds=0;
+  // Seed loops must respect the wall clock too: a starved budget (0 ms grants exist — see
+  // takeStaticPhaseBudget) used to still pay for lpRelax + up to ~350 role-seed localOpts per phase,
+  // so "max solve time bounds the whole project solve" leaked on long set-&-forget lists. The guard
+  // lives in trySeed — one choke point for every seed source — and only engages once an incumbent
+  // exists, so even a 0-budget solve still tries ONE seed and returns a valid (if unpolished) plan:
+  // quality degrades before wall-clock does. Under the frozen-clock test convention elapsed time is
+  // always 0, so the guard never fires there and the seed set stays fixed and deterministic.
+  const overBudget=()=>performance.now()-tStart>timeBudget;
   for(let si=0;si<stages.length;si++){
   curTol=stages[si];capped=false;tLastGain=performance.now();
   let inc=null;
-  const trySeed=ch=>{const c=ch.slice();const sc=localOpt(c);if(sc!=null&&(!inc||sc>inc.sc)){inc={sc,ch:c.slice()};tLastGain=performance.now();}};
+  const trySeed=ch=>{if(inc&&overBudget())return;seeds++;const c=ch.slice();const sc=localOpt(c);if(sc!=null&&(!inc||sc>inc.sc)){inc={sc,ch:c.slice()};tLastGain=performance.now();}};
   if(carry)trySeed(carry);   // strict optimum seeds the relaxed pass -> never drops below no-margin
-  // The seed set is fixed (budget-independent) on purpose: the ilsT/DFS caps are measured from the
-  // solve start, so seeds just consume part of the budget rather than extending it — and a fixed set
-  // keeps the search trajectory monotonic in budget (more time never yields a worse plan).
   if(lp&&lp.z>EPS){
     trySeed(lp.choice);
     for(let t=0;t<16;t++){const ch=new Array(N);
@@ -388,7 +393,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,tolOverride){
       rec(0,[]);
     }
   }
-  targets.map(t=>resIndex[t]).forEach(res=>{const ch=new Array(N);for(let i=0;i<N;i++){const bj=bestJobFor(i,res);ch[i]=bj>=0?bj:idleIdx(i);}const sc=localOpt(ch);if(sc!=null&&(!inc||sc>inc.sc)){inc={sc,ch:ch.slice()};tLastGain=performance.now();}});
+  targets.map(t=>resIndex[t]).forEach(res=>{const ch=new Array(N);for(let i=0;i<N;i++){const bj=bestJobFor(i,res);ch[i]=bj>=0?bj:idleIdx(i);}trySeed(ch);});
   if(inc&&N>0){
     // ILS gets the bulk of the budget so accuracy scales with the user's max-time setting: at high
     // line counts the exact DFS caps out without beating the heuristic, so perturbing the incumbent
@@ -418,7 +423,9 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,tolOverride){
   }
   let usesMargin=false;for(let r=0;r<R;r++)if(best.produced[r]<best.consumed[r]-1e-6)usesMargin=true;
   const forgie={};resources.forEach((r,i)=>forgie[r]=baseArr[i]*3600);
-  return {best,sorted,lineJobs,resources,resIndex,R,N,tIdx,tol,capped,usesMargin,issues,forgie,feasible:best.score>1e-9,ms:performance.now()-tStart};
+  // `seeds` = localOpt seed attempts across stages — a diagnostic for the budget guard above (a
+  // starved solve collapses to 1; a frozen-clock test run explores the full deterministic set).
+  return {best,sorted,lineJobs,resources,resIndex,R,N,tIdx,tol,capped,usesMargin,issues,forgie,seeds,feasible:best.score>1e-9,ms:performance.now()-tStart};
 }
 
 function minedUsageFromItemPlan(plan){

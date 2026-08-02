@@ -408,6 +408,33 @@ const runner = `
       phases === 12, "phases=" + phases);
   }
 
+  /* ---- R3 (review follow-up): a spent budget must starve the SEED work too -------------------
+   * takeStaticPhaseBudget legitimately grants 0 once the total is used up, but solveCore's seed
+   * loops (LP roundings, gel loadouts, up to ~350 role-assignment localOpts) used to run to
+   * completion regardless — so "max solve time bounds the whole solve" still leaked on long lists.
+   * The guard lives in trySeed and only engages once an incumbent exists: a 0-budget solve tries
+   * exactly one seed (quality floor — the phase still gets a valid plan), and a frozen-clock solve
+   * still explores the full deterministic seed set. */
+  {
+    build([P("a","A",[["Plates",90000]])], {});   // S.lines etc. for a direct solveCore call
+    const rc = relevantChain(["Plates"]);
+    // Frozen clock (the suite default): full deterministic seed exploration.
+    const full = solveCore(["Plates"], [1], rc.prods, rc.raws, 100000, 0);
+    // Advancing clock + zero budget: seeds collapse to the single quality-floor attempt.
+    const frozen = performance.now;
+    let clock = 0; performance.now = () => (clock += 10);
+    let starved = null, threw = null;
+    try { starved = solveCore(["Plates"], [1], rc.prods, rc.raws, 0, 0); }
+    catch (e) { threw = String(e && e.message || e); }
+    finally { performance.now = frozen; }
+    record("R3: frozen clock still explores the full seed set",
+      full.feasible === true && full.seeds > 3,
+      "seeds=" + full.seeds + " feasible=" + full.feasible);
+    record("R3: a zero budget collapses seeding to one attempt but still returns a plan",
+      threw === null && starved !== null && starved.seeds === 1 && starved.feasible === true,
+      "threw=" + threw + " seeds=" + (starved && starved.seeds) + " feasible=" + (starved && starved.feasible));
+  }
+
   __emit(JSON.stringify(results));
 })();
 `;
