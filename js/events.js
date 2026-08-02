@@ -32,11 +32,11 @@ function flushPersist(){
 function hasInvalidFieldDraft(){
   return [...document.querySelectorAll('[aria-invalid="true"]')].some(input=>input.offsetParent!==null);
 }
-function doSolve(){
+function doSolve(options){
   renderT=null;
   if(hasInvalidFieldDraft())return false;
   if(persistNow()===false)return false;
-  renderResults();return true;
+  renderResults(options);return true;
 }
 // Debounce the (potentially heavy) re-solve: while typing, wait until the user pauses;
 // leaving a field, pressing Enter, or making a selection flushes it immediately. State is
@@ -72,7 +72,7 @@ function showStale(on){
 }
 function clearStaleUI(){showStale(false);}
 function markStale(){clearTimeout(renderT);renderT=null;persistNow();showStale(true);}
-function resimulate(){doSolve();}   // doSolve→renderResults repaints and clears the stale UI
+function resimulate(){doSolve({forceFresh:true});}   // explicit refresh bypasses today's Max Items cache once
 document.getElementById("btnResim").addEventListener("click",resimulate);
 
 document.getElementById("lines").addEventListener("change",e=>{

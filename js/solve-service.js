@@ -20,6 +20,112 @@ function solveStateKey(state){
   return canonicalSolveJson(snapshot);
 }
 
+/* Max Items solves can consume the full user budget even when nothing relevant changed. Keep a
+ * small, separate daily cache keyed only by the inputs that Items mode actually reads. It never
+ * enters the save/export schema, and every storage failure falls through to an ordinary solve. */
+const MAX_ITEMS_CACHE_VERSION=1;
+const MAX_ITEMS_CACHE_STORAGE_KEY="forgePlannerMaxItemsCache_v1";
+const MAX_ITEMS_CACHE_AGE_MS=24*60*60*1000;
+const MAX_ITEMS_CACHE_ENTRIES=24;
+const MAX_ITEMS_CACHE_RECORD_CHARS=512*1024;
+const MAX_ITEMS_CACHE_TOTAL_CHARS=2*1024*1024;
+let maxItemsCacheMemory=null;
+
+function maxItemsConditionKey(state){
+  const source=state||{};
+  const lines=Array.isArray(source.lines)?source.lines.map(line=>({
+    max:line&&line.max,spx:line&&line.spx,turbo:line&&line.turbo
+  })):[];
+  return canonicalSolveJson({
+    version:MAX_ITEMS_CACHE_VERSION,
+    lines,maxTurbo:source.maxTurbo,dupe:source.dupe,margin:source.margin,
+    solveBudget:source.solveBudget,targets:source.targets||{},baseTime:source.baseTime||{},
+    prodCost:source.prodCost||{},forgie:source.forgie||{},minedIncome:source.minedIncome||{}
+  });
+}
+function maxItemsConditionHash(value){
+  let first=2166136261,second=2246822507;
+  for(let i=0;i<value.length;i++){
+    const code=value.charCodeAt(i);
+    first=Math.imul(first^code,16777619)>>>0;
+    second=Math.imul(second^code,3266489917)>>>0;
+  }
+  return first.toString(16).padStart(8,"0")+second.toString(16).padStart(8,"0");
+}
+function maxItemsJsonSafe(value,depth=0,budget){
+  budget=budget||{nodes:0};
+  if(++budget.nodes>50000||depth>16)return false;
+  if(value===null||typeof value==="boolean")return true;
+  if(typeof value==="number")return Number.isFinite(value);
+  if(typeof value==="string")return value.length<=10000&&!/[<>]/.test(value);
+  if(Array.isArray(value))return value.length<=5000&&value.every(item=>maxItemsJsonSafe(item,depth+1,budget));
+  if(Object.prototype.toString.call(value)!=="[object Object]")return false;
+  const keys=Object.keys(value);if(keys.length>5000)return false;
+  return keys.every(key=>key.length<=200&&maxItemsJsonSafe(value[key],depth+1,budget));
+}
+function maxItemsResultValid(result){
+  if(!result||Object.prototype.toString.call(result)!=="[object Object]"||result.mode!=="items")return false;
+  if(!maxItemsJsonSafe(result))return false;
+  if(result.empty===true)return true;
+  return result.empty===false&&Array.isArray(result.issues)&&Array.isArray(result.targets)&&
+    Array.isArray(result.plan)&&Array.isArray(result.balance)&&
+    Object.prototype.toString.call(result.out)==="[object Object]"&&Number.isFinite(result.ms);
+}
+function maxItemsRecordValid(record,now){
+  if(!record||record.version!==MAX_ITEMS_CACHE_VERSION||typeof record.savedAt!=="number"||
+    typeof record.id!=="string"||typeof record.conditionKey!=="string"||!maxItemsResultValid(record.result))return false;
+  const age=now-record.savedAt;
+  return age>=0&&age<MAX_ITEMS_CACHE_AGE_MS&&record.id===maxItemsConditionHash(record.conditionKey);
+}
+function loadMaxItemsCache(now=Date.now()){
+  if(maxItemsCacheMemory!==null)return maxItemsCacheMemory.filter(record=>maxItemsRecordValid(record,now));
+  let entries=[];
+  try{
+    if(typeof localStorage!=="undefined"){
+      const raw=localStorage.getItem(MAX_ITEMS_CACHE_STORAGE_KEY);
+      if(raw&&raw.length<=MAX_ITEMS_CACHE_TOTAL_CHARS){
+        const parsed=JSON.parse(raw);
+        if(parsed&&parsed.version===MAX_ITEMS_CACHE_VERSION&&Array.isArray(parsed.entries))entries=parsed.entries;
+      }
+    }
+  }catch(error){entries=[];}
+  maxItemsCacheMemory=entries.filter(record=>maxItemsRecordValid(record,now)).slice(0,MAX_ITEMS_CACHE_ENTRIES);
+  return maxItemsCacheMemory;
+}
+function persistMaxItemsCache(entries){
+  maxItemsCacheMemory=entries.slice(0,MAX_ITEMS_CACHE_ENTRIES);
+  if(typeof localStorage==="undefined")return false;
+  let kept=maxItemsCacheMemory.slice();
+  while(kept.length){
+    let raw;
+    try{raw=JSON.stringify({version:MAX_ITEMS_CACHE_VERSION,entries:kept});}
+    catch(error){return false;}
+    if(raw.length>MAX_ITEMS_CACHE_TOTAL_CHARS){kept.pop();continue;}
+    try{localStorage.setItem(MAX_ITEMS_CACHE_STORAGE_KEY,raw);maxItemsCacheMemory=kept;return true;}
+    catch(error){kept.pop();}
+  }
+  try{localStorage.removeItem(MAX_ITEMS_CACHE_STORAGE_KEY);}catch(error){}
+  maxItemsCacheMemory=[];return false;
+}
+function readMaxItemsCache(conditionKey,now=Date.now()){
+  try{
+    const id=maxItemsConditionHash(conditionKey);
+    const record=loadMaxItemsCache(now).find(entry=>entry.id===id&&entry.conditionKey===conditionKey);
+    if(!record)return null;
+    return {savedAt:record.savedAt,result:JSON.parse(JSON.stringify(record.result))};
+  }catch(error){return null;}
+}
+function writeMaxItemsCache(conditionKey,result,now=Date.now()){
+  try{
+    const storedResult=JSON.parse(JSON.stringify(result));
+    if(!maxItemsResultValid(storedResult)||storedResult.empty===true)return false;
+    const record={version:MAX_ITEMS_CACHE_VERSION,savedAt:now,id:maxItemsConditionHash(conditionKey),conditionKey,result:storedResult};
+    if(JSON.stringify(record).length>MAX_ITEMS_CACHE_RECORD_CHARS)return false;
+    const entries=loadMaxItemsCache(now).filter(entry=>entry.conditionKey!==conditionKey);
+    return persistMaxItemsCache([record,...entries]);
+  }catch(error){return false;}
+}
+
 /* One authority owns asynchronous solve generations, the Worker, fallback timer, callback, and
  * overlay. Callers provide the exact accepted-state revision and snapshot they want solved; a
  * completion is delivered only while that mode/solve-equivalent state is still current. */
@@ -30,6 +136,7 @@ const solveService=(()=>{
   let expectedMode=null;
   let expectedRevision=null;
   let expectedKey=null;
+  let expectedItemsCacheKey=null;
   let callback=null;
   let worker=null;
   let workerBusy=false;
@@ -65,7 +172,7 @@ const solveService=(()=>{
   function isCurrent(requestGeneration){
     return requestGeneration===generation&&expectedMode===S.mode&&expectedKey===solveStateKey(S);
   }
-  function clearRequest(){callback=null;expectedMode=null;expectedRevision=null;expectedKey=null;clearFallbackTimer();}
+  function clearRequest(){callback=null;expectedMode=null;expectedRevision=null;expectedKey=null;expectedItemsCacheKey=null;clearFallbackTimer();}
   function cancel(reason){
     generation+=1;
     lastReason=String(reason||"cancelled");
@@ -75,15 +182,18 @@ const solveService=(()=>{
     overlay(false);
     return status();
   }
-  function deliver(requestGeneration,result,error){
+  function deliver(requestGeneration,result,error,metadata){
     if(!isCurrent(requestGeneration)){cancel("accepted state changed before solve completion");return;}
     const done=callback;
+    const itemsCacheKey=expectedItemsCacheKey;
+    if(!error&&result&&itemsCacheKey&&!(metadata&&metadata.cached))writeMaxItemsCache(itemsCacheKey,result);
     callback=null;
     expectedMode=null;
     expectedRevision=null;
     expectedKey=null;
+    expectedItemsCacheKey=null;
     overlay(false);
-    if(done)done(result,error||null);
+    if(done)done(result,error||null,metadata||null);
   }
   function runFallback(requestGeneration,reason){
     fallbackNotice(true,reason);
@@ -152,14 +262,19 @@ const solveService=(()=>{
       throw new TypeError("solveService.request solveKey must describe the dispatched state snapshot");
     }
 
+    const itemsCacheKey=mode==="items"?maxItemsConditionKey(dispatchedState):null;
     const requestGeneration=++generation;
     clearFallbackTimer();
-    callback=done;expectedMode=mode;expectedRevision=revision;expectedKey=stateKey;
-    overlay(true);
+    callback=done;expectedMode=mode;expectedRevision=revision;expectedKey=stateKey;expectedItemsCacheKey=itemsCacheKey;
 
     // optimize() is synchronous inside the Worker. Superseding busy work requires termination;
     // a healthy idle Worker may be reused and receives a fresh stability snapshot below.
     if(workerBusy)terminateOwned();
+    if(itemsCacheKey&&options.forceFresh!==true){
+      const cached=readMaxItemsCache(itemsCacheKey);
+      if(cached){lastReason="Max Items cache hit";deliver(requestGeneration,cached.result,null,{cached:true,savedAt:cached.savedAt});return requestGeneration;}
+    }
+    overlay(true);
     if(!shouldTryWorker()){
       runFallback(requestGeneration,typeof Worker==="undefined"?"Worker is unavailable":"Worker retry is cooling down");
       return requestGeneration;

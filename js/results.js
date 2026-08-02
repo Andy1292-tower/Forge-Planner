@@ -399,7 +399,8 @@ function renderProjectResults(res,el,stat){
 }
 
 
-function renderResults(){
+function renderResults(options){
+  options=options||{};
   if(typeof clearStaleUI==="function")clearStaleUI();   // results are about to reflect current inputs
   if(typeof setPricePoke==="function")setPricePoke(false); // Credits owns this nudge; clear it before every synchronous mode path.
   const el=document.getElementById("results");
@@ -410,12 +411,12 @@ function renderResults(){
   const snapshot=solveStateSnapshot(S);
   const solveKey=solveStateKey(snapshot);
   const budget=boundedPersistedField("solveBudget",snapshot.solveBudget,10000,200,60000,true);
-  solveService.request({mode:snapshot.mode,stateRevision,budget,stateSnapshot:snapshot,solveKey},(res,error)=>{
+  solveService.request({mode:snapshot.mode,stateRevision,budget,stateSnapshot:snapshot,solveKey,forceFresh:options.forceFresh===true},(res,error,metadata)=>{
     if(error){solveError(error);return;}
-    if(res)renderSolveResult(res,el,stat,solveKey);
+    if(res)renderSolveResult(res,el,stat,solveKey,metadata);
   });
 }
-function renderSolveResult(res,el,stat,solveKey){
+function renderSolveResult(res,el,stat,solveKey,metadata){
   if(res.mode==="project"){
     if(typeof solveKey==="string")_lastProjectKey=solveKey;
     renderProjectResults(res,el,stat);return;
@@ -558,7 +559,9 @@ function renderSolveResult(res,el,stat,solveKey){
     html+=`<div class="notice info" style="font-size:11.5px">${resource} income is set, but this plan puts <b>0</b> lines on <b>${crafts}</b>, so it uses none of that mined income.</div>`;
   });
   el.innerHTML=html;
-  stat.textContent=res.mode==="credits"&&res.allCandidatesEvaluated===false
+  stat.textContent=metadata&&metadata.cached
+    ?"Plan updated instantly from a Max Items solve cached less than 24 hours ago."
+    :res.mode==="credits"&&res.allCandidatesEvaluated===false
     ?"Comparison stopped at the time limit; some priced items were not evaluated."
     :"Plan updated. Solved in "+res.ms.toFixed(1)+" ms";
 }
