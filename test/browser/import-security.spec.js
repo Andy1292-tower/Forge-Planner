@@ -173,7 +173,7 @@ test.describe("imported markup stays inert with CSP bypassed", () => {
     await page.getByRole("button", { name: "Shopping list", exact: true }).click();
     await expect(page.locator("#projList .pname-static")).toContainText(name);
     await expect(page.locator("#projList .cat-card-desc")).toHaveText(description);
-    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await page.locator("#projDone").click();
     await page.getByRole("button", { name: "Track progress", exact: true }).click();
     await expect(page.locator("#progList .prog-proj-name")).toContainText(name);
     await expect(page.locator("#progList .prog-desc")).toHaveText(description);
@@ -335,14 +335,14 @@ test.describe("imported markup stays inert with CSP bypassed", () => {
     });
     await page.getByRole("button", { name: "Sell prices", exact: true }).click();
     await expect(page.locator("[data-price='Frames']")).toHaveValue(exact);
-    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await page.locator("#priceDone").click();
     await page.getByRole("button", { name: "Lil' Forgie", exact: true }).click();
     await expect(page.locator("[data-forgie='Bits']")).toHaveValue(exact);
-    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await page.locator("#forgieDone").click();
     await page.getByRole("button", { name: "Shopping list", exact: true }).click();
     await expect(page.locator("[data-inv='Ingots']")).toHaveValue(exact);
     await expect(page.locator("[data-pname='0']")).toHaveValue(exact);
-    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await page.locator("#projDone").click();
     await page.getByRole("button", { name: "Manual", exact: true }).click();
     await expect(page.locator("#manualPreset option[value='roundtrip-preset']")).toHaveText(exact);
   });

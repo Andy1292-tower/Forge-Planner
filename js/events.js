@@ -171,14 +171,9 @@ function renderPrices(){
   const box=document.getElementById("priceRows");
   renderItemValueRows(box,S.priceText,S.sellPrice,"price","—","");
 }
-const priceModal=document.getElementById("priceModal");
-function openPrices(){renderPrices();priceModal.hidden=false;}
-function closePrices(){priceModal.hidden=true;}
-document.getElementById("btnPrices").addEventListener("click",openPrices);
-document.getElementById("priceClose").addEventListener("click",closePrices);
-document.getElementById("priceDone").addEventListener("click",closePrices);
-priceModal.addEventListener("click",e=>{if(e.target===priceModal)closePrices();});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!priceModal.hidden)closePrices();});
+const priceDialog=dialogController.register({root:document.getElementById("priceModal"),panel:document.querySelector("#priceModal .modal"),opener:document.getElementById("btnPrices"),initialFocus:()=>document.querySelector("#priceRows input"),onOpen:renderPrices});
+function openPrices(invoker){priceDialog.open(invoker);}
+function closePrices(){priceDialog.close();}
 document.getElementById("priceClear").addEventListener("click",()=>{
   if(!confirm("Clear all sell prices?"))return;
   mutateState(st=>{[...RAWS,...PRODUCTS].forEach(it=>{st.sellPrice[it]=null;st.priceText[it]="";});});
@@ -199,14 +194,9 @@ function renderForgie(){
   const box=document.getElementById("forgieRows");
   renderItemValueRows(box,S.forgieText,S.forgie,"forgie","—","decimal");
 }
-const forgieModal=document.getElementById("forgieModal");
-function openForgie(){renderForgie();forgieModal.hidden=false;}
-function closeForgie(){forgieModal.hidden=true;}
-document.getElementById("btnForgie").addEventListener("click",openForgie);
-document.getElementById("forgieClose").addEventListener("click",closeForgie);
-document.getElementById("forgieDone").addEventListener("click",closeForgie);
-forgieModal.addEventListener("click",e=>{if(e.target===forgieModal)closeForgie();});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!forgieModal.hidden)closeForgie();});
+const forgieDialog=dialogController.register({root:document.getElementById("forgieModal"),panel:document.querySelector("#forgieModal .modal"),opener:document.getElementById("btnForgie"),initialFocus:()=>document.querySelector("#forgieRows input"),onOpen:renderForgie});
+function openForgie(invoker){forgieDialog.open(invoker);}
+function closeForgie(){forgieDialog.close();}
 document.getElementById("forgieClear").addEventListener("click",()=>{
   if(!confirm("Clear all Lil' Forgie supply rates?"))return;
   mutateState(st=>{[...RAWS,...PRODUCTS].forEach(it=>{st.forgie[it]=null;st.forgieText[it]="";});});
@@ -220,58 +210,25 @@ document.getElementById("forgieRows").addEventListener("input",e=>{
 });
 
 /* ---------- mined resources modal ---------- */
-const minedModal=document.getElementById("minedModal");
 const btnMined=document.getElementById("btnMined");
-let minedInvoker=null;
-function minedFocusable(){
-  return [...minedModal.querySelectorAll('button,input,select,textarea,a[href],[tabindex]:not([tabindex="-1"])')]
-    .filter(el=>!el.disabled&&!el.hidden&&el.tabIndex!==-1);
-}
-function openMined(e){
-  minedInvoker=(e&&e.currentTarget)||document.activeElement||btnMined;
-  renderMinedResources();minedModal.hidden=false;
-  const focusables=minedFocusable();
-  const firstIncome=focusables.find(el=>el.dataset&&el.dataset.minedIncome);
-  (firstIncome||focusables[0]||minedModal).focus();
-}
-function closeMined(){
-  minedModal.hidden=true;
-  const restore=minedInvoker||btnMined;minedInvoker=null;
-  if(restore&&typeof restore.focus==="function")restore.focus();
-}
-btnMined.addEventListener("click",openMined);
-document.getElementById("minedClose").addEventListener("click",closeMined);
-document.getElementById("minedDone").addEventListener("click",closeMined);
-minedModal.addEventListener("click",e=>{if(e.target===minedModal)closeMined();});
-minedModal.addEventListener("input",e=>{
+const minedDialog=dialogController.register({root:document.getElementById("minedModal"),panel:document.querySelector("#minedModal .modal"),opener:btnMined,initialFocus:()=>document.getElementById("minedVespium"),onOpen:renderMinedResources});
+function openMined(invoker){minedDialog.open(invoker);}
+function closeMined(){minedDialog.close();}
+document.getElementById("minedModal").addEventListener("input",e=>{
   const resource=e.target.dataset.minedIncome;if(!resource)return;
   mutateState(()=>{setMinedIncome(resource,e.target.value);});
   renderMinedResources();scheduleSolve();
 });
-document.addEventListener("keydown",e=>{
-  if(minedModal.hidden)return;
-  if(e.key==="Escape"){e.preventDefault();closeMined();return;}
-  if(e.key!=="Tab")return;
-  const focusables=minedFocusable();if(!focusables.length){e.preventDefault();return;}
-  const first=focusables[0],last=focusables[focusables.length-1],active=document.activeElement;
-  if(e.shiftKey&&(active===first||!focusables.includes(active))){e.preventDefault();last.focus();}
-  else if(!e.shiftKey&&(active===last||!focusables.includes(active))){e.preventDefault();first.focus();}
-});
 
 /* ---------- settings modal (max solve time) ---------- */
-const settingsModal=document.getElementById("settingsModal");
 const solveBudgetInput=document.getElementById("solveBudget");
 const solveBudgetVal=document.getElementById("solveBudgetVal");
 function fmtBudget(ms){return (ms/1000).toFixed(ms<1000?1:(ms%1000?1:0))+" s";}
 function syncBudgetUI(){const ms=Math.max(200,Math.min(60000,num(S.solveBudget)||2000));
   if(solveBudgetInput)solveBudgetInput.value=(ms/1000);if(solveBudgetVal)solveBudgetVal.textContent=fmtBudget(ms);}
-function openSettings(){syncBudgetUI();settingsModal.hidden=false;}
-function closeSettings(){settingsModal.hidden=true;}
-document.getElementById("btnSettings").addEventListener("click",openSettings);
-document.getElementById("settingsClose").addEventListener("click",closeSettings);
-document.getElementById("settingsDone").addEventListener("click",closeSettings);
-settingsModal.addEventListener("click",e=>{if(e.target===settingsModal)closeSettings();});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!settingsModal.hidden)closeSettings();});
+const settingsDialog=dialogController.register({root:document.getElementById("settingsModal"),panel:document.querySelector("#settingsModal .modal"),opener:document.getElementById("btnSettings"),initialFocus:solveBudgetInput,onOpen:syncBudgetUI});
+function openSettings(invoker){settingsDialog.open(invoker);}
+function closeSettings(){settingsDialog.close();}
 if(solveBudgetInput)solveBudgetInput.addEventListener("input",()=>{
   mutateState(st=>{st.solveBudget=Math.round(Math.max(0.2,Math.min(15,Number(solveBudgetInput.value)||2))*1000);});
   if(solveBudgetVal)solveBudgetVal.textContent=fmtBudget(S.solveBudget);save();});
@@ -477,14 +434,9 @@ if(catListEl)catListEl.addEventListener("click",e=>{
 const catSearchEl=document.getElementById("catSearch");
 if(catSearchEl)catSearchEl.addEventListener("input",e=>{catQuery=e.target.value;renderCatalog();});
 
-const projModal=document.getElementById("projModal");
-function openProjects(){renderProjects();renderCatalog();projModal.hidden=false;}
-function closeProjects(){projModal.hidden=true;}
-document.getElementById("btnProjects").addEventListener("click",openProjects);
-document.getElementById("projClose").addEventListener("click",closeProjects);
-document.getElementById("projDone").addEventListener("click",closeProjects);
-projModal.addEventListener("click",e=>{if(e.target===projModal)closeProjects();});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!projModal.hidden)closeProjects();});
+const projectsDialog=dialogController.register({root:document.getElementById("projModal"),panel:document.querySelector("#projModal .modal"),opener:document.getElementById("btnProjects"),initialFocus:()=>document.getElementById("projSeqToggle"),onOpen:()=>{renderProjects();renderCatalog();}});
+function openProjects(invoker){projectsDialog.open(invoker);}
+function closeProjects(){projectsDialog.close();}
 document.getElementById("projAdd").addEventListener("click",()=>{
   mutateState(st=>{st.projects.push({id:newId(),name:"New project",on:true,prio:null,from:1,to:1,done:0,levels:[{costs:[]}],_open:true});});
   renderProjects();save();scheduleSolve();
@@ -583,13 +535,9 @@ function setProjDone(pid,newDone){
   mutateState(()=>{p.done=Math.max(0,Math.min(span,Math.floor(newDone)));});
   save();renderProgress();scheduleSolve();
 }
-const progModal=document.getElementById("progModal");
-function openProgress(){renderProgress();progModal.hidden=false;}
-function closeProgress(){progModal.hidden=true;}
-document.getElementById("progClose").addEventListener("click",closeProgress);
-document.getElementById("progDone").addEventListener("click",closeProgress);
-progModal.addEventListener("click",e=>{if(e.target===progModal)closeProgress();});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!progModal.hidden)closeProgress();});
+const progressDialog=dialogController.register({root:document.getElementById("progModal"),panel:document.querySelector("#progModal .modal"),opener:null,initialFocus:()=>document.getElementById("progDone"),onOpen:renderProgress});
+function openProgress(invoker){progressDialog.open(invoker);}
+function closeProgress(){progressDialog.close();}
 document.getElementById("progList").addEventListener("click",e=>{
   const reset=e.target.closest("[data-preset]");
   if(reset){setProjDone(reset.getAttribute("data-preset"),0);return;}
@@ -750,7 +698,7 @@ document.getElementById("results").addEventListener("change",e=>{
 });
 document.getElementById("results").addEventListener("click",e=>{
   const cl=sel=>e.target.closest&&e.target.closest(sel);
-  if(cl("#btnProgress")){openProgress();return;}
+  if(cl("#btnProgress")){openProgress(cl("#btnProgress"));return;}
   // Plan-start "Now" — re-anchor the clock to the current moment (display only).
   if(cl("#spNow")){mutateState(st=>{st.planStart=Date.now();});save();repaintProject();return;}
   // Persist a disclosure's open state across the next re-render. The native <details> toggle still
