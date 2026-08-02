@@ -279,11 +279,45 @@ function cachedItemsResult(marker = "cached") {
   };
 }
 
+function creditsState(overrides = {}) {
+  return maxItemsState({
+    mode: "credits",
+    targets: { Frames: { on: false, w: 9 } },
+    sellPrice: { Frames: 123 },
+    ...overrides,
+  });
+}
+
+function cachedCreditsResult(marker = "cached") {
+  const plan = [{ line: 1, max: 64, spx: 1, dup: 12.4, sp: 1, dp: 1.124,
+    job: { kind: "produce", res: "Frames", lvl: 1, ct: 1, prod: [[0, 1]], cons: [] } }];
+  const balance = [{ res: "Frames", prod: 12, forgie: 3, cons: 0 }];
+  return {
+    mode: "credits", marker, empty: false, issues: [], ranking: [{
+      item: "Frames", kind: "product", out: 12, price: 123, credits: 1476,
+      plan, balance, minedUsage: [], gelReserved: null, resIndex: { Frames: 0 },
+      feasible: true, usesMargin: false, capped: true, evaluated: true, ms: 42,
+    }],
+    bestItem: "Frames", credits: 1476, objective: 1476, plan, balance,
+    minedUsage: [], gelReserved: null, resIndex: { Frames: 0 }, tol: 0,
+    usesMargin: false, feasible: true, capped: true, allCandidatesEvaluated: true,
+    deadlineReached: true, searchExhaustive: false, ms: 42,
+  };
+}
+
 function primeItemsCache(storage, state = maxItemsState(), now = 1_000) {
   const harness = lifecycleHarness({ storage, now });
   harness.callRequest({ mode: "items", stateRevision: 1, budget: state.solveBudget, stateSnapshot: state }, () => {});
   assert.equal(harness.workers.length, 1, "the priming solve must be a fresh Worker solve");
   harness.workers[0].emitMessage(workerResponse(harness.workers[0], { res: cachedItemsResult("primed") }));
+  return harness;
+}
+
+function primeCreditsCache(storage, state = creditsState(), now = 1_000) {
+  const harness = lifecycleHarness({ storage, now });
+  harness.callRequest({ mode: "credits", stateRevision: 1, budget: state.solveBudget, stateSnapshot: state }, () => {});
+  assert.equal(harness.workers.length, 1, "the priming Credits solve must be a fresh Worker solve");
+  harness.workers[0].emitMessage(workerResponse(harness.workers[0], { res: cachedCreditsResult("primed") }));
   return harness;
 }
 
@@ -306,6 +340,132 @@ test("a completed capped Items solve is reused after the service is recreated", 
   assert.equal(delivered[0].result.marker, "primed");
   assert.equal(delivered[0].error, null);
   assert.deepEqual(delivered[0].metadata, { cached: true, savedAt: 1_000 });
+});
+
+test("an unchanged completed Credits comparison is reused after the service is recreated", () => {
+  const storage = new Map();
+  const state = creditsState();
+  primeCreditsCache(storage, state);
+  assert.ok(storage.size > 0, "a successful capped Credits result must be persisted for daily reuse");
+
+  const harness = lifecycleHarness({ storage });
+  const delivered = [];
+  harness.callRequest({ mode: "credits", stateRevision: 2, budget: state.solveBudget, stateSnapshot: state },
+    (result, error, metadata) => delivered.push({ result, error, metadata }));
+
+  assert.equal(harness.workers.length, 0, "an exact Credits cache hit must not create a Worker");
+  assert.equal(delivered.length, 1);
+  assert.equal(delivered[0].result.marker, "primed");
+  assert.equal(delivered[0].error, null);
+  assert.deepEqual(delivered[0].metadata, { cached: true, savedAt: 1_000 });
+});
+
+test("Credits cache tracks sell prices but ignores Items-only target choices", () => {
+  const targetStorage = new Map();
+  const original = creditsState();
+  primeCreditsCache(targetStorage, original);
+  const targetOnly = creditsState({ targets: { Wire: { on: true, w: 99 } } });
+  const targetHarness = lifecycleHarness({ storage: targetStorage });
+  targetHarness.callRequest({ mode: "credits", stateRevision: 2, budget: targetOnly.solveBudget, stateSnapshot: targetOnly }, () => {});
+  assert.equal(targetHarness.workers.length, 0, "Items-only target choices must not invalidate a Credits result");
+
+  const priceStorage = new Map();
+  primeCreditsCache(priceStorage, original);
+  const repriced = creditsState({ sellPrice: { Frames: 456 } });
+  const priceHarness = lifecycleHarness({ storage: priceStorage });
+  priceHarness.callRequest({ mode: "credits", stateRevision: 2, budget: repriced.solveBudget, stateSnapshot: repriced }, () => {});
+  assert.equal(priceHarness.workers.length, 1, "a sell-price change must dispatch a fresh Credits solve");
+});
+
+test("an incomplete Credits comparison is never persisted for daily reuse", () => {
+  const storage = new Map();
+  const state = creditsState({ sellPrice: { Frames: 123, Wire: 1 } });
+  const harness = lifecycleHarness({ storage });
+  harness.callRequest({ mode: "credits", stateRevision: 1, budget: state.solveBudget, stateSnapshot: state }, () => {});
+  const incomplete = cachedCreditsResult("incomplete");
+  incomplete.allCandidatesEvaluated = false;
+  incomplete.ranking.push({
+    item: "Wire", kind: "product", out: 0, price: 1, credits: 0,
+    plan: null, balance: null, minedUsage: [], gelReserved: null, resIndex: {},
+    feasible: false, usesMargin: false, capped: false, evaluated: false, ms: 0,
+  });
+  harness.workers[0].emitMessage(workerResponse(harness.workers[0], { res: incomplete }));
+
+  assert.equal(storage.size, 0, "a comparison with unevaluated priced items must not be cached for 24 hours");
+});
+
+test("a Credits cache record must match every priced item and its current price", () => {
+  const cases = [
+    {
+      label: "missing priced item",
+      state: creditsState({ sellPrice: { Frames: 123, Wire: 1 } }),
+      result: cachedCreditsResult("missing-wire"),
+    },
+    {
+      label: "stale candidate price",
+      state: creditsState({ sellPrice: { Frames: 456 } }),
+      result: cachedCreditsResult("stale-price"),
+    },
+  ];
+
+  for (const { label, state, result } of cases) {
+    const storage = new Map();
+    const priming = lifecycleHarness({ storage });
+    priming.callRequest({ mode: "credits", stateRevision: 1, budget: state.solveBudget, stateSnapshot: state }, () => {});
+    priming.workers[0].emitMessage(workerResponse(priming.workers[0], { res: result }));
+
+    const reuse = lifecycleHarness({ storage });
+    reuse.callRequest({ mode: "credits", stateRevision: 2, budget: state.solveBudget, stateSnapshot: state }, () => {});
+    assert.equal(reuse.workers.length, 1, `${label} must fail open to a fresh Worker solve`);
+  }
+});
+
+test("a cached result whose mode disagrees with its condition key fails open", () => {
+  const storage = new Map();
+  const state = creditsState();
+  primeCreditsCache(storage, state);
+  const [storageKey, raw] = [...storage.entries()][0];
+  const tampered = JSON.parse(raw);
+  tampered.entries[0].result = cachedItemsResult("wrong-mode");
+  storage.set(storageKey, JSON.stringify(tampered));
+
+  const harness = lifecycleHarness({ storage });
+  harness.callRequest({ mode: "credits", stateRevision: 2, budget: state.solveBudget, stateSnapshot: state }, () => {});
+  assert.equal(harness.workers.length, 1, "cross-mode cache corruption must dispatch a fresh Worker solve");
+});
+
+test("forceFresh bypasses and replaces a Credits daily-cache record", () => {
+  const storage = new Map();
+  const state = creditsState();
+  primeCreditsCache(storage, state);
+
+  const forced = lifecycleHarness({ storage, now: 2_000 });
+  forced.callRequest({ mode: "credits", stateRevision: 2, budget: state.solveBudget, stateSnapshot: state, forceFresh: true }, () => {});
+  assert.equal(forced.workers.length, 1, "forceFresh must bypass the Credits cache once");
+  forced.workers[0].emitMessage(workerResponse(forced.workers[0], { res: cachedCreditsResult("fresh-credits") }));
+
+  const afterForced = lifecycleHarness({ storage, now: 2_000 });
+  const delivered = [];
+  afterForced.callRequest({ mode: "credits", stateRevision: 3, budget: state.solveBudget, stateSnapshot: state },
+    result => delivered.push(result.marker));
+  assert.equal(afterForced.workers.length, 0, "the forced Credits result must replace the prior cache record");
+  assert.deepEqual(delivered, ["fresh-credits"]);
+});
+
+test("forceFresh removes the prior Credits record when the fresh comparison is incomplete", () => {
+  const storage = new Map();
+  const state = creditsState();
+  primeCreditsCache(storage, state);
+
+  const forced = lifecycleHarness({ storage, now: 2_000 });
+  forced.callRequest({ mode: "credits", stateRevision: 2, budget: state.solveBudget, stateSnapshot: state, forceFresh: true }, () => {});
+  const incomplete = cachedCreditsResult("incomplete-refresh");
+  incomplete.allCandidatesEvaluated = false;
+  forced.workers[0].emitMessage(workerResponse(forced.workers[0], { res: incomplete }));
+
+  const afterForced = lifecycleHarness({ storage, now: 2_000 });
+  afterForced.callRequest({ mode: "credits", stateRevision: 3, budget: state.solveBudget, stateSnapshot: state }, () => {});
+  assert.equal(afterForced.workers.length, 1, "an incomplete forced solve must not expose the older cache record again");
 });
 
 test("Items cache identity excludes sell prices, project/manual state, inventory, and plan start", () => {
@@ -364,7 +524,7 @@ test("Items cache misses projected input changes and expired records", () => {
   assert.equal(expired.workers.length, 1, "a record exactly 24 hours old must dispatch a Worker");
 });
 
-test("non-Items, forceFresh, and malformed daily-cache bytes fail open to a Worker", () => {
+test("mode isolation, forceFresh, and malformed daily-cache bytes fail open to a Worker", () => {
   for (const mode of ["credits", "project"]) {
     const storage = new Map();
     primeItemsCache(storage);
@@ -372,7 +532,7 @@ test("non-Items, forceFresh, and malformed daily-cache bytes fail open to a Work
     const state = maxItemsState({ mode });
     const harness = lifecycleHarness({ storage });
     harness.callRequest({ mode, stateRevision: 1, budget: state.solveBudget, stateSnapshot: state }, () => {});
-    assert.equal(harness.workers.length, 1, `${mode} must never use the Items cache`);
+    assert.equal(harness.workers.length, 1, `${mode} must never use an Items-mode cache record`);
   }
 
   const freshStorage = new Map();

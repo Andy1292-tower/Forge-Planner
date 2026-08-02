@@ -20,30 +20,35 @@ function solveStateKey(state){
   return canonicalSolveJson(snapshot);
 }
 
-/* Max Items solves can consume the full user budget even when nothing relevant changed. Keep a
- * small, separate daily cache keyed only by the inputs that Items mode actually reads. It never
+/* Items and Credits solves can consume the full user budget even when nothing relevant changed.
+ * Keep a small, separate daily cache keyed only by the inputs each mode actually reads. It never
  * enters the save/export schema, and every storage failure falls through to an ordinary solve. */
-const MAX_ITEMS_CACHE_VERSION=1;
-const MAX_ITEMS_CACHE_STORAGE_KEY="forgePlannerMaxItemsCache_v1";
-const MAX_ITEMS_CACHE_AGE_MS=24*60*60*1000;
-const MAX_ITEMS_CACHE_ENTRIES=24;
-const MAX_ITEMS_CACHE_RECORD_CHARS=512*1024;
-const MAX_ITEMS_CACHE_TOTAL_CHARS=2*1024*1024;
-let maxItemsCacheMemory=null;
+const DAILY_SOLVE_CACHE_VERSION=2;
+// Retain the original storage key; the version invalidates pre-Credits records safely.
+const DAILY_SOLVE_CACHE_STORAGE_KEY="forgePlannerMaxItemsCache_v1";
+const DAILY_SOLVE_CACHE_AGE_MS=24*60*60*1000;
+const DAILY_SOLVE_CACHE_ENTRIES=24;
+const DAILY_SOLVE_CACHE_RECORD_CHARS=512*1024;
+const DAILY_SOLVE_CACHE_TOTAL_CHARS=2*1024*1024;
+let dailySolveCacheMemory=null;
 
-function maxItemsConditionKey(state){
+function dailySolveConditionKey(state){
   const source=state||{};
   const lines=Array.isArray(source.lines)?source.lines.map(line=>({
     max:line&&line.max,spx:line&&line.spx,turbo:line&&line.turbo
   })):[];
-  return canonicalSolveJson({
-    version:MAX_ITEMS_CACHE_VERSION,
+  const mode=source.mode==="credits"?"credits":"items";
+  const projected={
+    version:DAILY_SOLVE_CACHE_VERSION,mode,
     lines,maxTurbo:source.maxTurbo,dupe:source.dupe,margin:source.margin,
-    solveBudget:source.solveBudget,targets:source.targets||{},baseTime:source.baseTime||{},
+    solveBudget:source.solveBudget,baseTime:source.baseTime||{},
     prodCost:source.prodCost||{},forgie:source.forgie||{},minedIncome:source.minedIncome||{}
-  });
+  };
+  if(mode==="credits")projected.sellPrice=source.sellPrice||{};
+  else projected.targets=source.targets||{};
+  return canonicalSolveJson(projected);
 }
-function maxItemsConditionHash(value){
+function dailySolveConditionHash(value){
   let first=2166136261,second=2246822507;
   for(let i=0;i<value.length;i++){
     const code=value.charCodeAt(i);
@@ -52,18 +57,18 @@ function maxItemsConditionHash(value){
   }
   return first.toString(16).padStart(8,"0")+second.toString(16).padStart(8,"0");
 }
-function maxItemsJsonSafe(value,depth=0,budget){
+function dailySolveJsonSafe(value,depth=0,budget){
   budget=budget||{nodes:0};
   if(++budget.nodes>50000||depth>16)return false;
   if(value===null||typeof value==="boolean")return true;
   if(typeof value==="number")return Number.isFinite(value);
   if(typeof value==="string")return value.length<=10000&&!/[<>]/.test(value);
-  if(Array.isArray(value))return value.length<=5000&&value.every(item=>maxItemsJsonSafe(item,depth+1,budget));
+  if(Array.isArray(value))return value.length<=5000&&value.every(item=>dailySolveJsonSafe(item,depth+1,budget));
   if(Object.prototype.toString.call(value)!=="[object Object]")return false;
   const keys=Object.keys(value);if(keys.length>5000)return false;
-  return keys.every(key=>key.length<=200&&maxItemsJsonSafe(value[key],depth+1,budget));
+  return keys.every(key=>key.length<=200&&dailySolveJsonSafe(value[key],depth+1,budget));
 }
-function maxItemsPlanValid(result){
+function dailySolvePlanValid(result){
   let needsIndex=false;
   const valid=result.plan.every(row=>{
     if(!row||Object.prototype.toString.call(row)!=="[object Object]"||!row.job||
@@ -79,69 +84,115 @@ function maxItemsPlanValid(result){
   });
   return valid&&(!needsIndex||Object.prototype.toString.call(result.resIndex)==="[object Object]");
 }
-function maxItemsResultValid(result){
-  if(!result||Object.prototype.toString.call(result)!=="[object Object]"||result.mode!=="items")return false;
-  if(!maxItemsJsonSafe(result))return false;
-  if(result.empty===true)return true;
-  return result.empty===false&&Array.isArray(result.issues)&&Array.isArray(result.targets)&&
-    Array.isArray(result.plan)&&Array.isArray(result.balance)&&
-    result.issues.every(issue=>typeof issue==="string")&&result.targets.every(target=>typeof target==="string")&&
-    Object.prototype.toString.call(result.out)==="[object Object]"&&Number.isFinite(result.ms)&&maxItemsPlanValid(result);
+function dailySolveConditionFromKey(conditionKey){
+  if(typeof conditionKey!=="string"||conditionKey.length>DAILY_SOLVE_CACHE_RECORD_CHARS)return null;
+  try{
+    const condition=JSON.parse(conditionKey);
+    if(!condition||Object.prototype.toString.call(condition)!=="[object Object]"||
+      condition.version!==DAILY_SOLVE_CACHE_VERSION||
+      (condition.mode!=="items"&&condition.mode!=="credits")||
+      !dailySolveJsonSafe(condition)||canonicalSolveJson(condition)!==conditionKey)return null;
+    return condition;
+  }catch(error){return null;}
 }
-function maxItemsRecordValid(record,now){
-  if(!record||record.version!==MAX_ITEMS_CACHE_VERSION||typeof record.savedAt!=="number"||
-    typeof record.id!=="string"||typeof record.conditionKey!=="string"||!maxItemsResultValid(record.result))return false;
-  try{if(JSON.stringify(record).length>MAX_ITEMS_CACHE_RECORD_CHARS)return false;}
+function dailySolveResultValid(result,conditionKey){
+  if(!result||Object.prototype.toString.call(result)!=="[object Object]"||
+    (result.mode!=="items"&&result.mode!=="credits"))return false;
+  const condition=dailySolveConditionFromKey(conditionKey);
+  if(!condition||condition.mode!==result.mode)return false;
+  if(!dailySolveJsonSafe(result))return false;
+  if(result.empty===true)return result.mode==="items";
+  if(result.empty!==false||!Array.isArray(result.issues)||!Array.isArray(result.plan)||
+    !Array.isArray(result.balance)||!result.issues.every(issue=>typeof issue==="string")||
+    !Number.isFinite(result.ms)||result.ms<0||!dailySolvePlanValid(result))return false;
+  if(result.mode==="items")return Array.isArray(result.targets)&&
+    result.targets.every(target=>typeof target==="string")&&
+    Object.prototype.toString.call(result.out)==="[object Object]";
+  if(!Array.isArray(result.ranking)||result.ranking.length>100||
+    (result.bestItem!==null&&typeof result.bestItem!=="string")||
+    !Number.isFinite(result.credits)||result.credits<0||!Number.isFinite(result.objective)||result.objective<0||
+    !Number.isFinite(result.tol)||typeof result.usesMargin!=="boolean"||typeof result.feasible!=="boolean"||
+    typeof result.capped!=="boolean"||result.allCandidatesEvaluated!==true||
+    typeof result.deadlineReached!=="boolean"||typeof result.searchExhaustive!=="boolean"||
+    !Array.isArray(result.minedUsage)||Object.prototype.toString.call(result.resIndex)!=="[object Object]")return false;
+  if(!condition.sellPrice||Object.prototype.toString.call(condition.sellPrice)!=="[object Object]")return false;
+  const expectedPrices=new Map(Object.entries(condition.sellPrice)
+    .filter(([,price])=>Number.isFinite(price)&&price>0));
+  if(result.ranking.length!==expectedPrices.size)return false;
+  const rankedItems=[];
+  const valid=result.ranking.every(candidate=>{
+    if(!candidate||Object.prototype.toString.call(candidate)!=="[object Object]"||
+      typeof candidate.item!=="string"||rankedItems.includes(candidate.item)||!expectedPrices.has(candidate.item)||
+      (candidate.kind!=="raw"&&candidate.kind!=="product")||
+      !Number.isFinite(candidate.out)||candidate.out<0||candidate.price!==expectedPrices.get(candidate.item)||
+      !Number.isFinite(candidate.credits)||candidate.credits<0||
+      typeof candidate.feasible!=="boolean"||typeof candidate.usesMargin!=="boolean"||
+      typeof candidate.capped!=="boolean"||candidate.evaluated!==true||!Number.isFinite(candidate.ms)||candidate.ms<0||
+      !Array.isArray(candidate.plan)||!Array.isArray(candidate.balance)||!Array.isArray(candidate.minedUsage)||
+      Object.prototype.toString.call(candidate.resIndex)!=="[object Object]")return false;
+    rankedItems.push(candidate.item);
+    return dailySolvePlanValid(candidate);
+  });
+  return valid&&(result.bestItem===null||rankedItems.includes(result.bestItem));
+}
+function dailySolveRecordValid(record,now){
+  if(!record||record.version!==DAILY_SOLVE_CACHE_VERSION||typeof record.savedAt!=="number"||
+    typeof record.id!=="string"||typeof record.conditionKey!=="string"||!dailySolveResultValid(record.result,record.conditionKey))return false;
+  try{if(JSON.stringify(record).length>DAILY_SOLVE_CACHE_RECORD_CHARS)return false;}
   catch(error){return false;}
   const age=now-record.savedAt;
-  return age>=0&&age<MAX_ITEMS_CACHE_AGE_MS&&record.id===maxItemsConditionHash(record.conditionKey);
+  return age>=0&&age<DAILY_SOLVE_CACHE_AGE_MS&&record.id===dailySolveConditionHash(record.conditionKey);
 }
-function loadMaxItemsCache(now=Date.now()){
-  if(maxItemsCacheMemory!==null)return maxItemsCacheMemory.filter(record=>maxItemsRecordValid(record,now));
+function loadDailySolveCache(now=Date.now()){
+  if(dailySolveCacheMemory!==null)return dailySolveCacheMemory.filter(record=>dailySolveRecordValid(record,now));
   let entries=[];
   try{
     if(typeof localStorage!=="undefined"){
-      const raw=localStorage.getItem(MAX_ITEMS_CACHE_STORAGE_KEY);
-      if(raw&&raw.length<=MAX_ITEMS_CACHE_TOTAL_CHARS){
+      const raw=localStorage.getItem(DAILY_SOLVE_CACHE_STORAGE_KEY);
+      if(raw&&raw.length<=DAILY_SOLVE_CACHE_TOTAL_CHARS){
         const parsed=JSON.parse(raw);
-        if(parsed&&parsed.version===MAX_ITEMS_CACHE_VERSION&&Array.isArray(parsed.entries))entries=parsed.entries;
+        if(parsed&&parsed.version===DAILY_SOLVE_CACHE_VERSION&&Array.isArray(parsed.entries))entries=parsed.entries;
       }
     }
   }catch(error){entries=[];}
-  maxItemsCacheMemory=entries.filter(record=>maxItemsRecordValid(record,now)).slice(0,MAX_ITEMS_CACHE_ENTRIES);
-  return maxItemsCacheMemory;
+  dailySolveCacheMemory=entries.filter(record=>dailySolveRecordValid(record,now)).slice(0,DAILY_SOLVE_CACHE_ENTRIES);
+  return dailySolveCacheMemory;
 }
-function persistMaxItemsCache(entries){
-  maxItemsCacheMemory=entries.slice(0,MAX_ITEMS_CACHE_ENTRIES);
+function persistDailySolveCache(entries){
+  dailySolveCacheMemory=entries.slice(0,DAILY_SOLVE_CACHE_ENTRIES);
   if(typeof localStorage==="undefined")return false;
-  let kept=maxItemsCacheMemory.slice();
+  let kept=dailySolveCacheMemory.slice();
   while(kept.length){
     let raw;
-    try{raw=JSON.stringify({version:MAX_ITEMS_CACHE_VERSION,entries:kept});}
+    try{raw=JSON.stringify({version:DAILY_SOLVE_CACHE_VERSION,entries:kept});}
     catch(error){return false;}
-    if(raw.length>MAX_ITEMS_CACHE_TOTAL_CHARS){kept.pop();continue;}
-    try{localStorage.setItem(MAX_ITEMS_CACHE_STORAGE_KEY,raw);maxItemsCacheMemory=kept;return true;}
+    if(raw.length>DAILY_SOLVE_CACHE_TOTAL_CHARS){kept.pop();continue;}
+    try{localStorage.setItem(DAILY_SOLVE_CACHE_STORAGE_KEY,raw);dailySolveCacheMemory=kept;return true;}
     catch(error){kept.pop();}
   }
-  try{localStorage.removeItem(MAX_ITEMS_CACHE_STORAGE_KEY);}catch(error){}
-  maxItemsCacheMemory=[];return false;
+  try{localStorage.removeItem(DAILY_SOLVE_CACHE_STORAGE_KEY);}catch(error){}
+  dailySolveCacheMemory=[];return false;
 }
-function readMaxItemsCache(conditionKey,now=Date.now()){
+function readDailySolveCache(conditionKey,expectedMode,now=Date.now()){
   try{
-    const id=maxItemsConditionHash(conditionKey);
-    const record=loadMaxItemsCache(now).find(entry=>entry.id===id&&entry.conditionKey===conditionKey);
+    const id=dailySolveConditionHash(conditionKey);
+    const record=loadDailySolveCache(now).find(entry=>entry.id===id&&entry.conditionKey===conditionKey&&entry.result.mode===expectedMode);
     if(!record)return null;
     return {savedAt:record.savedAt,result:JSON.parse(JSON.stringify(record.result))};
   }catch(error){return null;}
 }
-function writeMaxItemsCache(conditionKey,result,now=Date.now()){
+function removeDailySolveCache(conditionKey,now=Date.now()){
+  try{return persistDailySolveCache(loadDailySolveCache(now).filter(entry=>entry.conditionKey!==conditionKey));}
+  catch(error){return false;}
+}
+function writeDailySolveCache(conditionKey,result,now=Date.now()){
   try{
     const storedResult=JSON.parse(JSON.stringify(result));
-    if(!maxItemsResultValid(storedResult)||storedResult.empty===true)return false;
-    const record={version:MAX_ITEMS_CACHE_VERSION,savedAt:now,id:maxItemsConditionHash(conditionKey),conditionKey,result:storedResult};
-    if(JSON.stringify(record).length>MAX_ITEMS_CACHE_RECORD_CHARS)return false;
-    const entries=loadMaxItemsCache(now).filter(entry=>entry.conditionKey!==conditionKey);
-    return persistMaxItemsCache([record,...entries]);
+    if(!dailySolveResultValid(storedResult,conditionKey)||storedResult.empty===true)return false;
+    const record={version:DAILY_SOLVE_CACHE_VERSION,savedAt:now,id:dailySolveConditionHash(conditionKey),conditionKey,result:storedResult};
+    if(JSON.stringify(record).length>DAILY_SOLVE_CACHE_RECORD_CHARS)return false;
+    const entries=loadDailySolveCache(now).filter(entry=>entry.conditionKey!==conditionKey);
+    return persistDailySolveCache([record,...entries]);
   }catch(error){return false;}
 }
 
@@ -155,7 +206,7 @@ const solveService=(()=>{
   let expectedMode=null;
   let expectedRevision=null;
   let expectedKey=null;
-  let expectedItemsCacheKey=null;
+  let expectedDailyCacheKey=null;
   let callback=null;
   let worker=null;
   let workerBusy=false;
@@ -191,7 +242,7 @@ const solveService=(()=>{
   function isCurrent(requestGeneration){
     return requestGeneration===generation&&expectedMode===S.mode&&expectedKey===solveStateKey(S);
   }
-  function clearRequest(){callback=null;expectedMode=null;expectedRevision=null;expectedKey=null;expectedItemsCacheKey=null;clearFallbackTimer();}
+  function clearRequest(){callback=null;expectedMode=null;expectedRevision=null;expectedKey=null;expectedDailyCacheKey=null;clearFallbackTimer();}
   function cancel(reason){
     generation+=1;
     lastReason=String(reason||"cancelled");
@@ -204,13 +255,13 @@ const solveService=(()=>{
   function deliver(requestGeneration,result,error,metadata){
     if(!isCurrent(requestGeneration)){cancel("accepted state changed before solve completion");return;}
     const done=callback;
-    const itemsCacheKey=expectedItemsCacheKey;
-    if(!error&&result&&itemsCacheKey&&!(metadata&&metadata.cached))writeMaxItemsCache(itemsCacheKey,result);
+    const dailyCacheKey=expectedDailyCacheKey;
+    if(!error&&result&&dailyCacheKey&&!(metadata&&metadata.cached))writeDailySolveCache(dailyCacheKey,result);
     callback=null;
     expectedMode=null;
     expectedRevision=null;
     expectedKey=null;
-    expectedItemsCacheKey=null;
+    expectedDailyCacheKey=null;
     overlay(false);
     if(done)done(result,error||null,metadata||null);
   }
@@ -281,17 +332,18 @@ const solveService=(()=>{
       throw new TypeError("solveService.request solveKey must describe the dispatched state snapshot");
     }
 
-    const itemsCacheKey=mode==="items"?maxItemsConditionKey(dispatchedState):null;
+    const dailyCacheKey=(mode==="items"||mode==="credits")?dailySolveConditionKey(dispatchedState):null;
     const requestGeneration=++generation;
     clearFallbackTimer();
-    callback=done;expectedMode=mode;expectedRevision=revision;expectedKey=stateKey;expectedItemsCacheKey=itemsCacheKey;
+    callback=done;expectedMode=mode;expectedRevision=revision;expectedKey=stateKey;expectedDailyCacheKey=dailyCacheKey;
 
     // optimize() is synchronous inside the Worker. Superseding busy work requires termination;
     // a healthy idle Worker may be reused and receives a fresh stability snapshot below.
     if(workerBusy)terminateOwned();
-    if(itemsCacheKey&&options.forceFresh!==true){
-      const cached=readMaxItemsCache(itemsCacheKey);
-      if(cached){lastReason="Max Items cache hit";deliver(requestGeneration,cached.result,null,{cached:true,savedAt:cached.savedAt});return requestGeneration;}
+    if(dailyCacheKey&&options.forceFresh===true)removeDailySolveCache(dailyCacheKey);
+    if(dailyCacheKey&&options.forceFresh!==true){
+      const cached=readDailySolveCache(dailyCacheKey,mode);
+      if(cached){lastReason="Daily solve cache hit";deliver(requestGeneration,cached.result,null,{cached:true,savedAt:cached.savedAt});return requestGeneration;}
     }
     overlay(true);
     if(!shouldTryWorker()){

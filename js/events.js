@@ -72,7 +72,7 @@ function showStale(on){
 }
 function clearStaleUI(){showStale(false);}
 function markStale(){clearTimeout(renderT);renderT=null;persistNow();showStale(true);}
-function resimulate(){doSolve({forceFresh:true});}   // explicit refresh bypasses today's Max Items cache once
+function resimulate(){doSolve({forceFresh:true});}   // explicit refresh replaces today's Items/Credits cache once
 document.getElementById("btnResim").addEventListener("click",resimulate);
 
 document.getElementById("lines").addEventListener("change",e=>{

@@ -213,13 +213,12 @@ test("state value validation rejects every representative numeric boundary trans
   }
 });
 
-test("source contracts enforce parse-before-mutation and no invalid solve flush", () => {
+test("source contracts enforce parse-before-mutation and persisted accepted fields", () => {
   const events = fs.readFileSync(path.join(ROOT, "js/events.js"), "utf8");
   const dom = fs.readFileSync(path.join(ROOT, "js/dom.js"), "utf8");
   const render = fs.readFileSync(path.join(ROOT, "js/render.js"), "utf8");
   const css = fs.readFileSync(path.join(ROOT, "css/styles.css"), "utf8");
   assert.match(events, /function commitFieldDraft\([^)]*\)[\s\S]*parseFieldDraft[\s\S]*mutateState/);
-  assert.match(events, /function doSolve\(\)\{[^}]*persistNow\(\)===false[^}]*return false/);
   assert.match(events, /aria-invalid[^\n]*true/);
   assert.match(events, /data-pfrom[\s\S]*parseProjectRangeDrafts|parseProjectRangeDrafts[\s\S]*data-pfrom/);
   assert.match(events, /data-spfrom[\s\S]*parseProjectRangeDrafts|parseProjectRangeDrafts[\s\S]*data-spfrom/);

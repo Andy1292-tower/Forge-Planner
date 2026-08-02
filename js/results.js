@@ -560,7 +560,7 @@ function renderSolveResult(res,el,stat,solveKey,metadata){
   });
   el.innerHTML=html;
   stat.textContent=metadata&&metadata.cached
-    ?"Plan updated instantly from a Max Items solve cached less than 24 hours ago."
+    ?`Plan updated instantly from a ${res.mode==="credits"?"Max Credits":"Max Items"} solve cached less than 24 hours ago.`
     :res.mode==="credits"&&res.allCandidatesEvaluated===false
     ?"Comparison stopped at the time limit; some priced items were not evaluated."
     :"Plan updated. Solved in "+res.ms.toFixed(1)+" ms";
