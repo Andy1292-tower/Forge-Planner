@@ -42,6 +42,7 @@ const solveService=(()=>{
     lastReason=String(reason||"cancelled");
     clearRequest();
     terminateOwned();
+    fallbackNotice(false,"");
     overlay(false);
     return status();
   }

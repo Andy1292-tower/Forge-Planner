@@ -123,7 +123,7 @@ document.getElementById("fileImport").addEventListener("change",e=>{
     const raw=String(r.result==null?"":r.result);let candidate;
     try{candidate=JSON.parse(raw);}catch(error){showStateRecovery(raw,"Could not read that file because it is not valid JSON.",f);return;}
     solveService.cancel("Import is replacing accepted state");
-    const result=applyImportedState(candidate,renderAll);
+    const result=applyImportedState(candidate,renderAll,()=>solveService.cancel("Import rollback is restoring accepted state"));
     if(!result.ok){showStateRecovery(raw,result.errors.join("; "),f);return;}
     dismissStateRecovery(false);flashSaved();
   };

@@ -415,7 +415,7 @@ function initializeState(render){
   }
   return {state:S,recovery};
 }
-function applyImportedState(candidate,render){
+function applyImportedState(candidate,render,beforeRollback){
   const validation=importState(candidate);
   if(!validation.ok)return validation;
   const previousState=S,previousRaw=_readStorage(LSKEY).raw,previousBackup=_readStorage(STATE_BACKUP_KEY).raw;
@@ -423,12 +423,14 @@ function applyImportedState(candidate,render){
   try{render();}
   catch(error){
     _restorePersistedPair(previousRaw,previousBackup);
+    if(typeof beforeRollback==="function")beforeRollback();
     commitState(previousState);
     try{render();}catch(rollbackError){}
     return {ok:false,errors:["Imported build could not be rendered: "+((error&&error.message)||String(error))]};
   }
   const persisted=_persistValidatedState(S,previousRaw);
   if(!persisted.ok){
+    if(typeof beforeRollback==="function")beforeRollback();
     commitState(previousState);
     try{render();}catch(rollbackError){}
     return {ok:false,errors:persisted.errors};

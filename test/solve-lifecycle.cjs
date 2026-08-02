@@ -197,6 +197,25 @@ test("cancel invalidates the callback, clears fallback work, and terminates only
   assert.equal(harness.elements.solveOverlay.hidden, true);
 });
 
+test("cancel after Worker failure clears the accessible fallback status", () => {
+  const harness = lifecycleHarness();
+  const painted = [];
+  harness.callRequest(request("items", 1, "A"), result => painted.push(result.mode));
+  harness.workers[0].emitError("load failed");
+
+  assert.equal(harness.status().fallbackActive, true);
+  assert.equal(harness.elements.solveFallback.hidden, false);
+  const cancelled = harness.cancel("entering Manual");
+  harness.flushTimers();
+
+  assert.equal(cancelled.active, false);
+  assert.equal(cancelled.fallbackActive, false);
+  assert.equal(harness.elements.solveFallback.hidden, true);
+  assert.equal(harness.elements.solveFallback.textContent, "");
+  assert.equal(harness.elements.solveOverlay.hidden, true);
+  assert.deepEqual(painted, []);
+});
+
 test("an owned Worker failure preserves the generation and callback through synchronous fallback", () => {
   const harness = lifecycleHarness();
   const painted = [];

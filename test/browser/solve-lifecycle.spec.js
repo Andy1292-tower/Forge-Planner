@@ -140,6 +140,46 @@ test("import cancels before transactional replacement and stale imported-over wo
   await expect(page.locator("#results")).not.toContainText("stale pre-import marker");
 });
 
+test("failed import rollback cancels candidate work before restoring accepted state", async ({ page }) => {
+  await installControllableWorker(page);
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await waitForWorkers(page, 1);
+
+  const beforeRaw = await page.evaluate(() => localStorage.getItem("forgePlannerState_v3"));
+  const beforeState = await page.evaluate(() => JSON.stringify(S));
+  const candidate = JSON.parse(beforeState);
+  candidate.mode = candidate.mode === "credits" ? "items" : "credits";
+  candidate.lines[0].spx = 88.75;
+  await page.evaluate(() => {
+    const realRenderAll = renderAll;
+    let calls = 0;
+    renderAll = function failCandidateAndRollbackRender() {
+      calls++;
+      if (calls === 1) {
+        realRenderAll();
+        throw new Error("candidate render failed after starting solve");
+      }
+      throw new Error("rollback render failed before starting replacement work");
+    };
+  });
+
+  await page.locator("#fileImport").setInputFiles({
+    name: "candidate-render-failure.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(candidate)),
+  });
+
+  await expect(page.getByRole("alert")).toContainText("could not be rendered");
+  await waitForWorkers(page, 2);
+  expect(await page.evaluate(() => window.__controlledWorkers[1].terminated)).toBe(true);
+  expect(await page.evaluate(() => JSON.stringify(S))).toBe(beforeState);
+  expect(await page.evaluate(() => localStorage.getItem("forgePlannerState_v3"))).toBe(beforeRaw);
+  expect(await page.evaluate(() => solveService.status().active)).toBe(false);
+  expect(await page.evaluate(() => solveService.status().fallbackActive)).toBe(false);
+  await expect(page.locator("#solveOverlay")).toHaveJSProperty("hidden", true);
+  await expect(page.locator("#solveFallback")).toBeHidden();
+});
+
 test("Worker failure falls back accessibly, then a later request retries and recovers", async ({ page }) => {
   await installControllableWorker(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
@@ -159,6 +199,23 @@ test("Worker failure falls back accessibly, then a later request retries and rec
   await expect(page.locator("#solveOverlay")).toHaveJSProperty("hidden", true);
   await expect(page.locator("#solveFallback")).toBeHidden();
   expect(await page.evaluate(() => solveService.status().workerFailures)).toBe(0);
+});
+
+test("entering Manual after fallback clears the inactive fallback notice", async ({ page }) => {
+  await installControllableWorker(page);
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await waitForWorkers(page, 1);
+
+  await emitWorkerError(page, 0, "failed to load solver script");
+  await expect(page.locator("#solveFallback")).toBeVisible();
+  await page.getByRole("button", { name: "Manual", exact: true }).click();
+
+  await expect(page.locator("#results")).toContainText("Manual mode.");
+  await expect(page.locator("#solveFallback")).toBeHidden();
+  await expect(page.locator("#solveFallback")).toHaveText("");
+  await expect(page.locator("#solveOverlay")).toHaveJSProperty("hidden", true);
+  expect(await page.evaluate(() => solveService.status().fallbackActive)).toBe(false);
+  expect(await page.evaluate(() => solveService.status().active)).toBe(false);
 });
 
 test("page teardown fully cancels the owned Worker and overlay", async ({ page }) => {
