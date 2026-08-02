@@ -744,8 +744,14 @@ function solvePhaseFor(net,name,avail,stabilize,phaseKey){
   demandItems.forEach(it=>{const blockers=chainMinedBlockers(it);if(blockers.length)blockedMined[it]=blockers;});
   const unsat=Object.keys(blockedMined);   // legacy item-level blocker list
   const targets=demandItems.filter(it=>!blockedMined[it]);
+  // Nothing to craft is SUCCESS, not failure: a project fully covered by inventory — or whose
+  // selected levels are all free — used to render a red "(blocked — see notes)" with nothing in the
+  // notes, drag the whole plan's feasible flag down, and score cost=Infinity so the FREE project
+  // sorted LAST. demandItems empty is the only "nothing to do" case; targets empty with demand still
+  // present means everything left is blocked on a missing mined income, which stays infeasible so
+  // the "Missing mined income" notice and the phase card's blocked badge tell the truth.
   if(targets.length===0)
-    return {name,plan:[],balance:[],minedUsage:[],demandItems,net,rate:{},eta:0,bottleneck:null,infeasItems:[],unsat,blockedMined,atRisk:[],items:[],z:0,partial:false,feasible:false};
+    return {name,plan:[],balance:[],minedUsage:[],demandItems,net,rate:{},eta:0,bottleneck:null,infeasItems:[],unsat,blockedMined,atRisk:[],items:[],z:0,partial:false,feasible:demandItems.length===0};
   const sch=projectSchedule(net,targets,avail,stabilize?{stabilize:true,phaseKey:(phaseKey!=null?phaseKey:name)}:null);
   const rate={};targets.forEach(it=>rate[it]=Math.max(0,sch.rate[it]||0));
   let eta=0,bottleneck=null;const infeasItems=[];
