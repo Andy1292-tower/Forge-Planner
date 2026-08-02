@@ -278,7 +278,12 @@ function renderProjectResults(res,el,stat){
       bd+=`</tbody></table>`;
     }
   }
-  const minedNote=minedUsageNote(resultMinedUsage(res));
+  // The top-level mined-usage note is derived from phase 1 alone (optimizeProjectTop's `main`), so in
+  // a sequenced or waved plan it goes silent whenever a LATER phase forges the mined craft — and when
+  // phase 1 does forge it, it reports that one phase's burn as though it were the whole plan. The
+  // step plan carries a per-phase note built from each phase's own minedUsage, which is the honest
+  // version, so suppress the misleading top-level copy in those shapes.
+  const minedNote=(res.sequenced||res.waved)?"":minedUsageNote(resultMinedUsage(res));
   if(minedNote)bd+=minedNote;
   html+=`<details class="cat-panel breakdown-panel" ${_breakdownOpen?"open":""}><summary data-paneltoggle="breakdown"><span class="cat-sum-lbl">Full breakdown — demand, line assignment, resource balance</span><span class="cat-sum-meta">the numbers</span></summary><div class="panel-pad">${bd}</div></details>`;
   el.innerHTML=html;
