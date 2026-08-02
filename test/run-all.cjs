@@ -19,6 +19,7 @@ const tests = [
   "test/minedui.cjs",
   "test/rawtargets.cjs",
   "test/scale.cjs",
+  "test/seqgate.cjs",
   "test/solve-lifecycle.cjs",
   "test/state-schema.cjs",
   "test/stability.cjs",
