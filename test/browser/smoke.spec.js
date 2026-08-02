@@ -184,12 +184,13 @@ test("the planner serves, solves in its Worker, and opens every planning mode", 
       from: 1, to: 1, done: 0, prio: null, levels: [{ costs: [{ item: "Frames", qty: 10_000 }] }] }];
     normalize(state);syncManual(state);
     const worker = __forgeCreateSolverWorker();
-    const timeout = setTimeout(() => { worker.terminate(); reject(new Error("Project Worker solve timed out")); }, 10_000);
+    const release = () => { if(typeof worker.__forgeRelease === "function")worker.__forgeRelease(); };
+    const timeout = setTimeout(() => { release();worker.terminate();reject(new Error("Project Worker solve timed out")); }, 10_000);
     worker.onmessage = event => {
-      clearTimeout(timeout);worker.terminate();
+      clearTimeout(timeout);release();worker.terminate();
       if(event.data&&event.data.error)reject(new Error(event.data.error));else resolve(event.data&&event.data.res);
     };
-    worker.onerror = event => { clearTimeout(timeout);worker.terminate();reject(new Error(event.message||"Project Worker failed")); };
+    worker.onerror = event => { clearTimeout(timeout);release();worker.terminate();reject(new Error(event.message||"Project Worker failed")); };
     worker.postMessage({reqId:991,generation:991,mode:"project",stateRevision:1,state,budget:state.solveBudget,stab:{}});
   }));
   expect(projectWorkerResult.mode).toBe("project");

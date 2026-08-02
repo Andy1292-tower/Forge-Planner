@@ -68,6 +68,37 @@ const runner = `
   const clone=x=>JSON.parse(JSON.stringify(x));
   const boundaryShape=r=>(r.boundaries||[]).map(b=>({time:b.time,inventory:b.inventory,minedRates:b.minedRates}));
 
+  const malformedCases=[
+    ["top-level phases object",{}],
+    ["null phase",[null]],
+    ["plan object",[{kind:"project",eta:1,plan:{},demandSub:{}}]],
+    ["entries object",[{kind:"project",eta:1,plan:[{line:1,entries:{}}],demandSub:{}}]],
+    ["cons object",[{kind:"project",eta:1,plan:[{line:1,entries:[{item:"A",lvl:1,frac:1,outHr:1,cons:{}}]}],demandSub:{}}]],
+    ["demand array",[{kind:"project",eta:1,plan:[],demandSub:[]}]],
+    ["pre-produced string",[{kind:"project",eta:1,plan:[],demandSub:{},preProducedDemand:"Bits"}]],
+    ["external array",[{kind:"prerequisite",eta:0,plan:[],demandSub:{},externalSupply:[]}]],
+    ["infinite demand",[{kind:"project",eta:1,plan:[],demandSub:{B:Infinity}}]],
+    ["negative pre-produced",[{kind:"project",eta:1,plan:[],demandSub:{},preProducedDemand:{Bits:-1}}]],
+    ["infinite external",[{kind:"prerequisite",eta:0,plan:[],demandSub:{},externalSupply:{Bits:Infinity}}]],
+    ["external without matching total",[{kind:"prerequisite",eta:0,plan:[],demandSub:{},externalSupply:{Bits:1},prerequisiteDemand:{}}]],
+    ["external exceeds total",[{kind:"prerequisite",eta:0,plan:[],demandSub:{},externalSupply:{Bits:2},prerequisiteDemand:{Bits:1}}]],
+    ["external prerequisite has duration",[{kind:"prerequisite",eta:1,plan:[],demandSub:{},externalSupply:{Bits:1},prerequisiteDemand:{Bits:1}}]],
+    ["external prerequisite has line work",[{kind:"prerequisite",eta:0,plan:[{line:1,entries:[{item:"A",lvl:1,frac:1,outHr:1,cons:[]}]}],demandSub:{},externalSupply:{Bits:1},prerequisiteDemand:{Bits:1}}]],
+    ["negative output",[{kind:"project",eta:1,plan:[{line:1,entries:[{item:"A",lvl:1,frac:1,outHr:-1,cons:[]}]}],demandSub:{}}]],
+    ["infinite consumption",[{kind:"project",eta:1,plan:[{line:1,entries:[{item:"B",lvl:1,frac:1,outHr:1,cons:[{item:"A",hr:Infinity}]}]}],demandSub:{}}]],
+    ["epsilon entry still validates nested data",[{kind:"project",eta:1,plan:[{line:1,entries:[{item:"GHOST",lvl:1,frac:0,outHr:Infinity,cons:{}}]}],demandSub:{}}]]
+  ];
+  const malformedFailures=[];
+  malformedCases.forEach(([name,input])=>{let replay;
+    try{replay=replayProjectSchedule(input,{},ctx());}
+    catch(error){malformedFailures.push(name+" threw "+error.message);return;}
+    if(replay.ok||!replay.firstFailure||replay.firstFailure.kind!=="malformed")malformedFailures.push(name+" failed open");
+  });
+  assert.deepEqual(malformedFailures,[],"malformed schedules return stable blocking diagnostics without throwing");
+  const toleratedPrerequisite=replayProjectSchedule([{kind:"prerequisite",eta:0,plan:[],demandSub:{},
+    externalSupply:{Bits:1+1e-9},prerequisiteDemand:{Bits:1}}],{},ctx());
+  assert.equal(toleratedPrerequisite.ok,true,"ULP/absolute-tolerance carry does not invalidate a scheduler-owned prerequisite");
+
   const ordered={kind:"project",name:"pipeline",eta:1,demandSub:{B:5},plan:[
     {line:2,entries:[{item:"B",lvl:1,frac:.5,outHr:5,cons:[{item:"A",hr:5}]}]},
     {line:1,entries:[{item:"A",lvl:1,frac:.5,outHr:5,cons:[]}]}
@@ -155,6 +186,15 @@ const runner = `
   const minedBlocked=replayProjectSchedule([mined],{},ctx({minedIncomeRates:{Vespium:6}}));
   assert.equal(minedBlocked.ok,false);assert.equal(minedBlocked.firstFailure.kind,"mined-rate");
   assert.ok(Math.abs(minedBlocked.firstFailure.excess-4)<1e-9,"active mined rate, not phase average, is capped");
+  const bothMined={kind:"warmup",eta:1,plan:[
+    {line:1,entries:[{item:"A",lvl:1,frac:1,outHr:1,cons:[{item:"Vespium",hr:9}]}]},
+    {line:2,entries:[{item:"B",lvl:1,frac:1,outHr:1,cons:[{item:"Hydracite",hr:8}]}]}
+  ]};
+  const bothCaps=replayProjectSchedule([bothMined],{},ctx({minedIncomeRates:{Vespium:5,Hydracite:4}}));
+  assert.equal(bothCaps.ok,false);assert.equal(bothCaps.firstFailure.kind,"mined-rate");
+  const bothBoundary=bothCaps.boundaries.find(b=>b.kind==="switch");
+  assert.equal(bothBoundary.minedRates.Vespium,9);assert.equal(bothBoundary.minedRates.Hydracite,8,
+    "simultaneous mined-resource rates are both preserved and checked");
 
   let calls=0;
   const warm=buildExecutableProjectSchedule([draw],{},ctx(),deficit=>{calls++;return {
@@ -177,6 +217,55 @@ const runner = `
   assert.equal(unrelated.validation.ok,false,"a callback cannot widen warm-up recursion to an unrelated recipe branch");
   assert.match(unrelated.validation.firstFailure.message,/unrelated|dependency|ancestor/i);
   assert.equal(maliciousCalls,1,"unrelated recursive stock is rejected before invoking the callback again");
+  const callbackContext=ctx({ordinaryResources:["A","B","C"],recipeDependencies:{A:[],B:["A"],C:[]},recipeDepth:{A:0,B:1,C:0}});
+  const externalCheat=buildExecutableProjectSchedule([draw],{},callbackContext,()=>({kind:"warmup",eta:0,plan:[],externalSupply:{A:10}}));
+  assert.equal(externalCheat.validation.ok,false,"solveBuffer cannot inject scheduler-owned external supply");
+  assert.equal(externalCheat.validation.firstFailure.kind,"malformed");
+  const callbackMapCheat=buildExecutableProjectSchedule([draw],{},callbackContext,deficit=>({kind:"warmup",eta:1,demandSub:{B:Infinity},plan:[{line:1,entries:[
+    {item:"A",lvl:1,frac:1,outHr:deficit.A||0,cons:[]}
+  ]}]}));
+  assert.equal(callbackMapCheat.validation.ok,false,"explicit callback maps are validated before scheduler fields are imposed");
+  assert.equal(callbackMapCheat.validation.firstFailure.kind,"malformed");
+  const ghostCheat=buildExecutableProjectSchedule([draw],{GHOST:999},callbackContext,deficit=>({kind:"warmup",eta:1,plan:[{line:1,entries:[
+    {item:"A",lvl:1,frac:1,outHr:deficit.A||0,cons:[{item:"GHOST",hr:999}]}
+  ]}]}));
+  assert.equal(ghostCheat.validation.ok,false,"unknown callback consumption cannot disappear from replay");
+  assert.equal(ghostCheat.validation.firstFailure.kind,"malformed");
+  const stockedUnrelated=buildExecutableProjectSchedule([draw],{C:100},callbackContext,deficit=>({kind:"warmup",eta:1,plan:[{line:1,entries:[
+    {item:"A",lvl:1,frac:1,outHr:deficit.A||0,cons:[{item:"C",hr:1}]}
+  ]}]}));
+  assert.equal(stockedUnrelated.validation.ok,false,"unrelated consumption is rejected even when enough stock hides the deficit");
+  assert.match(stockedUnrelated.validation.firstFailure.message,/unrelated|dependency|ancestor/i);
+  const legitimateMinedWarmup=buildExecutableProjectSchedule([draw],{},ctx({minedIncomeRates:{Vespium:2}}),deficit=>({kind:"warmup",eta:1,plan:[{line:1,entries:[
+    {item:"A",lvl:1,frac:1,outHr:deficit.A||0,cons:[{item:"Vespium",hr:1}]}
+  ]}]}));
+  assert.equal(legitimateMinedWarmup.validation.ok,true,"known mined consumption is replay-capped but not treated as ordinary ancestry");
+  const unrelatedOutput=buildExecutableProjectSchedule([draw],{},callbackContext,deficit=>({kind:"warmup",eta:1,plan:[
+    {line:1,entries:[{item:"A",lvl:1,frac:1,outHr:deficit.A||0,cons:[]}]},
+    {line:2,entries:[{item:"C",lvl:1,frac:1,outHr:1,cons:[]}]}
+  ]}));
+  assert.equal(unrelatedOutput.validation.ok,false,"callback output stays inside target ancestry");
+  assert.match(unrelatedOutput.validation.firstFailure.message,/unrelated|dependency|ancestor/i);
+  const excessivePhases=buildExecutableProjectSchedule([draw],{},callbackContext,deficit=>Array.from({length:1001},()=>({kind:"warmup",eta:.001,plan:[{line:1,entries:[{item:"A",lvl:1,frac:1,outHr:deficit.A||0,cons:[]}]}]})));
+  assert.equal(excessivePhases.validation.ok,false);assert.match(excessivePhases.validation.firstFailure.message,/too many|limit/i);
+  const excessiveLines=buildExecutableProjectSchedule([draw],{},callbackContext,deficit=>({kind:"warmup",eta:1,plan:Array.from({length:1001},(_,i)=>({line:i+1,entries:[{item:"A",lvl:1,frac:1,outHr:(deficit.A||0)/1001,cons:[]}]}))}));
+  assert.equal(excessiveLines.validation.ok,false);assert.match(excessiveLines.validation.firstFailure.message,/too many|limit/i);
+  const excessiveEntries=buildExecutableProjectSchedule([draw],{},callbackContext,deficit=>({kind:"warmup",eta:1,plan:[{line:1,entries:Array.from({length:1001},()=>({item:"A",lvl:1,frac:1/1001,outHr:(deficit.A||0)/1001,cons:[]}))}]}));
+  assert.equal(excessiveEntries.validation.ok,false);assert.match(excessiveEntries.validation.firstFailure.message,/too many|limit/i);
+
+  let combinedCalls=0;
+  const combinedProject={kind:"project",eta:1,demandSub:{B:2},plan:[{line:1,entries:[{item:"B",lvl:1,frac:1,outHr:1,cons:[{item:"A",hr:1}]}]}]};
+  const combinedRoots=buildExecutableProjectSchedule([combinedProject],{},ctx(),(deficit)=>{combinedCalls++;
+    if(deficit.A&&deficit.B)return [
+      {kind:"warmup",eta:1,plan:[{line:1,entries:[{item:"B",lvl:1,frac:1,outHr:deficit.B,cons:[{item:"A",hr:deficit.B}]}]}]},
+      {kind:"warmup",eta:1,plan:[{line:1,entries:[{item:"A",lvl:1,frac:1,outHr:deficit.A,cons:[]}]}]}
+    ];
+    return {kind:"warmup",eta:1,plan:[{line:1,entries:[{item:"A",lvl:1,frac:1,outHr:deficit.A||0,cons:[]}]}]};
+  });
+  assert.equal(combinedRoots.validation.ok,true,"A remains a legal recursive ancestor when A and dependent B are combined roots");
+  assert.ok(combinedCalls>=2);
+  const cyclic=buildExecutableProjectSchedule([draw],{},ctx({recipeDependencies:{A:["B"],B:["A"]},recipeDepth:{A:0,B:1}}),deficit=>({kind:"warmup",eta:1,plan:[{line:1,entries:[{item:"A",lvl:1,frac:1,outHr:deficit.A||0,cons:[{item:"B",hr:1}]}]}]}));
+  assert.equal(cyclic.validation.ok,false,"cyclic callback ancestry is rejected");assert.match(cyclic.validation.firstFailure.message,/cycle|acyclic/i);
   const semantic=[
     {kind:"project",semanticIndex:0,eta:5,demandSub:{B:1},plan:[{line:1,entries:[{item:"B",lvl:1,frac:1,outHr:.2,cons:[{item:"A",hr:.4}]}]}]},
     {kind:"project",semanticIndex:1,eta:7,demandSub:{B:1},plan:[{line:1,entries:[{item:"B",lvl:1,frac:1,outHr:1/7,cons:[{item:"A",hr:1/7}]}]}]}
@@ -184,6 +273,19 @@ const runner = `
   const timed=buildExecutableProjectSchedule(semantic,{},ctx(),(deficit,_inv,info)=>{const eta=info.sourcePhase.semanticIndex===0?2:1;
     return {kind:"warmup",eta,plan:[{line:1,entries:[{item:"A",lvl:1,frac:1,outHr:(deficit.A||0)/eta,cons:[]}]}]};});
   assert.equal(timed.validation.ok,true);assert.equal(timed.phases.length,4);assert.ok(Math.abs(timed.eta-15)<1e-9,"warm-up durations add to semantic LP work ETA");
+  let repeatedCalls=0;
+  const repeated=buildExecutableProjectSchedule([clone(draw),clone(draw)],{},ctx(),deficit=>{repeatedCalls++;return {
+    kind:"warmup",eta:1,plan:[{line:1,entries:[{item:"A",lvl:1,frac:1,outHr:deficit.A||0,cons:[]}]}]
+  };});
+  assert.equal(repeated.validation.ok,true,"identical deficits in distinct semantic phases do not trip a cross-phase signature guard");
+  assert.equal(repeatedCalls,2);
+
+  const mutationPhases=[clone(draw)],mutationInventory={A:4},mutationContext=ctx();
+  const mutationBefore=clone({phases:mutationPhases,inventory:mutationInventory,context:mutationContext});
+  replayProjectSchedule(mutationPhases,mutationInventory,mutationContext);
+  buildExecutableProjectSchedule(mutationPhases,mutationInventory,mutationContext,deficit=>({kind:"warmup",eta:1,plan:[{line:1,entries:[{item:"A",lvl:1,frac:1,outHr:deficit.A||0,cons:[]}]}]}));
+  assert.deepEqual({phases:mutationPhases,inventory:mutationInventory,context:mutationContext},mutationBefore,
+    "replay and builder do not mutate nested caller inputs");
 
   let seed=0x51f15e;const rnd=()=>((seed=(seed*1664525+1013904223)>>>0)/4294967296);
   for(let i=0;i<40;i++){
@@ -205,12 +307,24 @@ const eventsSrc = fs.readFileSync(path.join(root, "js", "events.js"), "utf8");
 const stepStart = eventsSrc.indexOf("function stepPlanHtml(res){");
 const stepEnd = eventsSrc.indexOf("// ── Plan-start", stepStart);
 assert.ok(stepStart >= 0 && stepEnd > stepStart, "step-plan renderer remains extractable for its safety contract");
-const stepPlanHtml = Function(eventsSrc.slice(stepStart, stepEnd) + "\nreturn stepPlanHtml;")();
+const testDisp = value => value===40000?"40k":value===80000?"80k":String(value);
+const stepPlanHtml = Function("S","fmtDuration","htmlText","disp","RAWS","MINED_CRAFTS","compressionLabel","minedUsageNote",
+  eventsSrc.slice(stepStart, stepEnd) + "\nreturn stepPlanHtml;")(
+    {planStart:1},value=>String(value)+"h",String,testDisp,[],{},String,()=>"");
 const partialCopy = stepPlanHtml({empty:false,phases:[{}],executionPhases:[{kind:"project",eta:1,plan:[]}],
   feasible:false,lpFeasible:false,partial:true,eta:1,scheduleValidation:{ok:true,boundaries:[]}});
 assert.match(partialCopy,/No executable run instructions/);
 assert.doesNotMatch(partialCopy,/Follow the|Set all|Run this|Do these/,
   "average-infeasible partial plans must never emit imperative execution copy");
+const partialBitsPhase={kind:"prerequisite",eta:0,plan:[],externalSupply:{Bits:40000},
+  prerequisiteDemand:{Bits:80000},invStart:{Bits:40000}};
+const partialBitsCopy=stepPlanHtml({empty:false,phases:[{}],executionPhases:[partialBitsPhase],
+  feasible:true,lpFeasible:true,partial:false,eta:0,scheduleValidation:{ok:true,boundaries:[]}});
+assert.match(partialBitsCopy,/Pre-produce <b>40k more Bits<\/b>/);
+assert.match(partialBitsCopy,/<b>80k total<\/b>/);
+assert.match(partialBitsCopy,/<b>40k currently on hand<\/b>/);
+assert.doesNotMatch(partialBitsCopy,/Have <b>40k Bits<\/b>/,
+  "step-plan copy must not present the additional shortfall as the total requirement");
 
 const resultsSrc = fs.readFileSync(path.join(root, "js", "results.js"), "utf8");
 const renderStart = resultsSrc.indexOf("function renderProjectResults(res,el,stat){");
@@ -219,13 +333,30 @@ assert.ok(renderStart >= 0 && renderEnd > renderStart, "Project result renderer 
 const renderProjectResults = Function("S","mutateState","save","projectForgieNote","projPlanAnchorHtml","htmlText","disp","fmtDuration",
   "stepsProjControls","stepPlanHtml","ALLITEMS","num","resultMinedUsage","minedUsageNote","lineAssignTableHtml","idleLinesNote",
   `let _lastProjectRes=null,_breakdownOpen=false,_projAdjustOpen=false;${resultsSrc.slice(renderStart,renderEnd)};return renderProjectResults;`)(
-    {planStart:1,projects:[],inventory:{}},()=>{},()=>{},()=>"",()=>"",String,String,()=>"1h",()=>"",()=>partialCopy,[],Number,()=>[],()=>"",()=>"",()=>"");
+    {planStart:1,projects:[],inventory:{Bits:40000}},()=>{},()=>{},()=>"",()=>"",String,testDisp,()=>"1h",()=>"",()=>partialCopy,[],Number,()=>[],()=>"",()=>"",()=>"");
+const bitsEl={innerHTML:""},bitsStat={textContent:""};
+renderProjectResults({empty:false,sequenced:false,waved:false,single:true,feasible:true,lpFeasible:true,partial:false,
+  eta:3,workEta:2,ms:1,perProject:[],phases:[{name:"Frames",eta:2,demandSub:{}}],executionPhases:[partialBitsPhase],
+  scheduleValidation:{ok:true,boundaries:[]},blockedMined:{},infeasItems:[],atRiskItems:[],demandItems:[],rate:{},net:{},balance:[],plan:[]},bitsEl,bitsStat);
+assert.match(bitsEl.innerHTML,/Pre-produce <b>40k more Bits<\/b>/);
+assert.match(bitsEl.innerHTML,/<b>80k total<\/b>/);
+assert.match(bitsEl.innerHTML,/<b>40k currently on hand<\/b>/);
+assert.doesNotMatch(bitsEl.innerHTML,/Have <b>40k Bits<\/b>/,
+  "result summary distinguishes additional Bits from the total prerequisite");
 const blockedEl={innerHTML:""},blockedStat={textContent:""};
 renderProjectResults({empty:false,sequenced:false,waved:false,single:false,feasible:true,lpFeasible:true,partial:false,
-  eta:3,workEta:2,ms:1,perProject:[],phases:[{name:"Blocked",eta:2,demandSub:{}}],executionPhases:[{kind:"prerequisite",externalSupply:{Bits:8}}],
+  eta:3,workEta:2,ms:1,bottleneck:"A",perProject:[],phases:[{name:"Blocked",eta:2,demandSub:{}}],executionPhases:[{kind:"prerequisite",externalSupply:{Bits:8}}],
   scheduleValidation:{ok:false,firstFailure:{kind:"mined-rate",resource:"Vespium",time:1,excess:4,message:"over cap"}},
   blockedMined:{},infeasItems:[],atRiskItems:[],demandItems:[],rate:{},net:{},balance:[],plan:[]},blockedEl,blockedStat);
 assert.match(blockedEl.innerHTML,/Executable schedule blocked/);
 assert.doesNotMatch(blockedEl.innerHTML,/External pre-produced prerequisite|Startup warm-up included|Have <b>/,
   "blocked results keep prerequisite data diagnostic rather than imperative");
+assert.doesNotMatch(blockedEl.innerHTML,/sets the finish time/i,"blocked bottleneck copy stays analytical");
 assert.match(blockedStat.textContent,/Schedule blocked/);
+const blockedWaveEl={innerHTML:""},blockedWaveStat={textContent:""};
+renderProjectResults({empty:false,sequenced:false,waved:true,single:false,feasible:false,lpFeasible:true,partial:false,
+  eta:3,workEta:2,ms:1,perProject:[],phases:[{name:"Blocked wave",members:["One"],eta:2,demandSub:{},feasible:true}],executionPhases:[],
+  scheduleValidation:{ok:false,firstFailure:{kind:"stock",resource:"A",time:1,deficit:2,message:"short"}},
+  blockedMined:{},infeasItems:[],atRiskItems:[],demandItems:[],rate:{},net:{},balance:[],plan:[]},blockedWaveEl,blockedWaveStat);
+assert.doesNotMatch(blockedWaveEl.innerHTML,/Order:|finish each wave|Build order|Completion order|Done by/i,
+  "blocked waved results suppress every imperative ordering instruction");

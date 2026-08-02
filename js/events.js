@@ -639,8 +639,10 @@ function stepPlanHtml(res){
     const label=ph.kind==="prerequisite"?"External prerequisite":ph.kind==="warmup"?"Warm-up":htmlText(ph.name||"Project phase");
     h+=`<div class="step-h"><span class="step-n">${i+1}</span> <b>${label}</b> <span class="proj-mini">${ph.eta>0?"· "+fmtDuration(ph.eta)+" · complete by ":"· before crafting begins"}</span>${ph.eta>0?'<span class="step-clock">~'+fmtClock(pStart+(ph.eta||0))+'</span>':""}</div>`;
     if(ph.kind==="prerequisite"){
-      const supply=Object.entries(ph.externalSupply||{}).map(([resource,amount])=>`<b>${disp(amount)} ${htmlText(resource)}</b>`).join(" and ");
-      h+=`<div class="notice info" style="font-size:11px;margin:4px 0 6px">Have ${supply} pre-produced and available before starting. Same-phase production cannot satisfy this prerequisite.</div></div>`;return;
+      const supply=Object.entries(ph.externalSupply||{}).map(([resource,amount])=>{const current=(ph.invStart&&ph.invStart[resource])||0;
+        const total=(ph.prerequisiteDemand&&ph.prerequisiteDemand[resource])||current+amount;
+        return `Pre-produce <b>${disp(amount)} more ${htmlText(resource)}</b> (<b>${disp(total)} total</b>; <b>${disp(current)} currently on hand</b>)`;}).join(" and ");
+      h+=`<div class="notice info" style="font-size:11px;margin:4px 0 6px">${supply} before starting. Same-phase production cannot satisfy this prerequisite.</div></div>`;return;
     }
     if(!lines.length){h+=`<div class="proj-mini" style="padding:2px 0">No line activity.</div></div>`;return;}
     const onHandAt=(item,elapsed)=>{const matches=allBoundaries.filter(b=>b.phaseIndex===i&&b.kind==="switch"&&Math.abs((b.phaseTime||0)-elapsed)<1e-7);

@@ -60,3 +60,40 @@ The generated Blob Worker smoke spec now solves the exact 10,000-Frames/zero-sto
 ## Remaining verification boundary
 
 The browser smoke test was syntax-checked but not executed locally because browser launch was explicitly prohibited. CI remains the owner of the generated-app/Blob-Worker browser execution.
+
+## Review fix round 1
+
+Commit `1e36613` received a NEEDS FIXES review. The follow-up used separate RED/GREEN cycles for every Important finding.
+
+### RED evidence
+
+- The malformed schedule table reported all original failures in one run: non-array top-level input and bad maps failed open; null phases and object-shaped `plan`, `entries`, and `cons` containers threw. Infinity and negative resource values were silently accepted.
+- A zero-fraction entry initially bypassed validation of its unknown output, infinite rate, and object-shaped consumption.
+- A callback consuming unrelated `C` remained executable when `C` inventory was sufficient, proving ancestry was only checked after a deficit.
+- A callback with an invalid explicit `demandSub` map was accepted because scheduler-owned fields overwrote it before validation.
+- The legitimate mined warm-up test initially failed because Vespium was incorrectly treated as an ordinary recipe-ancestry requirement.
+- The partial-Bits step renderer said `Have 40k Bits` even though the actual contract was 40k additional and 80k total.
+- Scheduler prerequisite fixtures without a total, with supply above total, with nonzero time, or with line work all failed open. A tolerated `1e-9` carry was initially rejected by a strict comparison.
+- Blocked result fixtures retained ordering, wave, `Done by`, and finish-time language.
+
+### Fixes and regression coverage
+
+- Every schedule container and explicit resource map is now shape-checked before iteration. Values must be known, numeric, finite, and nonnegative; malformed inputs return stable `{kind: "malformed"}` diagnostics instead of throwing.
+- Canonicalization applies safe bounds to phase, line, entry, and consumption counts. Callback results have a stricter 64-phase bound.
+- Callback maps are validated before scheduler fields are imposed. Callback `externalSupply`, unknown resources, unrelated ordinary output/consumption, and sufficient-stock ancestry bypasses are blocked.
+- Dependency closure preserves a root that is also another combined root's legitimate ancestor (`B -> A` with roots `A + B`), while cycles, repeated targets, depth overflow, and unrelated widening remain blocked.
+- Known mined consumption is allowed through ancestry validation and remains subject to instantaneous replay caps; informational consumption remains non-inventory data.
+- Scheduler-owned external prerequisites require zero ETA, no line entries, a matching finite total, and supply no greater than that total within production stock tolerance.
+- Both prerequisite renderers now say how much more to pre-produce, the total requirement, and current on-hand stock. Blocked results omit imperative ordering/wave/finish-clock language and label retained data as analytical LP output.
+- Added direct coverage for deep input non-mutation, identical deficits in separate semantic phases, simultaneous Vespium/Hydracite rates, epsilon-filtered malformed entries, callback bounds, callback external-supply/unknown/unrelated cheats, legitimate mined warm-ups, combined-root recursion, and cyclic ancestry.
+- The generated Worker smoke fixture now explicitly invokes its attached object-URL release hook on response, timeout, and error before termination.
+
+### Fix-round verification
+
+- `node test/project-transients.cjs` — pass
+- impacted Project, inventory, Forgie, mined, stability, gate, stock-risk, and static-build tests — pass
+- `npm test` — `20 test scripts passed`; parity `16 ok, 0 improved, 0 failed`
+- `npm run build` — pass
+- browser smoke spec syntax — pass; browser not launched per task constraint
+- `git diff --check` — pass
+- frozen compatibility Worker hashes unchanged and compatibility numstat diff empty

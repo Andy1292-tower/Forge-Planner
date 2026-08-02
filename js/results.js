@@ -136,9 +136,10 @@ function projectForgieNote(res){
 }
 function renderProjectResults(res,el,stat){
   _lastProjectRes=res;
+  const scheduleExecutable=!!(res&&res.feasible&&res.lpFeasible&&res.scheduleValidation&&res.scheduleValidation.ok);
   // Seed the plan-start anchor once, the first time a real plan exists (issue #87 item 1) — moved here
   // from the old modal's open handler now that the step plan is always on screen. Display anchor only.
-  if(S.planStart==null&&res&&!res.empty&&res.phases&&res.phases.length){mutateState(st=>{st.planStart=Date.now();});save();}
+  if(S.planStart==null&&scheduleExecutable&&res.phases&&res.phases.length){mutateState(st=>{st.planStart=Date.now();});save();}
   if(res.empty){
     // Distinguish "everything's done" from "nothing configured" (issue #87 item 2). When active
     // projects exist but are fully checked off, keep the Track-progress opener so the user can still
@@ -156,25 +157,26 @@ function renderProjectResults(res,el,stat){
     el.innerHTML=`<div class="notice info">No project demand yet. Open <b>Shopping list</b>, add a project with item costs, tick it <b>on</b>, then come back. Enter your current <b>inventory</b> there too — it's subtracted from what you need to craft.</div>`;
     stat.textContent="Plan updated. No project demand selected.";return;
   }
-  const scheduleExecutable=!!(res.feasible&&res.lpFeasible&&res.scheduleValidation&&res.scheduleValidation.ok);
   let html="";
   // Header: ordering note + Track-progress opener. The step plan below is the main event, so there's
   // no longer a "Step-by-step" button — this panel *is* it.
   html+=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-    <div class="proj-mini" style="font-size:11.5px">${res.sequenced?'Order: <b style="color:var(--ink2)">one project at a time</b> — unlocks first, then your order, then cheapest. Change in Shopping list.':res.waved?'Order: <b style="color:var(--ink2)">all together, in unlock waves</b> — material unlocks first, then the rest. Change in Shopping list.':res.single?'Order: <b style="color:var(--ink2)">all projects in one phase</b> — unlock ordering off. Change in Shopping list.':'Order: <b style="color:var(--ink2)">all projects together</b> (fastest total). Change in Shopping list.'}</div>
+    <div class="proj-mini" style="font-size:11.5px">${scheduleExecutable?(res.sequenced?'Order: <b style="color:var(--ink2)">one project at a time</b> — unlocks first, then your order, then cheapest. Change in Shopping list.':res.waved?'Order: <b style="color:var(--ink2)">all together, in unlock waves</b> — material unlocks first, then the rest. Change in Shopping list.':res.single?'Order: <b style="color:var(--ink2)">all projects in one phase</b> — unlock ordering off. Change in Shopping list.':'Order: <b style="color:var(--ink2)">all projects together</b> (fastest total). Change in Shopping list.'):'Exact replay is blocked. Review the diagnostic and analytical breakdown below.'}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn primary" id="btnProgress">Track progress</button>
     </div></div>`;
   // Plan-start anchor (promoted from the old modal header)
-  html+=projPlanAnchorHtml();
+  if(scheduleExecutable)html+=projPlanAnchorHtml();
   // Key notices — the ones that change what you actually do. The old verbose "Project plan." explainer
   // is dropped; the step-plan intro below already tells you how to run it.
   html+=projectForgieNote(res);
   const prerequisites=(res.executionPhases||[]).filter(ph=>ph.kind==="prerequisite");
   const warmups=(res.executionPhases||[]).filter(ph=>ph.kind==="warmup");
   if(scheduleExecutable&&prerequisites.length){
-    const needs=prerequisites.flatMap(ph=>Object.entries(ph.externalSupply||{})).map(([resource,amount])=>`<b>${disp(amount)} ${htmlText(resource)}</b>`).join(" and ");
-    html+=`<div class="notice info"><b>External pre-produced prerequisite:</b> Have ${needs} available before the timed work begins. This is listed as an explicit zero-time execution step and cannot be supplied by the same phase.</div>`;
+    const needs=prerequisites.flatMap(ph=>Object.entries(ph.externalSupply||{}).map(([resource,amount])=>{const current=(ph.invStart&&ph.invStart[resource])||0;
+      const total=(ph.prerequisiteDemand&&ph.prerequisiteDemand[resource])||current+amount;
+      return `Pre-produce <b>${disp(amount)} more ${htmlText(resource)}</b> (<b>${disp(total)} total</b>; <b>${disp(current)} currently on hand</b>)`;})).join(" and ");
+    html+=`<div class="notice info"><b>External pre-produced prerequisite:</b> ${needs} before the timed work begins. This is an explicit zero-time execution step and cannot be supplied by the same phase.</div>`;
   }
   if(scheduleExecutable&&warmups.length){const warmEta=warmups.reduce((sum,ph)=>sum+(ph.eta||0),0);
     html+=`<div class="notice info"><b>Startup warm-up included:</b> ${fmtDuration(warmEta)} builds the ordinary input stock needed to keep every replay boundary nonnegative. The total and finish clocks include this time.</div>`;}
@@ -185,7 +187,7 @@ function renderProjectResults(res,el,stat){
       :`${htmlText(f.resource||"A required resource")} is short by <b>${disp(f.deficit||0)}</b>${when}.`;
     html+=`<div class="notice warn"><b>Executable schedule blocked:</b> ${detail} ${htmlText(f.message||"")}</div>`;
   }
-  if(res.waved)html+=`<div class="notice info" style="font-size:11.5px"><b>Unlock-aware order.</b> Some projects unlock materials others need (Frames, Gel, Wire), so this is split into <b>${res.phases.length} waves</b> — finish each wave before starting the next. Everything within a wave is crafted together.</div>`;
+  if(scheduleExecutable&&res.waved)html+=`<div class="notice info" style="font-size:11.5px"><b>Unlock-aware order.</b> Some projects unlock materials others need (Frames, Gel, Wire), so this is split into <b>${res.phases.length} waves</b> — finish each wave before starting the next. Everything within a wave is crafted together.</div>`;
   if(res.blockedMined&&Object.keys(res.blockedMined).length){
     const blocked=Object.entries(res.blockedMined).map(([item,resources])=>`<b>${item}</b> needs ${resources.map(r=>`<b>${r}</b>`).join(" and ")}`).join("; ");
     html+=`<div class="notice warn"><b>Missing mined income:</b> ${blocked}. Enter those incomes in <b>Mined resources</b> to include the blocked items; they remain excluded from the plan time below.</div>`;
@@ -196,8 +198,8 @@ function renderProjectResults(res,el,stat){
   // Summary metrics
   html+=`<div class="metrics">
     <div class="metric"><div class="l">${res.partial?"Partial plan time":scheduleExecutable?"Executable total time":"Analytical LP time"}</div><div class="v">${fmtDuration(scheduleExecutable?res.eta:res.workEta)}</div><div class="u">${res.partial?"currently plannable work only":scheduleExecutable?(res.sequenced?"includes warm-ups; finishes every project":"includes warm-ups and prerequisites"):"not executable — see blocking diagnostic"}</div></div>
-    <div class="metric"><div class="l">Projects</div><div class="v">${res.perProject.length}</div><div class="u">${res.sequenced?"one at a time":res.waved?res.phases.length+" unlock waves":res.single?"all in one phase":"scheduled together"}</div></div>
-    ${!res.sequenced&&!res.waved&&res.bottleneck?`<div class="metric"><div class="l">Bottleneck</div><div class="v" style="font-size:17px">${res.bottleneck}</div><div class="u">sets the ${res.partial?"partial plan":"finish"} time</div></div>`:""}
+    <div class="metric"><div class="l">Projects</div><div class="v">${res.perProject.length}</div><div class="u">${scheduleExecutable?(res.sequenced?"one at a time":res.waved?res.phases.length+" unlock waves":res.single?"all in one phase":"scheduled together"):res.phases.length+" analytical phase"+(res.phases.length===1?"":"s")}</div></div>
+    ${!res.sequenced&&!res.waved&&res.bottleneck?`<div class="metric"><div class="l">Bottleneck</div><div class="v" style="font-size:17px">${res.bottleneck}</div><div class="u">${scheduleExecutable?`sets the ${res.partial?"partial plan":"finish"} time`:"analytical LP bottleneck only"}</div></div>`:""}
   </div>`;
   // Quick project controls (on/off, level range, mark done) — collapsed so the plan stays the hero.
   // Same fields as Shopping list / Track progress, kept in sync; wired via delegated #results handlers.
@@ -208,8 +210,8 @@ function renderProjectResults(res,el,stat){
   // Everything analytical folds into one collapsed breakdown so it's a click away, not in the way.
   let bd="";
   if(res.sequenced||res.waved){
-    bd+=`<div class="subhead" style="margin-top:0">${res.waved?"Build order — waves, each crafted together":"Completion order — done one project at a time"}</div>
-      <table><thead><tr><th>#</th><th>${res.waved?"Wave":"Project"}</th><th>Needs</th><th class="num">${res.partial?"Plan time":"Phase"}</th><th class="num">${res.partial?"Plannable by":"Done by"}</th></tr></thead><tbody>`;
+    bd+=`<div class="subhead" style="margin-top:0">${scheduleExecutable?(res.waved?"Build order — waves, each crafted together":"Completion order — done one project at a time"):"Analytical phase breakdown"}</div>
+      <table><thead><tr><th>#</th><th>${scheduleExecutable?(res.waved?"Wave":"Project"):"Phase"}</th><th>Needs</th><th class="num">${res.partial?"Plan time":"Phase"}</th><th class="num">${scheduleExecutable?(res.partial?"Plannable by":"Done by"):"LP endpoint"}</th></tr></thead><tbody>`;
     res.phases.forEach((ph,i)=>{
       const sub=ph.demandSub||{};
       const items=ALLITEMS.filter(it=>(sub[it]||0)>0);
