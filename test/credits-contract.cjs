@@ -7,7 +7,7 @@ globalThis.localStorage={getItem:()=>null,setItem:()=>{}};
 globalThis.document={getElementById:()=>new El()};
 globalThis.performance={now:()=>0};globalThis.__nativeNow=nativeNow;
 
-const src=["core.js","project-schedule.js","solver.js","results.js","manual.js"]
+const src=["core.js","fields.js","state.js","project-schedule.js","solver.js","results.js","manual.js"]
   .map(file=>fs.readFileSync(path.join(__dirname,"..","js",file),"utf8")).join("\n;\n");
 const indexHtml=fs.readFileSync(path.join(__dirname,"..","index.html"),"utf8");
 
@@ -92,25 +92,42 @@ const runner=`
     state.minedIncome.Vespium=5.0000000000000005e28;state.minedIncome.Hydracite=300000000000;
     normalize(state);syncManual(state);return state;
   }
-  S=creditsSaveRegressionState();S.solveBudget=10000;
+  function creditsSchemaV1State(){
+    const state=creditsSaveRegressionState();state.schemaVersion=1;state.solveBudget=2000;
+    delete state.projectStability;
+    return JSON.parse(JSON.stringify(state));
+  }
+  const migratedCredits=validateAndMigrate(creditsSchemaV1State());
+  check("save-derived schema-v1 state migrates once to schema v3 and 10 seconds",
+    migratedCredits.ok&&migratedCredits.sourceVersion===1&&CURRENT_SCHEMA_VERSION===3&&
+      migratedCredits.state.schemaVersion===3&&migratedCredits.state.solveBudget===10000,
+    "ok="+migratedCredits.ok+", source="+migratedCredits.sourceVersion+
+      ", schema="+(migratedCredits.state&&migratedCredits.state.schemaVersion)+
+      ", budget="+(migratedCredits.state&&migratedCredits.state.solveBudget)+
+      ", errors="+JSON.stringify(migratedCredits.errors||[]));
+  const migratedCreditsState=migratedCredits.state;
+  S=JSON.parse(JSON.stringify(migratedCreditsState));
   let completedBaselines=0,expireAfterBaselines=false;
-  const baselineOnly=optimizeInner(10000,{now:()=>expireAfterBaselines?10001:0,workLimit:1_000_000_000,
+  const baselineOnly=optimizeInner(S.solveBudget,{now:()=>expireAfterBaselines?10001:0,workLimit:1_000_000_000,
     onCheckpoint:event=>{if(event.type==="baseline-complete"&&++completedBaselines===10)expireAfterBaselines=true;}});
   const highestBaseline=baselineOnly.ranking.find(candidate=>candidate.evaluated);
-  S=creditsSaveRegressionState();S.solveBudget=10000;
+  S=migratedCreditsState;
   let savedFirstRefinement=null,firstRefinementActive=false,firstRefinementComplete=false,refinementNow=0;
-  const savedCreditsRun=optimizeInner(10000,{now:()=>firstRefinementComplete?10001:(firstRefinementActive?(refinementNow+=0.001):0),workLimit:1_000_000_000,
+  const savedCreditsRun=optimizeInner(S.solveBudget,{now:()=>firstRefinementComplete?10001:(firstRefinementActive?(refinementNow+=0.001):0),workLimit:1_000_000_000,
     onCheckpoint:event=>{
       if(event.type==="refinement-start"&&savedFirstRefinement===null){savedFirstRefinement=event.item;firstRefinementActive=true;}
       if(event.type==="refinement-complete"&&event.item===savedFirstRefinement)firstRefinementComplete=true;
     }});
   const savedWire=savedCreditsRun.ranking.find(candidate=>candidate.item==="Wire");
+  const expectedSavedWire=18423.900967529135;
+  const savedWireRelativeError=savedWire?Math.abs(savedWire.out-expectedSavedWire)/expectedSavedWire:Infinity;
   check("save-derived Credits refines the highest demonstrated baseline first",
     highestBaseline&&highestBaseline.item==="Wire"&&savedFirstRefinement==="Wire",
     "baseline="+(highestBaseline&&highestBaseline.item)+", first="+savedFirstRefinement);
-  check("save-derived migrated 10-second Credits result beats the already-feasible saved Wire setup",
-    firstRefinementComplete&&savedCreditsRun.bestItem==="Wire"&&savedWire&&savedWire.out>=18147.589538806016,
-    "complete="+firstRefinementComplete+", best="+savedCreditsRun.bestItem+", wire="+(savedWire&&savedWire.out));
+  check("migrated save-derived 10-second Credits solve reproduces the exact Wire result",
+    firstRefinementComplete&&savedCreditsRun.bestItem==="Wire"&&savedWire&&savedWireRelativeError<=1e-12,
+    "complete="+firstRefinementComplete+", best="+savedCreditsRun.bestItem+
+      ", wire="+(savedWire&&savedWire.out)+", relativeError="+savedWireRelativeError);
   // Fixed references were produced by separate one-priced-item solves from this same immutable-save
   // factory. The combined comparison must find their true winner without letting an earlier chain
   // consume the shared deadline before every product gets a meaningful refinement.
@@ -291,7 +308,7 @@ const runner=`
     !beyondRenderError&&!beyondEl.innerHTML.includes('id="btnCopyManual"')&&!beyondEl.innerHTML.includes('<td class="mono">#2</td>'),
     "error="+(beyondRenderError&&beyondRenderError.message)+", copy="+beyondEl.innerHTML.includes('id="btnCopyManual"'));
   let mutations=0,saves=0,renders=0;
-  globalThis.mutateState=fn=>{mutations++;fn(S);};globalThis.save=()=>{saves++;};globalThis.renderModeSwitch=()=>{};renderResults=()=>{renders++;};
+  mutateState=fn=>{mutations++;fn(S);};save=()=>{saves++;};globalThis.renderModeSwitch=()=>{};renderResults=()=>{renders++;};
   const beforeMode=S.mode;let beyondCopyError=null;
   try{copyPlanToManual({mode:"credits",bestItem:"Bits",plan:beyondCurrentPlan});}catch(error){beyondCopyError=error;}
   check("direct copy ignores executable rows beyond the current physical line count",
