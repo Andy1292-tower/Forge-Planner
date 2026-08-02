@@ -152,8 +152,49 @@ function projOrderHeader(res){
     case "seq":return 'Order: <b style="color:var(--ink2)">one project at a time</b> — unlocks first, then your order numbers, then cheapest. Change in Shopping list.';
     case "single":return 'Order: <b style="color:var(--ink2)">all projects in one phase</b> — unlock ordering off. Change in Shopping list.';
     case "waves":return 'Order: <b style="color:var(--ink2)">all together, in unlock waves</b> — material unlocks first, then the rest. Change in Shopping list.';
-    default:return 'Order: <b style="color:var(--ink2)">all projects together</b> (fastest total). Change in Shopping list.';
+    // "(fastest total)" describes the makespan LP. In "set & forget" the lines are deliberately not
+    // allowed to chase the fastest total, so the caption would be advertising something the plan
+    // below isn't doing — name the line mode instead.
+    default:return 'Order: <b style="color:var(--ink2)">all projects together</b> '+(S.projLineMode==="static"?"(set &amp; forget lines)":"(fastest total)")+'. Change in Shopping list.';
   }
+}
+// How each line is used across a phase (S.projLineMode). "Fastest" is the makespan LP, where a line
+// may split its time between jobs — the quickest finish, but you have to come back and switch it
+// mid-run. "Set & forget" pins one job per line for the whole phase, picked to bring the SLOWEST
+// item in as early as it can; it is usually slower overall and there's nothing to babysit. Reuses
+// the header's .modesw pill styling — same aria-pressed contract as the planning-mode switch;
+// clicks are handled by the delegated #results handler in events.js.
+function projLineModeHtml(){
+  const stat=S.projLineMode==="static";
+  return `<div class="line-mode">
+    <span class="line-mode-l">Line plan</span>
+    <div class="modesw" aria-label="Project line plan">
+      <button type="button" data-linemode="split" class="${stat?"":"on"}" aria-pressed="${stat?"false":"true"}" title="Lines may split their time between jobs to finish the phase as fast as possible — you come back and switch them part-way through.">Fastest (lines switch jobs)</button>
+      <button type="button" data-linemode="static" class="${stat?"on":""}" aria-pressed="${stat?"true":"false"}" title="Each line runs a single job the whole phase — nothing to switch mid-run, and usually slower overall.">Set &amp; forget (one job per line)</button>
+    </div>
+  </div>`;
+}
+// "Set & forget" solves a world with no stock drawdown at all (staticSchedule's documented
+// limitation), so a player sitting on a pile of Ingots still gets lines assigned to craft Ingots from
+// scratch — the one behaviour of the mode that looks like a bug rather than a trade-off. Fire a
+// single notice when the plan is actually doing that: an item some line PRODUCES, of which the player
+// holds more than this phase's own direct demand for it (below that, the stock is already netted off
+// and genuinely being used). Naming the items keeps it concrete; one notice keeps it out of the way.
+function staticIgnoresStockNote(res){
+  if(S.projLineMode!=="static"||!res.phases)return "";
+  const wasted=[];
+  res.phases.forEach(ph=>{
+    const inv0=ph.invStart||{},sub=ph.demandSub||{};
+    // projAvailVec, not a raw inv−sub subtraction: Bits' effective direct demand includes the
+    // Frames/Wire pre-produce fold-in, which projNetVec DOES net stock against in every mode. The
+    // raw subtraction called that stock "unused" and told the player to switch modes over Bits the
+    // plan was in fact already spending.
+    const av=(typeof projAvailVec==="function")?projAvailVec(sub,inv0):null;
+    (ph.plan||[]).forEach(p=>(p.entries||[]).forEach(e=>{
+      if(((av&&av[e.item])||0)>1e-9&&wasted.indexOf(e.item)<0)wasted.push(e.item);}));
+  });
+  if(!wasted.length)return "";
+  return `<div class="notice info" style="font-size:11.5px"><b>Set &amp; forget crafts everything fresh.</b> You're holding <b>${htmlText(wasted.join(", "))}</b>, but this plan won't draw your existing stock of ${wasted.length>1?"them":"it"} down — every line runs a single job start to finish. Switch to <b>Fastest</b> above to spend that stock instead.</div>`;
 }
 function renderProjectResults(res,el,stat){
   _lastProjectRes=res;
@@ -185,17 +226,28 @@ function renderProjectResults(res,el,stat){
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn primary" id="btnProgress">Track progress</button>
     </div></div>`;
-  // Plan-start anchor (promoted from the old modal header)
+  // Plan-start anchor (promoted from the old modal header) + how lines are used across a phase
   html+=projPlanAnchorHtml();
+  html+=projLineModeHtml();
   // Key notices — the ones that change what you actually do. The old verbose "Project plan." explainer
   // is dropped; the step-plan intro below already tells you how to run it.
   html+=projectForgieNote(res);
+  html+=staticIgnoresStockNote(res);
   if(res.waved)html+=`<div class="notice info" style="font-size:11.5px"><b>Unlock-aware order.</b> Some projects unlock materials others need (Frames, Gel, Wire), so this is split into <b>${res.phases.length} waves</b> — finish each wave before starting the next. Everything within a wave is crafted together.</div>`;
   if(res.blockedMined&&Object.keys(res.blockedMined).length){
     const blocked=Object.entries(res.blockedMined).map(([item,resources])=>`<b>${item}</b> needs ${resources.map(r=>`<b>${r}</b>`).join(" and ")}`).join("; ");
     html+=`<div class="notice warn"><b>Missing mined income:</b> ${blocked}. Enter those incomes in <b>Mined resources</b> to include the blocked items; they remain excluded from the plan time below.</div>`;
   }
-  if(res.infeasItems&&res.infeasItems.length)html+=`<div class="notice warn"><b>Can't sustainably produce:</b> ${res.infeasItems.join(", ")}. Raise a line's max compression, add a line, or check recipe costs — the time below excludes these.</div>`;
+  if(res.infeasItems&&res.infeasItems.length){
+    // Set & forget can't time-share a line, so it needs at least one line per DISTINCT job in the
+    // chain — Frames alone needs five (Ingots, Bits, Plates, Rods, Frames). Under that the phase is
+    // genuinely unbuildable as a static plan even though the splitting LP juggles it fine, so name the
+    // cause and the two real fixes; otherwise flipping the switch just looks like the planner broke.
+    const staticHint=S.projLineMode==="static"
+      ? ` <b>Set &amp; forget</b> needs one line per job in the chain, because no line can double up — add lines, or switch back to <b>Fastest</b> above to let lines share their time.`
+      : "";
+    html+=`<div class="notice warn"><b>Can't sustainably produce:</b> ${res.infeasItems.join(", ")}. Raise a line's max compression, add a line, or check recipe costs — the time below excludes these.${staticHint}</div>`;
+  }
   if(res.atRiskItems&&res.atRiskItems.length)html+=`<div class="notice warn"><b>Relies entirely on stock:</b> ${res.atRiskItems.join(", ")}. No line is crafting ${res.atRiskItems.length>1?"these":"this"} — the plan is spending down your current inventory to cover them. Once it runs out you'll need dedicated crafters.</div>`;
   if(res.partial)html+=`<div class="notice warn"><b>Partial plan only.</b> The blocked items remain excluded, so the ticked projects are <b>not fully finishable</b> with the current mined incomes. The time shown is for currently plannable work only.</div>`;
   // Summary metrics. The "how" caption reads off the user's order SETTING (see projOrderMode), not

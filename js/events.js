@@ -624,7 +624,19 @@ function stepsProjControls(){
 // surrounding controls. Returns "" when there's no plan yet.
 function stepPlanHtml(res){
   if(!res||res.empty||!res.phases||!res.phases.length)return "";
-  let h=`<p class="help" style="margin:0 0 12px">${res.sequenced
+  // "Set & forget" mode (S.projLineMode) pins one job per line for the whole phase, so every
+  // "then …" instruction disappears — the intro has to describe that instead of explaining splits.
+  // It must NOT promise that everything lands together: the schedule minimises the SLOWEST item's
+  // finish and never penalises finishing early, so a line with spare capacity genuinely does come in
+  // ahead of the phase (and keeps producing). Each line's own "until ~" readout is the honest detail.
+  const isStatic=S.projLineMode==="static";
+  let h=`<p class="help" style="margin:0 0 12px">${isStatic
+      ?(res.sequenced
+        ?"Do these phases <b>in order</b>. Set each line once and leave it — no line ever switches jobs. The slowest item sets the phase time; anything with spare line capacity finishes earlier and keeps producing. Reset the lines when you start the next phase."
+        :res.waved
+        ?"Do these waves <b>in order</b> — finish a wave before starting the next so the unlocks land first. Set each line once and leave it — no line ever switches jobs. The slowest item sets the wave time; anything with spare line capacity finishes earlier and keeps producing."
+        :"Set each line once and leave it — no line ever switches jobs. The slowest item sets the finish time; anything with spare line capacity finishes earlier and keeps producing.")
+      :res.sequenced
       ?"Do these phases <b>in order</b>. Within a phase, a line listing two jobs splits its time — do the input job first so you don't stall. Reset the lines when you start the next phase."
       :res.waved
       ?"Do these waves <b>in order</b> — finish a wave before starting the next so the unlocks land first. Within a wave, a line listing two jobs splits its time; do the input job first."
@@ -656,6 +668,21 @@ function stepPlanHtml(res){
     if(!ph.feasible){const why=blocked.length?" — "+blocked.map(([item,resources])=>item+" needs "+resources.join(" + ")).join("; "):"";
       h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">Can't fully produce this phase with the current lines and incomes${why}. ${ph.partial?"The line work below is only the currently plannable portion.":""}</div>`;}
     if(ph.atRisk&&ph.atRisk.length)h+=`<div class="notice warn" style="font-size:11px;margin:4px 0 6px">No line here is crafting ${ph.atRisk.join(", ")} — this plan is spending down your current stock of ${ph.atRisk.length>1?"them":"it"} instead. Once that stock is gone, this schedule stops working.</div>`;
+    // Set & forget only: every line runs the whole phase, so the per-line "until" below is the same
+    // clock time for all of them and hides the thing the user actually needs to know — that the items
+    // land at DIFFERENT times, and the last one is what the phase time is. Print when each one lands.
+    // Finish = what's still needed / the rate the plan makes it at, from the same numbers the phase's
+    // eta comes from (eta is just the largest of these). Items with rate 0 are already called out by
+    // the infeasible warning above, so they're skipped rather than shown as "never". Only worth
+    // printing with more than one item to compare — with a single item the finish IS the phase time.
+    if(isStatic){
+      const fin=ALLITEMS.filter(it=>((ph.net&&ph.net[it])||0)>1e-9&&((ph.rate&&ph.rate[it])||0)>1e-9)
+        .map(it=>({it,h:ph.net[it]/ph.rate[it]})).sort((a,b)=>a.h-b.h);
+      if(fin.length>1)h+=`<div class="proj-mini" style="margin:2px 0 6px">Finishes: ${fin.map(f=>{
+        const at=fmtClock(pStart+f.h);
+        return `<b>${htmlText(f.it)}</b> ${at?"~"+at:"in ~"+fmtDuration(f.h)}`;
+      }).join(" · ")}</div>`;
+    }
     if(!lines.length){h+=`<div class="proj-mini" style="padding:2px 0">No line activity.</div></div>`;return;}
     // Projected on-hand stock of each item at a given point in the phase (issue #87 follow-up):
     // stock when the phase began + net (produced + Lil' Forgie − consumed by other lines) so far. Uses
@@ -731,6 +758,10 @@ document.getElementById("results").addEventListener("change",e=>{
 document.getElementById("results").addEventListener("click",e=>{
   const cl=sel=>e.target.closest&&e.target.closest(sel);
   if(cl("#btnProgress")){openProgress(cl("#btnProgress"));return;}
+  // Line-plan switch (Fastest / Set & forget). Changes how every phase is scheduled, so re-solve.
+  const lm=cl("[data-linemode]");
+  if(lm){const v=lm.getAttribute("data-linemode")==="static"?"static":"split";
+    if(v!==(S.projLineMode==="static"?"static":"split")){mutateState(st=>{st.projLineMode=v;});save();doSolve();}return;}
   // Plan-start "Now" — re-anchor the clock to the current moment (display only).
   if(cl("#spNow")){mutateState(st=>{st.planStart=Date.now();});save();repaintProject();return;}
   // Persist a disclosure's open state across the next re-render. The native <details> toggle still

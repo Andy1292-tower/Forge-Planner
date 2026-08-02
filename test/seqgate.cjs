@@ -17,6 +17,7 @@
  *   M5  the order header claimed "all projects together" whenever only one project was left,
  *       regardless of what the Shopping-list toggle actually said.
  *   L2  unlockLayers tested unlock materials against direct costs only, missing Gel -> Wire.
+ *   L4  static mode gave no signal that it ignores intermediate stock the user is holding.
  *
  * Single-phase "set & forget" behaviour has its own suite in test/staticmode.cjs; what lives here is
  * the multi-phase side of it — the overshoot carry, the ranking world, and the budget division. The
@@ -318,6 +319,65 @@ const runner = `
     const flat = unlockLayers(projectDemand().perProject);
     record("L2: an unrelated project is not dragged behind the unlock",
       JSON.stringify(flat) === "[0,0]", "layers=" + JSON.stringify(flat));
+  }
+
+  /* ---- L4: static mode says out loud that it ignores intermediate stock -------------------- */
+  {
+    const r = run([P("a","Plates",[["Plates",20000]])],
+                  {projLineMode:"static", inventory:{Ingots:400000}});
+    const el = document.getElementById("results"), stat = document.getElementById("solveStat");
+    renderProjectResults(r, el, stat);
+    const hasNotice = el.innerHTML.indexOf("won't draw your existing") >= 0;
+    record("L4: static + held intermediate stock renders the ignore-stock notice",
+      hasNotice && el.innerHTML.indexOf("Ingots") >= 0,
+      "notice=" + hasNotice);
+    record("L4: exactly one notice, not one per item",
+      el.innerHTML.split("won't draw your existing").length - 1 === 1,
+      "count=" + (el.innerHTML.split("won't draw your existing").length - 1));
+    // Fastest mode DOES spend that stock, so it must stay quiet.
+    const sp = run([P("a","Plates",[["Plates",20000]])], {inventory:{Ingots:400000}});
+    renderProjectResults(sp, el, stat);
+    record("L4: fastest mode does not show it (it really does draw the stock down)",
+      el.innerHTML.indexOf("won't draw your existing") < 0, "shown=false");
+  }
+
+  /* ---- R2 (review follow-up): the ignore-stock notice must not fire on Bits the plan IS using.
+   * Bits' effective direct demand includes the Frames fold-in, and projNetVec nets stock against it
+   * in every mode. Holding fewer Bits than the fold-in means that stock is genuinely being spent;
+   * the raw inv−sub test called it "unused" and told the player to switch modes for nothing. */
+  {
+    const r = run([P("f","Frames",[["Frames",60]])],
+                  {projLineMode:"static", inventory:{Bits:200}});   // 200 < 8×60: all spent
+    const el = document.getElementById("results"), stat = document.getElementById("solveStat");
+    renderProjectResults(r, el, stat);
+    record("R2: no false ignore-stock notice for Bits the fold-in already nets off",
+      el.innerHTML.indexOf("won't draw your existing") < 0,
+      "netBits=" + ((r.phases[0].net&&r.phases[0].net.Bits)||0));
+  }
+
+  /* ---- review follow-up: the line-plan toggle carries aria-pressed on BOTH buttons, and the
+   * "(fastest total)" caption never runs while a set & forget plan is on screen. */
+  {
+    const el = document.getElementById("results"), stat = document.getElementById("solveStat");
+    const together = run([P("a","A",[["Glass",100]]), P("b","B",[["Bricks",100]])],
+                         {projectSeq:false, projectGate:true});
+    renderProjectResults(together, el, stat);
+    record("toggle: split active marks split pressed and static not",
+      el.innerHTML.indexOf('data-linemode="split" class="on" aria-pressed="true"') >= 0 &&
+      el.innerHTML.indexOf('data-linemode="static" class="" aria-pressed="false"') >= 0,
+      "splitPressed=" + (el.innerHTML.indexOf('aria-pressed="true"') >= 0));
+    record("caption: split mode still advertises the fastest total",
+      el.innerHTML.indexOf("(fastest total)") >= 0, "hasFastestTotal=true");
+    const statRes = run([P("a","A",[["Glass",100]]), P("b","B",[["Bricks",100]])],
+                        {projLineMode:"static", projectSeq:false, projectGate:true});
+    renderProjectResults(statRes, el, stat);
+    record("toggle: static active flips both aria-pressed values",
+      el.innerHTML.indexOf('data-linemode="static" class="on" aria-pressed="true"') >= 0 &&
+      el.innerHTML.indexOf('data-linemode="split" class="" aria-pressed="false"') >= 0,
+      "staticPressed=" + (el.innerHTML.indexOf('data-linemode="static" class="on"') >= 0));
+    record("caption: static mode never claims the fastest total",
+      el.innerHTML.indexOf("(fastest total)") < 0 && el.innerHTML.indexOf("set &amp; forget lines") >= 0,
+      "hasFastestTotal=" + (el.innerHTML.indexOf("(fastest total)") >= 0));
   }
 
   __emit(JSON.stringify(results));

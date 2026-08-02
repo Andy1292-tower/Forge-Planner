@@ -184,6 +184,42 @@ test("project adjustment and progress actions include the project in every acces
   await expectNoWcagViolations(page);
 });
 
+test("the project line-plan toggle follows the planning-mode switch pattern", async ({ page }) => {
+  await loadPlanner(page);
+  await seedNamedProjects(page);
+
+  const fastest = page.getByRole("button", { name: "Fastest (lines switch jobs)" });
+  const setForget = page.getByRole("button", { name: "Set & forget (one job per line)" });
+  await expect(fastest).toHaveAttribute("aria-pressed", "true");
+  await expect(setForget).toHaveAttribute("aria-pressed", "false");
+  expect((await setForget.boundingBox()).height).toBeGreaterThanOrEqual(44);
+  // Tab in from the sibling so the focus ring is evaluated under keyboard modality (:focus-visible).
+  await fastest.focus();
+  await page.keyboard.press("Tab");
+  await expect(setForget).toBeFocused();
+  expect(await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle)).not.toBe("none");
+
+  await setForget.click();
+  await expect(setForget).toHaveAttribute("aria-pressed", "true");
+  await expect(fastest).toHaveAttribute("aria-pressed", "false");
+  expect(await page.evaluate(() => S.projLineMode)).toBe("static");
+  // The step plan must describe the mode honestly: one job per line, slowest item sets the time —
+  // never a promise that everything lands together, and never a "fastest total" caption.
+  await expect(page.locator("#results")).toContainText("no line ever switches jobs");
+  await expect(page.locator("#results")).toContainText("The slowest item sets");
+  await expect(page.locator("#results")).not.toContainText("(fastest total)");
+  await expectNoWcagViolations(page);
+
+  // Two sentence-length labels are the tightest thing in #results, so check the narrow widths too.
+  for (const width of [390, 320, 195]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(setForget).toBeVisible();
+    expect((await setForget.boundingBox()).height).toBeGreaterThanOrEqual(44);
+    await expectNoPageClipping(page);
+  }
+  await expectNoWcagViolations(page);
+});
+
 test("390px and 200%-equivalent reflow retain reachable controls without page clipping", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await loadPlanner(page);
