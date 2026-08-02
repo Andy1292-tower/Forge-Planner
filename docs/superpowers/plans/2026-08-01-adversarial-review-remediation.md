@@ -26,6 +26,17 @@
 - Do not erase a damaged save. Quarantine it and offer GUI recovery/download.
 - Do not merge implementation branches or PRs without explicit owner approval.
 
+## Release and Worker Contract
+
+Emergency fixes `188e913` and `1466a5d` are the release baseline for every remaining task:
+
+- `npm run build` produces `dist/` through `scripts/build-static.cjs`. `dist/index.html` is the only revalidated release pointer; generated `/static/*` assets are content-addressed and immutable.
+- The current source Worker handler is `js/solver.worker.v2.js`. Production does not fetch that path: the build concatenates the current Worker dependencies and handler into the hashed app, then creates a `blob:` Worker from that in-memory payload.
+- `/js/solver.worker.js` is a permanent immutable error fence for the oldest open tabs. `compat/solver.worker.v2.js` is the checksum-locked, self-contained v2-era Worker copied to the permanent immutable `/js/solver.worker.v2.js` compatibility endpoint. Never edit, replace, import, or repurpose either compatibility contract for current features.
+- Every change to a page script, Worker dependency, stylesheet, image, or future font must be registered in the build graph and proven to rotate only the affected content hash. Source-mode unit tests remain useful, but browser/release claims must exercise the generated app and its Blob Worker.
+- URLs emitted into HTML, CSS, or JavaScript must derive from the document/build base and work at both `/` and a subpath. Do not add new root-relative application assets.
+- Worker factories own every resource they create. Terminating an owned Blob Worker must revoke its object URL immediately; a timeout may remain only as a leak backstop, not the normal cleanup path.
+
 ## Agentic Execution Model
 
 Use a fresh `codex/` worktree branch for each merge unit. Parallel research and test-authoring are encouraged; implementation that overlaps `js/events.js`, `js/results.js`, or `index.html` must be serialized through one integration agent.
@@ -34,7 +45,7 @@ Use a fresh `codex/` worktree branch for each merge unit. Parallel research and 
 | --- | --- | --- |
 | 0 | Task 0 | One foundation agent; merge first |
 | 1 | Task 1, then Tasks 2–3 | Merge the state boundary first; security and solve-lifecycle work may then run in parallel worktrees with serialized integration |
-| 2 | Tasks 4–7 | Solver corrections can be independent if each owns separate functions/tests; one integration review after all four |
+| 2 | Task 3F, then Tasks 4–7 | Land the Worker/release follow-up first. Solver corrections can be independent if each owns separate functions/tests; one integration review after all four |
 | 3 | Tasks 8–10 | Field, dialog, and accessibility foundations; serialize shared markup/events changes |
 | 4 | Task 11A; approval; Tasks 11B–11D; then Task 12 | Land P1 geometry first, then approved system composition, then onboarding/IA; one UI integration agent |
 | 5 | Tasks 13–14, then Task 15, then Task 16 | Resilience and release engineering may run in parallel where safe; documentation follows Task 14 and settled behavior, then final verification runs after integration |
@@ -47,9 +58,21 @@ Each task follows this handoff:
 4. Integration agent rebases, resolves overlaps, and runs the standard full gate.
 5. Owner reviews rendered changes before merge.
 
+### Deferred minor ownership
+
+The checkpoint minors remain assigned and must not disappear merely because their originating task is marked complete:
+
+| Deferred minor | Owning task |
+| --- | --- |
+| Recovery dismissal restores Import focus rather than the exact invoker | Task 12 dialog/import-flow integration; recheck in Task 16 |
+| An owned but idle reused Worker can report an error as an active failure | Task 3F |
+| Dialog cleanup can overwrite a pre-existing `inert` state | Task 11C dense-dialog integration; recheck in Task 16 |
+| Skip-link destination suppresses a visible focus indicator | Task 11B visual/focus composition; recheck in Task 16 |
+| Visual CI step is unnamed and `test:browser` duplicates `visual-layout` | Task 11D deterministic visual gate |
+
 ## Standard Verification Gate
 
-Task 0 creates `npm test` and `test:browser`. Task 10 adds `test:a11y`; Task 11 adds `test:visual`; Task 14 adds `build` and `test:release`. Until each command exists, run the task's focused checks plus the available subset. Never add a placeholder command that reports green without running its promised checks.
+Task 0 creates `npm test` and `test:browser`. Task 10 adds `test:a11y`; Task 11 adds `test:visual`. Emergency baseline `1466a5d` supplies `build`; Task 14 adds `test:release` and completes its upgrade/subpath coverage. Until each command exists, run the task's focused checks plus the available subset. Never add a placeholder command that reports green without running its promised checks.
 
 ```bash
 npm test
@@ -189,6 +212,36 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - [ ] Preserve per-request Worker termination while `optimize()` remains synchronous. A healthy Worker may be reused only after it completes a request; superseding an active request still requires termination because it cannot process a cancel message mid-solve. Any reused idle Worker must reset its line-stability cache from the request snapshot.
 - [ ] GREEN in browser: rapid mode switching, reset/import mid-solve, Worker load failure/recovery, and repeated solves never paint stale output or leave the overlay stuck.
 
+## Task 3F: Reconcile Worker Lifecycle With the Hashed Blob Release
+
+**Priority:** P1 follow-up
+
+**Depends on:** Task 3 and release baseline `1466a5d`; must land before Task 4
+
+**Files:**
+
+- Modify: `js/solve-service.js`
+- Modify: `scripts/build-static.cjs`
+- Modify: `test/solve-lifecycle.cjs`
+- Modify: `test/browser/solve-lifecycle.spec.js`
+- Modify: `test/browser/smoke.spec.js`
+- Modify: `test/static-asset-build.cjs`
+- Modify: `test/legacy-worker-retirement.cjs`
+- Create: `test/fixtures/solver-worker-v2-request.json`
+- Preserve unchanged: `js/solver.worker.js`
+- Preserve unchanged: `compat/solver.worker.v2.js`
+
+**Interfaces produced:** an explicit current-Worker factory/owner contract used by `solveService`, with a termination path that releases factory-owned resources.
+
+- [ ] RED: finish a request so the current Worker is owned but idle, emit that exact Worker’s late `error`, and assert the service neither increments failure state nor exposes fallback for a request that no longer exists.
+- [ ] Ignore errors from an owned idle Worker after a completed delivery. An event may affect retry/fallback state only when that Worker is busy and owns the authoritative generation/callback.
+- [ ] RED at the build boundary: create a generated Blob Worker, terminate it before its first message/error, and require its object URL to be revoked immediately rather than waiting for the 60-second backstop.
+- [ ] Make the Worker factory return/attach an idempotent release operation and ensure every `solveService` termination path calls it. Natural completion/error may release the Blob URL after construction, but early termination must also release it synchronously.
+- [ ] Keep one frozen v2-era request/response fixture that executes against `compat/solver.worker.v2.js` and proves the permanent compatibility endpoint still solves with its historical schema. Do not regenerate that fixture from current source.
+- [ ] Keep source tests injectable without weakening the production build: the current source handler remains `js/solver.worker.v2.js`, while `scripts/build-static.cjs` substitutes the registered in-memory Blob factory in the hashed app.
+- [ ] Assert the oldest-tab fence and checksum-locked v2 compatibility file are byte-for-byte unchanged.
+- [ ] GREEN: focused lifecycle, static-build, compatibility, and generated-app Blob Worker tests all pass.
+
 ## Task 4: Make Project Instructions Executable From the Stated Inventory
 
 **Priority:** P1 correctness
@@ -203,7 +256,12 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - Modify: `js/solver.js`
 - Modify: `js/results.js`
 - Modify: `js/events.js`
-- Modify: `js/solver.worker.js`
+- Modify: `js/solver.worker.v2.js`
+- Modify: `scripts/build-static.cjs` when registering any new page/Worker module
+- Modify: `test/static-asset-build.cjs`
+- Modify: `test/browser/smoke.spec.js`
+
+**Worker ownership:** current Project behavior belongs only to the current source graph and generated Blob Worker. Never change `js/solver.worker.js`, `compat/solver.worker.v2.js`, or either permanent deployed compatibility endpoint for this task.
 
 **Interfaces produced:**
 
@@ -224,7 +282,8 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - [ ] Include warm-up duration in ETA and finish-by clocks. Never retain the old ETA after inserting prerequisites.
 - [ ] If an executable schedule cannot be constructed, suppress imperative run instructions and show a blocking diagnostic; never call it feasible merely because the average LP is feasible.
 - [ ] Ensure displayed stock comes from the event replay, not phase-average rates, and never hide a deficit by `Math.max(0, ...)` before validation.
-- [ ] GREEN: zero-stock Frames case starts with a valid warm-up, all boundaries stay nonnegative, ETA includes it, and existing inventory/mined/partial scenarios retain their intended behavior.
+- [ ] Register `js/project-schedule.js` in the page and Worker dependency arrays in `scripts/build-static.cjs`; fail the build if the current Worker payload omits it or a compatibility file changes.
+- [ ] GREEN in both direct Node coverage and the generated Blob Worker: zero-stock Frames starts with a valid warm-up, all boundaries stay nonnegative, ETA includes it, and existing inventory/mined/partial scenarios retain their intended behavior.
 
 ## Task 5: Replace the Greedy Gel Capacity Claim With an Exact Loadout
 
@@ -249,6 +308,7 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - [ ] Account for real call volume: `solveCore` invokes Gel loadouts for ranked-line prefixes and Credits repeats that work across candidates. Reuse prefix frontiers incrementally where possible, or keep a separately named bounded seed helper while reserving exact `gelLoadout` for claims of maximum capacity.
 - [ ] Add full Items/Credits timing, parity, and budget-monotonicity tests plus 5/7/8/10/12-line helper guards. Do not introduce a wall-clock cap that silently makes “best” approximate again.
 - [ ] Assert `vespHr <= budget`, one choice per line, exact total sums, and no exhaustive candidate beats the result.
+- [ ] Prove the exact helper through the generated app’s current Blob Worker as well as direct Node tests. A `js/solver.js` change must rotate the hashed app; no test or implementation may update the frozen v2 compatibility Worker.
 - [ ] Update copy only if the result remains approximate for any supported input. Otherwise retain “best” with the new proof tests.
 
 ## Task 6: Correct Credits Warning Ownership and Enforce a Real Deadline
@@ -276,6 +336,7 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - [ ] Define confidence precisely: `allCandidatesEvaluated` means every candidate got the bounded baseline; `searchExhaustive` means no competitive candidate was capped. Copy remains “best found” whenever exhaustive comparison is false, and identifies unevaluated candidates when present.
 - [ ] Hide/disable Copy to Manual unless the winning plan contains a non-idle job.
 - [ ] Rewrite the false “always mono-product” comment to describe the dedicated-item comparison contract.
+- [ ] Run the budget/deadline contract through the generated current Blob Worker. Keep deterministic clock/work-budget injection in current source/test seams only; never add it to either permanent compatibility endpoint.
 
 ## Task 7: Expose and Control Project Line-Stability Tradeoffs
 
@@ -299,7 +360,7 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - [ ] When stabilized and slower, render each affected phase’s exact throughput/ETA difference plus the total plan ETA difference, the reason jobs were retained, and GUI actions **Keep current line jobs** / **Use fastest plan**.
 - [ ] Make the choice global and unambiguous: **Use fastest plan** changes the persisted setting to `fastest`, bypasses pins for every phase, and re-solves the entire plan. A future phase-specific override requires a separate design.
 - [ ] Remove unqualified “fastest/optimal” wording when a slower stable plan is displayed.
-- [ ] Test zero-gap swaps, sub-band holds, past-band releases, mode persistence, and Worker serialization.
+- [ ] Test zero-gap swaps, sub-band holds, past-band releases, mode persistence, and serialization through the generated current Blob Worker; preserve the frozen v2 compatibility fixture unchanged.
 
 ## Task 8: Unify Numeric Validation, Error Messaging, and UI Ranges
 
@@ -328,6 +389,7 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - [ ] Remove dead `data-prev` lookup or render the intended feedback element consistently.
 - [ ] Reject invalid import fields in the transactional preview rather than silently coercing them.
 - [ ] Verify keyboard, paste, mobile numeric keyboards, game suffixes, exponent notation, blank values, and localization-safe display.
+- [ ] Exercise accepted/rejected snapshots through the generated current Blob Worker because `js/fields.js` and `js/state.js` are embedded Worker dependencies. Assert the hashed app rotates and both permanent compatibility files remain byte-for-byte unchanged.
 
 ## Task 9: Introduce One Accessible Dialog Controller
 
@@ -459,8 +521,11 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 
 - [ ] Move presentation-only inline styles in owned surfaces into semantic classes. Keep an explicit allowlist only for genuinely dynamic values such as progress width and tooltip image variables; fail a source check on new unapproved inline presentation.
 - [ ] Consolidate breakpoints around component needs and keep overrides after—or at equal specificity to—the declarations they replace.
-- [ ] Self-host the selected fonts with license notices before recording geometry/screenshots. Capture only after `document.fonts.ready`; freeze animations, current-clock text, and solver-time text; use deterministic saved-state fixtures.
+- [ ] Self-host the selected fonts with license notices before recording geometry/screenshots. Add every font file and CSS reference to `scripts/build-static.cjs` so fonts are content-addressed members of the closed asset graph; the build must fail on an unregistered `url(...)` dependency.
+- [ ] Emit font and other owned asset URLs relative to the generated stylesheet/document base so the same build works at `/` and `/Forge-Planner/`; do not add a new root-relative `/static/...` assumption while extending the graph.
+- [ ] Capture only after `document.fonts.ready`; freeze animations, current-clock text, and solver-time text; use deterministic saved-state fixtures.
 - [ ] Store approved baselines under `test/browser/visual-baselines/<viewport>/<state>.png`. The manifest records source revision, viewport, fixture/state name, font asset revision, capture command, expected intentional differences, reviewer, and approval date.
+- [ ] Name the visual CI step and make `test:browser`/`test:visual` ownership non-overlapping so `visual-layout.spec.js` is not silently executed twice in the same gate.
 - [ ] GREEN geometry at 320, 375, 390, 430, 560, 561, 640, 768, 880, 881, 900, 1024, and 1440px: document `scrollWidth <= clientWidth + 1`; each surface matches its documented inset token; the 11A selector assertions remain green; and sparse recipe layouts have neither stretched cards nor large empty row gaps.
 - [ ] Screenshot-review fresh Items, solved Items, stale, Credits empty/solved, Project empty/long, Manual, Crafting Data, Sell prices, Forgie, Mined Resources, Shopping list with a long catalog name, Progress, and Settings at 320/375/390/430/768/900/1024/1440px. Record reviewer sign-off in the manifest and design spec.
 
@@ -510,9 +575,9 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - [ ] Add a cheap persistence debounce independent of the solve debounce; flush pending persistence on `pagehide` and when visibility becomes hidden.
 - [ ] Do not launch an expensive solve merely to persist.
 - [ ] Remove synchronous `optimizeProjectTop()` from `renderProgress()`. Consume a current cached project result or request it through the solve service.
-- [ ] Add a deliberately slow fake solve and assert Progress remains responsive.
+- [ ] Add a deliberately slow fake solve through the explicit current-solver factory/test hook established in Task 3F and assert Progress remains responsive. Do not replace the global `Worker`, bypass `solveService`, or couple persistence tests to the permanent v2 compatibility endpoint.
 
-## Task 14: Make Releases Cache-Coherent and Subpath-Safe
+## Task 14: Finish Release Upgrade Coverage and Subpath Safety on the Hashed Build
 
 **Priority:** P2 delivery
 
@@ -520,26 +585,37 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 
 **Files:**
 
-- Create: `scripts/build.cjs`
 - Create: `scripts/release-smoke.cjs`
 - Create: `test/browser/release-upgrade.spec.js`
 - Modify: `package.json`
-- Modify: `index.html`
-- Modify: `js/results.js`
-- Modify: `js/solver.worker.js`
+- Modify: `scripts/build-static.cjs`
+- Modify: `test/static-asset-build.cjs`
+- Modify: `test/serve-built.cjs`
+- Modify: `js/render.js`
+- Modify: `index.html` and owned asset references only where subpath fixes require it
 - Modify: `README.md`
-- Modify: deployment configuration if/when confirmed
+- Modify: `vercel.json` only if verification exposes a header/routing gap
 
-- [ ] Build a static release directory with content-addressed filenames for CSS, every page script, the Worker, and Worker dependencies. Do not treat a query string on an overwritten path as equivalent unless the actual host is separately proven to provide atomic, immutable, query-keyed artifacts.
-- [ ] Add `build` and `test:release` package scripts to the existing manifest and CI release lane.
-- [ ] Keep HTML revalidated/no-cache and fingerprinted assets long-lived/immutable.
-- [ ] Make Worker dependency revision derive from its own revisioned URL so page and Worker code cannot split versions.
-- [ ] Replace root-relative tooltip assets with base-aware/document-relative URLs. Remove Vercel Analytics or make its script/request path explicitly subpath-safe before claiming `/Forge-Planner/` support.
-- [ ] Serve and test under both `/` and `/Forge-Planner/`.
-- [ ] On one origin, warm release A, swap to incompatible release B, reload without clearing cache, and assert every loaded asset belongs to B and no console error occurs. Exercise explicit `Cache-Control`, ETag, and Last-Modified behavior; use a fresh origin only as the control case.
-- [ ] Document the exact GUI-friendly local preview and release verification steps.
+**Implemented baseline at `1466a5d`:**
 
-## Task 15: Correct Product Copy, Privacy Scope, Catalog Provenance, and Release Docs
+- [x] `scripts/build-static.cjs` emits deterministic content-addressed app, CSS, image, and embedded Worker bytes into `dist/`.
+- [x] The current Worker and its dependencies are one self-contained payload inside the hashed app and run from a Blob URL; production solves do not fetch Worker scripts or `importScripts` dependencies.
+- [x] `npm run build` and `npm run preview` exist, Playwright serves `dist/`, and the generated asset graph has a Node regression test.
+- [x] `/` and `/index.html` revalidate; `/static/*` is long-lived/immutable under the production header configuration.
+- [x] The original retired Worker fence and checksum-locked v2-era functional compatibility Worker are served at permanent immutable endpoints.
+- [x] Current tooltip images are copied into the hashed graph and the generated app/page references their emitted assets.
+
+**Remaining gaps:**
+
+- [ ] Add `test:release` to the existing manifest and CI. It must build from clean source and verify the emitted site; it must not be an alias for the ordinary Node suite.
+- [ ] Make every emitted application URL base-aware for both `/` and `/Forge-Planner/`. Replace the builder’s current root-relative `/static/...` output and any remaining root-relative tooltip/font/application references with document- or stylesheet-relative URLs. Remove Vercel Analytics or make every path explicitly subpath-safe before claiming support.
+- [ ] Extend `test/serve-built.cjs`/release smoke so the identical generated bytes are served and exercised at both roots, including the generated Blob Worker and CSP.
+- [ ] On one origin, warm release A, swap to an intentionally incompatible release B, reload without clearing cache, and assert HTML revalidation selects only B assets, the Worker solves, and no console/network error occurs. Exercise explicit `Cache-Control`, ETag, and Last-Modified behavior; use a fresh origin only as a control.
+- [ ] Assert old permanent Worker endpoints retain their exact bytes/cache behavior across the A→B swap while current page/Worker changes rotate only content-addressed assets.
+- [ ] Verify CSS/font graph changes independently rotate their affected hashes after Task 11D extends the builder.
+- [ ] Document the exact GUI-friendly local preview plus cold-cache and warm-upgrade release verification steps. Do not replace the existing build architecture while filling these gaps.
+
+## Task 15: Align Remaining Product Trust Copy and Operator Documentation
 
 **Priority:** P2/P3 trust
 
@@ -550,7 +626,7 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - Create: `docs/STATE_SCHEMA.md`
 - Create: `docs/SOLVER_CONTRACT.md`
 - Create: `docs/CATALOG.md`
-- Create: `docs/RELEASING.md`
+- Create or update: `docs/RELEASING.md`
 - Create: `test/catalog-validation.cjs`
 - Modify: `test/run-all.cjs`
 - Modify: `README.md`
@@ -560,10 +636,11 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - [ ] Replace “almost certainly optimal” with “best found within this time budget; not proven optimal.”
 - [ ] Remove the absolute sustainability guarantee when May-work margin is active.
 - [ ] Explain dedicated-item Credits, visible stability tradeoff, project warm-up/buffer semantics, and mined-resource hard caps.
-- [ ] Document Task 11’s self-hosted font assets/licenses. Recommendation: remove analytics so the local-only privacy story stays simple. If analytics is retained, document it visibly and verify planner state never enters requests.
-- [ ] Clarify README export scope, solve-time behavior, browser support, persistence/recovery, schema version, and release process.
+- [ ] Document Task 11’s self-hosted font assets/licenses. Keep the existing no-backend/local-first privacy scope precise; if any analytics remains after Task 14, document it visibly and verify planner state never enters requests.
+- [ ] Clarify only the still-missing README/operator facts: export scope, solve-time behavior, browser support, persistence/recovery, schema version, and the final Task 14 preview/release commands. Reference the existing hashed-build and permanent Worker compatibility contract rather than redesigning or duplicating it.
 - [ ] Document catalog source/version/update procedure, add structural/semantic validation to the explicit `test/run-all.cjs` list, and prove `npm test` executes it.
 - [ ] Document supported mechanics and intentional non-findings so future agents do not “correct” pre-produced Bits, independent mined budgets, or explicit Resimulate.
+- [ ] Keep release documentation bounded to operator behavior: clean build, GUI-friendly preview, cold/warm verification, immutable asset expectations, and rollback. The deterministic builder and cache headers remain executable truth.
 
 ## Task 16: Final Adversarial Regression and Release Candidate Audit
 
@@ -580,11 +657,16 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - [ ] Run the Standard Verification Gate twice: cold cache and warm upgrade cache.
 - [ ] Replay every review counterexample: project transient, Worker/Manual race, import attack corpus, corrupt storage, Gel packing, Credits warnings/deadline, stability disclosure, invalid notation, empty Credits copy, stale price nudge, and stale dialog scroll.
 - [ ] Run exhaustive-oracle small solver cases, parity, scale through 12 lines, catalog validation, and all legacy migration fixtures.
+- [ ] Run the frozen v2-era compatibility request/response fixture and byte/checksum assertions for both permanent Worker endpoints; confirm current features execute only in the generated Blob Worker.
 - [ ] Browser-test every mode/dialog at 1440×900, 1024×768, 900×760, 881×900, 880×900, 768×1024, 640×900, 561×900, 560×900, 430×932, 390×844, 375×812, and 320×568; capture representative screenshots.
 - [ ] Keyboard-test the complete first-run → data entry → solve → project → progress → export path.
 - [ ] Inspect console, failed requests, CSP violations, storage mutations, Worker lifecycle, and outbound request payloads.
+- [ ] Instrument current Blob Worker creation/termination and prove every early termination immediately revokes its object URL, an idle late error cannot activate fallback, and repeated solves add no Worker/dependency HTTP requests.
 - [ ] Confirm no body-level horizontal overflow, zero-inset result state, title/tab/status collision, project-name collapse, label/input overlap, offscreen dialog action, or stretched sparse recipe card; intentional tables must identify and contain horizontal scrolling.
 - [ ] Have a second agent review the implementation against this plan and the original review without seeing the implementer’s conclusions first.
+- [ ] Build and serve the same release under `/` and `/Forge-Planner/`; verify all app/CSS/image/font URLs, CSP, dialogs/tooltips, and solves without root-relative leakage.
+- [ ] On one origin, execute the release-A warm cache → incompatible release-B swap. Record HTML revalidation, cache headers/validators, loaded asset hashes, compatibility endpoint bytes, and the successful B solve.
+- [ ] Confirm the generated asset graph is closed: every page script, Worker dependency, stylesheet, image, and font is registered; a mutation rotates the expected hash and leaves unrelated assets stable.
 - [ ] Record passed evidence, known limitations, and any deliberately deferred P3 item in the verification document.
 - [ ] Do not call the release complete, push, or merge until the owner reviews the rendered release candidate and explicitly approves it.
 
