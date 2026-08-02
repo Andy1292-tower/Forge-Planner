@@ -162,10 +162,11 @@ button.btn.poke-on{animation:pokePulse 1.15s ease-out infinite}
 .globals .fl span{flex-wrap:wrap}
 .line-fields .fl > select,.line-fields .fl > input,.globals .fl > input{min-height:var(--target)}
 .line-final{margin-top:6px;font-size:10.5px;color:var(--amber);letter-spacing:.3px}
-/* keep the desktop 3-col field layout down to very narrow widths — only stack
-   to 2 cols when labels/numbers would actually get cramped (~360px and below) */
-@media(max-width:360px){
+/* Keep the desktop 3-col field layout until every label has a font-safe column.
+   At 375px the longest label can exceed one third of the line-card content area. */
+@media(max-width:375px){
   .line-fields{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 7px}
+  .line-fields>.fl:nth-child(3){grid-column:1/-1}
   .globals{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 select,input[type=number],input[type=text]{font-family:"JetBrains Mono",monospace;font-size:12.5px;
@@ -591,7 +592,6 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
   .price-row .pprev{grid-column:1;text-align:left}
 }
 @media(max-width:360px){
-  .line-fields>.fl:nth-child(3){grid-column:1/-1}
   .tg-row{grid-template-columns:minmax(0,1fr) auto;gap:6px;padding-inline:10px}
   .tg-row:not(.on) .prio{display:none}
   .tg-row .prio{gap:4px}
