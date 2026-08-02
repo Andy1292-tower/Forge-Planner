@@ -416,6 +416,13 @@ function projectFieldIds(p,scope="project"){
   const base=`field-${scope}-${fieldDomToken(p&&p.id)}`;
   return {from:`${base}-from-error`,to:`${base}-to-error`,priority:`${base}-priority-error`};
 }
+function projPrioField(p,pi,errorId){
+  const disabled=S.projectSeq===false;
+  const title=disabled
+    ?"Turn on Complete projects one at a time to set a manual order."
+    :"Numbered projects run first in numeric order after required material unlocks. Leave blank to use the planner's estimated order.";
+  return `<label class="proj-prio${disabled?" disabled":""}" title="${htmlAttribute(title)}"><input type="number" class="pprio" ${htmlFieldInputAttributes(FIELD_SCHEMA.projectPriority)} data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–" data-field-error="${errorId}" aria-label="${htmlAttribute(p.name)} schedule order"${disabled?" disabled":""}>order</label>`;
+}
 function projectRangeRule(p,endpoint){
   const count=Math.max(1,(p&&p.levels||[]).length);
   return fieldRuleWithBounds(FIELD_SCHEMA.projectIndex,{max:count,label:`${p&&p.name||"Project"} ${endpoint==="from"?"starting":"ending"} level`});
@@ -463,7 +470,7 @@ function compactProjCard(p,pi){
       <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule" aria-label="Include ${htmlAttribute(p.name)} in schedule">
       <span class="pname-static">${htmlText(p.name)}${desc}</span>
       <div class="proj-tools">
-        <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" ${htmlFieldInputAttributes(FIELD_SCHEMA.projectPriority)} data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–" data-field-error="${ids.priority}" aria-label="${htmlAttribute(p.name)} schedule order">order</label>
+        ${projPrioField(p,pi,ids.priority)}
         ${range}
         ${projStepper(p,pi)}
         <button class="iconbtn" data-pdel="${pi}" title="Remove from list" aria-label="Remove ${htmlAttribute(p.name)} from shopping list">×</button>
@@ -493,7 +500,7 @@ function projCard(p,pi){
       <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule" aria-label="Include ${htmlAttribute(p.name)} in schedule">
       <input type="text" class="pname" data-pname="${pi}" value="${htmlAttribute(p.name)}" placeholder="Project name" aria-label="Project name">
       <div class="proj-tools">
-        <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" ${htmlFieldInputAttributes(FIELD_SCHEMA.projectPriority)} data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–" data-field-error="${ids.priority}" aria-label="${htmlAttribute(p.name)} schedule order">order</label>
+        ${projPrioField(p,pi,ids.priority)}
         <span class="proj-lvls">lv <input type="number" ${htmlFieldInputAttributes(fromRule)} data-pfrom="${pi}" value="${p.from||1}" data-field-error="${ids.from}" aria-label="${htmlAttribute(p.name)} starting level"> → <input type="number" ${htmlFieldInputAttributes(toRule)} data-pto="${pi}" value="${p.to||lv.length||1}" data-field-error="${ids.to}" aria-label="${htmlAttribute(p.name)} ending level"></span>
         ${projStepper(p,pi)}
         <button class="iconbtn" data-pdup="${pi}" title="Duplicate" aria-label="Duplicate ${htmlAttribute(p.name)}" style="font-size:13px">⧉</button>
@@ -514,6 +521,11 @@ function renderInv(){
 function setProjectStabilityPolicy(value){
   if(value!=="prefer-current"&&value!=="reoptimize")return false;
   mutateState(st=>{st.projectStability=value;});save();doSolve();return true;
+}
+function setProjectLineMode(value){
+  const checked=validateFieldValue(FIELD_SCHEMA.projLineMode,value);if(!checked.valid)return false;
+  if(checked.value===S.projLineMode)return true;
+  mutateState(st=>{st.projLineMode=checked.value;});persistNow();doSolve();return true;
 }
 function renderProjects(){
   const box=document.getElementById("projList");
@@ -632,16 +644,11 @@ document.getElementById("invRows").addEventListener("input",e=>{
 // Levels completed for a project, clamped to its from→to span (non-destructive).
 function projSpan(p){const n=(p.levels||[]).length;const from=Math.max(1,Math.min(n||1,Math.floor(num(p.from)||1)));const to=Math.max(from,Math.min(n,Math.floor(num(p.to)||n)));return {from,to,span:to-from+1};}
 function projDone(p){const {span}=projSpan(p);return Math.max(0,Math.min(span,Math.floor(num(p.done)||0)));}
-function renderProgress(){
-  const list=document.getElementById("progList");
+function renderProgressSummary(active){
   const sum=document.getElementById("progSummary");
-  if(!list||!sum)return;
-  const active=(S.projects||[]).filter(p=>p.on&&(p.levels||[]).length);
-  if(!active.length){
-    sum.innerHTML="";
-    list.innerHTML=`<div class="notice info">No active projects. Open <b>Shopping list</b>, add or tick on a project, then track its level progress here.</div>`;
-    return;
-  }
+  if(!sum)return;
+  active=active||(S.projects||[]).filter(p=>p.on&&(p.levels||[]).length);
+  if(!active.length){sum.innerHTML="";return;}
   let totalLv=0,doneLv=0;
   active.forEach(p=>{const {span}=projSpan(p);totalLv+=span;doneLv+=projDone(p);});
   const currentKey=solveStateKey(S);
@@ -659,6 +666,18 @@ function renderProgress(){
       <div class="prog-metric"><div class="pm-v">${remLv}</div><div class="pm-l">levels left</div></div>
       <div class="prog-metric"><div class="pm-v">${etaTxt}</div><div class="pm-l">time remaining</div></div>
     </div>${res&&!res.empty&&!res.feasible&&remLv>0?`<div class="notice warn" style="margin:10px 0 0;font-size:11.5px">Plan isn't fully sustainable with current lines — see the main panel for blocked items.</div>`:""}`;
+}
+function renderProgress(){
+  const list=document.getElementById("progList");
+  const sum=document.getElementById("progSummary");
+  if(!list||!sum)return;
+  const active=(S.projects||[]).filter(p=>p.on&&(p.levels||[]).length);
+  if(!active.length){
+    sum.innerHTML="";
+    list.innerHTML=`<div class="notice info">No active projects. Open <b>Shopping list</b>, add or tick on a project, then track its level progress here.</div>`;
+    return;
+  }
+  renderProgressSummary(active);
   list.innerHTML=active.map(p=>{
     const {from,to,span}=projSpan(p);
     const done=projDone(p);
@@ -679,6 +698,10 @@ function renderProgress(){
       <div class="prog-lvls">${chips.join("")}</div>
     </div>`;
   }).join("");
+}
+function refreshProgressIfOpen(){
+  const modal=document.getElementById("progModal");
+  if(modal&&!modal.hidden)renderProgressSummary();
 }
 function setProjDone(pid,newDone){
   const p=(S.projects||[]).find(x=>x.id===pid);if(!p)return;
@@ -747,8 +770,11 @@ function stepsProjControls(){
 function stepPlanHtml(res){
   if(!res||res.empty||!res.phases||!res.phases.length)return "";
   const valid=!!(res.feasible&&res.lpFeasible&&res.scheduleValidation&&res.scheduleValidation.ok),execution=res.executionPhases||[];
+  const staticInstructions=S.projLineMode==="static"
+    ?" Within each timed phase, every busy line keeps one job for the whole phase; reset lines only between listed phases. The slowest required item sets that phase's duration."
+    :" Every line switch and stock figure comes from the executable replay.";
   let h=valid
-    ?`<p class="help" style="margin:0 0 12px">Follow the prerequisite, warm-up, and project phases <b>in order</b>. Every line switch and stock figure comes from the executable replay. Total ≈ <b>${fmtDuration(res.eta)}</b>. <span style="color:var(--ink3)">Clock times count from the <b>plan start</b> above.</span></p>`
+    ?`<p class="help" style="margin:0 0 12px">Follow the prerequisite, warm-up, and project phases <b>in order</b>.${staticInstructions} Total ≈ <b>${fmtDuration(res.eta)}</b>. <span style="color:var(--ink3)">Clock times count from the <b>plan start</b> above.</span></p>`
     :`<div class="notice warn"><b>No executable run instructions are available.</b> The analytical LP breakdown is retained below for diagnosis, but it must not be followed as a schedule.</div>`;
   if(!valid)return h;
   const _ps=(S.planStart!=null&&isFinite(S.planStart))?new Date(S.planStart):null;
@@ -849,6 +875,8 @@ document.getElementById("results").addEventListener("change",e=>{
 document.getElementById("results").addEventListener("click",e=>{
   const cl=sel=>e.target.closest&&e.target.closest(sel);
   if(cl("#btnProgress")){openProgress(cl("#btnProgress"));return;}
+  const lineMode=cl("[data-linemode]");
+  if(lineMode){setProjectLineMode(lineMode.getAttribute("data-linemode"));return;}
   // Plan-start "Now" — re-anchor the clock to the current moment (display only).
   if(cl("#spNow")){mutateState(st=>{st.planStart=Date.now();});save();repaintProject();return;}
   const stabilityAction=cl("[data-project-stability]");

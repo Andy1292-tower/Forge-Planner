@@ -397,9 +397,21 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 /* Plan-start anchor — inline in the Project-mode panel (promoted from the old step-by-step modal). */
 .plan-anchor{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;margin-bottom:12px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg2)}
 .plan-anchor label{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink3);font-weight:600}
-.plan-anchor input[type=datetime-local]{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;color-scheme:dark}
+/* max-width/min-width: the native datetime control has a fixed intrinsic width (~185px) that pushed
+   the page wider than the viewport once the window got narrow enough (200%-zoom reflow territory). */
+.plan-anchor input[type=datetime-local]{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;color-scheme:dark;max-width:100%;min-width:0}
 .plan-anchor .btn{padding:4px 12px;font-size:11px}
 .plan-anchor .proj-mini{flex:1 1 auto}
+/* Line-plan switch (Line switching / Set & forget) reuses the header's .modesw pills. Below 560px
+   the controls stack so a narrow screen never has to fit both labels side by side. */
+.line-mode{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;margin-bottom:12px}
+.line-mode-l{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink3);font-weight:600}
+.line-mode .modesw button{text-transform:none;letter-spacing:.2px;padding:6px 11px}
+@media(max-width:560px){
+  .line-mode .modesw{display:grid;grid-template-columns:minmax(0,1fr);width:100%}
+  .line-mode .modesw button:nth-child(even){border-left:none}
+  .line-mode .modesw button+button{border-top:1px solid var(--line2)}
+}
 /* Content padding inside a collapsible cat-panel (Adjust projects / Full breakdown). The parent clips
    overflow, so let wide breakdown tables scroll within the panel instead of being cut off. */
 .panel-pad{padding:2px 12px 12px;min-width:0}
@@ -502,6 +514,11 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 .proj-first .pfirst{width:15px;height:15px;margin-top:0}
 .proj-prio{display:flex;align-items:center;gap:4px;font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:var(--ink3)}
 .proj-prio input{width:36px;text-align:center;padding:4px 5px}
+/* Order is only consulted when projects run one at a time — dimmed (and the input disabled) when
+   that toggle is off, so it reads as "not applicable" rather than "typed a number, nothing happened".
+   Mirrors the .seq-toggle.disabled treatment on the unlock-gating checkbox. */
+.proj-prio.disabled{opacity:.45}
+.proj-prio.disabled input{cursor:default}
 /* project catalog picker */
 .cat-panel{border:1px solid var(--line);border-radius:7px;background:var(--bg2);margin-bottom:14px;overflow:hidden}
 .cat-panel>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;font-size:12.5px;font-weight:600;color:var(--ink);user-select:none}

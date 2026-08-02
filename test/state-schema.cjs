@@ -165,6 +165,30 @@ test("accepts a complete current state into a fresh object", () => {
   assert.equal(candidate.unknownRoot, "discard me");
 });
 
+test("keeps an explicit set-and-forget line mode through validation", () => {
+  const candidate = currentState();
+  candidate.projLineMode = "static";
+  const result = api("validateAndMigrate")(candidate);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.state.projLineMode, "static");
+});
+
+test("rejects an unknown line mode", () => {
+  const candidate = currentState();
+  candidate.projLineMode = "nonsense";
+  const result = api("validateAndMigrate")(candidate);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /projLineMode.*supported values/i);
+});
+
+test("a save written before the line mode existed defaults to split", () => {
+  const candidate = currentState();
+  delete candidate.projLineMode;
+  const result = api("validateAndMigrate")(candidate);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.state.projLineMode, "split");
+});
+
 for (const [label, candidate] of [
   ["JSON number", 1],
   ["JSON string", "save"],

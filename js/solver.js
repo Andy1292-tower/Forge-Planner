@@ -200,7 +200,9 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   const resIndex={};resources.forEach((r,i)=>resIndex[r]=i);
   const R=resources.length;
   const tIdx=targets.map(t=>resIndex[t]);
-  const tol=boundedPersistedField("margin",S.margin,0,0,20)/100;
+  const tol=opts.tolOverride!=null
+    ?Math.max(0,Math.min(0.5,Number(opts.tolOverride)||0))
+    :boundedPersistedField("margin",S.margin,0,0,20)/100;
   // Active feasibility tolerance for the current search pass. The margin solve runs two passes
   // (strict tol=0, then the user's margin) so its result is monotone in margin — see the staged
   // search at the bottom of solveCore (issue #60).
@@ -221,12 +223,14 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // jobs per distinct max; per-line speed factor sp and dup factor dp
   const jobsByMax={};
   const sorted=sortedLines();
-  sorted.forEach(s=>{if(!jobsByMax[s.max])jobsByMax[s.max]=buildJobs(s.max,resIndex,relRaws,relProds,targets,w);});
-  const lineJobs=sorted.map(s=>jobsByMax[s.max]);
+  const requestedCeiling=Number(opts.maxCompression),hasCeiling=Number.isFinite(requestedCeiling)&&requestedCeiling>0;
+  const jobMax=sorted.map(line=>hasCeiling?Math.min(line.max,requestedCeiling):line.max);
+  jobMax.forEach(max=>{if(!jobsByMax[max])jobsByMax[max]=buildJobs(max,resIndex,relRaws,relProds,targets,w);});
+  const lineJobs=jobMax.map(max=>jobsByMax[max]);
   const N=sorted.length;
   // effective speed per (line, job): a craft can't run under 1s real time, so speed is capped at the craft's cycle seconds (ct)
   const spEff=lineJobs.map((js,i)=>{const sp=sorted[i].sp;return js.map(j=>(j.ct>0&&sp>j.ct)?j.ct:sp);});
-  const sameAsPrev=sorted.map((s,i)=>i>0&&s.max===sorted[i-1].max&&s.sp===sorted[i-1].sp&&s.dp===sorted[i-1].dp);
+  const sameAsPrev=sorted.map((s,i)=>i>0&&jobMax[i]===jobMax[i-1]&&s.sp===sorted[i-1].sp&&s.dp===sorted[i-1].dp);
   // items bound: best (speed+dup scaled) production rate of each target reachable per line
   const bp=lineJobs.map((js,i)=>targets.map(t=>{let m=0;js.forEach(j=>{if((j.kind==="craft"||j.kind==="produce")&&j.res===t)m=Math.max(m,j.prod[0][1]);});return m*sorted[i].sp*sorted[i].dp;}));
   const SP=targets.map((t,ti)=>{const a=new Array(N+1).fill(0);for(let i=N-1;i>=0;i--)a[i]=a[i+1]+bp[i][ti];return a;});
@@ -1068,24 +1072,59 @@ function projectSchedule(net,targets,avail,opts){
   const stabilityUpdate=stabKey&&opts.rememberStability?makeLineStabilityUpdate(stabKey,plan):null;
   return {rate,plan,items,z:(y[zCol]||0)/D0,stabilized,zFree:zFree/D0,zPin,stabilityKey:stabKey,stabilityUpdate};
 }
+
+/* One-job-per-line Project scheduling. The discrete core already models exactly that assignment;
+ * this adapter gives it the Project LP result shape so Task 4's replay remains the authority for
+ * inventory, prerequisites, warm-ups, mined-rate limits, and cross-phase carry. */
+function staticSchedule(net,targets,control,maxCompression){
+  const rc=relevantChain(targets),D0=Math.max(1,...targets.map(item=>net[item]||0));
+  const weights=targets.map(item=>Math.max(1e-12,(net[item]||0)/D0));
+  const budget=boundedPersistedField("solveBudget",S.solveBudget,2000,200,60000,true);
+  const solved=solveCore(targets,weights,rc.prods,rc.raws,budget,{tolOverride:0,control,maxCompression});
+  const rate={};
+  solved.resources.forEach((resource,index)=>{
+    rate[resource]=solved.feasible?(solved.best.produced[index]-solved.best.consumed[index])*3600:0;
+  });
+  const plan=solved.sorted.map((line,index)=>{
+    const row={line:line.orig+1,max:line.max,sp:line.sp,dp:line.dp,entries:[]};
+    const job=solved.feasible?solved.lineJobs[index][solved.best.choice[index]]:null;
+    if(job&&job.kind!=="idle"&&job.prod.length){
+      const speed=effSpeed(line.sp,job.ct);
+      row.entries.push({item:job.res,lvl:job.lvl,frac:1,outHr:job.prod[0][1]*speed*line.dp*3600,
+        cons:job.cons.map(input=>({item:solved.resources[input[0]],hr:input[1]*speed*3600}))});
+    }
+    return row;
+  }).sort((a,b)=>a.line-b.line);
+  return {rate,plan,items:solved.resources,z:solved.feasible?solved.best.score:0,
+    stabilized:false,zFree:null,zPin:null,stabilityKey:null,stabilityUpdate:null,
+    compressionCeiling:maxCompression!=null&&Number.isFinite(Number(maxCompression))&&Number(maxCompression)>0
+      ?Number(maxCompression):null,
+    evaluated:!solved.interrupted||!!solved.feasible,capped:!!solved.capped,
+    interrupted:!!solved.interrupted,searchExhaustive:!solved.capped&&!solved.interrupted};
+}
 // Solve one batch of demand (a single project, or all of them combined) into a pipelined phase.
 // `avail` (optional) is the stock the LP may draw down in place of producing an item (issue #73).
 // `stabilityPolicy` opts a final visible phase into the Tier-2 line-stability pass (issue #87 item 5);
 // ordering/cost estimates, preliminary fixed points, warm-ups, and hidden alternatives omit it.
 // `phaseKey` is the cache discriminator: a STABLE unique id (project id / member-id set), NOT the
 // display name, so two projects sharing a name don't collide on one cache slot. Falls back to name.
-function solvePhaseFor(net,name,avail,stabilityPolicy,phaseKey){
+function solvePhaseFor(net,name,avail,stabilityPolicy,phaseKey,solveOptions){
   const demandItems=ALLITEMS.filter(it=>net[it]>1e-9);
   const blockedMined={};
   demandItems.forEach(it=>{const blockers=chainMinedBlockers(it);if(blockers.length)blockedMined[it]=blockers;});
   const unsat=Object.keys(blockedMined);   // legacy item-level blocker list
   const targets=demandItems.filter(it=>!blockedMined[it]);
   if(targets.length===0)
-    return {name,plan:[],balance:[],minedUsage:[],demandItems,net,rate:{},eta:0,bottleneck:null,infeasItems:[],unsat,blockedMined,atRisk:[],items:[],z:0,partial:false,feasible:false};
+    return {name,phaseKey:(phaseKey!=null?phaseKey:name),plan:[],balance:[],minedUsage:[],demandItems,net,rate:{},eta:0,bottleneck:null,infeasItems:[],unsat,blockedMined,atRisk:[],items:[],z:0,partial:false,feasible:demandItems.length===0,stabilized:false,zFree:null,zPin:null,stabilityKey:null,stabilityUpdate:null,evaluated:true,capped:false,interrupted:false,searchExhaustive:true};
+  const staticControl=solveOptions&&solveOptions.static===true&&solveOptions.control;
+  if(staticControl&&staticControl.isStopped())
+    return {name,phaseKey:(phaseKey!=null?phaseKey:name),plan:[],balance:[],minedUsage:[],demandItems,net,rate:{},eta:0,bottleneck:null,infeasItems:[],unsat,blockedMined,atRisk:[],items:[],z:0,partial:false,feasible:false,stabilized:false,zFree:null,zPin:null,stabilityKey:null,stabilityUpdate:null,evaluated:false,capped:true,interrupted:true,searchExhaustive:false};
   let scheduleOptions=null;
   if(stabilityPolicy&&typeof stabilityPolicy==="object")scheduleOptions={...stabilityPolicy,phaseKey:(phaseKey!=null?phaseKey:name)};
   else if(stabilityPolicy===true)scheduleOptions={readStability:true,rememberStability:true,stabilityCache:cloneLineStability(_lineStability),phaseKey:(phaseKey!=null?phaseKey:name)};
-  const sch=projectSchedule(net,targets,avail,scheduleOptions);
+  const sch=solveOptions&&solveOptions.static===true
+    ?staticSchedule(net,targets,solveOptions.control,solveOptions.maxCompression)
+    :projectSchedule(net,targets,avail,scheduleOptions);
   const rate={};targets.forEach(it=>rate[it]=Math.max(0,sch.rate[it]||0));
   let eta=0,bottleneck=null;const infeasItems=[];
   targets.forEach(it=>{if(rate[it]<=1e-9)infeasItems.push(it);else{const t=net[it]/rate[it];if(t>eta){eta=t;bottleneck=it;}}});
@@ -1110,7 +1149,9 @@ function solvePhaseFor(net,name,avail,stabilityPolicy,phaseKey){
     const used=b.stock*eta;   // total units of this item's stock the phase draws down
     return used>=STOCK_SAFETY_FRAC*av*0.98;
   }).map(b=>b.res);
-  return {name,phaseKey:(phaseKey!=null?phaseKey:name),plan:sch.plan,balance,minedUsage,demandItems,net,rate,eta,bottleneck,infeasItems,unsat,blockedMined,atRisk,items:sch.items,z:sch.z,partial:!feasible&&hasThroughput,feasible,stabilized:!!sch.stabilized,zFree:sch.zFree,zPin:sch.zPin,stabilityKey:sch.stabilityKey,stabilityUpdate:sch.stabilityUpdate};
+  return {name,phaseKey:(phaseKey!=null?phaseKey:name),plan:sch.plan,balance,minedUsage,demandItems,net,rate,eta,bottleneck,infeasItems,unsat,blockedMined,atRisk,items:sch.items,z:sch.z,partial:!feasible&&hasThroughput,feasible,stabilized:!!sch.stabilized,zFree:sch.zFree,zPin:sch.zPin,stabilityKey:sch.stabilityKey,stabilityUpdate:sch.stabilityUpdate,
+    compressionCeiling:sch.compressionCeiling==null?null:sch.compressionCeiling,
+    evaluated:sch.evaluated!==false,capped:!!sch.capped,interrupted:!!sch.interrupted,searchExhaustive:sch.searchExhaustive!==false};
 }
 // Frames/Wire Bits are an external, pre-produced prerequisite. Reserve them before ordinary direct
 // Bits demand; they never become a Project LP target and never earn a synthetic Bits line.
@@ -1148,9 +1189,15 @@ function unlockLayers(perProject){
   const unlockerOf={};   // material -> index of the in-list project that unlocks it
   const idxOfCat={};     // catId -> index
   perProject.forEach((p,i)=>{const m=UNLOCKS[p.catId];if(m)unlockerOf[m]=i;if(p.catId)idxOfCat[p.catId]=i;});
+  const chains=perProject.map(project=>{
+    const direct=ALLITEMS.filter(item=>(project.sub[item]||0)>0);
+    if(!direct.length)return new Set();
+    const chain=relevantChain(direct);
+    return new Set([...direct,...chain.prods,...chain.raws]);
+  });
   const preds=perProject.map((p,i)=>{
     const set={};
-    UNLOCK_MATERIALS.forEach(m=>{const u=unlockerOf[m];if(u!=null&&u!==i&&(p.sub[m]||0)>0)set[u]=1;});
+    UNLOCK_MATERIALS.forEach(m=>{const u=unlockerOf[m];if(u!=null&&u!==i&&chains[i].has(m))set[u]=1;});
     (PROJECT_PREREQS[p.catId]||[]).forEach(cat=>{const u=idxOfCat[cat];if(u!=null&&u!==i)set[u]=1;});
     return Object.keys(set).map(Number);
   });
@@ -1165,9 +1212,10 @@ function unlockLayers(perProject){
   for(let i=0;i<n;i++)calc(i,{});
   return layer;
 }
-function solveProjectBuffer(deficit,_inventory,info){
+function solveProjectBuffer(deficit,_inventory,info,runOptions){
   const signature=Object.keys(deficit).sort().map(it=>it+":"+deficit[it].toPrecision(12)).join("|");
-  const warm=solvePhaseFor(deficit,"Warm-up: "+Object.keys(deficit).join(" + "),{},false,"warmup:"+(info&&info.depth||0)+":"+signature);
+  const warm=solvePhaseFor(deficit,"Warm-up: "+Object.keys(deficit).join(" + "),{},false,"warmup:"+(info&&info.depth||0)+":"+signature,
+    {static:S.projLineMode==="static",control:runOptions&&runOptions.staticControl});
   warm.kind="warmup";warm.demandSub={};return warm;
 }
 function plannedPreProducedDemand(ph){
@@ -1179,40 +1227,141 @@ function plannedPreProducedDemand(ph){
   const rounded=Math.round(bits);if(Math.abs(bits-rounded)<=1e-8+Number.EPSILON*32*Math.max(1,Math.abs(bits)))bits=rounded;
   return bits>0?{Bits:bits}:{};
 }
-function solveExecutableProjectPhase(sub,name,inv,stabilityPolicy,phaseKey){
-  let pre=phasePreProducedDemand(sub,inv),ph=null,solvedWith={},converged=false;
-  const fixedPoint=policy=>{
-    for(let pass=0;pass<8;pass++){
-      solvedWith=Object.assign({},pre);
-      ph=solvePhaseFor(projNetVec(sub,inv,solvedWith),name,projAvailVec(sub,inv,solvedWith),policy,phaseKey);
-      const next=plannedPreProducedDemand(ph),a=solvedWith.Bits||0,b=next.Bits||0;
-      pre=next;
-      if(Math.abs(a-b)<=1e-8+Number.EPSILON*32*Math.max(1,Math.abs(a),Math.abs(b)))return true;
-    }
-    return false;
+function staticCompressionFallbackCandidates(physicalMax,observedMaxCompressions){
+  const physical=Number(physicalMax)||0,observed=[...new Set((observedMaxCompressions||[])
+    .map(Number).filter(level=>Number.isFinite(level)&&level>0&&level<=physical))].sort((a,b)=>b-a);
+  const relevantMax=observed.length?observed[0]:physical;
+  // Walk strict lower ceilings in descending order below the highest job level implicated in the
+  // cycle. That tries 2x before 1x even if a 1x job happened to appear in one candidate, and avoids
+  // irrelevant 16k→8k retries when the oscillating assignments only ever reached 4x.
+  return LEVELS.filter(level=>level<relevantMax).sort((a,b)=>b-a);
+}
+function retainReplaySafeFixedPointIncumbent(incumbent,candidate,sub,inv,solvedWith,planned){
+  if(!candidate||candidate.feasible!==true||candidate.evaluated===false)return incumbent;
+  // This is a pure certification pass: external pre-produced prerequisites are inserted and the
+  // exact replay runs, but no warm-up solver is supplied and no search/control budget is touched.
+  // A candidate needing more solving is therefore not a usable deadline incumbent.
+  const probe=Object.assign({},candidate,{kind:"project",demandSub:Object.assign({},sub),
+    preProducedDemand:Object.assign({},planned)});
+  const built=buildExecutableProjectSchedule([probe],inv,projectScheduleContext());
+  if(!built.validation||built.validation.ok!==true)return incumbent;
+  return {phase:candidate,solvedWith:Object.assign({},solvedWith),planned:Object.assign({},planned)};
+}
+function solveExecutableProjectPhase(sub,name,inv,stabilityPolicy,phaseKey,runOptions){
+  const initialPre=phasePreProducedDemand(sub,inv);
+  const isStatic=S.projLineMode==="static";
+  const bitsKey=demand=>{
+    const value=Number((demand&&demand.Bits)||0);
+    return Number.isFinite(value)?value.toPrecision(15):String(value);
   };
-  converged=fixedPoint(null);
-  if(converged&&stabilityPolicy&&(stabilityPolicy.readStability||stabilityPolicy.rememberStability))converged=fixedPoint(stabilityPolicy);
+  const maxPlanCompression=phase=>{
+    let maximum=0;
+    (phase&&phase.plan||[]).forEach(line=>(line.entries||[]).forEach(entry=>{maximum=Math.max(maximum,Number(entry.lvl)||0);}));
+    return maximum;
+  };
+  const fixedPoint=(policy,startPre,maxCompression)=>{
+    let pre=Object.assign({},startPre),ph=null,solvedWith={};
+    let incumbent=null;
+    const seen=new Set([bitsKey(pre)]),observedMaxCompressions=new Set();
+    for(let pass=0;pass<8;pass++){
+      const passSolvedWith=Object.assign({},pre);
+      const candidate=solvePhaseFor(projNetVec(sub,inv,passSolvedWith),name,projAvailVec(sub,inv,passSolvedWith),policy,phaseKey,
+        {static:isStatic,control:runOptions&&runOptions.staticControl,maxCompression});
+      if(candidate.evaluated===false){
+        if(!incumbent)return {phase:candidate,solvedWith:passSolvedWith,pre,converged:false,
+          incumbent:null,observedMaxCompressions:[...observedMaxCompressions]};
+        // Refinement ran out of the shared static budget after a complete feasible pass. Keep that
+        // pass as a candidate for the exact executable replay instead of replacing it with an empty
+        // solve-budget result. The replay remains authoritative: only a schedule it validates can
+        // reach the user, and the interruption/cap telemetry stays explicit.
+        ph=Object.assign({},incumbent.phase,{evaluated:true,capped:true,interrupted:true,searchExhaustive:false});
+        solvedWith=Object.assign({},incumbent.solvedWith);
+        pre=Object.assign({},incumbent.planned);
+        return {phase:ph,solvedWith,pre,converged:null,incumbent,
+          observedMaxCompressions:[...observedMaxCompressions]};
+      }
+      ph=candidate;
+      solvedWith=passSolvedWith;
+      const usedCompression=maxPlanCompression(ph);if(usedCompression>0)observedMaxCompressions.add(usedCompression);
+      const next=plannedPreProducedDemand(ph),a=solvedWith.Bits||0,b=next.Bits||0;
+      if(isStatic)incumbent=retainReplaySafeFixedPointIncumbent(incumbent,ph,sub,inv,solvedWith,next);
+      pre=next;
+      if(Math.abs(a-b)<=1e-8+Number.EPSILON*32*Math.max(1,Math.abs(a),Math.abs(b)))
+        return {phase:ph,solvedWith,pre,converged:true,incumbent,
+          observedMaxCompressions:[...observedMaxCompressions]};
+      const key=bitsKey(pre);
+      if(seen.has(key))return {phase:ph,solvedWith,pre,converged:false,cycled:true,
+        incumbent,observedMaxCompressions:[...observedMaxCompressions]};
+      seen.add(key);
+    }
+    return {phase:ph,solvedWith,pre,converged:false,incumbent,
+      observedMaxCompressions:[...observedMaxCompressions]};
+  };
+  let attempt=fixedPoint(null,initialPre,null);
+  // A larger configured cap contains every lower-cap assignment, but the pre-produced Bits fixed
+  // point can alternate between two individually valid whole-line assignments. Retry the finite,
+  // deterministic set of lower ceilings observed in that cycle (then every lower table level).
+  // The final replay still certifies execution, and capped/non-exhaustive telemetry makes clear that
+  // this bounded recovery did not prove the unrestricted assignment search optimal.
+  if(isStatic&&attempt.converged===false&&attempt.phase&&attempt.phase.evaluated!==false&&attempt.phase.interrupted!==true){
+    const physicalMax=(S.lines||[]).reduce((maximum,line)=>Math.max(maximum,Number(line.max)||0),0);
+    const candidates=staticCompressionFallbackCandidates(physicalMax,attempt.observedMaxCompressions);
+    const primaryAttempt=attempt;let bestFallback=null,interruptedFallback=null;
+    for(let index=0;index<candidates.length;index++){
+      const ceiling=candidates[index],fallback=fixedPoint(null,initialPre,ceiling);
+      const certified=(fallback.converged===true||fallback.converged===null)
+        ?retainReplaySafeFixedPointIncumbent(null,fallback.phase,sub,inv,fallback.solvedWith,fallback.pre):null;
+      if(certified){
+        fallback.phase=certified.phase;fallback.solvedWith=certified.solvedWith;fallback.pre=certified.planned;
+        const currentEta=Number(fallback.phase.eta),bestEta=bestFallback?Number(bestFallback.phase.eta):Infinity;
+        if(!bestFallback||currentEta<bestEta-(1e-9+Number.EPSILON*32*Math.max(1,Math.abs(currentEta),Math.abs(bestEta)))){
+          fallback._compressionCeiling=ceiling;bestFallback=fallback;
+        }
+      }
+      if(fallback.converged===null||fallback.phase&&fallback.phase.evaluated===false){interruptedFallback=fallback;break;}
+    }
+    if(bestFallback){
+      bestFallback.phase=Object.assign({},bestFallback.phase,{compressionFallback:true,
+        compressionCeiling:bestFallback._compressionCeiling,capped:true,
+        interrupted:!!(bestFallback.phase.interrupted||interruptedFallback),searchExhaustive:false});
+      delete bestFallback._compressionCeiling;attempt=bestFallback;
+    }else if(interruptedFallback&&primaryAttempt.incumbent){
+      const retained=primaryAttempt.incumbent;
+      attempt={phase:Object.assign({},retained.phase,{evaluated:true,capped:true,interrupted:true,searchExhaustive:false}),
+        solvedWith:Object.assign({},retained.solvedWith),pre:Object.assign({},retained.planned),
+        converged:null,incumbent:retained,observedMaxCompressions:primaryAttempt.observedMaxCompressions};
+    }else if(interruptedFallback)attempt=interruptedFallback;
+  }
+  // Static phases have no within-phase line switching and never read, propose, or commit the split
+  // line-stability cache. Their first fixed-point pass is already the visible semantic solve.
+  if(!isStatic&&attempt.converged===true&&stabilityPolicy&&(stabilityPolicy.readStability||stabilityPolicy.rememberStability))
+    attempt=fixedPoint(stabilityPolicy,attempt.pre,null);
+  const ph=attempt.phase,solvedWith=attempt.solvedWith,pre=attempt.pre,converged=attempt.converged;
   ph.preProducedDemand=Object.assign({},pre);
   ph.preProducedSolveDemand=Object.assign({},solvedWith);
-  ph.preProducedConverged=converged;
-  if(!converged)ph.preProducedFailure={kind:"pre-produced-convergence",resource:"Bits",time:0,deficit:Math.abs((pre.Bits||0)-(solvedWith.Bits||0)),
+  ph.preProducedConverged=ph.evaluated===false||converged===null?null:converged;
+  if(converged===false&&ph.evaluated!==false)ph.preProducedFailure={kind:"pre-produced-convergence",resource:"Bits",time:0,deficit:Math.abs((pre.Bits||0)-(solvedWith.Bits||0)),
     message:"Pre-produced Bits obligation did not converge with the final stabilized Project plan"};
   return ph;
 }
-function buildProjectPhases(seq,net,perProject,stabilityPolicy){
+function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
   const layer=unlockLayers(perProject);
   const maxL=perProject.length?Math.max.apply(null,layer):0;
   const invStart=()=>{const o={};ALLITEMS.forEach(it=>o[it]=num(S.inventory&&S.inventory[it])||0);return o;};
   const context=projectScheduleContext(),executionPhases=[];
   let exactInventory=invStart(),scheduleBlocked=null;
+  const solveBudgetFailure=()=>({kind:"solve-budget",time:0,deficit:0,
+    message:"Set & forget search reached the Project solve limit before this phase received a usable assignment."});
   const executePhase=ph=>{
     if(scheduleBlocked)return;
+    if(ph.evaluated===false){scheduleBlocked=solveBudgetFailure();return;}
     if(ph.preProducedConverged===false){scheduleBlocked=ph.preProducedFailure;return;}
-    const built=buildExecutableProjectSchedule([ph],exactInventory,context,solveProjectBuffer);
+    const built=buildExecutableProjectSchedule([ph],exactInventory,context,
+      (deficit,inventory,info)=>{const warm=solveProjectBuffer(deficit,inventory,info,runOptions);
+        if(warm.evaluated===false&&!scheduleBlocked)scheduleBlocked=solveBudgetFailure();return warm;});
     executionPhases.push(...built.phases);
-    if(built.validation.ok)exactInventory=built.validation.finalInventory;
-    else scheduleBlocked=built.validation.firstFailure;
+    if(!scheduleBlocked){if(built.validation.ok)exactInventory=built.validation.finalInventory;
+      else scheduleBlocked=built.validation.firstFailure;}
   };
   if(!seq){
     // Single combined phase when nothing is gated, or when the user has turned unlock gating
@@ -1221,7 +1370,7 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy){
       const sumSub={};ALLITEMS.forEach(it=>sumSub[it]=perProject.reduce((s,p)=>s+(p.sub[it]||0),0));
       const inv0=invStart();
       const combKey=perProject.length>1?perProject.map(p=>p.id).sort().join("+"):perProject[0].id;
-      const ph=solveExecutableProjectPhase(sumSub,perProject.length>1?"All projects":perProject[0].name,inv0,stabilityPolicy,combKey);
+      const ph=solveExecutableProjectPhase(sumSub,perProject.length>1?"All projects":perProject[0].name,inv0,stabilityPolicy,combKey,runOptions);
       ph.semanticIndex=0;ph.demandSub=sumSub;ph.invStart=inv0;
       ph.doneAt=ph.eta;executePhase(ph);return {phases:[ph],executionPhases,finalInventory:exactInventory,scheduleBlocked};
     }
@@ -1233,28 +1382,35 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy){
       if(!members.length)continue;
       const sumSub={};ALLITEMS.forEach(it=>sumSub[it]=members.reduce((s,p)=>s+(p.sub[it]||0),0));
       const inv0=Object.assign({},exactInventory);
-      const ph=solveExecutableProjectPhase(sumSub,members.map(m=>m.name).join(" + "),exactInventory,stabilityPolicy,members.map(m=>m.id).sort().join("+"));
+      const ph=solveExecutableProjectPhase(sumSub,members.map(m=>m.name).join(" + "),exactInventory,stabilityPolicy,members.map(m=>m.id).sort().join("+"),runOptions);
       ph.semanticIndex=phases.length;ph.members=members.map(m=>m.name);ph.demandSub=sumSub;ph.wave=phases.length+1;ph.invStart=inv0;
       executePhase(ph);
       cum+=ph.eta;ph.doneAt=cum;phases.push(ph);
     }
     return {phases,executionPhases,finalInventory:exactInventory,scheduleBlocked};
   }
-  // sequenced: one project per phase, ordered by (unlock layer, manual priority, cheapest makespan)
+  // Sequenced: one project per phase, ordered by unlock layer, manual priority, then an estimated
+  // completion time. Static phases do not draw held intermediates into their one-job assignment, so
+  // omit that availability from the estimate instead of ranking in a stock world the actual phase
+  // will not use. The estimate remains split-mode and cache-neutral; exact static work is budgeted
+  // only for the selected executable phases below.
   const invInit=invStart();
-  const cost=perProject.map(p=>{const ph=solvePhaseFor(projNetVec(p.sub,invInit),p.name,projAvailVec(p.sub,invInit));return ph.feasible?ph.eta:Infinity;});
+  const cost=perProject.map(p=>{const netDemand=projNetVec(p.sub,invInit),avail=S.projLineMode==="static"?{}:projAvailVec(p.sub,invInit);
+    const ph=solvePhaseFor(netDemand,p.name,avail);return ph.feasible?ph.eta:Infinity;});
   const order=perProject.map((p,i)=>({p,i})).sort((a,b)=>{
     if(layer[a.i]!==layer[b.i])return layer[a.i]-layer[b.i];   // unlock precedence (hard)
     const pa=a.p.prio,pb=b.p.prio;
     if(pa!=null&&pb!=null){if(pa!==pb)return pa-pb;}            // manual order, lower first
     else if(pa!=null)return -1;
     else if(pb!=null)return 1;
-    return cost[a.i]-cost[b.i];                                // else cheapest makespan
+    const ca=cost[a.i],cb=cost[b.i];
+    if(!isFinite(ca)&&!isFinite(cb))return 0;
+    return ca-cb;                                               // else cheapest makespan
   });
   let cum=0;const phases=[];
   order.forEach(({p})=>{
     const inv0=Object.assign({},exactInventory);
-    const ph=solveExecutableProjectPhase(p.sub,p.name,exactInventory,stabilityPolicy,p.id);
+    const ph=solveExecutableProjectPhase(p.sub,p.name,exactInventory,stabilityPolicy,p.id,runOptions);
     ph.semanticIndex=phases.length;ph.prio=(p.prio!=null?p.prio:null);ph.demandSub=p.sub;ph.invStart=inv0;
     executePhase(ph);
     cum+=ph.eta;ph.doneAt=cum;phases.push(ph);
@@ -1309,8 +1465,8 @@ function projectRunExecutable(run){
 // One complete Project execution path. The same function owns selected and hidden runs so the
 // comparison includes sequencing/waves, recursive warm-ups, ordering, carried inventory, replay,
 // prerequisites, and finish clocks rather than comparing isolated LP phases.
-function solveProjectRun(seq,net,perProject,stabilityPolicy){
-  const builtPhases=buildProjectPhases(seq,net,perProject,stabilityPolicy),phases=builtPhases.phases;
+function solveProjectRun(seq,net,perProject,stabilityPolicy,runOptions){
+  const builtPhases=buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions),phases=builtPhases.phases;
   const waved=!seq&&phases.length>1;   // all-at-once split into unlock-ordered waves
   const single=!seq&&S.projectGate===false&&perProject.length>1;   // gating off — one combined phase
   phases.forEach((ph,i)=>{ph.semanticIndex=i;ph.kind="project";});
@@ -1332,16 +1488,22 @@ function solveProjectRun(seq,net,perProject,stabilityPolicy){
   const partial=!lpFeasible&&phases.some(ph=>ph.z>1e-15);
   const infeasItems=[...new Set([].concat(...phases.map(ph=>ph.infeasItems||[])))];
   const atRiskItems=[...new Set([].concat(...phases.map(ph=>ph.atRisk||[])))];
+  const searchedPhases=executionPhases.filter(ph=>ph.kind!=="prerequisite");
+  const allPhasesEvaluated=phases.every(ph=>ph.evaluated!==false)&&searchedPhases.every(ph=>ph.evaluated!==false);
+  const capped=phases.some(ph=>ph.capped===true)||searchedPhases.some(ph=>ph.capped===true);
+  const searchExhaustive=allPhasesEvaluated&&!capped&&phases.every(ph=>ph.searchExhaustive!==false)&&searchedPhases.every(ph=>ph.searchExhaustive!==false);
   const main=phases[0]||{plan:[],balance:[],rate:{},demandItems:[],bottleneck:null};
   const stabilityUpdates=phases.filter(ph=>ph.feasible&&ph.preProducedConverged!==false&&ph.stabilityUpdate).map(ph=>ph.stabilityUpdate);
-  return {empty:false,mode:"project",sequenced:seq,waved,single,phases,executionPhases:executable.phases,perProject,net,
+  return {empty:false,mode:"project",projLineMode:S.projLineMode==="static"?"static":"split",sequenced:seq,waved,single,
+    orderSeqSetting:S.projectSeq!==false,orderGateSetting:S.projectGate!==false,
+    phases,executionPhases:executable.phases,perProject,net,
     plan:main.plan,balance:main.balance,
     demandItems:(seq||waved)?ALLITEMS.filter(it=>net[it]>1e-9):main.demandItems,
     rate:main.rate,bottleneck:main.bottleneck,eta,workEta,warmupEta,lpFeasible,scheduleValidation:executable.validation,
     unsat,blockedMined,infeasItems,atRiskItems,partial,feasible,
     minedUsage:main.minedUsage||[],
     gelReserved:gelReservedFromPlan(main.plan),
-    objective:feasible&&eta>0?1/eta:0,_stabilityUpdates:stabilityUpdates};
+    objective:feasible&&eta>0?1/eta:0,allPhasesEvaluated,capped,searchExhaustive,_stabilityUpdates:stabilityUpdates};
 }
 function uniquePhaseKeys(phases){
   const keys=(phases||[]).map(ph=>ph&&ph.phaseKey);return keys.every(key=>typeof key==="string"&&key.length>0)&&new Set(keys).size===keys.length;
@@ -1385,28 +1547,33 @@ function stabilityComparisonSummary(selected,alternative){
 }
 // Top of project mode: compute the selected full run and any eligible hidden comparison before
 // atomically committing only the successful visible run's proposed stability records.
-function optimizeProjectTop(){
+function optimizeProjectTop(testOptions){
   const {gross,net,perProject}=projectDemand(),t0=performance.now();
   const projectStability=S.projectStability==="reoptimize"?"reoptimize":"prefer-current";
-  if(perProject.length===0)return {empty:true,mode:"project",plan:[],phases:[],gross,net,perProject,projectStability,stabilityComparison:null,ms:performance.now()-t0};
+  if(perProject.length===0)return {empty:true,mode:"project",projLineMode:S.projLineMode==="static"?"static":"split",plan:[],phases:[],gross,net,perProject,projectStability,stabilityComparison:null,ms:performance.now()-t0};
   const seq=S.projectSeq!==false&&perProject.length>1,cacheSnapshot=cloneLineStability(_lineStability);
+  const staticControl=S.projLineMode==="static"
+    ?makeSolveControl(boundedPersistedField("solveBudget",S.solveBudget,2000,200,60000,true),testOptions)
+    :null;
+  const runOptions={staticControl};
   const selectedPolicy={readStability:projectStability==="prefer-current",rememberStability:true,stabilityCache:cacheSnapshot};
-  const selected=solveProjectRun(seq,net,perProject,selectedPolicy);selected.gross=gross;
+  const selected=solveProjectRun(seq,net,perProject,selectedPolicy,runOptions);selected.gross=gross;
   let stabilityComparison=null;
   if(projectStability==="prefer-current"&&selected.phases.some(ph=>ph.stabilized===true)){
-    const alternative=solveProjectRun(seq,net,perProject,{readStability:false,rememberStability:false,stabilityCache:{}});
+    const alternative=solveProjectRun(seq,net,perProject,{readStability:false,rememberStability:false,stabilityCache:{}},runOptions);
     stabilityComparison=stabilityComparisonSummary(selected,alternative);
   }
   if(projectRunExecutable(selected))commitLineStabilityUpdates(selected._stabilityUpdates,cacheSnapshot);
   delete selected._stabilityUpdates;
+  selected.staticDeadlineReached=staticControl?staticControl.deadlineReached():false;
   selected.projectStability=projectStability;selected.stabilityComparison=stabilityComparison;selected.ms=performance.now()-t0;
   return selected;
 }
 
 
-function optimize(){
-  if(S.mode==="project")return optimizeProjectTop();
+function optimize(testOptions){
+  if(S.mode==="project")return optimizeProjectTop(testOptions);
   // Gel is a native resource inside solveCore now (vespium is its budgeted input), so items and
   // credits need no reservation sweep — the solver allocates Gel lines like any other product.
-  return optimizeInner();
+  return optimizeInner(undefined,testOptions);
 }

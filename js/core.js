@@ -108,7 +108,7 @@ function defaults(){
     forgie:nulls(),forgieText:{},
     minedIncome:{Vespium:null,Hydracite:null},minedIncomeText:{Vespium:"",Hydracite:""},
     targets:tg,
-    projects:[],inventory:nulls(),inventoryText:{},projectSeq:true,projectGate:true,projectStability:"prefer-current",
+    projects:[],inventory:nulls(),inventoryText:{},projectSeq:true,projectGate:true,projectStability:"prefer-current",projLineMode:"split",
     planStart:null,
     manual:[],manualSaved:[],manualActiveId:null
   };
@@ -186,6 +186,7 @@ function normalize(st){
   if(typeof st.projectSeq!=="boolean")st.projectSeq=true;
   if(typeof st.projectGate!=="boolean")st.projectGate=true;
   if(st.projectStability!=="reoptimize"&&st.projectStability!=="prefer-current")st.projectStability="prefer-current";
+  if(st.projLineMode!=="static")st.projLineMode="split";
   if(!Array.isArray(st.manualSaved))st.manualSaved=[];
   st.manualSaved=st.manualSaved.filter(p=>p&&typeof p==="object"&&Array.isArray(p.config)).map(p=>({id:typeof p.id==="string"?p.id:("m"+Math.random().toString(36).slice(2,9)),name:typeof p.name==="string"?p.name:"Setup",config:p.config.map(c=>({job:(c&&ALLITEMS.includes(c.job))?c.job:"Idle",lvl:(c&&LEVELS.includes(c.lvl))?c.lvl:1,sell:!!(c&&c.sell)}))}));
   if(typeof st.manualActiveId!=="string")st.manualActiveId=null;

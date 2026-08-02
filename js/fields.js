@@ -50,6 +50,7 @@ const FIELD_SCHEMA=Object.freeze({
   targetWeight:_field("integer",1,{min:1,max:9,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"target priority"}),
   mode:_field("enum",_FIELD_DEFAULTS.mode,{values:Object.freeze(["items","credits","project","manual"]),allowBlank:false,label:"planner mode"}),
   projectStability:_field("enum",_FIELD_DEFAULTS.projectStability,{values:Object.freeze(["prefer-current","reoptimize"]),allowBlank:false,label:"Project line-job policy"}),
+  projLineMode:_field("enum",_FIELD_DEFAULTS.projLineMode,{values:Object.freeze(["split","static"]),allowBlank:false,label:"Project line plan"}),
   flag:_field("boolean",false,{allowBlank:false,label:"option"}),
   displayText:_field("string","",{maxLength:DISPLAY_TEXT_MAX_LENGTH,allowBlank:true,label:"display text"}),
   id:_field("string","",{maxLength:64,allowBlank:false,pattern:/^[A-Za-z][A-Za-z0-9_-]{0,63}$/,label:"ID"}),

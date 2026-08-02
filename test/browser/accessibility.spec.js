@@ -86,6 +86,10 @@ test("dynamic planner fields expose item, level, and line context in their names
   await page.getByRole("button", { name: "Done editing Lil' Forgie supply" }).click();
 
   await page.getByRole("button", { name: "Shopping list" }).click();
+  await expect(page.locator("#projModal")).toContainText("required material unlocks first");
+  await expect(page.locator("#projModal")).toContainText("numeric order");
+  await expect(page.locator("#projModal")).toContainText("estimated completion time");
+  await expect(page.locator("#projModal")).not.toContainText("cheapest first");
   await expect(page.getByRole("textbox", { name: "Plates current inventory" })).toBeVisible();
   await page.getByRole("button", { name: "Done editing shopping list" }).click();
 
@@ -210,6 +214,42 @@ test("project adjustment and progress actions include the project in every acces
   await expect(page.getByRole("button", { name: "Undo Alpha Reactor level 1 completion" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Mark Alpha Reactor completed through level 2" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Mark Beta Reactor completed through level 1" })).toBeVisible();
+  await expectNoWcagViolations(page);
+});
+
+test("the project line-plan toggle follows the planning-mode switch pattern", async ({ page }) => {
+  await loadPlanner(page);
+  await seedNamedProjects(page);
+
+  const lineSwitching = page.getByRole("button", { name: "Line switching" });
+  const setForget = page.getByRole("button", { name: "Set & forget" });
+  await expect(lineSwitching).toHaveAttribute("aria-pressed", "true");
+  await expect(setForget).toHaveAttribute("aria-pressed", "false");
+  expect((await setForget.boundingBox()).height).toBeGreaterThanOrEqual(44);
+  // Tab in from the sibling so the focus ring is evaluated under keyboard modality (:focus-visible).
+  await lineSwitching.focus();
+  await page.keyboard.press("Tab");
+  await expect(setForget).toBeFocused();
+  expect(await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle)).not.toBe("none");
+
+  await setForget.click();
+  await expect(setForget).toHaveAttribute("aria-pressed", "true");
+  await expect(lineSwitching).toHaveAttribute("aria-pressed", "false");
+  expect(await page.evaluate(() => S.projLineMode)).toBe("static");
+  // The step plan must describe the mode honestly: one job per line, slowest item sets the time —
+  // never a promise that everything lands together, and never a "fastest total" caption.
+  await expect(page.locator("#results")).toContainText("every busy line keeps one job for the whole phase");
+  await expect(page.locator("#results")).toContainText("The slowest required item sets");
+  await expect(page.locator("#results")).not.toContainText("(fastest total)");
+  await expectNoWcagViolations(page);
+
+  // Two sentence-length labels are the tightest thing in #results, so check the narrow widths too.
+  for (const width of [390, 320, 195]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(setForget).toBeVisible();
+    expect((await setForget.boundingBox()).height).toBeGreaterThanOrEqual(44);
+    await expectNoPageClipping(page);
+  }
   await expectNoWcagViolations(page);
 });
 

@@ -225,7 +225,7 @@
     <div class="modal-h"><h3 id="projTitle">Shopping list — projects</h3><button class="iconbtn" id="projClose" title="Close" aria-label="Close shopping list" data-dialog-close>×</button></div>
     <div class="modal-b" data-dialog-body>
       <p class="help" style="margin-bottom:10px">Build named <b>projects</b> — each a list of <b>levels</b>, each level a set of item costs. Tick the ones to run and set each project's <b>from → to</b> level; <b>Project plan</b> mode sums those level costs (minus your inventory) and lays out a complete pipelined craft schedule. Accepts game notation (<b>1.2m</b>, <b>3.4qa</b>). A one-level project is just a flat needs-list.</p>
-      <label class="seq-toggle"><input type="checkbox" id="projSeqToggle"><span>Complete projects <b>one at a time</b> — cheapest first, with “<b>1st</b>” projects pinned ahead (unlock bonuses sooner). Uncheck to craft everything together in a shared schedule.</span></label>
+      <label class="seq-toggle"><input type="checkbox" id="projSeqToggle"><span>Complete projects <b>one at a time</b> — required material unlocks first, then your numeric order, then estimated completion time. Uncheck to craft everything together in a shared schedule.</span></label>
       <label class="seq-toggle"><input type="checkbox" id="projGateToggle"><span>Craft everything in <b>one phase</b> — ignore unlock ordering (waves) and run the whole list at once. Only applies when “one at a time” is off; use when you’ve already unlocked the needed materials.</span></label>
       <div class="fl" style="display:block;margin-bottom:14px">
         <label for="projectStability">Line-job policy</label>

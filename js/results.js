@@ -135,7 +135,51 @@ function projectForgieNote(res){
   const parts=made.map(it=>`<b>${disp(num(S.forgie[it])||0)}</b>/hr ${it}`).join(", ");
   return `<div class="notice info" style="font-size:11.5px"><b>Lil' Forgie</b> is passively supplying ${parts} — already credited toward these projects, so it's crafting you don't have to do.</div>`;
 }
+function projOrderMode(res){
+  const seq=res.orderSeqSetting!=null?!!res.orderSeqSetting:!!res.sequenced;
+  if(seq)return "seq";
+  const gateOff=res.orderGateSetting!=null?!res.orderGateSetting:!!res.single;
+  if(gateOff)return "single";
+  return res.phases&&res.phases.length>1?"waves":"together";
+}
+function projOrderHeader(res){
+  switch(projOrderMode(res)){
+    case "seq":return 'Order: <b style="color:var(--ink2)">one project at a time</b> — unlocks first, then order numbers, then estimated completion time. Change in Shopping list.';
+    case "single":return 'Order: <b style="color:var(--ink2)">all projects in one phase</b> — unlock ordering off. Change in Shopping list.';
+    case "waves":return 'Order: <b style="color:var(--ink2)">all together, in unlock waves</b> — material unlocks first, then the rest. Change in Shopping list.';
+    default:return 'Order: <b style="color:var(--ink2)">all projects together</b> in one shared '+(res.projLineMode==="static"?'set &amp; forget':'line-switching')+' schedule. Change in Shopping list.';
+  }
+}
+function projLineModeHtml(res){
+  const isStatic=res&&res.projLineMode==="static";
+  return `<div class="line-mode">
+    <span class="line-mode-l">Line plan</span>
+    <div class="modesw" role="group" aria-label="Project line plan">
+      <button type="button" data-linemode="split" class="${isStatic?"":"on"}" aria-pressed="${isStatic?"false":"true"}" title="Lines may switch jobs at replayed boundaries to shorten the complete schedule.">Line switching</button>
+      <button type="button" data-linemode="static" class="${isStatic?"on":""}" aria-pressed="${isStatic?"true":"false"}" title="Each line runs one job for a whole phase; reset lines only between listed phases.">Set &amp; forget</button>
+    </div>
+  </div>`;
+}
+function staticHeldFeederItems(res){
+  if(!res||res.projLineMode!=="static")return [];
+  const held=new Set();
+  (res.executionPhases||[]).filter(phase=>phase&&phase.kind==="project"&&phase.eta>0).forEach(phase=>{
+    const direct=phase.demandSub||{},inventory=phase.invStart||{},consumed={},assigned=new Set();
+    (phase.plan||[]).forEach(line=>(line.entries||[]).forEach(entry=>{
+      assigned.add(entry.item);
+      (entry.cons||[]).forEach(input=>{consumed[input.item]=(consumed[input.item]||0)+(input.hr||0)*phase.eta;});
+    }));
+    assigned.forEach(item=>{
+      const reserved=Number(phase.preProducedDemand&&phase.preProducedDemand[item])||0;
+      const have=Math.max(0,(Number(inventory[item])||0)-reserved),need=Number(consumed[item])||0;
+      const tolerance=1e-8+Number.EPSILON*64*Math.max(1,Math.abs(have),Math.abs(need));
+      if((direct[item]||0)<=tolerance&&need>tolerance&&have>=need-tolerance)held.add(item);
+    });
+  });
+  return ALLITEMS.filter(item=>held.has(item));
+}
 function projectStabilityHtml(res){
+  if(res&&res.projLineMode==="static")return "";
   const policy=res&&res.projectStability==="reoptimize"?"reoptimize":"prefer-current";
   if(policy==="reoptimize")return `<section class="notice info project-stability-summary" aria-label="Line-job policy">
     <b>Re-optimized line jobs are active.</b> Project phases will choose fresh line jobs on each edit and remember the selected setup.
@@ -196,8 +240,7 @@ function projectStabilityHtml(res){
 }
 function renderProjectResults(res,el,stat){
   _lastProjectRes=res;
-  const progress=document.getElementById("progModal");
-  if(progress&&!progress.hidden&&typeof renderProgress==="function")renderProgress();
+  if(typeof refreshProgressIfOpen==="function")refreshProgressIfOpen();
   const scheduleExecutable=!!(res&&res.feasible&&res.lpFeasible&&res.scheduleValidation&&res.scheduleValidation.ok);
   // Seed the plan-start anchor once, the first time a real plan exists (issue #87 item 1) — moved here
   // from the old modal's open handler now that the step plan is always on screen. Display anchor only.
@@ -223,16 +266,22 @@ function renderProjectResults(res,el,stat){
   // Header: ordering note + Track-progress opener. The step plan below is the main event, so there's
   // no longer a "Step-by-step" button — this panel *is* it.
   html+=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-    <div class="proj-mini" style="font-size:11.5px">${scheduleExecutable?(res.sequenced?'Order: <b style="color:var(--ink2)">one project at a time</b> — unlocks first, then your order, then cheapest. Change in Shopping list.':res.waved?'Order: <b style="color:var(--ink2)">all together, in unlock waves</b> — material unlocks first, then the rest. Change in Shopping list.':res.single?'Order: <b style="color:var(--ink2)">all projects in one phase</b> — unlock ordering off. Change in Shopping list.':'Order: <b style="color:var(--ink2)">all projects together</b> in one shared schedule. Change in Shopping list.'):'Exact replay is blocked. Review the diagnostic and analytical breakdown below.'}</div>
+    <div class="proj-mini" style="font-size:11.5px">${scheduleExecutable?projOrderHeader(res):'Exact replay is blocked. Review the diagnostic and analytical breakdown below.'}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn primary" id="btnProgress">Track progress</button>
     </div></div>`;
+  html+=projLineModeHtml(res);
   // Plan-start anchor (promoted from the old modal header)
   if(scheduleExecutable)html+=projPlanAnchorHtml();
   // Key notices — the ones that change what you actually do. The old verbose "Project plan." explainer
   // is dropped; the step-plan intro below already tells you how to run it.
   html+=projectForgieNote(res);
   html+=projectStabilityHtml(res);
+  if(scheduleExecutable&&res.projLineMode==="static"&&
+    (res.capped===true||res.searchExhaustive===false||res.staticDeadlineReached===true))
+    html+=`<div class="notice info" style="font-size:11.5px"><b>Executable plan found.</b> The listed instructions passed exact replay, but the Set &amp; forget assignment search was bounded and may not be the shortest plan.</div>`;
+  const heldFeeders=scheduleExecutable?staticHeldFeederItems(res):[];
+  if(heldFeeders.length)html+=`<div class="notice info" style="font-size:11.5px"><b>Held stock does not remove Set &amp; forget feeder jobs.</b> ${heldFeeders.map(htmlText).join(", ")} ${heldFeeders.length===1?"is":"are"} on hand in enough quantity for the phase, but this mode still keeps a sustainable feeder assignment. Exact replay still accounts for and carries that inventory; <b>Line switching</b> can use held intermediates to reduce feeder time.</div>`;
   const prerequisites=(res.executionPhases||[]).filter(ph=>ph.kind==="prerequisite");
   const warmups=(res.executionPhases||[]).filter(ph=>ph.kind==="warmup");
   if(scheduleExecutable&&prerequisites.length){
@@ -245,7 +294,9 @@ function renderProjectResults(res,el,stat){
     html+=`<div class="notice info"><b>Startup warm-up included:</b> ${fmtDuration(warmEta)} builds the ordinary input stock needed to avoid a material shortage beyond replay tolerance. The total and finish clocks include this time.</div>`;}
   if(res.scheduleValidation&&!res.scheduleValidation.ok){
     const f=res.scheduleValidation.firstFailure||{},when=isFinite(f.time)?` at ${fmtDuration(f.time)}`:"";
-    const detail=f.kind==="mined-rate"
+    const detail=f.kind==="solve-budget"
+      ?"The time limit was reached before every static phase received a usable assignment."
+      :f.kind==="mined-rate"
       ?`${htmlText(f.resource||"Mined resource")} exceeds its instantaneous income by <b>${disp(f.excess||0)}/hr</b>${when}.`
       :`${htmlText(f.resource||"A required resource")} is short by <b>${disp(f.deficit||0)}</b>${when}.`;
     html+=`<div class="notice warn"><b>Executable schedule blocked:</b> ${detail} ${htmlText(f.message||"")}</div>`;
@@ -255,7 +306,7 @@ function renderProjectResults(res,el,stat){
     const blocked=Object.entries(res.blockedMined).map(([item,resources])=>`<b>${item}</b> needs ${resources.map(r=>`<b>${r}</b>`).join(" and ")}`).join("; ");
     html+=`<div class="notice warn"><b>Missing mined income:</b> ${blocked}. Enter those incomes in <b>Mined resources</b> to include the blocked items; they remain excluded from the plan time below.</div>`;
   }
-  if(res.infeasItems&&res.infeasItems.length)html+=`<div class="notice warn"><b>Can't sustainably produce:</b> ${res.infeasItems.join(", ")}. Raise a line's max compression, add a line, or check recipe costs — the time below excludes these.</div>`;
+  if(res.infeasItems&&res.infeasItems.length)html+=`<div class="notice warn"><b>Can't sustainably produce:</b> ${res.infeasItems.join(", ")}. Raise a line's max compression, add a line, or check recipe costs — the time below excludes these.${res.projLineMode==="static"?" Set &amp; forget assigns at most one job to each line for a phase, so a deeper recipe chain may need more lines even when Line switching can build it.":""}</div>`;
   if(res.atRiskItems&&res.atRiskItems.length)html+=`<div class="notice warn"><b>Relies entirely on stock:</b> ${res.atRiskItems.join(", ")}. No line is crafting ${res.atRiskItems.length>1?"these":"this"} — the plan is spending down your current inventory to cover them. Once it runs out you'll need dedicated crafters.</div>`;
   if(res.partial)html+=`<div class="notice warn"><b>Partial plan only.</b> The blocked items remain excluded, so the ticked projects are <b>not fully finishable</b> with the current mined incomes. The time shown is for currently plannable work only.</div>`;
   // Summary metrics
@@ -336,7 +387,7 @@ function renderProjectResults(res,el,stat){
       bd+=`</tbody></table>`;
     }
   }
-  const minedNote=minedUsageNote(resultMinedUsage(res));
+  const minedNote=(res.sequenced||res.waved)?"":minedUsageNote(resultMinedUsage(res));
   if(minedNote)bd+=minedNote;
   html+=`<details class="cat-panel breakdown-panel" ${_breakdownOpen?"open":""}><summary data-paneltoggle="breakdown"><span class="cat-sum-lbl">${res.scheduleValidation&&res.scheduleValidation.ok?"Full breakdown":"Analytical LP breakdown"} — demand, line assignment, resource balance</span><span class="cat-sum-meta">the numbers</span></summary><div class="panel-pad">${bd}</div></details>`;
   el.innerHTML=html;

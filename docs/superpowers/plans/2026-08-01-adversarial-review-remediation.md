@@ -665,11 +665,30 @@ The three `alternativeMinusSelected*` fields are `alternative - selected`; a neg
 - [ ] Add a deliberately slow fake solve through that factory hook and assert Progress opens and accepts completion controls without main-thread optimization or global `Worker` replacement; when the controlled result returns, both the main Project result and still-open Progress summary become current. Cover both sides of in-flight currentness explicitly: `_open` and `planStart` changes during the slow solve still accept its result, while a solver-relevant mutation rejects/supersedes it. Do not bypass `solveService` or couple persistence tests to either permanent compatibility endpoint.
 - [ ] Preserve the explicit-Resimulate policy for crafter-line edits: persistence may flush independently, but this task must not turn those edits back into automatic expensive solves.
 
+## Task 13P: Semantically Integrate PR #94 Set & Forget Scheduling
+
+**Priority:** Owner-requested integration gate before remaining release work
+
+**Depends on:** Tasks 3F–8 and 13 on emergency baseline `1466a5d`; PR #94 head `b97cc95`
+
+**Files:** the exact PR #94 feature surface plus integration regressions and this plan/ledger; do not broaden checkpoint UI scope
+
+- [ ] Preserve PR #94's history and intended user feature while resolving its seven textual conflicts against the newer architecture. Never choose an entire side for `solver.js`, `events.js`, `results.js`, state, or validation.
+- [ ] Persist and validate `projLineMode` through the current schema/descriptor boundary. Add only the minimal accessible line-mode control, order-field disabled state, and datetime overflow repair required by #94; do not reopen visual composition.
+- [ ] Port one-job-per-line static scheduling onto the current shared absolute solve control, exact Gel/mined-resource model, executable replay, warm-up/external-prerequisite accounting, and Task 7 stability boundary. Every semantic static pass must remain static; static ranking must use the same inventory world as the selected run; a deadline must degrade search before it restarts a per-phase budget.
+- [ ] Preserve the last exact-replay-certified static incumbent when fixed-point refinement or a lower-ceiling recovery attempt reaches the shared deadline. Analytical feasibility alone is not certification; later replay-invalid candidates must not erase a usable plan. Keep this certification static-only so default Line switching pays no extra replay-build cost.
+- [ ] Detect repeated pre-produced-Bits obligations and retry finite strict-lower compression ceilings under the same root control without mutating configured line caps. Select only replay-certified feasible fallbacks, retain honest capped/non-exhaustive telemetry, and never replace a certified unrestricted incumbent with an interrupted empty retry.
+- [ ] Keep visible follow-up copy factual and geometry-neutral: static infeasibility may need more lines because each phase has at most one job per line; one-at-a-time precedence is unlocks → numeric order → estimated completion; executable bounded results may not be shortest; held-feeder disclosure must come from replay execution inventory/consumption after subtracting same-phase pre-produced reserves.
+- [ ] Keep Task 13's solve-equivalence-keyed authoritative Progress cache. Do not restore PR #94's weaker raw `solveService.status()` cache inference; a solve landing may refresh only the Progress summary so focused level controls survive.
+- [ ] Reconcile `staticmode`, `seqgate`, schema, accessibility, and ordered-runner coverage with current contracts. Replace obsolete assumptions (including pre-Task4 four-line Frames infeasibility and per-phase budget-grant helpers) with exact replayed prerequisite and one-root-control assertions.
+- [ ] Re-run Tasks 4–8/13 focused contracts, all ordered Node tests, deterministic build/static graph, parity, syntax/diff, and frozen endpoint/fixture/golden hashes. Browser execution remains CI-only in this local pass.
+- [ ] Require independent exact-diff semantic review before committing the conflict resolution. Do not merge or push `main` without the owner's later explicit approval.
+
 ## Task 14: Finish Release Upgrade Coverage and Subpath Safety on the Hashed Build
 
 **Priority:** P2 delivery
 
-**Depends on:** Tasks 0 and 3F, emergency baseline `1466a5d`, and the integrated current build graph
+**Depends on:** Tasks 0, 3F, and 13P, emergency baseline `1466a5d`, and the integrated current build graph
 
 **Files:**
 
