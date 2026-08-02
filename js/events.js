@@ -249,7 +249,7 @@ document.getElementById("minedModal").addEventListener("input",e=>{
 /* ---------- settings modal (max solve time) ---------- */
 const solveBudgetInput=document.getElementById("solveBudget");
 const solveBudgetVal=document.getElementById("solveBudgetVal");
-function fmtBudget(ms){return (ms/1000).toFixed(ms<1000?1:(ms%1000?1:0))+" s";}
+function fmtBudget(ms){return formatMillisecondsAsSeconds(FIELD_SCHEMA.solveBudget,ms);}
 const STANDARD_SOLVE_BUDGET_STOPS=Object.freeze([200,500,1000,2000,3000,5000,8000,10000,15000,20000,30000,45000,60000]);
 let solveBudgetSessionStops=[];
 function budgetStopsFor(value){

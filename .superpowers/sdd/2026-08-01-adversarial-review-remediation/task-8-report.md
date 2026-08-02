@@ -84,7 +84,7 @@ The current static build embeds `fields.js` and `state.js` into the ordinary gen
 
 ## Verification
 
-- `node test/field-validation.cjs` — pass: 12 focused parser/descriptor/formatter/state/source contracts.
+- `node test/field-validation.cjs` — pass: 14 focused parser/descriptor/formatter/identity/state/source contracts.
 - `node test/state-schema.cjs` — pass: 46 state/import/Worker boundary assertions.
 - `node test/minedrender.cjs` and `node test/minedui.cjs` — pass, including descriptor-bound mined controls.
 - `npm test` — exit 0: syntax plus all 24 ordered Node scripts; parity reported `16 ok, 0 improved, 0 failed`.
@@ -118,3 +118,16 @@ No known Node-side blocker remains. Browser behavior, Axe, 320px painted geometr
 ## Independent review
 
 The first independent review found two Important gaps (the incomplete accepted Worker fixture and missing required browser field-family flows) plus the Minor inaccurate tiny-number feedback. All were fixed, focused and full gates were rerun, and a fresh read-only re-review approved the complete Task 8 diff with no residual actionable findings. The reviewer independently confirmed the exact Worker snapshot, field-family matrix, round-trip formatter, mined harness integration, 24-script Node suite, `16/0/0` parity, 9 static-release assertions, frozen compatibility hashes, and diff hygiene. No browser was launched during either review.
+
+## Formal review fix round 1 — feedback identity and exact budget copy
+
+Formal review of exact range `299b5f3..dcf471d` found two additional Important issues and no Critical or Minor findings:
+
+- `fieldDomToken()` lowercased and normalized source strings, so schema-valid case-distinct Project IDs such as `ProjectA` and `projecta` generated the same feedback IDs. Because `fieldErrorForInput()` resolves through `document.getElementById()`, the second Shopping-list or inline Project row could update and describe the first row's live region.
+- the valid nonstandard persisted budget `2345ms` remained exact in state and storage but its visible value and `aria-valuetext` rounded to `2.3 s`, misreporting the accepted setting.
+
+The focused regression suite was extended first and failed for both causes: the formatter API did not exist and distinct case/punctuation/Unicode string fixtures collapsed to duplicate tokens. `fieldDomToken()` now uses deterministic fixed-width UTF-16 hexadecimal with a safe leading token marker, so every distinct JavaScript string maps injectively to a selector-safe ID component. CI-only Project coverage creates `ProjectA` and `projecta`, then proves all Shopping-list and inline `from`/`to` IDs are unique across both scopes, every control owns the error resolved by its ID, and each invalid control's `aria-describedby` includes that owned ID.
+
+`formatMillisecondsAsSeconds()` now validates the integer-millisecond value through the same descriptor and renders up to three exact, trailing-zero-trimmed decimal places. Settings uses it for both visible copy and `aria-valuetext`, so `200`, `1000`, `2340`, `2345`, and `60000ms` render as `0.2 s`, `1 s`, `2.34 s`, `2.345 s`, and `60 s`. The existing browser contract still proves opening and closing Settings neither changes the exact `2345` state value nor rewrites its stored bytes.
+
+Fix-round verification is green: focused field contracts `14/14`, state contracts `46/46`, all 24 ordered Node scripts, deterministic build, static release `9/9`, parity `16 ok, 0 improved, 0 failed`, changed runtime/Node/browser syntax, `git diff --check`, and frozen endpoint hashes. No browser or Playwright process was launched; the new ownership and rendered-budget flows remain CI-only as required.

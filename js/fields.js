@@ -173,6 +173,12 @@ function formatFieldValue(rule,value){
   }
   return String(checked.value);
 }
+function formatMillisecondsAsSeconds(rule,value){
+  const checked=validateFieldValue(rule,value);
+  if(!checked.valid||checked.value===null||!Number.isInteger(checked.value))return "";
+  const seconds=(checked.value/1000).toFixed(3).replace(/\.?0+$/,"");
+  return `${seconds} s`;
+}
 function fieldInputAttributes(rule,overrides={}){
   const attrs={};
   if(rule&&(rule.type==="number"||rule.type==="integer")){

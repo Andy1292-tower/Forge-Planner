@@ -7,7 +7,7 @@ const vm = require("vm");
 
 const ROOT = path.resolve(__dirname, "..");
 const context = vm.createContext({ console, performance: { now: () => 0 }, setTimeout, clearTimeout });
-for (const file of ["js/catalog.js", "js/core.js", "js/fields.js", "js/state.js"]) {
+for (const file of ["js/catalog.js", "js/core.js", "js/fields.js", "js/state.js", "js/dom.js"]) {
   const filename = path.join(ROOT, file);
   vm.runInContext(fs.readFileSync(filename, "utf8"), context, { filename });
 }
@@ -18,9 +18,23 @@ const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
 
 test("exports the pure parser, validator, formatter, and attribute API", () => {
-  for (const name of ["validateFieldValue", "parseFieldDraft", "formatFieldValue", "fieldInputAttributes"]) {
+  for (const name of ["validateFieldValue", "parseFieldDraft", "formatFieldValue", "formatMillisecondsAsSeconds", "fieldInputAttributes"]) {
     assert.equal(api(`typeof ${name}`), "function", `${name} must be exported`);
   }
+});
+
+test("creates deterministic collision-free DOM tokens for distinct input strings", () => {
+  const token = api("fieldDomToken");
+  const values = [
+    "ProjectA", "projecta", "Project A", "Project-A", "Project_A", "Project/A",
+    "", "field", "é", "e\u0301", "😀", "\ud83d",
+  ];
+  const tokens = values.map(token);
+  assert.equal(new Set(tokens).size, values.length, "every distinct string must own a distinct DOM token");
+  values.forEach((value, index) => {
+    assert.equal(token(value), tokens[index], `${JSON.stringify(value)} must be deterministic`);
+    assert.match(tokens[index], /^[A-Za-z][A-Za-z0-9_-]*$/, `${JSON.stringify(value)} must remain selector-safe`);
+  });
 });
 
 test("owns distinct numeric descriptors and the complete persisted ranges", () => {
@@ -125,6 +139,18 @@ test("formats accepted values and derives matching HTML input attributes", () =>
   assert.deepEqual({ ...attrs(api("FIELD_SCHEMA.sellPrice")) }, {
     min: "0", max: "1e+100", step: "any", inputmode: "decimal", maxlength: "128",
   });
+});
+
+test("formats integer milliseconds as exact trimmed seconds", () => {
+  const format = api("formatMillisecondsAsSeconds");
+  const rule = api("FIELD_SCHEMA.solveBudget");
+  assert.equal(format(rule, 200), "0.2 s");
+  assert.equal(format(rule, 1000), "1 s");
+  assert.equal(format(rule, 2340), "2.34 s");
+  assert.equal(format(rule, 2345), "2.345 s");
+  assert.equal(format(rule, 60000), "60 s");
+  assert.equal(format(rule, 2345.5), "");
+  assert.equal(format(rule, 60001), "");
 });
 
 test("round-trips calibrated boundaries and accepts historical display text independently", () => {

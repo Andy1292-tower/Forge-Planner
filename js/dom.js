@@ -21,7 +21,14 @@ function domTextInput(dataName,dataValue,value,options={}){
 }
 
 function fieldDomToken(value){
-  return String(value==null?"field":value).toLowerCase().replace(/[^a-z0-9_-]+/g,"-").replace(/^-+|-+$/g,"")||"field";
+  if(value==null)return "n";
+  const source=String(value);
+  let token="s";
+  /* Fixed-width UTF-16 hex is lossless for every JavaScript string while keeping the
+   * result safe in an HTML id and a CSS selector. Case and punctuation must never
+   * collapse because each generated feedback id has exactly one owning input. */
+  for(let i=0;i<source.length;i++)token+=source.charCodeAt(i).toString(16).padStart(4,"0");
+  return token;
 }
 function domFieldError(id,className=""){
   const error=domElement("div",`field-error${className?" "+className:""}`);

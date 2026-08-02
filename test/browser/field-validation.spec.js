@@ -61,6 +61,16 @@ async function expectFieldError(page, input, previous) {
   await expect(error).toContainText(String(previous));
 }
 
+async function expectOwnedFieldError(page, input, previous, ownerSelector) {
+  await expectFieldError(page, input, previous);
+  const errorId = await input.getAttribute("data-field-error");
+  expect(await input.evaluate((node, { id, selector }) => {
+    const error = document.getElementById(id);
+    return !!error && error.closest(selector) === node.closest(selector);
+  }, { id: errorId, selector: ownerSelector })).toBe(true);
+  return errorId;
+}
+
 test("required line/global drafts preserve the last accepted state and storage and never flush invalid Enter", async ({ page }) => {
   await observeWorkers(page);
   await loadPlanner(page);
@@ -283,6 +293,70 @@ test("Shopping-list and inline Project endpoint pairs commit atomically in eithe
   expect(await page.evaluate(() => [S.projects[0].from, S.projects[0].to])).toEqual([2, 2]);
 });
 
+test("case-distinct project IDs keep Shopping-list and inline feedback uniquely owned", async ({ page }) => {
+  await observeWorkers(page);
+  await loadPlanner(page);
+  await page.getByRole("button", { name: "Shopping list" }).click();
+  await page.evaluate(() => {
+    const project = (id, name) => ({
+      id, name, on: true, prio: null, from: 1, to: 2, done: 0, _open: false,
+      levels: [
+        { costs: [{ item: "Frames", qty: 100 }] },
+        { costs: [{ item: "Frames", qty: 100 }] },
+      ],
+    });
+    mutateState(st => { st.projects = [project("ProjectA", "Upper case ID"), project("projecta", "Lower case ID")]; });
+    renderProjects();
+    save();
+  });
+
+  const shopping = page.locator("#projList");
+  const upperFrom = shopping.getByRole("spinbutton", { name: "Upper case ID starting level" });
+  const upperTo = shopping.getByRole("spinbutton", { name: "Upper case ID ending level" });
+  const lowerFrom = shopping.getByRole("spinbutton", { name: "Lower case ID starting level" });
+  const lowerTo = shopping.getByRole("spinbutton", { name: "Lower case ID ending level" });
+  await upperTo.fill("1");
+  await upperFrom.fill("2");
+  await lowerTo.fill("1");
+  await lowerFrom.fill("2");
+
+  const shoppingIds = [
+    await expectOwnedFieldError(page, upperFrom, "1", ".proj"),
+    await expectOwnedFieldError(page, upperTo, "1", ".proj"),
+    await expectOwnedFieldError(page, lowerFrom, "1", ".proj"),
+    await expectOwnedFieldError(page, lowerTo, "1", ".proj"),
+  ];
+  expect(new Set(shoppingIds).size).toBe(shoppingIds.length);
+
+  await upperTo.fill("2");
+  await upperFrom.fill("1");
+  await lowerTo.fill("2");
+  await lowerFrom.fill("1");
+  await page.getByRole("button", { name: "Done editing shopping list" }).click();
+  await page.getByRole("button", { name: "Project plan" }).click();
+  await expect(page.getByText("Adjust project levels & completion")).toBeVisible();
+  await page.getByText("Adjust project levels & completion").click();
+
+  const results = page.locator("#results");
+  const inlineUpperFrom = results.getByRole("spinbutton", { name: "Upper case ID starting level" });
+  const inlineUpperTo = results.getByRole("spinbutton", { name: "Upper case ID ending level" });
+  const inlineLowerFrom = results.getByRole("spinbutton", { name: "Lower case ID starting level" });
+  const inlineLowerTo = results.getByRole("spinbutton", { name: "Lower case ID ending level" });
+  await dispatchDraft(inlineUpperTo, "1");
+  await dispatchDraft(inlineUpperFrom, "2");
+  await dispatchDraft(inlineLowerTo, "1");
+  await dispatchDraft(inlineLowerFrom, "2");
+
+  const inlineIds = [
+    await expectOwnedFieldError(page, inlineUpperFrom, "1", ".proj-inline-row"),
+    await expectOwnedFieldError(page, inlineUpperTo, "1", ".proj-inline-row"),
+    await expectOwnedFieldError(page, inlineLowerFrom, "1", ".proj-inline-row"),
+    await expectOwnedFieldError(page, inlineLowerTo, "1", ".proj-inline-row"),
+  ];
+  expect(new Set(inlineIds).size).toBe(inlineIds.length);
+  expect(new Set([...shoppingIds, ...inlineIds]).size).toBe(shoppingIds.length + inlineIds.length);
+});
+
 test("base time, recipe cost, and calibration share validation without fallback coercion", async ({ page }) => {
   await observeWorkers(page);
   await loadPlanner(page);
@@ -336,7 +410,8 @@ test("Settings preserves exact 60-second and nonstandard in-range budgets and di
   await page.evaluate(() => { mutateState(st => { st.solveBudget = 2345; });save(); });
   const before = await stored(page);
   await page.getByRole("button", { name: "Settings" }).click();
-  await expect(slider).toHaveAttribute("aria-valuetext", "2.3 s");
+  await expect(slider).toHaveAttribute("aria-valuetext", "2.345 s");
+  await expect(page.locator("#solveBudgetVal")).toHaveText("2.345 s");
   await page.getByRole("button", { name: "Done editing settings" }).click();
   const after = await stored(page);
   expect(after.raw).toBe(before.raw);
