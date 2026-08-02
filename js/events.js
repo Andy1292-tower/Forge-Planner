@@ -331,6 +331,18 @@ function projStepper(p,pi){
     <button class="iconbtn" data-psinc="${pi}" ${done>=span?"disabled":""} title="Mark one more level done" aria-label="Mark one more ${htmlAttribute(p.name)} level complete">+</button>
   </span>`;
 }
+// The manual-order input. Numbered projects run FIRST, in numeric order; blank means "no opinion" and
+// the planner slots the project in after the numbered ones, cheapest first. Order is only consulted
+// when projects are completed one at a time, so it's disabled (and says why) when that's off —
+// otherwise it silently does nothing, which reads as a broken control. Same pattern as the
+// unlock-gating toggle in renderProjects().
+function projPrioField(p,pi){
+  const off=S.projectSeq===false;
+  const title=off
+    ? "Only used when “Complete projects one at a time” is on — turn it on in the toggle above to set an order."
+    : "Manual order — numbered projects run first, in numeric order (1, 2, 3…). Leave blank and the planner picks where it goes, after the numbered ones. Projects that unlock materials are always scheduled ahead of everything.";
+  return `<label class="proj-prio${off?" disabled":""}" title="${htmlAttribute(title)}"><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–"${off?" disabled":""} aria-label="${htmlAttribute(p.name)} schedule order">order</label>`;
+}
 // Compact card for a catalog-sourced project: name is a fixed label, costs are
 // read-only, user only controls on/off, level range, "1st", and remove. Reuses
 // the same data-* hooks as the editable card so existing handlers apply.
@@ -350,7 +362,7 @@ function compactProjCard(p,pi){
       <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule" aria-label="Include ${htmlAttribute(p.name)} in schedule">
       <span class="pname-static">${htmlText(p.name)}${desc}</span>
       <div class="proj-tools">
-        <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–" aria-label="${htmlAttribute(p.name)} schedule order">order</label>
+        ${projPrioField(p,pi)}
         ${range}
         ${projStepper(p,pi)}
         <button class="iconbtn" data-pdel="${pi}" title="Remove from list" aria-label="Remove ${htmlAttribute(p.name)} from shopping list">×</button>
@@ -378,7 +390,7 @@ function projCard(p,pi){
       <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule" aria-label="Include ${htmlAttribute(p.name)} in schedule">
       <input type="text" class="pname" data-pname="${pi}" value="${htmlAttribute(p.name)}" placeholder="Project name" aria-label="Project name">
       <div class="proj-tools">
-        <label class="proj-prio" title="Manual order — type 1, 2, 3… to set the sequence; blank lets the planner pick. Material unlocks are always ordered first."><input type="number" class="pprio" min="1" step="1" inputmode="numeric" data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–" aria-label="${htmlAttribute(p.name)} schedule order">order</label>
+        ${projPrioField(p,pi)}
         <span class="proj-lvls">lv <input type="number" min="1" step="1" data-pfrom="${pi}" value="${p.from||1}" aria-label="${htmlAttribute(p.name)} starting level"> → <input type="number" min="1" step="1" data-pto="${pi}" value="${p.to||lv.length||1}" aria-label="${htmlAttribute(p.name)} ending level"></span>
         ${projStepper(p,pi)}
         <button class="iconbtn" data-pdup="${pi}" title="Duplicate" aria-label="Duplicate ${htmlAttribute(p.name)}" style="font-size:13px">⧉</button>
