@@ -99,9 +99,9 @@ The top-level result must include:
 }
 ```
 
-All signed fields are `alternative - selected`; a negative value means reoptimization is shorter. Total ETA comes from full `executionPhases`. Work/per-phase ETA comes from semantic phases. Return only the summary, never the hidden plan.
+The three `alternativeMinusSelected*` fields are `alternative - selected`; a negative total difference means reoptimization is shorter. Total ETA comes from full `executionPhases`. Work/per-phase ETA comes from semantic phases. Return only the summary, never the hidden plan.
 
-`selectedPhaseOrder` and `alternativePhaseOrder` contain phase keys, not display names. Set the execution flags only when `scheduleValidation.ok === true`, there is no first failure, and total/work/warm-up ETAs are finite and nonnegative. `comparable` additionally requires both executions, unique phase keys, and exactly one alternative semantic phase with finite positive throughput and finite nonnegative ETA for every stabilized selected key.
+`selectedPhaseOrder` and `alternativePhaseOrder` contain phase keys, not display names. Set an execution flag only when that full run has `feasible === true`, `lpFeasible === true`, `partial !== true`, `scheduleValidation.ok === true`, no first failure, and finite nonnegative total/work/warm-up ETAs. Use that same full-demand success boundary before committing the selected run's cache updates. `comparable` additionally requires both executions, unique phase keys, and exactly one alternative semantic phase with finite positive throughput and finite nonnegative ETA for every stabilized selected key. A replay-safe partial or average-infeasible plan is not executable or comparable.
 
 Use:
 
@@ -150,8 +150,8 @@ Actions and selected state must be truthful:
 
 - show `Current line jobs retained` as selected-state text, not a no-op button;
 - `Use shorter re-optimized plan` only if alternative total ETA is lower;
-- otherwise `Use higher-throughput line jobs anyway` only if the alternative exceeds the throughput tolerance;
-- `Use re-optimized line jobs anyway` for an effective zero throughput gap;
+- otherwise `Use higher-throughput line jobs anyway` only if every compared phase's alternative throughput is at least within its pairwise tolerance and at least one phase exceeds selected throughput by more than tolerance;
+- `Use re-optimized line jobs anyway` when all compared phases are within tolerance or material phase gaps are mixed/negative;
 - while reoptimize is active, `Prefer current line jobs on future edits`.
 
 If either run is nonexecutable, keys do not match, required metrics are invalid, or the comparison is otherwise noncomparable, explain that a safe full comparison is unavailable and render no speed/throughput switching action inside the comparison block. The labeled policy selector remains available as an explicit override.
@@ -164,7 +164,8 @@ Create/register `test/stability-ui.cjs` and extend the existing state, stability
 
 - 420 holds; established 500 case releases; reoptimize ignores pins.
 - Real longer reoptimized alternative and a synthetic shorter alternative render the correct action.
-- Effective zero-gap copy is neutral; a failed/noncomparable alternative produces no misleading comparison action.
+- Effective zero-gap and mixed multi-phase throughput copy are neutral and quantify every phase rather than the first row; a failed/noncomparable alternative produces no misleading comparison action.
+- A replay-safe but LP-partial or otherwise not-full-demand run is not executable/comparable and cannot replace the previous-good cache.
 - Hidden comparison, ordering, preliminary fixed-point, and warm-up work cannot mutate a sentinel cache.
 - Repeated held runs remain held; visible reoptimize remembers; failed selected full run retains previous-good records; JSON roundtrip and eviction stay correct.
 - Sequenced/wave phase keys are stable, duplicate display names cannot cross-match, legacy duplicate IDs migrate deterministically, and v2 duplicate IDs are rejected.
