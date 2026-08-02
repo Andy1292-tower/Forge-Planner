@@ -64,6 +64,8 @@ The lanes are non-overlapping. The visual lane contains 13 exact release-matrix 
 
 Feature branches run this full suite through `pull_request` only; the `push` trigger is limited to `main`. This prevents one branch update from launching duplicate Chromium matrices while retaining post-merge verification.
 
+The second PR browser run passed 80 of 85 ordinary-browser cases and narrowed the remaining failures to one release-graph defect plus three stale test assumptions. Tooltip image custom properties now stay source-relative and build to stylesheet-relative `../static/<hash>` URLs, preventing the observed `/static/static/...` 404s at both supported mounts. The affected field-validation tests now expose the established Resimulate action through real crafter-line edits, and the import-security wave test distinguishes the two semantic project names from executable warm-up/prerequisite phases. Focused static coverage and the full 28-script local suite pass; the replacement PR browser run remains authoritative.
+
 Each viewport covers all four modes and all six registered semantic dialogs: 130 mode/dialog states plus 13 sparse Crafting-data states. Assertions cover document overflow, result inset, title/tab/status containment, persistent label/control collisions, named table scrollers, Project identity width, dialog action reachability/scroll ownership, and sparse-card width. CI must also retain four representative screenshots: 1440 Items, 880 Project, 390 Shopping list, and 320 Manual. Missing evidence fails the workflow.
 
 ## Pull-request CI and owner gates
