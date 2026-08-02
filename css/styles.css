@@ -35,7 +35,7 @@ body::before{
 .skip-link{position:fixed;top:8px;left:8px;z-index:1000;padding:10px 14px;border:2px solid var(--focus);
   border-radius:6px;background:var(--bg);color:var(--ink);font-weight:700;transform:translateY(-160%)}
 .skip-link:focus{transform:translateY(0)}
-#plannerMain:focus{outline:none}
+#plannerMain:focus{outline:3px solid var(--focus);outline-offset:3px}
 :focus-visible{outline:3px solid var(--focus);outline-offset:3px}
 .wrap{position:relative;z-index:1}
 .mono{font-family:"JetBrains Mono",monospace}

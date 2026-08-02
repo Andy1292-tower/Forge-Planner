@@ -101,26 +101,26 @@ test("controller restores state when an onOpen callback throws", async ({ page }
   // Break caught: a rendering exception leaves an invisible dialog on the stack and the page inert.
   await page.goto("/", { waitUntil: "domcontentloaded" });
   const result = await page.evaluate(() => {
-    const root=document.createElement("div"),panel=document.createElement("div"),button=document.createElement("button");
-    root.hidden=true;root.append(panel);document.body.append(button,root);button.focus();
+    const root=document.createElement("div"),panel=document.createElement("div"),button=document.createElement("button"),preserved=document.createElement("div");
+    preserved.inert=true;root.hidden=true;root.append(panel);document.body.append(button,preserved,root);button.focus();
     const api=dialogController.register({root,panel,opener:button,onOpen(){throw new Error("open boom");}});
     let error;try{api.open(button);}catch(e){error=e.message;}
-    return {error,hidden:root.hidden,locked:document.body.classList.contains("dialog-open"),inert:document.querySelector(".wrap").inert,focused:document.activeElement===button};
+    return {error,hidden:root.hidden,locked:document.body.classList.contains("dialog-open"),inert:document.querySelector(".wrap").inert,preserved:preserved.inert,focused:document.activeElement===button};
   });
-  expect(result).toEqual({ error: "open boom", hidden: true, locked: false, inert: false, focused: true });
+  expect(result).toEqual({ error: "open boom", hidden: true, locked: false, inert: false, preserved: true, focused: true });
 });
 
 test("controller restores state and focus when an onClose callback throws", async ({ page }) => {
   // Break caught: a close callback exception leaves background inertness and scroll lock behind.
   await page.goto("/", { waitUntil: "domcontentloaded" });
   const result = await page.evaluate(() => {
-    const root=document.createElement("div"),panel=document.createElement("div"),button=document.createElement("button");
-    root.hidden=true;root.append(panel);document.body.append(button,root);button.focus();
+    const root=document.createElement("div"),panel=document.createElement("div"),button=document.createElement("button"),preserved=document.createElement("div");
+    preserved.inert=true;root.hidden=true;root.append(panel);document.body.append(button,preserved,root);button.focus();
     const api=dialogController.register({root,panel,opener:button,onClose(){throw new Error("close boom");}});
     api.open(button);let error;try{api.close();}catch(e){error=e.message;}
-    return {error,hidden:root.hidden,locked:document.body.classList.contains("dialog-open"),inert:document.querySelector(".wrap").inert,focused:document.activeElement===button};
+    return {error,hidden:root.hidden,locked:document.body.classList.contains("dialog-open"),inert:document.querySelector(".wrap").inert,preserved:preserved.inert,focused:document.activeElement===button};
   });
-  expect(result).toEqual({ error: "close boom", hidden: true, locked: false, inert: false, focused: true });
+  expect(result).toEqual({ error: "close boom", hidden: true, locked: false, inert: false, preserved: true, focused: true });
 });
 
 test("only the top registered dialog handles Escape before focus returns to the underlying dialog", async ({ page }) => {
@@ -154,6 +154,37 @@ test("only the top registered dialog handles Escape before focus returns to the 
   await page.keyboard.press("Escape");
   await expect(page.locator("#priceModal")).toBeHidden();
   await expect(page.locator("#btnPrices")).toBeFocused();
+});
+
+test("nested dialogs restore each body child's original inert state after the final close", async ({ page }) => {
+  // Break caught: stack cleanup flattens both pre-existing inert and active body children to inert=false.
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const states = await page.evaluate(() => {
+    const preserved=document.createElement("div"),active=document.createElement("div");
+    preserved.inert=true;
+    const makeDialog=id=>{
+      const root=document.createElement("div"),panel=document.createElement("div"),button=document.createElement("button");
+      root.id=id;root.hidden=true;button.textContent=`Close ${id}`;panel.append(button);root.append(panel);
+      return {root,api:dialogController.register({root,panel,opener:null,initialFocus:button})};
+    };
+    const first=makeDialog("inertStackFirst"),second=makeDialog("inertStackSecond");
+    document.body.append(preserved,active,first.root);
+    first.api.open();
+    document.body.append(second.root);
+    second.api.open();
+    const nested={preserved:preserved.inert,active:active.inert,first:first.root.inert,second:second.root.inert};
+    second.api.close();
+    const underlying={preserved:preserved.inert,active:active.inert,first:first.root.inert,second:second.root.inert};
+    first.api.close();
+    const restored={preserved:preserved.inert,active:active.inert,first:first.root.inert,second:second.root.inert};
+    return {nested,underlying,restored};
+  });
+
+  expect(states).toEqual({
+    nested: { preserved: true, active: true, first: true, second: false },
+    underlying: { preserved: true, active: true, first: false, second: true },
+    restored: { preserved: true, active: false, first: false, second: false },
+  });
 });
 
 test("opening an already-open underlying dialog does not duplicate its stack entry", async ({ page }) => {

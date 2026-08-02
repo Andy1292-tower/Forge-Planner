@@ -174,7 +174,14 @@ test("skip route, project disclosures, and table scrollers work from the keyboar
   await expect(skipLink).toBeFocused();
   await expect(skipLink).toHaveCSS("visibility", "visible");
   await page.keyboard.press("Enter");
-  await expect(page.locator("#plannerMain")).toBeFocused();
+  const plannerMain = page.locator("#plannerMain");
+  await expect(plannerMain).toBeFocused();
+  const mainFocus = await plannerMain.evaluate(element => {
+    const style=getComputedStyle(element);
+    return {style:style.outlineStyle,width:parseFloat(style.outlineWidth)};
+  });
+  expect(mainFocus.style).not.toBe("none");
+  expect(mainFocus.width).toBeGreaterThan(0);
 
   const scroller = page.getByRole("region", { name: /Line assignment table/ });
   await expect(scroller).toHaveAttribute("tabindex", "0");
@@ -287,6 +294,19 @@ test("forced colors retain boundaries and focus while reduced motion stops anima
   const help = page.getByRole("button", { name: "Help for max turbo stacks" });
   await help.focus();
   expect(await help.evaluate(element => getComputedStyle(element).outlineStyle)).not.toBe("none");
+
+  const skipLink = page.getByRole("link", { name: "Skip to planner results" });
+  await skipLink.focus();
+  await expect(skipLink).toBeFocused();
+  await page.keyboard.press("Enter");
+  const plannerMain = page.locator("#plannerMain");
+  await expect(plannerMain).toBeFocused();
+  const forcedMainFocus = await plannerMain.evaluate(element => {
+    const style=getComputedStyle(element);
+    return {style:style.outlineStyle,width:parseFloat(style.outlineWidth)};
+  });
+  expect(forcedMainFocus.style).not.toBe("none");
+  expect(forcedMainFocus.width).toBeGreaterThan(0);
 
   await page.emulateMedia({ forcedColors: "none", reducedMotion: "reduce" });
   expect(await page.locator(".spinner").evaluate(element => getComputedStyle(element).animationName)).toBe("none");

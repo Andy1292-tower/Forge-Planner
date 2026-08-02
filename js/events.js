@@ -134,7 +134,21 @@ const stateRecovery=document.getElementById("stateRecovery");
 const stateRecoveryReason=document.getElementById("stateRecoveryReason");
 const stateRecoveryDownload=document.getElementById("stateRecoveryDownload");
 let _recoveryDownload=null;
-function showStateRecovery(raw,reason,file){
+let _recoveryInvoker=null;
+let _recoveryInvokerId=null;
+let _recoveryImportFallback=false;
+function showStateRecovery(raw,reason,file,invoker=document.activeElement,importFallback=false){
+  const candidate=invoker&&invoker!==document.body&&invoker!==document.documentElement&&typeof invoker.focus==="function"?invoker:null;
+  const insideRecovery=!!(candidate&&stateRecovery&&(candidate===stateRecovery||(typeof stateRecovery.contains==="function"&&stateRecovery.contains(candidate))));
+  if(candidate&&!insideRecovery){
+    _recoveryInvoker=candidate;
+    _recoveryInvokerId=candidate&&candidate.id||null;
+    _recoveryImportFallback=false;
+  }else if(!stateRecovery||stateRecovery.hidden){
+    _recoveryInvoker=null;
+    _recoveryInvokerId=null;
+    _recoveryImportFallback=!!importFallback;
+  }
   if(typeof raw==="string")quarantineRejectedState(raw,reason);
   _recoveryDownload=file||((typeof raw==="string")?new Blob([raw],{type:"application/json"}):null);
   if(stateRecoveryDownload)stateRecoveryDownload.disabled=!_recoveryDownload;
@@ -142,8 +156,13 @@ function showStateRecovery(raw,reason,file){
   if(stateRecovery){stateRecovery.hidden=false;stateRecovery.focus();}
 }
 function dismissStateRecovery(restoreFocus=true){
+  const invoker=_recoveryInvoker,invokerId=_recoveryInvokerId,importFallback=_recoveryImportFallback;
+  _recoveryInvoker=null;_recoveryInvokerId=null;_recoveryImportFallback=false;
   if(stateRecovery)stateRecovery.hidden=true;
-  if(restoreFocus){const button=document.getElementById("btnImport");if(button)button.focus();}
+  if(!restoreFocus)return;
+  if(invoker&&invoker.isConnected){invoker.focus();return;}
+  if(invokerId){const replacement=document.getElementById(invokerId);if(replacement&&typeof replacement.focus==="function"){replacement.focus();return;}}
+  if(importFallback){const button=document.getElementById("btnImport");if(button)button.focus();}
 }
 stateRecoveryDownload.addEventListener("click",()=>{
   if(!_recoveryDownload)return;
@@ -385,7 +404,7 @@ function renderAll(){
 const initialState=initializeState(renderAll);
 initCalib();
 document.getElementById("saveind").textContent="auto-saves locally";
-if(initialState.recovery)showStateRecovery(initialState.recovery.raw,initialState.recovery.reason);
+if(initialState.recovery)showStateRecovery(initialState.recovery.raw,initialState.recovery.reason,null,null,true);
 function costRow(pi,li,ci,c){
   const projectName=(S.projects[pi]&&S.projects[pi].name)||`Project ${pi+1}`;
   const opts=ALLITEMS.map(it=>`<option value="${it}" ${it===c.item?"selected":""}>${it}</option>`).join("");

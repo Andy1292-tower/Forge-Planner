@@ -9,7 +9,36 @@ if (process.env.PLAYWRIGHT_CHROME_PATH) {
 }
 
 const PX_TOLERANCE = 1;
-const OVERFLOW_VIEWPORTS = [320, 375, 390, 430, 560, 561, 640, 768, 880, 881, 900, 1024, 1440];
+const RELEASE_VIEWPORTS = [
+  { width: 1440, height: 900 },
+  { width: 1024, height: 768 },
+  { width: 900, height: 760 },
+  { width: 881, height: 900 },
+  { width: 880, height: 900 },
+  { width: 768, height: 1024 },
+  { width: 640, height: 900 },
+  { width: 561, height: 900 },
+  { width: 560, height: 900 },
+  { width: 430, height: 932 },
+  { width: 390, height: 844 },
+  { width: 375, height: 812 },
+  { width: 320, height: 568 },
+];
+const OVERFLOW_VIEWPORTS = RELEASE_VIEWPORTS.map(viewport => viewport.width);
+const RELEASE_MODES = [
+  { name: "Max items/hr", ready: "Line assignment" },
+  { name: "Max credits/hr", ready: "Credits mode." },
+  { name: "Manual", ready: "Manual mode." },
+  { name: "Project plan", ready: "Track progress" },
+];
+const RELEASE_DIALOGS = [
+  { name: "Sell prices", opener: "#btnPrices", root: "#priceModal", close: "#priceDone" },
+  { name: "Lil' Forgie", opener: "#btnForgie", root: "#forgieModal", close: "#forgieDone" },
+  { name: "Mined resources", opener: "#btnMined", root: "#minedModal", close: "#minedDone" },
+  { name: "Settings", opener: "#btnSettings", root: "#settingsModal", close: "#settingsDone" },
+  { name: "Shopping list", opener: "#btnProjects", root: "#projModal", close: "#projDone" },
+  { name: "Track progress", opener: "#btnProgress", root: "#progModal", close: "#progDone" },
+];
 
 async function loadPlanner(page, viewport) {
   await page.setViewportSize(viewport);
@@ -198,6 +227,239 @@ async function seedCatalogProject(page) {
   await page.getByRole("button", { name: "Shopping list", exact: true }).click();
   await page.evaluate(() => addCatalogProject(CATALOG[0].catId));
   await expect(page.locator("#projList .cat-card")).toBeVisible();
+}
+
+async function addCatalogProjectAndFlushSolve(page, label) {
+  const generation = await page.evaluate(() => {
+    addCatalogProject(CATALOG[0].catId);
+    flushSolve();
+    if (renderT !== null) throw new Error("flushSolve left the scheduled project solve pending");
+    return solveService.status().generation;
+  });
+  await expect.poll(() => page.evaluate(expectedGeneration => {
+    const status = solveService.status();
+    return { generation: status.generation, active: status.active, current: status.current };
+  }, generation), { message: `${label}: flushed project solve must finish before release geometry is measured` }).toEqual({
+    generation,
+    active: false,
+    current: false,
+  });
+  await expect(page.locator("#solveOverlay")).toBeHidden();
+}
+
+async function expectReleaseMatrixState(page, label, { result = false, scope = null } = {}) {
+  const audit = await page.evaluate(({ tolerance, scope, result }) => {
+    const visible = element => {
+      if (!element || !element.getClientRects().length) return false;
+      const style = getComputedStyle(element);
+      return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) !== 0;
+    };
+    const box = element => {
+      const rect = element.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height };
+    };
+    const overlaps = (a, b) => a.left < b.right - tolerance && a.right > b.left + tolerance
+      && a.top < b.bottom - tolerance && a.bottom > b.top + tolerance;
+    const root = scope ? document.querySelector(scope) : document;
+    const labelCollisions = [];
+    const seen = new Set();
+    const compare = (labelElement, control, owner) => {
+      if (!visible(labelElement) || !visible(control)) return;
+      const key = `${labelElement.textContent.trim()}\u0000${control.id || control.getAttribute("aria-label") || control.localName}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      if (overlaps(box(labelElement), box(control))) {
+        labelCollisions.push({
+          owner: owner.id || owner.className || owner.localName,
+          label: labelElement.textContent.trim().slice(0, 80),
+          control: control.id || control.getAttribute("aria-label") || control.localName,
+        });
+      }
+    };
+    root.querySelectorAll("label[for]").forEach(labelElement => {
+      const control = document.getElementById(labelElement.htmlFor);
+      compare(labelElement, control, labelElement.parentElement || labelElement);
+    });
+    root.querySelectorAll(".fl,.price-row,.base-time-field").forEach(owner => {
+      const labelElement = owner.querySelector(":scope > span, :scope > label, .pnm");
+      const control = owner.querySelector(":scope > input, :scope > select, :scope > textarea, input, select, textarea");
+      compare(labelElement, control, owner);
+    });
+
+    const tableFailures = [...root.querySelectorAll("table")].filter(visible).map(table => {
+      const owner = table.closest(".table-scroll");
+      const ownerStyle = owner && getComputedStyle(owner);
+      if (owner && owner.getAttribute("role") === "region" && owner.getAttribute("aria-label")?.trim()
+        && owner.getAttribute("tabindex") === "0" && ["auto", "scroll"].includes(ownerStyle.overflowX)) return null;
+      return {
+        table: table.getAttribute("aria-label") || table.querySelector("th")?.textContent?.trim() || "unnamed table",
+        owner: owner && owner.className,
+        role: owner && owner.getAttribute("role"),
+        name: owner && owner.getAttribute("aria-label"),
+        tabindex: owner && owner.getAttribute("tabindex"),
+        overflowX: ownerStyle && ownerStyle.overflowX,
+      };
+    }).filter(Boolean);
+
+    let resultGeometry = null;
+    if (result) {
+      const results = document.getElementById("results");
+      const head = document.querySelector(".result-card > .results-head");
+      const title = head && head.querySelector("h2");
+      const tabs = document.getElementById("modesw");
+      const status = document.getElementById("solveStat");
+      const style = getComputedStyle(results);
+      const headBox = box(head),titleBox = box(title),tabsBox = box(tabs),statusBox = box(status);
+      const tabBoxes = [...tabs.querySelectorAll("button")].filter(visible).map(box);
+      const tabOverlaps = [];
+      for (let left = 0; left < tabBoxes.length; left += 1) {
+        for (let right = left + 1; right < tabBoxes.length; right += 1) {
+          if (overlaps(tabBoxes[left], tabBoxes[right])) tabOverlaps.push([left, right]);
+        }
+      }
+      resultGeometry = {
+        token: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--card-inset")),
+        padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft].map(parseFloat),
+        headBox,titleBox,tabsBox,statusBox,tabBoxes,tabOverlaps,
+        collisions: {
+          titleTabs: overlaps(titleBox, tabsBox),
+          titleStatus: overlaps(titleBox, statusBox),
+          tabsStatus: overlaps(tabsBox, statusBox),
+        },
+      };
+    }
+
+    return {
+      html: { scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth },
+      body: { scrollWidth: document.body.scrollWidth, clientWidth: document.body.clientWidth },
+      labelCollisions,
+      tableFailures,
+      resultGeometry,
+    };
+  }, { tolerance: PX_TOLERANCE, scope, result });
+
+  expect(audit.html.scrollWidth, `${label}: html must not scroll horizontally`)
+    .toBeLessThanOrEqual(audit.html.clientWidth + PX_TOLERANCE);
+  expect(audit.body.scrollWidth, `${label}: body must not scroll horizontally`)
+    .toBeLessThanOrEqual(audit.body.clientWidth + PX_TOLERANCE);
+  expect(audit.labelCollisions, `${label}: labels and controls must not overlap`).toEqual([]);
+  expect(audit.tableFailures, `${label}: visible tables must own named keyboard-operable scrolling`).toEqual([]);
+
+  if (audit.resultGeometry) {
+    const geometry = audit.resultGeometry;
+    expect(geometry.token, `${label}: result inset token`).toBeGreaterThan(0);
+    geometry.padding.forEach((padding, index) => {
+      expect(Math.abs(padding - geometry.token), `${label}: result inset side ${index}`).toBeLessThanOrEqual(PX_TOLERANCE);
+    });
+    for (const [name, candidate] of [["title", geometry.titleBox], ["tabs", geometry.tabsBox], ["status", geometry.statusBox]]) {
+      expectInside(candidate, geometry.headBox, `${label}: ${name} must stay in the result header`);
+    }
+    expect(geometry.collisions, `${label}: title, tabs, and status must not collide`).toEqual({
+      titleTabs: false,
+      titleStatus: false,
+      tabsStatus: false,
+    });
+    expect(geometry.tabOverlaps, `${label}: planning tabs must not overlap`).toEqual([]);
+    geometry.tabBoxes.forEach((tabBox, index) => expectInside(tabBox, geometry.tabsBox, `${label}: planning tab ${index + 1}`));
+  }
+}
+
+async function expectDialogActionsReachable(page, dialog, viewport, label) {
+  const geometry = await page.locator(dialog.root).evaluate((root, tolerance) => {
+    const box = element => {
+      const rect = element.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height };
+    };
+    const panel = root.querySelector(".modal"),header = panel.querySelector(".modal-h");
+    const body = panel.querySelector("[data-dialog-body]"),footer = panel.querySelector(".modal-f");
+    const actions = [...panel.querySelectorAll(".modal-h button,.modal-f button")]
+      .filter(button => button.getClientRects().length).map(button => ({ name: button.getAttribute("aria-label") || button.textContent.trim(), box: box(button) }));
+    return {
+      panel: box(panel),header: box(header),body: box(body),footer: box(footer),actions,
+      panelScrollHeight: panel.scrollHeight,panelClientHeight: panel.clientHeight,
+      rootScrollHeight: root.scrollHeight,rootClientHeight: root.clientHeight,
+      bodyOverflowY: getComputedStyle(body).overflowY,
+      tolerance,
+    };
+  }, PX_TOLERANCE);
+  const viewportBox = { left: 0, top: 0, right: viewport.width, bottom: viewport.height };
+  expectInside(geometry.panel, viewportBox, `${label}: dialog panel`);
+  expectInside(geometry.header, geometry.panel, `${label}: dialog header`);
+  expectInside(geometry.footer, geometry.panel, `${label}: dialog footer`);
+  expect(geometry.actions.length, `${label}: dialog must expose a close or footer action`).toBeGreaterThan(0);
+  geometry.actions.forEach(action => {
+    expectInside(action.box, geometry.panel, `${label}: ${action.name} inside panel`);
+    expectInside(action.box, viewportBox, `${label}: ${action.name} on screen`);
+  });
+  expect(geometry.panelScrollHeight, `${label}: panel must not own vertical scrolling`)
+    .toBeLessThanOrEqual(geometry.panelClientHeight + PX_TOLERANCE);
+  expect(geometry.rootScrollHeight, `${label}: overlay must not own vertical scrolling`)
+    .toBeLessThanOrEqual(geometry.rootClientHeight + PX_TOLERANCE);
+  expect(["auto", "scroll"], `${label}: dialog body owns vertical scrolling`).toContain(geometry.bodyOverflowY);
+}
+
+async function expectProjectIdentityNotCollapsed(page, label) {
+  const card = page.locator("#projList .cat-card").first();
+  const name = card.locator(".pname-static");
+  await expect(name).toBeVisible();
+  const nameBox = await rect(name),cardBox = await rect(card);
+  expect(nameBox.width, `${label}: project identity must retain readable width`).toBeGreaterThanOrEqual(140 - PX_TOLERANCE);
+  expectInside(nameBox, cardBox, `${label}: project identity must stay inside its card`);
+}
+
+async function expectSparseRecipeCardsStable(page, label) {
+  await page.locator("#recipeToggle").click();
+  await expect(page.locator("#recipeBody")).toBeVisible();
+  const cards = page.locator("#recipes .rcard");
+  const count = await cards.count();
+  expect(count, `${label}: recipe fixture needs several cards`).toBeGreaterThan(2);
+  const last = cards.last();
+  await last.evaluate(element => { element.hidden = true; });
+  const geometry = await page.locator("#recipes").evaluate((grid, tolerance) => {
+    const gridBox = grid.getBoundingClientRect();
+    const cards = [...grid.querySelectorAll(".rcard")].filter(card => card.getClientRects().length).map(card => {
+      const rect = card.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, top: rect.top, width: rect.width };
+    });
+    const rows = [];
+    cards.forEach(card => {
+      let row = rows.find(candidate => Math.abs(candidate.top - card.top) <= tolerance);
+      if (!row) { row = { top: card.top, cards: [] };rows.push(row); }
+      row.cards.push({ left: card.left, right: card.right, width: card.width });
+    });
+    const columns = Math.max(...rows.map(row => row.cards.length));
+    const fullRow = rows.find(row => row.cards.length === columns);
+    const sparseRow = [...rows].reverse().find(row => row.cards.length < columns);
+    return {
+      grid: { left: gridBox.left, right: gridBox.right },cards,columns,
+      referenceWidth: fullRow && fullRow.cards[0].width,
+      sparseWidths: sparseRow ? sparseRow.cards.map(card => card.width) : [],
+    };
+  }, PX_TOLERANCE);
+  await last.evaluate(element => { element.hidden = false; });
+  geometry.cards.forEach((card, index) => {
+    expect(card.left, `${label}: recipe card ${index + 1} left edge`).toBeGreaterThanOrEqual(geometry.grid.left - PX_TOLERANCE);
+    expect(card.right, `${label}: recipe card ${index + 1} right edge`).toBeLessThanOrEqual(geometry.grid.right + PX_TOLERANCE);
+  });
+  if (geometry.columns > 1 && geometry.sparseWidths.length) {
+    geometry.sparseWidths.forEach((width, index) => {
+      expect(Math.abs(width - geometry.referenceWidth), `${label}: sparse recipe card ${index + 1} must not stretch`)
+        .toBeLessThanOrEqual(PX_TOLERANCE);
+    });
+  }
+  await expectReleaseMatrixState(page, `${label}: crafting data`, { scope: "#recipeBody" });
+  await page.locator("#recipeToggle").click();
+  await expect(page.locator("#recipeBody")).toBeHidden();
+}
+
+async function attachReleaseMatrixScreenshot(page, testInfo, name) {
+  await page.evaluate(() => {
+    const status = document.getElementById("solveStat");
+    if (status && /Solved in/.test(status.textContent)) status.textContent = "Plan updated. Solved in 0.0 ms";
+  });
+  const file = testInfo.outputPath(`release-matrix-${name}.png`);
+  await page.screenshot({ path: file, animations: "disabled", caret: "hide", fullPage: false });
+  await testInfo.attach(`release-matrix-${name}`, { path: file, contentType: "image/png" });
 }
 
 test("result content keeps its shared inset and its mode row fits at 1440, 1024, and 900px", async ({ page }) => {
@@ -416,6 +678,56 @@ test("every rendered planning mode and long-dialog state obeys the discovered ov
       await expectHorizontalOverflowContract(page, `${width}px ${dialog.opener} dialog`);
       await page.locator(dialog.close).click();
     }
+  }
+});
+
+test.describe("Task 16 release viewport matrix", () => {
+  for (const viewport of RELEASE_VIEWPORTS) {
+    test(`${viewport.width}x${viewport.height} covers every mode and registered dialog`, async ({ page }, testInfo) => {
+      test.setTimeout(60_000);
+      const viewportLabel = `${viewport.width}x${viewport.height}`;
+      await loadPlanner(page, viewport);
+      await addCatalogProjectAndFlushSolve(page, viewportLabel);
+
+      const dialogRoots = await page.locator(".modal-bg").evaluateAll(roots => roots
+        .filter(root => root.querySelector('.modal[role="dialog"]')).map(root => `#${root.id}`).sort());
+      expect(dialogRoots, `${viewportLabel}: release matrix must track every semantic dialog`)
+        .toEqual(RELEASE_DIALOGS.map(dialog => dialog.root).sort());
+
+      for (const mode of RELEASE_MODES) {
+        await page.getByRole("button", { name: mode.name, exact: true }).click();
+        await expect(page.locator("#results")).toContainText(mode.ready);
+        await expect(page.locator("#solveOverlay")).toBeHidden();
+        await expectReleaseMatrixState(page, `${viewportLabel}: ${mode.name}`, { result: true });
+
+        if (viewport.width === 1440 && mode.name === "Max items/hr") {
+          await attachReleaseMatrixScreenshot(page, testInfo, `${viewportLabel}-items`);
+        }
+        if (viewport.width === 880 && mode.name === "Project plan") {
+          await attachReleaseMatrixScreenshot(page, testInfo, `${viewportLabel}-project`);
+        }
+        if (viewport.width === 320 && mode.name === "Manual") {
+          await attachReleaseMatrixScreenshot(page, testInfo, `${viewportLabel}-manual`);
+        }
+      }
+
+      await expect(page.locator("#btnProgress")).toBeVisible();
+      for (const dialog of RELEASE_DIALOGS) {
+        await page.locator(dialog.opener).click();
+        await expect(page.locator(dialog.root)).toBeVisible();
+        const stateLabel = `${viewportLabel}: ${dialog.name} dialog`;
+        await expectReleaseMatrixState(page, stateLabel, { scope: dialog.root });
+        await expectDialogActionsReachable(page, dialog, viewport, stateLabel);
+        if (dialog.name === "Shopping list") await expectProjectIdentityNotCollapsed(page, stateLabel);
+        if (viewport.width === 390 && dialog.name === "Shopping list") {
+          await attachReleaseMatrixScreenshot(page, testInfo, `${viewportLabel}-shopping-dialog`);
+        }
+        await page.locator(dialog.close).click();
+        await expect(page.locator(dialog.root)).toBeHidden();
+      }
+
+      await expectSparseRecipeCardsStable(page, viewportLabel);
+    });
   }
 });
 
