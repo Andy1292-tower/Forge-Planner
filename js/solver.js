@@ -61,6 +61,12 @@ function preprodBitsBreakdown(plan){
   return by;
 }
 function preprodBitsHr(plan){return Object.values(preprodBitsBreakdown(plan)).reduce((a,b)=>a+b,0);}
+// Bits that Frames/Wire crafts burn OUTSIDE the recipe graph (PREPROD_BITS): they never appear as a
+// recipe input and never earn a crafting line, so every place that reasons about Bits demand has to
+// fold them back in by hand. `vec` is always a NET (post-inventory) vector — the units actually being
+// crafted — which is the basis projNetVec/projAvailVec/consumeInv all share. Centralised because the
+// formula was copy-pasted, and consumeInv had quietly been missed.
+function preprodBitsOf(vec){return PREPROD_BITS.Frames*((vec&&vec.Frames)||0)+PREPROD_BITS.Wire*((vec&&vec.Wire)||0);}
 // "8 per frame, 2 per wire" — per-unit note for the pre-produce readout, for the products present.
 const PREPROD_BITS_UNIT={Frames:"frame",Wire:"wire"};
 function preprodBitsNote(who){return who.map(n=>`${PREPROD_BITS[n]} per ${PREPROD_BITS_UNIT[n]||n.toLowerCase()}`).join(", ");}
@@ -587,7 +593,7 @@ function projectDemand(){
   const inv=it=>num(S.inventory&&S.inventory[it])||0;
   const net={};ALLITEMS.forEach(it=>{net[it]=Math.max(0,gross[it]-inv(it));});
   // Frames & Wire each consume Bits that aren't in the recipe graph — fold them into Bits demand
-  const ppBits=PREPROD_BITS.Frames*(net.Frames||0)+PREPROD_BITS.Wire*(net.Wire||0);
+  const ppBits=preprodBitsOf(net);
   if(ppBits>0)net.Bits=Math.max(0,(gross.Bits||0)+ppBits-inv("Bits"));
   return {gross,net,perProject};
 }
@@ -770,7 +776,7 @@ function solvePhaseFor(net,name,avail,stabilize,phaseKey){
 // net demand for a project's level-sum `sub`, against an inventory map (folds in Frame bits).
 function projNetVec(sub,invMap){
   const net={};ALLITEMS.forEach(it=>net[it]=Math.max(0,(sub[it]||0)-(invMap[it]||0)));
-  const ppBits=PREPROD_BITS.Frames*(net.Frames||0)+PREPROD_BITS.Wire*(net.Wire||0);
+  const ppBits=preprodBitsOf(net);
   if(ppBits>0)net.Bits=Math.max(0,(sub.Bits||0)+ppBits-(invMap.Bits||0));
   return net;
 }
@@ -782,7 +788,7 @@ function projNetVec(sub,invMap){
 function projAvailVec(sub,invMap){
   const net=projNetVec(sub,invMap);
   const av={};ALLITEMS.forEach(it=>av[it]=Math.max(0,((invMap&&invMap[it])||0)-(sub[it]||0)));
-  const ppBits=PREPROD_BITS.Frames*(net.Frames||0)+PREPROD_BITS.Wire*(net.Wire||0);
+  const ppBits=preprodBitsOf(net);
   av.Bits=Math.max(0,((invMap&&invMap.Bits)||0)-((sub.Bits||0)+ppBits));
   return av;
 }
