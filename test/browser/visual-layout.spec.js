@@ -9,6 +9,7 @@ if (process.env.PLAYWRIGHT_CHROME_PATH) {
 }
 
 const PX_TOLERANCE = 1;
+const OVERFLOW_VIEWPORTS = [320, 375, 390, 430, 560, 561, 640, 768, 880, 881, 900, 1024, 1440];
 
 async function loadPlanner(page, viewport) {
   await page.setViewportSize(viewport);
@@ -32,12 +33,132 @@ function expectInside(inner, outer, message) {
   expect(inner.bottom, message).toBeLessThanOrEqual(outer.bottom + PX_TOLERANCE);
 }
 
-async function expectNoRootOverflow(page) {
-  const geometry = await page.evaluate(() => ({
-    scrollWidth: document.documentElement.scrollWidth,
-    clientWidth: document.documentElement.clientWidth,
-  }));
-  expect(geometry.scrollWidth, `root width ${geometry.scrollWidth}px exceeds ${geometry.clientWidth}px`).toBeLessThanOrEqual(geometry.clientWidth + PX_TOLERANCE);
+async function collectHorizontalOverflow(page) {
+  return page.evaluate(tolerance => {
+    const selectorFor = element => {
+      if (element === document.documentElement) return "html";
+      if (element === document.body) return "body";
+      if (element.id) return `#${CSS.escape(element.id)}`;
+      const parts = [];
+      let current = element;
+      while (current && current !== document.documentElement && parts.length < 4) {
+        let part = current.localName;
+        if (current.classList.length) part += `.${[...current.classList].slice(0, 2).map(name => CSS.escape(name)).join(".")}`;
+        const siblings = current.parentElement ? [...current.parentElement.children].filter(child => child.localName === current.localName) : [];
+        if (siblings.length > 1) part += `:nth-of-type(${siblings.indexOf(current) + 1})`;
+        parts.unshift(part);
+        current = current.parentElement;
+      }
+      return parts.join(" > ");
+    };
+    const rendered = element => {
+      const style = getComputedStyle(element);
+      return element.getClientRects().length > 0
+        && style.display !== "none"
+        && style.visibility !== "hidden"
+        && style.clip === "auto"
+        && style.clipPath === "none";
+    };
+    const paintedCache = new WeakMap();
+    const painted = element => {
+      if (paintedCache.has(element)) return paintedCache.get(element);
+      let current = element;
+      let result = true;
+      while (current && current.nodeType === Node.ELEMENT_NODE) {
+        const style = getComputedStyle(current);
+        if (!rendered(current) || Number(style.opacity) === 0) {
+          result = false;
+          break;
+        }
+        current = current.parentElement;
+      }
+      paintedCache.set(element, result);
+      return result;
+    };
+    const hasPaintedOverflow = element => {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      const left = box.left + parseFloat(style.borderLeftWidth || "0");
+      const right = left + element.clientWidth;
+      const outside = rect => rect.left < left - tolerance || rect.right > right + tolerance;
+      if ([...element.querySelectorAll("*")].some(descendant => painted(descendant)
+        && [...descendant.getClientRects()].some(outside))) return true;
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+      let textNode;
+      while ((textNode = walker.nextNode())) {
+        if (!textNode.textContent.trim() || !painted(textNode.parentElement)) continue;
+        const range = document.createRange();
+        range.selectNodeContents(textNode);
+        if ([...range.getClientRects()].some(outside)) return true;
+      }
+      return false;
+    };
+    const critical = [document.documentElement, document.body, document.getElementById("results")].map(element => {
+      const style = getComputedStyle(element);
+      return {
+        selector: element === document.documentElement ? "html" : element === document.body ? "body" : "#results",
+        scrollWidth: element.scrollWidth,
+        clientWidth: element.clientWidth,
+        overflowX: style.overflowX,
+        dialogLocked: element === document.body && element.classList.contains("dialog-open"),
+      };
+    });
+    const wide = [...document.querySelectorAll("*")]
+      .filter(element => painted(element)
+        && element.scrollWidth > element.clientWidth + tolerance
+        && hasPaintedOverflow(element))
+      .map(element => {
+        const owner = element.closest(".table-scroll");
+        const ownerStyle = owner && getComputedStyle(owner);
+        const tableRelated = !!owner && (element === owner
+          ? !!owner.querySelector("table")
+          : !!element.closest("table") || element.matches("table") || !!element.querySelector("table"));
+        return {
+          selector: selectorFor(element),
+          scrollWidth: element.scrollWidth,
+          clientWidth: element.clientWidth,
+          ownerSelector: owner ? selectorFor(owner) : null,
+          ownerIsNearest: !!owner && element.closest(".table-scroll") === owner,
+          ownerRole: owner && owner.getAttribute("role"),
+          ownerName: owner && owner.getAttribute("aria-label"),
+          ownerTabindex: owner && owner.getAttribute("tabindex"),
+          ownerOverflowX: ownerStyle && ownerStyle.overflowX,
+          ownerContainsTable: !!owner && !!owner.querySelector("table"),
+          tableRelated,
+        };
+      });
+    return { critical, wide };
+  }, PX_TOLERANCE);
+}
+
+function assertHorizontalOverflowContract(audit, label) {
+  const criticalViolations = audit.critical.filter(entry => {
+    const exceedsWidth = entry.scrollWidth > entry.clientWidth + PX_TOLERANCE;
+    const intentionalDialogLock = entry.selector === "body"
+      && entry.dialogLocked
+      && entry.overflowX === "hidden"
+      && !exceedsWidth;
+    return exceedsWidth
+      || (["auto", "scroll", "hidden", "clip"].includes(entry.overflowX) && !intentionalDialogLock);
+  });
+  const wideViolations = audit.wide.filter(entry =>
+    !entry.ownerSelector
+    || !entry.ownerIsNearest
+    || entry.ownerRole !== "region"
+    || !entry.ownerName?.trim()
+    || entry.ownerTabindex !== "0"
+    || !["auto", "scroll"].includes(entry.ownerOverflowX)
+    || !entry.ownerContainsTable
+    || !entry.tableRelated);
+  if (criticalViolations.length || wideViolations.length) {
+    throw new Error(`${label} horizontal overflow contract failed: ${JSON.stringify({ criticalViolations, wideViolations })}`);
+  }
+}
+
+async function expectHorizontalOverflowContract(page, label) {
+  const audit = await collectHorizontalOverflow(page);
+  assertHorizontalOverflowContract(audit, label);
+  return audit;
 }
 
 async function seedCatalogProject(page) {
@@ -89,19 +210,13 @@ test("result content keeps its shared inset and its mode row fits at 1440, 1024,
   }
 });
 
-test("the document remains the viewport, not an overflow mask, from 561 through 900px", async ({ page }) => {
-  // Break caught: a component wider than the responsive grid makes the document itself a horizontal table scroller.
-  for (const width of [561, 640, 768, 880, 881, 900]) {
-    await loadPlanner(page, { width, height: 900 });
-    await expectNoRootOverflow(page);
-    const overflow = await page.evaluate(() => ({
-      html: getComputedStyle(document.documentElement).overflowX,
-      body: getComputedStyle(document.body).overflowX,
-      results: getComputedStyle(document.getElementById("results")).overflowX,
-    }));
-    expect(overflow.html, `${width}px html must not hide overflow`).not.toBe("hidden");
-    expect(overflow.body, `${width}px body must not hide overflow`).not.toBe("hidden");
-    expect(overflow.results, `${width}px #results must not hide overflow`).not.toBe("hidden");
+test("the document remains the viewport, not an overflow mask, at every supported width", async ({ page }) => {
+  // Break caught: a component wider than any responsive grid makes the document itself a horizontal scroller or invites overflow masking.
+  for (const width of OVERFLOW_VIEWPORTS) {
+    await loadPlanner(page, { width, height: width >= 900 ? 900 : 844 });
+    const audit = await expectHorizontalOverflowContract(page, `${width}px Items`);
+    const root = audit.critical.find(entry => entry.selector === "html");
+    expect(root.scrollWidth, `${width}px root width is asserted directly`).toBeLessThanOrEqual(root.clientWidth + PX_TOLERANCE);
   }
 });
 
@@ -172,53 +287,25 @@ test("320px fields keep labels clear and give the third line field an intentiona
   expect(tooltipBox.right).toBeLessThanOrEqual(320 + PX_TOLERANCE);
 });
 
-test("wide result tables have the nearest named component scroller and Manual controls remain reachable", async ({ page }) => {
-  // Break caught: a wide result table leaks to #results/document or leaves editable Manual columns unreachable.
-  await loadPlanner(page, { width: 320, height: 760 });
-  for (const mode of ["Max items/hr", "Manual"]) {
-    await page.getByRole("button", { name: mode, exact: true }).click();
-    await expect(page.locator("#results table").first()).toBeVisible();
-    await expect.poll(() => page.locator("#results table").count()).toBeGreaterThan(0);
-    const ownership = await page.locator("#results table").evaluateAll(tables => tables.map(table => {
-      const owner = table.closest(".table-scroll");
-      return {
-        owner: !!owner,
-        role: owner && owner.getAttribute("role"),
-        name: owner && owner.getAttribute("aria-label"),
-        tabindex: owner && owner.getAttribute("tabindex"),
-        ownerLeft: owner && owner.getBoundingClientRect().left,
-        ownerRight: owner && owner.getBoundingClientRect().right,
-        viewport: document.documentElement.clientWidth,
-      };
-    }));
-    for (const [index, table] of ownership.entries()) {
-      expect(table.owner, `${mode} table ${index + 1} needs a component owner`).toBe(true);
-      expect(table.role).toBe("region");
-      expect(table.name).toBeTruthy();
-      expect(table.tabindex).toBe("0");
-      expect(table.ownerLeft).toBeGreaterThanOrEqual(-PX_TOLERANCE);
-      expect(table.ownerRight).toBeLessThanOrEqual(table.viewport + PX_TOLERANCE);
+test("every rendered planning mode and long-dialog state obeys the discovered overflow contract", async ({ page }) => {
+  // Break caught: checking only known table owners misses rogue non-table overflow and untested Credits, Project, or dialog states.
+  await loadPlanner(page, { width: 320, height: 844 });
+  await seedCatalogProject(page);
+  await page.locator("#projDone").click();
+
+  for (const width of [320, 390, 560, 900, 1024, 1440]) {
+    await page.setViewportSize({ width, height: width >= 900 ? 900 : 844 });
+    for (const mode of ["Max items/hr", "Max credits/hr", "Project plan", "Manual"]) {
+      await page.getByRole("button", { name: mode, exact: true }).click();
+      await expect(page.locator("#solveOverlay")).toBeHidden();
+      if (mode === "Max items/hr" || mode === "Manual") await expect(page.locator("#results table:visible").first()).toBeVisible();
+      if (mode === "Project plan") await expect(page.locator("#results .metrics")).toBeVisible();
+      await expectHorizontalOverflowContract(page, `${width}px ${mode}`);
     }
-    const wideOwners = await page.locator("#results").evaluate(results => [...results.querySelectorAll(".table-scroll")]
-      .filter(owner => owner.scrollWidth > owner.clientWidth + 1)
-      .map(owner => ({
-        role: owner.getAttribute("role"),
-        name: owner.getAttribute("aria-label"),
-        ownsTable: !!owner.querySelector("table"),
-        nestedInResults: owner.closest("#results") === results,
-      })));
-    expect(wideOwners.length, `${mode} must expose at least one genuinely overflowing component owner`).toBeGreaterThan(0);
-    for (const owner of wideOwners) {
-      expect(owner, `${mode} every element that owns horizontal table overflow must be the nearest named region`).toEqual({
-        role: "region",
-        name: expect.any(String),
-        ownsTable: true,
-        nestedInResults: true,
-      });
-    }
-    await expectNoRootOverflow(page);
   }
 
+  await page.setViewportSize({ width: 320, height: 760 });
+  await page.getByRole("button", { name: "Manual", exact: true }).click();
   const manualControlReachability = await page.locator("#results .table-scroll").first().evaluate(owner => {
     const controls = [...owner.querySelectorAll("select,input,button")].filter(control => control.getClientRects().length);
     return controls.map(control => {
@@ -230,6 +317,38 @@ test("wide result tables have the nearest named component scroller and Manual co
   });
   expect(manualControlReachability.length).toBeGreaterThan(0);
   expect(manualControlReachability.every(Boolean), "every Manual table control must be reachable within its named scroller").toBe(true);
+
+  for (const width of [320, 390, 560, 1024]) {
+    await page.setViewportSize({ width, height: width === 1024 ? 720 : 600 });
+    for (const dialog of [
+      { opener: "Mined resources", root: "#minedModal", close: "#minedDone" },
+      { opener: "Shopping list", root: "#projModal", close: "#projDone" },
+    ]) {
+      await page.getByRole("button", { name: dialog.opener, exact: true }).click();
+      await expect(page.locator(dialog.root)).toBeVisible();
+      await expectHorizontalOverflowContract(page, `${width}px ${dialog.opener} dialog`);
+      await page.locator(dialog.close).click();
+    }
+  }
+});
+
+test("the overflow detector rejects and then releases a rogue non-table surface", async ({ page }) => {
+  // Break caught: a gate that starts from .table-scroll owners cannot see an unrelated overflowing component.
+  await loadPlanner(page, { width: 390, height: 844 });
+  await page.evaluate(() => {
+    const rogue = document.createElement("div");
+    rogue.id = "visual-overflow-mutation";
+    rogue.style.cssText = "width:120px;overflow:visible";
+    const child = document.createElement("div");
+    child.style.width = "420px";
+    child.textContent = "overflow mutation";
+    rogue.append(child);
+    document.querySelector("main").append(rogue);
+  });
+  const mutatedAudit = await collectHorizontalOverflow(page);
+  expect(() => assertHorizontalOverflowContract(mutatedAudit, "rogue mutation")).toThrow(/#visual-overflow-mutation/);
+  await page.locator("#visual-overflow-mutation").evaluate(element => element.remove());
+  await expectHorizontalOverflowContract(page, "restored after rogue mutation");
 });
 
 test("long dialogs keep header and footer reachable while only the designated body scrolls", async ({ page }) => {

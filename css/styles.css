@@ -359,6 +359,9 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 .result-head-controls{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-sm);width:100%;min-width:0}
 .mode-nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%;max-width:100%}
 .mode-nav button{min-width:0;justify-content:center}
+@media(min-width:561px) and (max-width:900px){
+  .mode-nav button{padding-inline:6px;letter-spacing:.3px}
+}
 /* On narrow screens the 4-button row can't fit — wrap it into a full-width 2×2 grid */
 @media(max-width:560px){
   .modesw{display:grid;grid-template-columns:1fr 1fr;width:100%}
@@ -589,6 +592,10 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 }
 @media(max-width:360px){
   .line-fields>.fl:nth-child(3){grid-column:1/-1}
+  .tg-row{grid-template-columns:minmax(0,1fr) auto;gap:6px;padding-inline:10px}
+  .tg-row:not(.on) .prio{display:none}
+  .tg-row .prio{gap:4px}
+  .tg-row .prio input[type=range]{width:70px}
 }
 
 @media (prefers-reduced-motion:reduce){
