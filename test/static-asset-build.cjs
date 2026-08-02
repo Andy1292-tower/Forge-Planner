@@ -174,6 +174,12 @@ test("the current Worker payload registers Project scheduling before the solver"
   const solver = payload.indexOf("function optimizeProjectTop(");
   assert.ok(helper >= 0, "current Worker payload omitted project-schedule.js");
   assert.ok(solver > helper, "project-schedule.js must execute before solver.js");
+  assert.match(payload, /function parseFieldDraft\(/,
+    "the generated current Worker must embed the shared numeric parser");
+  assert.match(payload, /function validateFieldValue\(/,
+    "the generated current Worker must embed the shared numeric value validator");
+  assert.match(payload, /max:60000/,
+    "the generated current Worker must retain the 60-second descriptor ceiling");
   assert.doesNotMatch(payload, /importScripts\s*\(/);
 });
 
@@ -355,6 +361,34 @@ test("a js/solver.js change rotates the app while permanent Worker endpoints sta
     fs.readFileSync(path.join(root, "compat", "solver.worker.v2.js")),
     "the immutable v2 endpoint must retain its registered bytes"
   );
+});
+
+test("a shared fields.js change rotates the generated app and embedded Worker only", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "forge-static-fields-"));
+  const source = path.join(temporary, "source");
+  const before = path.join(temporary, "before");
+  const after = path.join(temporary, "after");
+  copyBuildInputs(source);
+
+  const workerBefore = buildWorkerPayload(source);
+  buildStaticSite({ sourceRoot: source, outputRoot: before });
+  fs.appendFileSync(path.join(source, "js", "fields.js"), "\n/* shared field propagation mutation */\n");
+  const workerAfter = buildWorkerPayload(source);
+  buildStaticSite({ sourceRoot: source, outputRoot: after });
+
+  assert.notEqual(workerAfter, workerBefore, "the generated current Worker payload must include fields.js");
+  assert.notEqual(
+    findOne(before, /^app\.[0-9a-f]{16}\.js$/),
+    findOne(after, /^app\.[0-9a-f]{16}\.js$/),
+    "changing the shared validation boundary must rotate the generated app URL"
+  );
+  for (const endpoint of ["solver.worker.js", "solver.worker.v2.js"]) {
+    assert.deepEqual(
+      fs.readFileSync(path.join(before, "js", endpoint)),
+      fs.readFileSync(path.join(after, "js", endpoint)),
+      `${endpoint} must remain frozen when fields.js changes`
+    );
+  }
 });
 
 test("a Project schedule helper change rotates only the generated app graph", () => {

@@ -4,8 +4,8 @@ const fs=require("fs"),path=require("path");
 
 class El{
   constructor(){this.innerHTML="";this.textContent="";this.value="";this.hidden=false;this.dataset={};this.children=[];this.className="";this.style={};
-    this.classList={add:()=>{},remove:()=>{},toggle:()=>{}};}
-  addEventListener(){} setAttribute(){} appendChild(x){this.children.push(x);return x;} append(...xs){this.children.push(...xs);} prepend(x){this.children.unshift(x);} replaceChildren(...xs){this.children=xs;} querySelector(){return null;}
+    this.attributes={};this.classList={add:()=>{},remove:()=>{},toggle:()=>{}};}
+  addEventListener(){} setAttribute(name,value){this.attributes[name]=String(value);} appendChild(x){this.children.push(x);return x;} append(...xs){this.children.push(...xs);} prepend(x){this.children.unshift(x);} replaceChildren(...xs){this.children=xs;} querySelector(){return null;}
 }
 const els={};
 globalThis.document={
@@ -16,7 +16,7 @@ globalThis.document={
 };
 globalThis.localStorage={getItem:()=>null,setItem:()=>{}};
 globalThis.performance={now:()=>0};
-const src=["core.js","dom.js","project-schedule.js","solver.js","results.js","manual.js","render.js"]
+const src=["core.js","fields.js","dom.js","project-schedule.js","solver.js","results.js","manual.js","render.js"]
   .map(f=>fs.readFileSync(path.join(__dirname,"..","js",f),"utf8")).join("\n;\n");
 
 const runner=`
@@ -33,6 +33,10 @@ const runner=`
   gelLoadout=function(){renderExactCalls++;return renderExact.apply(null,arguments);};
   gelSeedLoadout=function(){renderSeedCalls++;return renderSeed.apply(null,arguments);};
   renderMinedResources();
+  const minedInput=document.getElementById("minedVespium");
+  check("mined inputs receive descriptor-derived range and draft limits",
+    minedInput.attributes.min==="0"&&minedInput.attributes.max==="1e+100"&&minedInput.attributes.maxlength==="128"&&minedInput.attributes.inputmode==="decimal",
+    JSON.stringify(minedInput.attributes));
   let capacity=document.getElementById("minedVespiumSummary").textContent;
   let loadout=document.getElementById("minedGelLoadout").innerHTML;
   check("12-line UI branches to exact before doing seed work",renderExactCalls===1&&renderSeedCalls===0,

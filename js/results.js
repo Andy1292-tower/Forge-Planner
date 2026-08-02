@@ -352,7 +352,7 @@ function renderResults(){
   // Off the main thread: a long solve (the user's max-solve-time budget) shows a spinner instead
   // of freezing. The service owns cancellation and only delivers the accepted mode/revision.
   const snapshot=JSON.parse(JSON.stringify(S));
-  const budget=Math.max(200,Math.min(60000,num(snapshot.solveBudget)||2000));
+  const budget=boundedPersistedField("solveBudget",snapshot.solveBudget,2000,200,60000,true);
   solveService.request({mode:snapshot.mode,stateRevision,budget,stateSnapshot:snapshot},(res,error)=>{
     if(error){solveError(error);return;}
     if(res)renderSolveResult(res,el,stat);

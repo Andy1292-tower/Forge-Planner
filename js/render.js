@@ -17,14 +17,15 @@ function renderLines(){
   S.lines.forEach((ln,i)=>{
     const opts=LEVELS.map(L=>`<option value="${L}" ${L===ln.max?"selected":""}>${compressionLabel(L)}</option>`).join("");
     const row=document.createElement("div");row.className="line-row";
+    const speedError=`field-line-${i}-speed-error`,turboError=`field-line-${i}-turbo-error`;
     const projected=(num(ln.turbo)||0)!==(num(S.maxTurbo)||0);
     const spNote=projected?`<div class="line-final mono">→ ×${fmt(lineSpeed(ln),2)} at ${fmt(num(S.maxTurbo)||0,0)} turbo stacks</div>`:"";
     row.innerHTML=`<div class="tag mono">#${i+1}</div>
       <div><div class="lname">Line ${i+1}${tipHtml(`line${i+1}Help`,`Line ${i+1}`,TIPS.line)}</div>
         <div class="line-fields">
           <div class="fl"><span>max compression</span><select data-line="${i}" aria-label="Line ${i+1} max compression">${opts}</select></div>
-          <div class="fl"><span>speed × ${tipHtml(`line${i+1}SpeedHelp`,`Line ${i+1} speed`,TIPS.spx,"tip-right tip-ic","--tip-img:url('/assets/speed.jpg')")}</span><input type="number" min="0" step="any" placeholder="1" value="${ln.spx??1}" data-spx="${i}" aria-label="Line ${i+1} currently displayed speed multiplier"></div>
-          <div class="fl"><span>turbo stacks ${tipHtml(`line${i+1}TurboHelp`,`Line ${i+1} turbo stacks`,TIPS.turbo,"tip-right")}</span><input type="number" min="0" step="any" placeholder="0" value="${ln.turbo??0}" data-turbo="${i}" aria-label="Line ${i+1} current turbo stacks"></div>
+          <div class="fl"><span>speed × ${tipHtml(`line${i+1}SpeedHelp`,`Line ${i+1} speed`,TIPS.spx,"tip-right tip-ic","--tip-img:url('/assets/speed.jpg')")}</span><input type="number" ${htmlFieldInputAttributes(FIELD_SCHEMA.lineSpeed)} placeholder="1" value="${ln.spx??1}" data-spx="${i}" aria-describedby="line${i+1}SpeedHelp" data-field-error="${speedError}" aria-label="Line ${i+1} currently displayed speed multiplier"><div class="field-error" id="${speedError}" aria-live="polite" aria-atomic="true"></div></div>
+          <div class="fl"><span>turbo stacks ${tipHtml(`line${i+1}TurboHelp`,`Line ${i+1} turbo stacks`,TIPS.turbo,"tip-right")}</span><input type="number" ${htmlFieldInputAttributes(FIELD_SCHEMA.turbo)} placeholder="0" value="${ln.turbo??0}" data-turbo="${i}" aria-describedby="line${i+1}TurboHelp" data-field-error="${turboError}" aria-label="Line ${i+1} current turbo stacks"><div class="field-error" id="${turboError}" aria-live="polite" aria-atomic="true"></div></div>
         </div>${spNote}</div>
       <button class="iconbtn" data-del="${i}" title="${TIPS.del}" aria-label="Remove crafter line ${i+1}">×</button>`;
     box.appendChild(row);
@@ -53,7 +54,7 @@ function targetRow(it){
   row.innerHTML=`<label><input type="checkbox" data-tg="${it}" ${t.on?"checked":""}> ${it}</label>
     <div class="prio" style="${t.on?"":"visibility:hidden"}">
       <span>PRIORITY</span>
-      <input type="range" min="1" max="9" step="1" value="${t.w}" data-w="${it}" aria-label="${it} priority">
+      <input type="range" ${htmlFieldInputAttributes(FIELD_SCHEMA.targetWeight)} value="${t.w}" data-w="${it}" aria-label="${it} priority">
       <span class="pv mono">${t.w}</span></div>`;
   return row;
 }
@@ -73,7 +74,10 @@ const GEL_EXACT_UI_MAX_LINES=12;
 function renderMinedResources(){
   MINED_RESOURCES.forEach(resource=>{
     const inp=document.getElementById("mined"+resource);
-    if(inp&&document.activeElement!==inp)inp.value=S.minedIncomeText[resource]||"";
+    if(inp){
+      applyFieldInputAttributes(inp,FIELD_SCHEMA.minedIncome);
+      if(document.activeElement!==inp)inp.value=S.minedIncomeText[resource]||"";
+    }
   });
   const vespHr=minedBudgetHr("Vespium");
   const rows=lineRows(),exact=rows.length<=GEL_EXACT_UI_MAX_LINES;
@@ -136,9 +140,10 @@ function renderRecipes(){
 }
 function baseTimeField(item){
   const v=S.baseTime[item]??12.85;
-  return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 2px 8px">
+  const errorId=`field-base-time-${fieldDomToken(item)}-error`;
+  return `<div class="base-time-field" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 2px 8px">
     <span style="font-size:10.5px;color:var(--ink3)">base time @1× (s)</span>
-    <input type="number" min="0" step="any" class="base-time-input" value="${v}" data-res="${item}" data-fld="baseT" aria-label="${item} base time at 1x in seconds"></div>`;
+    <span class="field-stack"><input type="number" ${htmlFieldInputAttributes(FIELD_SCHEMA.baseTime)} class="base-time-input" value="${v}" data-res="${item}" data-fld="baseT" data-field-error="${errorId}" aria-label="${item} base time at 1x in seconds"><span class="field-error" id="${errorId}" aria-live="polite" aria-atomic="true"></span></span></div>`;
 }
 function rawCard(r){
   const c=document.createElement("div");c.className="rcard";
@@ -158,8 +163,9 @@ function prodCard(p){
     let cells=`<td class="lv">${compressionLabel(L)}</td>`;
     ins.forEach(k=>{
       const v=S.prodCost[p][k][L];
-      cells+=`<td><input type="number" min="0" step="any" placeholder="–" value="${v??""}"
-        data-res="${p}" data-fld="cost" data-in="${k}" data-lv="${L}" aria-label="${p} recipe ${k} cost at compression ${L}x"></td>`;
+      const errorId=`field-recipe-${fieldDomToken(p)}-${fieldDomToken(k)}-${L}-error`;
+      cells+=`<td><span class="field-stack"><input type="number" ${htmlFieldInputAttributes(FIELD_SCHEMA.recipeCost)} placeholder="–" value="${v??""}"
+        data-res="${p}" data-fld="cost" data-in="${k}" data-lv="${L}" data-field-error="${errorId}" aria-label="${p} recipe ${k} cost at compression ${L}x"><span class="field-error" id="${errorId}" aria-live="polite" aria-atomic="true"></span></span></td>`;
     });
     rows+=`<tr>${cells}</tr>`;
   });

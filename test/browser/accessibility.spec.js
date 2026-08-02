@@ -94,6 +94,29 @@ test("dynamic planner fields expose item, level, and line context in their names
   await expect(page.getByRole("spinbutton", { name: "Plates recipe Ingots cost at compression 16384x" })).toBeVisible();
 });
 
+test("visible validation feedback is polite, preserves help descriptions, and passes Axe", async ({ page }) => {
+  await loadPlanner(page);
+  const speed = page.getByRole("spinbutton", { name: "Line 1 currently displayed speed multiplier" });
+  await speed.fill("");
+  const speedErrorId = await speed.getAttribute("data-field-error");
+  await expect(speed).toHaveAttribute("aria-invalid", "true");
+  await expect(speed).toHaveAttribute("aria-describedby", new RegExp(`line1SpeedHelp.*${speedErrorId}|${speedErrorId}.*line1SpeedHelp`));
+  await expect(page.locator(`#${speedErrorId}`)).toHaveAttribute("aria-live", "polite");
+  await expect(page.locator(`#${speedErrorId}`)).toHaveAttribute("aria-atomic", "true");
+
+  await page.getByRole("button", { name: "Shopping list" }).click();
+  await page.getByRole("button", { name: "New custom project" }).click();
+  await page.getByRole("button", { name: "Add level to New project" }).click();
+  const from = page.getByRole("spinbutton", { name: "New project starting level" });
+  await page.getByRole("spinbutton", { name: "New project ending level" }).fill("1");
+  await from.fill("2");
+  const projectErrorId = await from.getAttribute("data-field-error");
+  const projectError = page.locator(`#${projectErrorId}`);
+  await expect(projectError).toBeVisible();
+  expect(await projectError.evaluate(element => element.closest("label") === null)).toBe(true);
+  await expectNoWcagViolations(page);
+});
+
 test("mode, save, stale, solving, fallback, failure, and completion states are concise", async ({ page }) => {
   await page.addInitScript(() => {
     window.__a11yWorkers = [];

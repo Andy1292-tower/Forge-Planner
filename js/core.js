@@ -145,7 +145,10 @@ function normalize(st){
   }
   delete st.attrDupe;delete st.trio4;
   if(st.margin==null||isNaN(st.margin))st.margin=0;
-  if(st.solveBudget==null||isNaN(st.solveBudget)||st.solveBudget<200||st.solveBudget>60000)st.solveBudget=2000;
+  const _budgetRule=typeof FIELD_SCHEMA!=="undefined"?FIELD_SCHEMA.solveBudget:{min:200,max:60000,defaultValue:2000};
+  const _budgetValue=Number(st.solveBudget);
+  if(!Number.isInteger(_budgetValue)||_budgetValue<_budgetRule.min||_budgetValue>_budgetRule.max)st.solveBudget=_budgetRule.defaultValue;
+  else st.solveBudget=_budgetValue;
   if(!st.baseTime)st.baseTime={};
   const _DB=defaults().baseTime,_PB={Ingots:9.63,Bits:9.63,Concrete:9.63,Glass:87.3,Bricks:114.3,Plates:29.23,Rods:44.46,Frames:311.38};
   const _migrate=!st.baseTimeRev||st.baseTimeRev<2;
@@ -195,6 +198,13 @@ let stateRevision=0;
 
 const num=v=>{if(v===""||v===null||v===undefined)return null;const n=Number(v);return isFinite(n)?n:null;};
 const fmt=(n,d=0)=>n.toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:0});
+function boundedPersistedField(name,value,fallback,min,max,integer=false){
+  if(typeof FIELD_SCHEMA!=="undefined"&&typeof clampFieldValue==="function"&&FIELD_SCHEMA[name]){
+    return clampFieldValue(FIELD_SCHEMA[name],value,fallback);
+  }
+  const number=Number(value);
+  return Number.isFinite(number)&&(!integer||Number.isInteger(number))&&number>=min&&number<=max?number:fallback;
+}
 
 /* ---------- game number notation (k m b t qa qu sx sp o n d → exponent) ---------- */
 const SUFFIX={k:1e3,m:1e6,b:1e9,t:1e12,qa:1e15,qu:1e18,sx:1e21,sp:1e24,o:1e27,n:1e30,d:1e33};

@@ -324,6 +324,65 @@ test("the generated current Blob Worker honors the shared Credits deadline", asy
   expect(requestCounts["/js/solver.worker.v2.js"] || 0).toBe(0);
 });
 
+test("the generated current Blob Worker accepts numeric boundaries and rejects an out-of-range snapshot", async ({ page }) => {
+  await isolateRequestCounts(page);
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker;
+    window.__fieldBoundaryWorkerUrls = [];
+    window.Worker = class ObservedBoundaryWorker extends NativeWorker {
+      constructor(url, options) {
+        super(url, options);
+        window.__fieldBoundaryWorkerUrls.push(String(url));
+      }
+    };
+  });
+  const permanentRequests = [];
+  page.on("request", request => {
+    const pathname = new URL(request.url()).pathname;
+    if (/\/js\/solver\.worker(?:\.v2)?\.js$/.test(pathname)) permanentRequests.push(pathname);
+  });
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const probe = await page.evaluate(async () => {
+    const send = state => new Promise((resolve, reject) => {
+      const worker = __forgeCreateSolverWorker();
+      const release = () => { if (typeof worker.__forgeRelease === "function") worker.__forgeRelease(); };
+      const timeout = setTimeout(() => { release();worker.terminate();reject(new Error("field-boundary Worker timed out")); }, 10_000);
+      worker.onmessage = event => { clearTimeout(timeout);release();worker.terminate();resolve(event.data); };
+      worker.onerror = event => { clearTimeout(timeout);release();worker.terminate();reject(new Error(event.message || "field-boundary Worker failed")); };
+      worker.postMessage({ reqId: 1400, generation: 1400, mode: state.mode, stateRevision: 1,
+        state, budget: state.solveBudget, stab: {} });
+    });
+    const accepted = defaults();
+    accepted.schemaVersion = CURRENT_SCHEMA_VERSION;
+    accepted.baseTimeRev = CURRENT_SCHEMA_VERSION;
+    accepted.mode = "items";
+    accepted.lines[0] = { max: 16384, spx: 1e-6, turbo: 1e6 };
+    accepted.maxTurbo = 1e6;accepted.dupe = 100;accepted.margin = 20;accepted.solveBudget = 200;
+    accepted.baseTime.Ingots = 1e-6;accepted.sellPrice.Frames = 1e100;
+    accepted.forgie.Frames = 0;accepted.minedIncome.Vespium = 1e100;accepted.inventory.Ingots = 0;
+    ALLITEMS.forEach(item => { accepted.targets[item].on = item === "Ingots";accepted.targets[item].w = 1; });
+    syncManual(accepted);
+    const good = await send(accepted);
+    const rejected = structuredClone(accepted);rejected.dupe = 100.01;
+    const bad = await send(rejected);
+    const appScript = [...document.scripts].map(script => script.src).find(src => /\/static\/app\.[0-9a-f]{16}\.js$/.test(src));
+    return { good, bad, appScript, workerUrls: window.__fieldBoundaryWorkerUrls.slice() };
+  });
+  const counts = await page.evaluate(async () => (await fetch("/__test/request-counts", { cache: "no-store" })).json());
+
+  expect(probe.good.error).toBeUndefined();
+  expect(probe.good.res.mode).toBe("items");
+  expect(probe.bad.error).toContain("Worker state rejected");
+  expect(probe.bad.error).toContain("dupe");
+  expect(probe.appScript).toMatch(/\/static\/app\.[0-9a-f]{16}\.js$/);
+  expect(probe.workerUrls.length).toBeGreaterThanOrEqual(3);
+  expect(probe.workerUrls.every(url => url.startsWith("blob:"))).toBe(true);
+  expect(permanentRequests).toEqual([]);
+  expect(counts["/js/solver.worker.js"] || 0).toBe(0);
+  expect(counts["/js/solver.worker.v2.js"] || 0).toBe(0);
+});
+
 test("the generated current Blob Worker keeps Project stability writes selected and exposes the full 420 tradeoff", async ({ page }) => {
   await isolateRequestCounts(page);
   const workerScriptRequests = [];

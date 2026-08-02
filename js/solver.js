@@ -200,7 +200,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   const resIndex={};resources.forEach((r,i)=>resIndex[r]=i);
   const R=resources.length;
   const tIdx=targets.map(t=>resIndex[t]);
-  const tol=Math.max(0,Math.min(50,num(S.margin)||0))/100;
+  const tol=boundedPersistedField("margin",S.margin,0,0,20)/100;
   // Active feasibility tolerance for the current search pass. The margin solve runs two passes
   // (strict tol=0, then the user's margin) so its result is monotone in margin — see the staged
   // search at the bottom of solveCore (issue #60).
@@ -631,7 +631,7 @@ function optimizeInner(timeBudget,testOptions){
   // keeping the worst-case freeze well under half a second (and it's one-shot, post-debounce).
   // User-set max solve time (ms); the budget is an anytime cap, so easy factories still finish early.
   // Runs off the main thread (Web Worker), so a larger default doesn't freeze the UI.
-  const userBudget=Math.max(200,Math.min(60000,num(S.solveBudget)||2000));
+  const userBudget=boundedPersistedField("solveBudget",S.solveBudget,2000,200,60000,true);
   const itemsBudget=timeBudget||userBudget, credBudget=timeBudget||userBudget;
   const mode=S.mode==="credits"?"credits":"items";
   if(mode==="items"){
@@ -726,7 +726,7 @@ function optimizeInner(timeBudget,testOptions){
   const feasible=!!top&&top.credits>1e-9;
   return {empty:false,mode,issues,ranking:cand,bestItem:feasible?top.item:null,credits:feasible?top.credits:0,objective:feasible?top.credits:0,
     plan:feasible?top.plan:idlePlan(),balance:feasible?top.balance:[],minedUsage:feasible?top.minedUsage:[],gelReserved:feasible?top.gelReserved:null,resIndex:feasible?top.resIndex:{},
-    tol:Math.max(0,Math.min(50,num(S.margin)||0))/100,usesMargin:!!(feasible&&top.usesMargin),feasible,capped:!!(feasible&&top.capped),
+    tol:boundedPersistedField("margin",S.margin,0,0,20)/100,usesMargin:!!(feasible&&top.usesMargin),feasible,capped:!!(feasible&&top.capped),
     allCandidatesEvaluated,deadlineReached,searchExhaustive,ms:Math.max(0,control.elapsed()-(t0-control.startedAt))};
 }
 

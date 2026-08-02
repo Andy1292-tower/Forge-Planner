@@ -562,6 +562,85 @@ test("storage failure leaves both current and previous-good keys byte-for-byte u
   assert.equal(storage.value("forgePlannerState_v3_previous_good"), oldBackup);
 });
 
+test("accepts every numeric descriptor boundary including an exact 60000 ms budget", () => {
+  const candidate = currentState();
+  candidate.lines[0] = { max: 16384, spx: 1e-6, turbo: 1e6 };
+  candidate.maxTurbo = 1e6;
+  candidate.dupe = 100;
+  candidate.margin = 20;
+  candidate.solveBudget = 60000;
+  candidate.baseTime.Ingots = 1e-6;
+  candidate.prodCost.Glass.Bits[1] = 1e100;
+  candidate.sellPrice.Frames = 1e100;
+  candidate.forgie.Frames = 0;
+  candidate.minedIncome.Vespium = 1e100;
+  candidate.inventory.Ingots = 0;
+  candidate.targets.Frames.w = 9;
+  candidate.projects = [{
+    id: "numeric-boundaries", name: "Numeric boundaries", on: true, prio: 1e6,
+    from: 1, to: 2, done: 2,
+    levels: [{ costs: [{ item: "Frames", qty: 0 }] }, { costs: [{ item: "Glass", qty: 1e100 }] }],
+  }];
+  candidate.manual[0].lvl = 16384;
+
+  const result = api("validateAndMigrate")(candidate);
+
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.state.solveBudget, 60000);
+  assert.equal(result.state.lines[0].spx, 1e-6);
+  assert.equal(result.state.projects[0].levels[1].costs[0].qty, 1e100);
+});
+
+test("rejects representative numeric values beyond every live field family", () => {
+  const cases = [
+    ["line speed", state => { state.lines[0].spx = 1e-7; }],
+    ["line turbo", state => { state.lines[0].turbo = 1e6 + 1; }],
+    ["max turbo", state => { state.maxTurbo = 1e6 + 1; }],
+    ["dupe", state => { state.dupe = 101; }],
+    ["margin", state => { state.margin = 21; }],
+    ["solve budget integer", state => { state.solveBudget = 2345.5; }],
+    ["base time", state => { state.baseTime.Ingots = 0; }],
+    ["recipe", state => { state.prodCost.Glass.Bits[1] = 1e101; }],
+    ["price", state => { state.sellPrice.Frames = -1; }],
+    ["Forgie", state => { state.forgie.Frames = 1e101; }],
+    ["mined", state => { state.minedIncome.Hydracite = -1; }],
+    ["inventory", state => { state.inventory.Ingots = 1e101; }],
+    ["target", state => { state.targets.Frames.w = 1.5; }],
+  ];
+  for (const [label, mutate] of cases) {
+    const candidate = currentState();
+    mutate(candidate);
+    const before = JSON.stringify(candidate);
+    const result = api("validateAndMigrate")(candidate);
+    assert.equal(result.ok, false, label);
+    assert.equal(JSON.stringify(candidate), before, `${label} rejection mutated caller bytes`);
+  }
+});
+
+test("invalid numeric import is transactional while historical display text stays independent", () => {
+  const previous = currentState();
+  previous.priceText.Frames = "old UI text can differ from 12.5";
+  previous.sellPrice.Frames = 12.5;
+  const previousRaw = JSON.stringify(previous);
+  const storage = storageWith({ forgePlannerState_v3: previousRaw });
+  context.localStorage = storage;
+  api("commitState")(api("validateAndMigrate")(previous).state);
+
+  const accepted = api("validateAndMigrate")(previous);
+  assert.equal(accepted.ok, true, JSON.stringify(accepted.errors));
+  assert.equal(accepted.state.priceText.Frames, previous.priceText.Frames);
+  assert.equal(accepted.state.sellPrice.Frames, 12.5);
+
+  const invalid = currentState();
+  invalid.solveBudget = 60001;
+  invalid.projects = [{ id: "invalid-qty", name: "Invalid", on: true, prio: null, from: 1, to: 1, done: 0,
+    levels: [{ costs: [{ item: "Frames", qty: -1 }] }] }];
+  const result = api("applyImportedState")(invalid, () => {});
+  assert.equal(result.ok, false);
+  assert.equal(storage.value("forgePlannerState_v3"), previousRaw);
+  assert.equal(api("S.sellPrice.Frames"), 12.5);
+});
+
 test("stateRevision changes only through the single commit hook", () => {
   const before = api("stateRevision");
   api("commitState")(api("validateAndMigrate")(currentState()).state);

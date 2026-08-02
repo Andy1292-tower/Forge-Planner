@@ -279,6 +279,60 @@ test("mobile project cards preserve a named identity row and put tools below it"
   }
 });
 
+test("320px validation feedback stays inside line, Shopping-list Project, inline Project, and price owners", async ({ page }) => {
+  await loadPlanner(page, { width: 320, height: 760 });
+  const expectRootFits = async label => {
+    const width = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
+    expect(width.scroll, `${label}: ${width.scroll}px root must fit ${width.client}px`).toBeLessThanOrEqual(width.client + PX_TOLERANCE);
+  };
+
+  const speed = page.getByRole("spinbutton", { name: "Line 1 currently displayed speed multiplier" });
+  await speed.fill("");
+  const lineError = page.locator(`#${await speed.getAttribute("data-field-error")}`);
+  await expect(lineError).toBeVisible();
+  expectInside(await rect(lineError), await rect(speed.locator("xpath=..")), "line error must stay in its field");
+  await expectRootFits("line error");
+
+  await page.getByRole("button", { name: "Sell prices" }).click();
+  const price = page.getByRole("textbox", { name: "Frames sell price per unit" });
+  await price.fill("abc");
+  const priceError = page.locator(`#${await price.getAttribute("data-field-error")}`);
+  await expect(priceError).toBeVisible();
+  expectInside(await rect(priceError), await rect(price.locator("xpath=..")), "price error must stay in its row");
+  await expectRootFits("price error");
+  await page.getByRole("button", { name: "Done editing sell prices" }).click();
+
+  await page.getByRole("button", { name: "Shopping list" }).click();
+  await page.getByRole("button", { name: "New custom project" }).click();
+  await page.getByRole("button", { name: "Add level to New project" }).click();
+  const from = page.getByRole("spinbutton", { name: "New project starting level" });
+  const to = page.getByRole("spinbutton", { name: "New project ending level" });
+  await to.fill("1");
+  await from.fill("2");
+  const projectErrors = page.locator(".proj-field-errors").first();
+  await expect(projectErrors).toBeVisible();
+  expectInside(await rect(projectErrors), await rect(page.locator(".proj-tools").first()), "Shopping-list errors must stay in tools");
+  await expectRootFits("Shopping-list Project error");
+
+  await from.fill("1");
+  await to.fill("2");
+  await page.evaluate(() => {
+    mutateState(st => { st.projects[0].levels[0].costs = [{ item: "Frames", qty: 100 }]; });
+    save();
+  });
+  await page.getByRole("button", { name: "Done editing shopping list" }).click();
+  await page.getByRole("button", { name: "Project plan" }).click();
+  await expect(page.getByText("Adjust project levels & completion")).toBeVisible();
+  await page.getByText("Adjust project levels & completion").click();
+  const inlineFrom = page.locator("[data-spfrom]").first(),inlineTo = page.locator("[data-spto]").first();
+  await inlineTo.fill("1");
+  await inlineFrom.fill("2");
+  const inlineErrors = page.locator(".proj-inline-errors").first();
+  await expect(inlineErrors).toBeVisible();
+  expectInside(await rect(inlineErrors), await rect(page.locator(".proj-inline-row").first()), "inline errors must stay in row");
+  await expectRootFits("inline Project error");
+});
+
 test("320px fields keep labels clear and give the third line field an intentional full row", async ({ page }) => {
   // Break caught: the third crafter input is stranded in half a row and compact modal labels crowd their inputs.
   await loadPlanner(page, { width: 320, height: 760 });
