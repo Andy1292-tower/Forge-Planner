@@ -361,7 +361,7 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 .mode-nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%;max-width:100%}
 .mode-nav button{min-width:0;justify-content:center}
 @media(min-width:561px) and (max-width:900px){
-  .mode-nav button{padding-inline:6px;letter-spacing:.3px}
+  .mode-nav button{padding-inline:3px;letter-spacing:.2px}
 }
 /* On narrow screens the 4-button row can't fit — wrap it into a full-width 2×2 grid */
 @media(max-width:560px){
