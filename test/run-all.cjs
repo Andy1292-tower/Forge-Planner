@@ -10,6 +10,7 @@ const tests = [
   "test/craftdata.cjs",
   "test/forgieproject.cjs",
   "test/gate.cjs",
+  "test/gel-loadout-exact.cjs",
   "test/inventory.cjs",
   "test/legacy-worker-retirement.cjs",
   "test/minedfocus.cjs",

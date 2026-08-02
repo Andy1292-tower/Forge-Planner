@@ -338,16 +338,15 @@ function solveCore(targets,w,relProds,relRaws,timeBudget){
         ch[i]=pick;}
       trySeed(ch);}
   }
-  // Reservation-style seeds: dedicate the k best Gel-efficiency lines to Gel (levels from the same
-  // budget greedy the modal preview uses), and let localOpt fill the rest. This hands the unified
-  // search the starting points the old per-k decomposition explored — so it's never worse on a
-  // Gel chain — at the cost of M+1 cheap local optimisations, not nested solves.
+  // Reservation-style seeds: dedicate the k best Gel-efficiency lines to Gel with a bounded
+  // heuristic, and let localOpt fill the rest. This helper is seed-only: unlike the exact modal
+  // capacity calculation, it makes no maximum claim and stays cheap across prefixes/candidates.
   const gelBudgetHr=minedBudgetHr(VESP);
   if(resIndex[VESP]!=null&&gelBudgetHr>0){
     const o2s={};sorted.forEach((s,i)=>o2s[s.orig]=i);
     const ranked=lineRows().sort((a,b)=>gelOutHr(b,b.max)-gelOutHr(a,a.max));
     for(let k=1;k<=ranked.length;k++){
-      const lo=gelLoadout(ranked.slice(0,k),gelBudgetHr);
+      const lo=gelSeedLoadout(ranked.slice(0,k),gelBudgetHr);
       if(!lo.perLine.length)continue;
       const ch=new Array(N);for(let i=0;i<N;i++)ch[i]=idleIdx(i);
       lo.perLine.forEach(pl=>{const i=o2s[pl.__i];if(i==null)return;
@@ -526,19 +525,15 @@ function optimizeInner(timeBudget){
 }
 
 /* ---------- Gel loadout ----------
-   Gel is a native resource in the solve now (see solveCore / projectSchedule). gelLoadout powers
-   both the Gel modal's "max Gel/hr + setup" preview and solveCore's reservation-style seeds. */
+   Gel is a native resource in the solve now (see solveCore / projectSchedule). The player-facing
+   capacity helper is exact; repeated solver prefixes use the separately named bounded seed. */
 // Gel output / vespium burn for a whole line running Gel @L (≤ the line's own cap), full time.
 function gelOutHr(row,L){const sp=lineSpeed(row),dp=dupeMult(),ct=craftTime(GEL,L);return ct>0?(L/ct)*effSpeed(sp,ct)*dp*3600:0;}
 function gelVespHr(row,L){const sp=lineSpeed(row),ct=craftTime(GEL,L);return ct>0?gelOreCost(L).vesp*(effSpeed(sp,ct)/ct)*3600:0;}
-// Maximum Gel/hr obtainable from `rows` within a vespium/hr budget. In-game a crafter runs ONE
-// compression FULL-TIME (you can't throttle uptime or blend levels), so each used line is assigned
-// a single whole level and the plan must stay under the budget — leftover vespium is simply profit,
-// not wasted capacity. Raising compression doubles Gel but triples vespium, so marginal Gel-per-
-// vespium falls with level: greedily apply the cheapest-per-Gel single-level step-up that still fits
-// the remaining budget until none fit. Returns the total + per-line {__i,max,L,gelHr,vespHr,frac};
-// frac is always 1 (full-time) — kept so the plan/balance display code can read it uniformly.
-function gelLoadout(rows,vespBudgetHr){
+// Cheap reservation seed for solveCore. It deliberately makes no optimality claim: each candidate
+// solve invokes this across ranked-line prefixes (and Credits repeats those solves), so bounded work
+// belongs here while exact `gelLoadout` remains reserved for capacity claims.
+function gelSeedLoadout(rows,vespBudgetHr){
   if(!(vespBudgetHr>0)||!rows.length)return {gelHr:0,vespHr:0,perLine:[]};
   const levelsFor=rows.map(row=>[0,...LEVELS.filter(L=>L<=(row.max||0))]);   // [off, 1×, 2×, …]
   const cur=rows.map(()=>0);   // chosen level index per line (0 = off)
@@ -562,6 +557,101 @@ function gelLoadout(rows,vespBudgetHr){
   rows.forEach((row,ri)=>{const L=levelsFor[ri][cur[ri]];if(!L)return;
     perLine.push({__i:row.__i,max:row.max,L,gelHr:gelOutHr(row,L),vespHr:gelVespHr(row,L),frac:1});});
   return {gelHr:gel,vespHr:spent,perLine};
+}
+// Exact multiple-choice loadout for the discrete full-time model: every physical line contributes
+// either off or one eligible compression. Its Pareto frontier discards a raw-dominated state only
+// outside a correctness-safe numeric envelope. There is intentionally no clock/frontier cutoff.
+//
+// Stable objective order: most Gel, then least Vespium, then the lexicographically smallest list of
+// active [physical line id, compression] pairs. Final equality uses a tight ULP-scale policy, not a
+// gameplay-sized margin; raw maxima/minima anchor each band so the result cannot depend on iteration.
+const GEL_LOADOUT_ABS_EPS=Number.EPSILON*8;
+const GEL_LOADOUT_REL_EPS=Number.EPSILON*32;
+function gelLoadoutTolerance(a,b){return GEL_LOADOUT_ABS_EPS+GEL_LOADOUT_REL_EPS*Math.max(1,Math.abs(a),Math.abs(b));}
+function gelLoadoutClose(a,b){return Math.abs(a-b)<=gelLoadoutTolerance(a,b);}
+function gelLoadoutChoiceCompare(a,b){
+  // Lexicographic active-pair order means lower physical line ID first, then lower compression.
+  const aa=a.choices.filter(choice=>choice.L>0),bb=b.choices.filter(choice=>choice.L>0);
+  const n=Math.min(aa.length,bb.length);
+  for(let i=0;i<n;i++){
+    if(aa[i].row.__i!==bb[i].row.__i)return aa[i].row.__i-bb[i].row.__i;
+    if(aa[i].L!==bb[i].L)return aa[i].L-bb[i].L;
+  }
+  return aa.length-bb.length;
+}
+function gelLoadoutPruneEnvelope(upperBound,additions){
+  const magnitude=Math.max(1,Math.abs(upperBound));
+  const nu=Math.max(0,additions)*(Number.EPSILON/2);
+  const gamma=nu<1?nu/(1-nu):Infinity;
+  // This is deliberately wider than the final tie band. Adding the same remaining rates to two
+  // prefixes can round differently and shrink their stored gap; 2*gamma covers both addition paths.
+  return GEL_LOADOUT_ABS_EPS+GEL_LOADOUT_REL_EPS*magnitude+2*gamma*magnitude;
+}
+function gelLoadoutPruneCandidates(candidates,gelEnvelope,vespEnvelope){
+  candidates.sort((a,b)=>a.vespHr-b.vespHr||b.gelHr-a.gelHr||gelLoadoutChoiceCompare(a,b));
+  const next=[];let maxGel=-Infinity,maxFarGel=-Infinity,farIndex=0;
+  candidates.forEach((candidate,index)=>{
+    // vespium order makes both dominance queries monotone. Equality stays retained: only a gap
+    // strictly outside an envelope is safe to discard before the final staged tie calculation.
+    while(farIndex<index&&candidate.vespHr-candidates[farIndex].vespHr>vespEnvelope){
+      maxFarGel=Math.max(maxFarGel,candidates[farIndex].gelHr);farIndex++;
+    }
+    const pruned=maxGel>candidate.gelHr+gelEnvelope||maxFarGel>=candidate.gelHr;
+    if(!pruned)next.push(candidate);
+    maxGel=Math.max(maxGel,candidate.gelHr);
+  });
+  return next;
+}
+function gelLoadout(rows,vespBudgetHr){
+  if(!(vespBudgetHr>0)||!Array.isArray(rows)||!rows.length)return {gelHr:0,vespHr:0,perLine:[]};
+  const profileIds=new Map();
+  const ordered=rows.map((row,inputIndex)=>({row,inputIndex})).sort((a,b)=>
+    (Number(a.row.__i)-Number(b.row.__i))||a.inputIndex-b.inputIndex).map(entry=>{
+      const options=[{L:0,gelHr:0,vespHr:0},...LEVELS.filter(L=>L<=(entry.row.max||0)).map(L=>
+        ({L,gelHr:gelOutHr(entry.row,L),vespHr:gelVespHr(entry.row,L)}))];
+      const profileKey=String(entry.row.max)+"\u0001"+options.map(option=>
+        option.L+"\u0002"+option.gelHr+"\u0002"+option.vespHr).join("\u0003");
+      if(!profileIds.has(profileKey))profileIds.set(profileKey,profileIds.size);
+      const offRank=options.length-1;
+      options.forEach((option,index)=>option.rank=option.L?index-1:offRank);
+      return {row:entry.row,options,profileId:profileIds.get(profileKey)};
+    });
+  const gelUpperBound=ordered.reduce((sum,entry)=>sum+
+    entry.options.reduce((best,option)=>Math.max(best,option.gelHr),0),0);
+  const gelPruneEnvelope=gelLoadoutPruneEnvelope(gelUpperBound,ordered.length);
+  const vespPruneEnvelope=gelLoadoutPruneEnvelope(vespBudgetHr,ordered.length);
+  let frontier=[{gelHr:0,vespHr:0,choices:[]}];
+  ordered.forEach(({row,options,profileId})=>{
+    const candidates=[];
+    frontier.forEach(state=>options.forEach(option=>{
+      // Identical option profiles are symmetric. Nondecreasing positive-level ranks followed by
+      // OFF represent each multiset once: earliest physical IDs stay active and lower compression
+      // stays on the lower ID, which is exactly the documented lexicographic assignment.
+      let previousRank=-1;
+      for(let i=state.choices.length-1;i>=0;i--)if(state.choices[i].profileId===profileId){
+        previousRank=state.choices[i].rank;break;
+      }
+      if(option.rank<previousRank)return;
+      const vespHr=state.vespHr+option.vespHr;
+      if(vespHr>vespBudgetHr)return;
+      candidates.push({gelHr:state.gelHr+option.gelHr,vespHr,
+        choices:state.choices.concat({row,L:option.L,gelHr:option.gelHr,vespHr:option.vespHr,
+          profileId,rank:option.rank})});
+    }));
+    frontier=gelLoadoutPruneCandidates(candidates,gelPruneEnvelope,vespPruneEnvelope);
+  });
+  const gelMax=frontier.reduce((maximum,state)=>Math.max(maximum,state.gelHr),-Infinity);
+  const gelBand=frontier.filter(state=>gelLoadoutClose(state.gelHr,gelMax));
+  const vespMin=gelBand.reduce((minimum,state)=>Math.min(minimum,state.vespHr),Infinity);
+  const finalBand=gelBand.filter(state=>gelLoadoutClose(state.vespHr,vespMin));
+  const best=finalBand.reduce((winner,state)=>
+    !winner||gelLoadoutChoiceCompare(state,winner)<0?state:winner,null);
+  const perLine=(best?best.choices:[]).filter(choice=>choice.L>0).map(choice=>({
+    __i:choice.row.__i,max:choice.row.max,L:choice.L,
+    gelHr:gelOutHr(choice.row,choice.L),vespHr:gelVespHr(choice.row,choice.L),frac:1
+  }));
+  return {gelHr:perLine.reduce((sum,line)=>sum+line.gelHr,0),
+    vespHr:perLine.reduce((sum,line)=>sum+line.vespHr,0),perLine};
 }
 // Vespium/hr income from the user's vespium/minute figure (0 if unset → Gel off).
 function gelVespBudgetHr(){return minedBudgetHr("Vespium");}

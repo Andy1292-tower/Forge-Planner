@@ -69,28 +69,38 @@ function renderTargets(){
 }
 
 /* ---------- RENDER: mined resources ---------- */
+const GEL_EXACT_UI_MAX_LINES=12;
 function renderMinedResources(){
   MINED_RESOURCES.forEach(resource=>{
     const inp=document.getElementById("mined"+resource);
     if(inp&&document.activeElement!==inp)inp.value=S.minedIncomeText[resource]||"";
   });
   const vespHr=minedBudgetHr("Vespium");
-  // Preserve the established Gel capacity/loadout calculation across all current lines.
-  const lo=gelLoadout(lineRows(),vespHr);
+  const rows=lineRows(),exact=rows.length<=GEL_EXACT_UI_MAX_LINES;
+  // Exact multiple-choice capacity is responsive through the gameplay-scale 12-line boundary.
+  // Larger compatible saves use the bounded solver seed with explicitly estimated copy.
+  const lo=exact?gelLoadout(rows,vespHr):gelSeedLoadout(rows,vespHr);
   const summary=document.getElementById("minedVespiumSummary");
-  if(summary)summary.textContent=vespHr>0?`Gel/hr capacity: ${disp(lo.gelHr)}`:"Gel/hr capacity: off";
-  renderMinedGelLoadout(lo,vespHr);
+  if(summary)summary.textContent=exact
+    ?(vespHr>0?`Gel/hr capacity: ${disp(lo.gelHr)}`:"Gel/hr capacity: off")
+    :(vespHr>0?`Estimated capacity: ${disp(lo.gelHr)} Gel/hr`:"Estimated capacity: off");
+  renderMinedGelLoadout(lo,vespHr,exact);
   renderMinedCostRows("Gel","minedVespiumCosts");
   renderMinedCostRows("Batteries","minedHydraciteCosts");
 }
-function renderMinedGelLoadout(lo,vespHr){
+function renderMinedGelLoadout(lo,vespHr,exact=true){
   const box=document.getElementById("minedGelLoadout");if(!box)return;
   if(vespHr<=0){box.innerHTML=`<p class="help mined-help">No Vespium income set — Gel is off, so Gel-consuming items (Wire and Batteries) can't be planned until you enter your income.</p>`;return;}
   if(!lo.perLine.length){box.innerHTML=`<div class="notice warn mined-summary">Your Vespium income is too low to run Gel on any current line. Raise your income (or add a lower-cap line) to make Gel.</div>`;return;}
-  const head=lo.vespHr<vespHr-1e-6
-    ? `Each line runs one compression full-time; this loadout burns <b>${disp(lo.vespHr)}</b> of your <b>${disp(vespHr)}</b> Vespium/hr (the rest is profit — raise a line's cap to spend it).`
-    : `Each line runs one compression full-time, burning <b>${disp(lo.vespHr)}</b> of your <b>${disp(vespHr)}</b> Vespium/hr.`;
-  let h=`<div class="notice info mined-summary">With <b>${disp(num(S.minedIncome.Vespium)||0)}</b> Vespium/min you can sustain up to <b>${disp(lo.gelHr)}</b> Gel/hr. ${head} Best loadout if you put everything you can on Gel:</div>
+  const head=exact
+    ?(lo.vespHr<vespHr-1e-6
+      ? `Each line runs one compression full-time; this loadout burns <b>${disp(lo.vespHr)}</b> of your <b>${disp(vespHr)}</b> Vespium/hr (the rest is profit — raise a line's cap to spend it).`
+      : `Each line runs one compression full-time, burning <b>${disp(lo.vespHr)}</b> of your <b>${disp(vespHr)}</b> Vespium/hr.`)
+    : `Each selected line runs one compression full-time. This bounded estimate burns <b>${disp(lo.vespHr)}</b> of your <b>${disp(vespHr)}</b> Vespium/hr; unused income may reflect the heuristic rather than a capacity limit.`;
+  const claim=exact
+    ?`With <b>${disp(num(S.minedIncome.Vespium)||0)}</b> Vespium/min you can sustain up to <b>${disp(lo.gelHr)}</b> Gel/hr. ${head} Best loadout if you put everything you can on Gel:`
+    :`<b>Estimated capacity.</b> With <b>${disp(num(S.minedIncome.Vespium)||0)}</b> Vespium/min, the bounded search found <b>${disp(lo.gelHr)}</b> Gel/hr. ${head} Best found loadout if you put everything you can on Gel:`;
+  let h=`<div class="notice info mined-summary">${claim}</div>
     <div class="mined-table-wrap"><table><thead><tr><th>Line</th><th>Compression</th><th class="num">Gel /hr</th><th class="num">Vespium /hr</th></tr></thead><tbody>`;
   lo.perLine.slice().sort((a,b)=>a.__i-b.__i).forEach(p=>{
     h+=`<tr><td class="mono">#${p.__i+1}</td><td class="mono">${compressionLabel(p.L)}</td>

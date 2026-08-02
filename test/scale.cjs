@@ -56,6 +56,31 @@ const runner = `
     const out={};rows.forEach(x=>out[x.resource]=(out[x.resource]||0)+x.inputHr);return out;
   }
 
+  // Directly exercise the exact helper at every UI-owned factory size. These are realistic
+  // high caps (up to 512x), mixed line speeds, and two nontrivial budget points; optimize()
+  // deliberately uses gelSeedLoadout(), so optimizer timing alone would not cover this path.
+  const exactOut=[];
+  [5,7,8,10,12].forEach(N=>{
+    const s=base();s.lines=mkLines(N);normalize(s);S=s;
+    const rows=lineRows(),before=JSON.stringify(rows);
+    const fullBudget=rows.reduce((sum,row)=>sum+gelVespHr(row,row.max),0);
+    const lowBudget=fullBudget*0.23,highBudget=fullBudget*0.41;
+    let t0=performance.now();const high=gelLoadout(rows,highBudget),highMs=performance.now()-t0;
+    t0=performance.now();const reversed=gelLoadout(rows.slice().reverse(),highBudget),reverseMs=performance.now()-t0;
+    t0=performance.now();const low=gelLoadout(rows,lowBudget),lowMs=performance.now()-t0;
+    const seed=gelSeedLoadout(rows,highBudget);
+    exactOut.push({N,rows,before,lowBudget,highBudget,low,high,reversed,seed,
+      highMs:Math.round(highMs),reverseMs:Math.round(reverseMs),lowMs:Math.round(lowMs)});
+  });
+  const symmetricState=base();symmetricState.lines=Array.from({length:12},()=>({max:512,spx:40,turbo:0}));
+  normalize(symmetricState);S=symmetricState;
+  const symmetricRows=lineRows();
+  const symmetricBudget=symmetricRows.reduce((sum,row)=>sum+gelVespHr(row,row.max),0)*0.41;
+  let symmetricStart=performance.now();
+  const symmetricExact=gelLoadout(symmetricRows,symmetricBudget);
+  const symmetricMs=Math.round(performance.now()-symmetricStart);
+  const symmetricSeed=gelSeedLoadout(symmetricRows,symmetricBudget);
+
   const out=[];
   [5,7,8,10,12].forEach(N=>{
     Object.keys(scen).forEach(name=>{
@@ -79,8 +104,38 @@ const runner = `
   __emit(pad('lines',6)+pad('scenario',30)+pad('ms',8)+pad('capped',8)+pad('feasible',10)+pad('objective',14)+pad('Batteries/hr',16)+pad('Vespium/hr',16)+'Hydracite/hr');
   out.forEach(r=> __emit('TELEMETRY '+pad(r.N,6)+pad(r.name,30)+pad(r.err?'ERR':r.ms,8)+pad(r.capped,8)+pad(r.feasible,10)+
     pad(r.err||r.obj,14)+pad(fmt(r.batteryOut),16)+pad(fmt(r.mined.Vespium||0),16)+fmt(r.mined.Hydracite||0)));
+  exactOut.forEach(r=>__emit('TELEMETRY '+r.N+' lines exact Gel helper high/reverse/low '+
+    r.highMs+'/'+r.reverseMs+'/'+r.lowMs+'ms, '+r.low.gelHr+' -> '+r.high.gelHr+' Gel/hr'));
+  __emit('TELEMETRY 12 identical max512 lines exact Gel helper '+symmetricMs+'ms, '+symmetricExact.gelHr+' Gel/hr');
 
   let scaleFail=false;
+  const close=(a,b)=>Math.abs(a-b)<=Number.EPSILON*64*Math.max(1,Math.abs(a),Math.abs(b));
+  exactOut.forEach(x=>{
+    const ids=x.high.perLine.map(line=>line.__i);
+    const legal=x.high.perLine.every(line=>{
+      const source=x.rows.find(row=>row.__i===line.__i);
+      return source&&LEVELS.includes(line.L)&&line.L<=source.max&&line.frac===1&&
+        close(line.gelHr,gelOutHr(source,line.L))&&close(line.vespHr,gelVespHr(source,line.L));
+    });
+    const summedGel=x.high.perLine.reduce((sum,line)=>sum+line.gelHr,0);
+    const summedVesp=x.high.perLine.reduce((sum,line)=>sum+line.vespHr,0);
+    const ok=x.high.gelHr>0&&x.low.gelHr>0&&x.high.vespHr<=x.highBudget&&x.low.vespHr<=x.lowBudget&&
+      x.high.gelHr>=x.seed.gelHr-Number.EPSILON*64*Math.max(1,x.high.gelHr,x.seed.gelHr)&&
+      x.high.gelHr>=x.low.gelHr-Number.EPSILON*64*Math.max(1,x.high.gelHr,x.low.gelHr)&&
+      JSON.stringify(x.high)===JSON.stringify(x.reversed)&&JSON.stringify(x.rows)===x.before&&
+      ids.length===new Set(ids).size&&legal&&close(x.high.gelHr,summedGel)&&close(x.high.vespHr,summedVesp)&&
+      x.highMs<5000&&x.reverseMs<5000&&x.lowMs<5000;
+    __emit((ok?'ok   ':'FAIL ')+x.N+' lines exact Gel helper is positive, seed-dominating, deterministic, monotone, strict-budget, and responsive ['+
+      x.highMs+'/'+x.reverseMs+'/'+x.lowMs+'ms]');
+    if(!ok)scaleFail=true;
+  });
+  const symmetricLevels=symmetricExact.perLine.map(line=>line.L);
+  const symmetricOk=symmetricExact.gelHr>0&&symmetricExact.vespHr<=symmetricBudget&&
+    symmetricExact.gelHr>=symmetricSeed.gelHr-Number.EPSILON*64*Math.max(1,symmetricExact.gelHr,symmetricSeed.gelHr)&&
+    JSON.stringify(symmetricLevels)===JSON.stringify([64,128,128,128,256,256,256,256,256,256,256,256])&&
+    symmetricMs<5000;
+  __emit((symmetricOk?'ok   ':'FAIL ')+'12 identical max512 lines use the canonical exact loadout responsively ['+symmetricMs+'ms]');
+  if(!symmetricOk)scaleFail=true;
   const capOk=(used,budget)=>used<=budget+1e-8*Math.max(1,budget);
   out.filter(x=>/Batteries$/.test(x.name)).forEach(x=>{
     const creditOk=!/^credits\./.test(x.name)||x.bestItem==='Batteries';
@@ -95,17 +150,66 @@ const runner = `
     __emit((ok?'ok   ':'FAIL ')+x.N+' lines cannot make Batteries without Hydracite');
     if(!ok)scaleFail=true;
   });
+  out.filter(x=>/^(items|credits)\./.test(x.name)).forEach(x=>{
+    const ok=!x.err&&x.ms<5000;
+    __emit((ok?'ok   ':'FAIL ')+x.N+' lines '+x.name+' completes inside the loose 5s wall bound ['+x.ms+'ms]');
+    if(!ok)scaleFail=true;
+  });
 
-  function batteryBudgetRun(ms){
-    const s=base();s.mode='items';s.lines=mkLines(12);on(s,['Batteries']);prepBattery(s);
+  function batteryBudgetRun(mode,ms){
+    const s=base();s.mode=mode;s.lines=mkLines(12);prepBattery(s);
+    if(mode==='items')on(s,['Batteries']);
+    else{PRODUCTS.forEach(product=>s.targets[product]={on:false,w:1});
+      [...RAWS,...PRODUCTS].forEach(item=>s.sellPrice[item]=null);s.sellPrice.Batteries=5000;}
     s.solveBudget=ms;normalize(s);syncManual(s);S=s;return optimize();
   }
-  const shortBudget=batteryBudgetRun(400),longBudget=batteryBudgetRun(1600);
-  const budgetFloor=(shortBudget.objective||0)-1e-8*Math.max(1,shortBudget.objective||0);
-  const budgetMonotone=(longBudget.objective||0)>=budgetFloor;
-  __emit((budgetMonotone?'ok   ':'FAIL ')+'Battery objective is non-worsening with more solve time ['+
-    (shortBudget.objective||0)+' -> '+(longBudget.objective||0)+']');
-  if(!budgetMonotone)process.exitCode=1;
+  ['items','credits'].forEach(mode=>{
+    const shortBudget=batteryBudgetRun(mode,400),longBudget=batteryBudgetRun(mode,1600);
+    const budgetFloor=(shortBudget.objective||0)-1e-8*Math.max(1,shortBudget.objective||0);
+    const budgetMonotone=(longBudget.objective||0)>=budgetFloor&&
+      (mode!=='credits'||(shortBudget.bestItem==='Batteries'&&longBudget.bestItem==='Batteries'));
+    __emit((budgetMonotone?'ok   ':'FAIL ')+mode+' Battery objective is non-worsening with more solve time ['+
+      (shortBudget.objective||0)+' -> '+(longBudget.objective||0)+']');
+    if(!budgetMonotone)scaleFail=true;
+  });
+  function frozenGelBudgetRun(mode,solveBudget){
+    const s=base();s.mode=mode;s.dupe=0;s.maxTurbo=0;s.margin=0;
+    s.lines=[{max:1,spx:6,turbo:0},{max:1,spx:4,turbo:0},{max:1,spx:4,turbo:0}];
+    s.minedIncome.Vespium=4498594189315839/60;s.solveBudget=solveBudget;
+    PRODUCTS.forEach(product=>s.targets[product]={on:mode==='items'&&product==='Gel',w:1});
+    [...RAWS,...PRODUCTS].forEach(item=>s.sellPrice[item]=null);if(mode==='credits')s.sellPrice.Gel=1;
+    normalize(s);syncManual(s);S=s;
+    const t0=performance.now(),result=optimize(),ms=performance.now()-t0;
+    const outHr=mode==='items'?(result.out.Gel||0):
+      (((result.ranking||[]).find(candidate=>candidate.item==='Gel')||{}).out||0);
+    const vespHr=(result.minedUsage||[]).filter(use=>use.resource==='Vespium')
+      .reduce((sum,use)=>sum+use.inputHr,0);
+    return {mode,solveBudget,result,outHr,vespHr,ms:Math.round(ms)};
+  }
+  ['items','credits'].forEach(mode=>[200,400].forEach(solveBudget=>{
+    const run=frozenGelBudgetRun(mode,solveBudget);
+    const ok=run.result.feasible&&Math.abs(run.outHr-8.997188378631677)<=1e-12&&
+      run.vespHr<=4498594189315839&&run.ms<3000;
+    __emit((ok?'ok   ':'FAIL ')+mode+' real-clock '+solveBudget+'ms budget keeps the 6/4/4 correction ['+
+      run.outHr+' Gel/hr in '+run.ms+'ms]');
+    if(!ok)scaleFail=true;
+  }));
+  const allCreditsState=base();allCreditsState.mode='credits';allCreditsState.lines=mkLines(12);
+  prepBattery(allCreditsState);allCreditsState.solveBudget=400;
+  PRODUCTS.forEach(product=>allCreditsState.targets[product]={on:false,w:1});
+  [...RAWS,...PRODUCTS].forEach((item,index)=>allCreditsState.sellPrice[item]=10+index);
+  normalize(allCreditsState);syncManual(allCreditsState);S=allCreditsState;
+  const allCreditsSeedOriginal=gelSeedLoadout;let allCreditsSeedCalls=0;
+  gelSeedLoadout=function(){allCreditsSeedCalls++;return allCreditsSeedOriginal.apply(null,arguments);};
+  const allCreditsStart=performance.now();let allCreditsResult,allCreditsError=null;
+  try{allCreditsResult=optimize();}catch(error){allCreditsError=error;}
+  const allCreditsMs=Math.round(performance.now()-allCreditsStart);
+  gelSeedLoadout=allCreditsSeedOriginal;
+  const allCreditsOk=!allCreditsError&&allCreditsResult&&allCreditsResult.feasible&&
+    allCreditsResult.ranking.length===PRODUCTS.length+RAWS.length&&allCreditsSeedCalls>0&&allCreditsMs<8000;
+  __emit((allCreditsOk?'ok   ':'FAIL ')+'12-line all-priced Credits exercises repeated bounded Gel seeds inside 8s ['+
+    allCreditsSeedCalls+' seed calls, '+allCreditsMs+'ms]');
+  if(!allCreditsOk)scaleFail=true;
   if(scaleFail)process.exitCode=1;
 })();
 `;

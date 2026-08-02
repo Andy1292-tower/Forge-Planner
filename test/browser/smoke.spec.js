@@ -125,6 +125,81 @@ test("the frozen v2 Worker keeps current legacy tabs solving without dependency 
   }
 });
 
+test("the generated current Blob Worker exposes the exact Gel capacity helper without script requests", async ({ page }) => {
+  await isolateRequestCounts(page);
+  const workerScriptRequests = [];
+  page.on("request", request => {
+    const url = new URL(request.url());
+    if ((url.protocol === "http:" || url.protocol === "https:") &&
+      url.origin === "http://127.0.0.1:4173" &&
+      (request.resourceType() === "worker" || /\/js\/solver\.worker(?:\.v2)?\.js$/.test(url.pathname))) {
+      workerScriptRequests.push(url.pathname);
+    }
+  });
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const probe = await page.evaluate(async () => {
+    const appendedHandler = `
+self.onmessage = function () {
+  S = defaults();
+  S.dupe = 0;
+  S.maxTurbo = 0;
+  const rows = [
+    { __i: 0, max: 1, spx: 6, turbo: 0 },
+    { __i: 1, max: 1, spx: 4, turbo: 0 },
+    { __i: 2, max: 1, spx: 4, turbo: 0 },
+  ];
+  self.postMessage(gelLoadout(rows, 4498594189315839));
+};`;
+    const nativeRevoke = URL.revokeObjectURL;
+    const revoked = [];
+    URL.revokeObjectURL = function (candidate) {
+      revoked.push(String(candidate));
+      return nativeRevoke.call(URL, candidate);
+    };
+    let objectUrl = null;
+    let worker = null;
+    let result = null;
+    try {
+      objectUrl = URL.createObjectURL(new Blob([
+        __FORGE_SOLVER_WORKER_SOURCE__,
+        "\n;\n",
+        appendedHandler,
+      ], { type: "text/javascript" }));
+      worker = new Worker(objectUrl);
+      result = await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("exact Gel Worker probe timed out")), 10_000);
+        worker.onmessage = event => {
+          clearTimeout(timeout);
+          resolve(event.data);
+        };
+        worker.onerror = event => {
+          clearTimeout(timeout);
+          reject(new Error(event.message || "exact Gel Worker probe failed"));
+        };
+        worker.postMessage({ probe: "gel-loadout-exact" });
+      });
+    } finally {
+      if (worker) worker.terminate();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      URL.revokeObjectURL = nativeRevoke;
+    }
+    return { objectUrl, result, revoked };
+  });
+  const requestCounts = await page.evaluate(async () => {
+    const response = await fetch("/__test/request-counts", { cache: "no-store" });
+    return response.json();
+  });
+
+  expect(probe.result.perLine.map(line => [line.__i, line.L])).toEqual([[1, 1], [2, 1]]);
+  expect(probe.result.gelHr).toBeCloseTo(8.997188378631677, 12);
+  expect(probe.result.vespHr).toBeLessThanOrEqual(4498594189315839);
+  expect(probe.revoked).toContain(probe.objectUrl);
+  expect(workerScriptRequests, "the appended Blob Worker must not fetch a Worker script").toEqual([]);
+  expect(requestCounts["/js/solver.worker.js"] || 0).toBe(0);
+  expect(requestCounts["/js/solver.worker.v2.js"] || 0).toBe(0);
+});
+
 test("the planner serves, solves in its Worker, and opens every planning mode", async ({ page }) => {
   const consoleErrors = [];
   const pageErrors = [];

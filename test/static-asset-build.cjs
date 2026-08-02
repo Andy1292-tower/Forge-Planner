@@ -312,7 +312,7 @@ test("generated Blob Worker setup failures terminate before one idempotent URL r
   }
 });
 
-test("a Worker dependency change automatically rotates the app URL", () => {
+test("a js/solver.js change rotates the app while permanent Worker endpoints stay frozen", () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "forge-static-dependency-"));
   const source = path.join(temporary, "source");
   const before = path.join(temporary, "before");
@@ -320,13 +320,13 @@ test("a Worker dependency change automatically rotates the app URL", () => {
   copyBuildInputs(source);
 
   buildStaticSite({ sourceRoot: source, outputRoot: before });
-  fs.appendFileSync(path.join(source, "js", "core.js"), "\n/* build propagation mutation */\n");
+  fs.appendFileSync(path.join(source, "js", "solver.js"), "\n/* solver build propagation mutation */\n");
   buildStaticSite({ sourceRoot: source, outputRoot: after });
 
   assert.notEqual(
     findOne(before, /^app\.[0-9a-f]{16}\.js$/),
     findOne(after, /^app\.[0-9a-f]{16}\.js$/),
-    "changing Worker/page code must rotate the app URL"
+    "changing the current solver must rotate the generated app URL"
   );
   assert.equal(
     findOne(before, /^styles\.[0-9a-f]{16}\.css$/),
@@ -337,6 +337,23 @@ test("a Worker dependency change automatically rotates the app URL", () => {
     fs.readFileSync(path.join(before, "index.html")),
     fs.readFileSync(path.join(after, "index.html")),
     "the release pointer must update when the app hash changes"
+  );
+  for (const endpoint of ["solver.worker.js", "solver.worker.v2.js"]) {
+    assert.deepEqual(
+      fs.readFileSync(path.join(before, "js", endpoint)),
+      fs.readFileSync(path.join(after, "js", endpoint)),
+      `${endpoint} must not be regenerated from a current solver change`
+    );
+  }
+  assert.deepEqual(
+    fs.readFileSync(path.join(after, "js", "solver.worker.js")),
+    fs.readFileSync(path.join(root, "js", "solver.worker.js")),
+    "the original compatibility fence must retain its registered bytes"
+  );
+  assert.deepEqual(
+    fs.readFileSync(path.join(after, "js", "solver.worker.v2.js")),
+    fs.readFileSync(path.join(root, "compat", "solver.worker.v2.js")),
+    "the immutable v2 endpoint must retain its registered bytes"
   );
 });
 
