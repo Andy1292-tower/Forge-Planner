@@ -835,7 +835,34 @@ function unlockLayers(perProject){
 function consumeInv(invRun,sub,ph){
   const eta=isFinite(ph.eta)?(ph.eta||0):0;
   const draw={};(ph.balance||[]).forEach(b=>{draw[b.res]=(b.stock||0)*eta;});
+  // Bits burned pre-produced by this phase's Frames/Wire crafts are invisible to `sub` (not a recipe
+  // input, so no cost line lists them) AND to `balance` (never a solver resource for these products).
+  // Without this the next phase re-nets against Bits stock this phase already spent, and ph.invStart
+  // reports an "on hand" figure the player doesn't have. ph.net is the post-inventory net, the same
+  // basis projNetVec folds these Bits in from — minus any item the phase never actually crafted
+  // because a mined income is missing (blockedMined): its Bits were never burned.
+  const blocked=ph.blockedMined||{};
+  const ppNet={Frames:blocked.Frames?0:((ph.net&&ph.net.Frames)||0),
+               Wire:blocked.Wire?0:((ph.net&&ph.net.Wire)||0)};
+  draw.Bits=(draw.Bits||0)+preprodBitsOf(ppNet);
   ALLITEMS.forEach(it=>{invRun[it]=Math.max(0,(invRun[it]||0)-(sub[it]||0)-(draw[it]||0));});
+  // Credit the OVERSHOOT forward. A phase runs until its slowest item is done, so every item that
+  // finished earlier keeps producing to the end of the phase: rate×eta units made against net needed.
+  // Only "set & forget" overshoots meaningfully — it can't re-task a line that's finished its quota,
+  // so a 2000-Glass + 50-Bricks phase hands the next one hundreds of spare Bricks. Throwing those
+  // away made the next phase re-craft what the player already has sitting in storage. The splitting
+  // LP lands every item on the makespan, so this is ~0 there and split plans are unchanged.
+  const sur={};
+  ALLITEMS.forEach(it=>{
+    const made=((ph.rate&&ph.rate[it])||0)*eta, need=((ph.net&&ph.net[it])||0);
+    if(made>need){sur[it]=made-need;invRun[it]=(invRun[it]||0)+sur[it];}});
+  // Surplus Frames/Wire aren't free: every one of them burned its pre-produced Bits too, and the
+  // draw above only charged the Bits for the DEMANDED units. Crediting the spare Frames without
+  // debiting their Bits would hand the next phase Bits stock the player already fed into the
+  // crafters — the same class of drift the preprodBitsOf(draw) line exists to kill. (The display-side
+  // "Bits to pre-produce" readout already assumes the line runs full-time, so this matches it.)
+  const surBits=preprodBitsOf(sur);
+  if(surBits>0)invRun.Bits=Math.max(0,(invRun.Bits||0)-surBits);
 }
 function buildProjectPhases(seq,net,perProject){
   const layer=unlockLayers(perProject);
