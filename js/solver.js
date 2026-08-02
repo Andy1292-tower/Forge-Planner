@@ -870,7 +870,12 @@ function buildProjectPhases(seq,net,perProject){
     if(pa!=null&&pb!=null){if(pa!==pb)return pa-pb;}            // manual order, lower first
     else if(pa!=null)return -1;
     else if(pb!=null)return 1;
-    return cost[a.i]-cost[b.i];                                // else cheapest makespan
+    // else cheapest makespan. Infeasible/blocked projects cost Infinity and sink to the back of
+    // their layer; two of them compare equal rather than Infinity-Infinity = NaN (an inconsistent
+    // comparator, which V8's sort is free to turn into an arbitrary order).
+    const ca=cost[a.i],cb=cost[b.i];
+    if(!isFinite(ca)&&!isFinite(cb))return 0;
+    return ca-cb;
   });
   const invRun=invStart();let cum=0;const phases=[];
   order.forEach(({p})=>{
