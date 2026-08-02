@@ -18,6 +18,9 @@
  *      and that path still runs the LP (which is free to split a line's time — frac < 1).
  *   d) solvePhaseFor still produces a usable eta in static mode (finite, > 0) — everything
  *      downstream of the schedule reads that.
+ *   e) the newer catalog behaves: Batteries against two independent mined incomes, a missing
+ *      Hydracite income producing an honest PARTIAL plan rather than a blocked one, the
+ *      seven-job Reinforced Concrete chain, and compression levels 8192 / 16384.
  *
  * Determinism: performance.now() is frozen to 0 (as in parity.cjs) so the anytime solver runs to
  * exhaustion instead of racing a wall clock. Compression caps are kept small so that stays fast.
@@ -162,6 +165,145 @@ const runner = `
     wide.feasible === true && wideRows.every(p => p.entries.length === 1 && p.entries[0].frac === 1),
     "feasible=" + wide.feasible + " eta=" + wide.eta.toFixed(3) +
     " lines=" + wideRows.map(p => p.entries[0].item).join("/"));
+
+  /* ================= the newer catalog: mined Batteries, Reinforced Concrete, 16384x ==========
+   * Everything above predates the second mined resource (Hydracite), the two long-chain products,
+   * and compression levels 8192/16384. Those are exactly the cases where "one job per line" bites
+   * hardest, so pin them here rather than assuming the Frames chain generalises. */
+  // A one-level project over the given [item, qty] costs, on the given lines.
+  function scene(costs, lines, opts){
+    const s = defaults(); s.dupe = 0; s.margin = 0; s.mode = "project";
+    s.projLineMode = (opts && opts.lineMode) || "static";
+    s.lines = lines.map(l => ({max:l.max, spx:l.spx, turbo:0}));
+    s.minedIncome = Object.assign({Vespium:null, Hydracite:null}, (opts && opts.minedIncome) || {});
+    s.projects = [{id:"x",name:"X",catId:"",on:true,from:1,to:1,done:0,prio:null,
+      levels:[{costs:costs.map(c=>({item:c[0], qty:c[1]}))}]}];
+    normalize(s); syncManual(s); S = s;
+    return optimize();
+  }
+  const rowsOf = r => ((r.phases[0] && r.phases[0].plan) || []).filter(p => p.entries && p.entries.length);
+  const jobsOf = r => rowsOf(r).map(p => p.entries[0].item);
+  const oneJobPerLine = r => rowsOf(r).every(p => p.entries.length === 1 && p.entries[0].frac === 1);
+  // A factory shaped the way these end-game chains actually have to be run in static mode: the final
+  // assembly sits on ONE slow, low-compression line and everything else feeds it flat out. A static
+  // line is all-or-nothing, so it can't take "12% of a line" the way the splitting LP can — the only
+  // way to hit a ratio like Batteries' 100000 Gel per craft is to slow the consumer down.
+  const BATTERY_LINES = [
+    {max:1,  spx:0.4},    // Batteries — deliberately slow, so one Gel line can keep up with it
+    {max:32, spx:50},
+    {max:32, spx:50},
+    {max:4,  spx:50},
+    {max:4,  spx:50},
+    {max:4,  spx:50},
+  ];
+
+  /* ---- Batteries: the second mined resource, budgeted independently ------------------------
+   * Batteries burn Hydracite directly and Gel (which burns Vespium) through Wire, so a static plan
+   * needs one line each for Batteries, Wire, Gel, Rods and Ingots — and both incomes present. */
+  {
+    const both = scene([["Batteries",1]], BATTERY_LINES,
+                       {minedIncome:{Vespium:1e30, Hydracite:1e30}});
+    const uses = (both.phases[0] && both.phases[0].minedUsage) || [];
+    record("static Batteries: builds with both incomes, one job per line",
+      both.feasible === true && both.eta > 0 && oneJobPerLine(both),
+      "feasible=" + both.feasible + " eta=" + both.eta.toFixed(4) + " lines=" + jobsOf(both).join("/"));
+    record("static Batteries: minedUsage survives the static path and names both ores",
+      uses.some(u => u.item === "Batteries" && u.resource === "Hydracite") &&
+      uses.some(u => u.item === "Gel" && u.resource === "Vespium"),
+      "uses=" + JSON.stringify(uses.map(u => u.item + "/" + u.resource + " x" + u.lines)));
+    record("static Batteries: every mined line reports a real burn against its own income",
+      uses.filter(u => u.resource === "Hydracite" || u.resource === "Vespium")
+          .every(u => u.lines > 0 && u.inputHr > 0 && u.outHr > 0),
+      "burn=" + JSON.stringify(uses.map(u => u.resource + ":" + (u.inputHr > 0))));
+  }
+
+  /* ---- missing Hydracite income: blocked, and honestly PARTIAL in static mode --------------
+   * The blocker is computed before the schedule runs, so Batteries is dropped from the targets and
+   * the rest of the project still gets a real static plan. That combination — a blocked item, a
+   * plannable remainder, one job per line — is what the "Partial plan only" notice renders from,
+   * and it has to carry the same shape the splitting LP produces (minedmodes.cjs reads it). */
+  {
+    const r = scene([["Batteries",1],["Glass",5000]], BATTERY_LINES,
+                    {minedIncome:{Vespium:1e30, Hydracite:null}});
+    const ph = r.phases[0];
+    record("static: a missing mined income names the ore, not just the item",
+      (r.blockedMined && r.blockedMined.Batteries || []).indexOf("Hydracite") >= 0 &&
+      (ph.blockedMined && ph.blockedMined.Batteries || []).indexOf("Hydracite") >= 0,
+      "blockedMined=" + JSON.stringify(r.blockedMined));
+    record("static: the plannable remainder is a PARTIAL plan, not a blocked one",
+      r.feasible === false && r.partial === true && ph.partial === true && ph.feasible === false,
+      "feasible=" + r.feasible + " partial=" + r.partial + " phasePartial=" + ph.partial);
+    record("static: the partial plan still delivers the unblocked items, one job per line",
+      (ph.rate.Glass || 0) > 0 && ph.eta > 0 && oneJobPerLine(r) && jobsOf(r).indexOf("Batteries") < 0,
+      "glassRate=" + (ph.rate.Glass||0).toFixed(2) + " eta=" + ph.eta.toFixed(4) +
+      " lines=" + jobsOf(r).join("/"));
+    // Both incomes missing and NOTHING else to craft: no targets at all, so no plan — and the phase
+    // must still hand back the upstream-shaped fields rather than a bare object.
+    const none = scene([["Batteries",1]], BATTERY_LINES, {});
+    const nph = none.phases[0];
+    record("static: a wholly blocked phase keeps the upstream result shape",
+      none.feasible === false && nph.partial === false && Array.isArray(nph.minedUsage) &&
+      nph.minedUsage.length === 0 && (nph.blockedMined.Batteries || []).length === 2,
+      "partial=" + nph.partial + " blockedMined=" + JSON.stringify(nph.blockedMined));
+  }
+
+  /* ---- Reinforced Concrete: the longest chain in the catalog -------------------------------
+   * Bricks + Concrete + Frames, and Frames drags in Plates, Rods and Ingots — seven distinct jobs.
+   * A static plan therefore needs seven lines; six is genuinely unbuildable and must say so rather
+   * than quietly dropping an input. It needs no mined income at all (minedmodes.cjs pins that too). */
+  {
+    const CHAIN = ["Reinforced Concrete","Bricks","Concrete","Frames","Plates","Rods","Ingots"];
+    const RC_LINES = [
+      {max:1, spx:0.05},   // Reinforced Concrete — slow, for the same all-or-nothing reason as above
+      {max:4, spx:50}, {max:4, spx:50}, {max:4, spx:50}, {max:4, spx:50}, {max:4, spx:50},
+      {max:8, spx:50},
+    ];
+    const thin = scene([["Reinforced Concrete",1]], RC_LINES.slice(0,6), {});
+    record("static Reinforced Concrete: six lines is one short -> honest infeasible",
+      thin.feasible === false && (thin.infeasItems || []).indexOf("Reinforced Concrete") >= 0 &&
+      rowsOf(thin).length === 0,
+      "feasible=" + thin.feasible + " infeas=" + JSON.stringify(thin.infeasItems));
+    const wide = scene([["Reinforced Concrete",1]], RC_LINES, {});
+    const jobs = jobsOf(wide);
+    record("static Reinforced Concrete: seven lines builds it, one job per line",
+      wide.feasible === true && wide.eta > 0 && oneJobPerLine(wide),
+      "feasible=" + wide.feasible + " eta=" + wide.eta.toFixed(4) + " lines=" + jobs.join("/"));
+    record("static Reinforced Concrete: the plan covers the whole chain, each job exactly once",
+      CHAIN.every(it => jobs.indexOf(it) >= 0) && new Set(jobs).size === jobs.length,
+      "jobs=" + jobs.slice().sort().join(",") );
+    record("static Reinforced Concrete: needs no mined income",
+      ((wide.phases[0] && wide.phases[0].minedUsage) || []).length === 0 &&
+      Object.keys(wide.blockedMined || {}).length === 0,
+      "minedUsage=" + JSON.stringify((wide.phases[0]||{}).minedUsage));
+    // The splitting LP can time-share, so the same six lines are fine for it — the limit is the
+    // mode's, not the factory's.
+    const thinSplit = scene([["Reinforced Concrete",1]], RC_LINES.slice(0,6), {lineMode:"split"});
+    record("split builds Reinforced Concrete on the same six lines",
+      thinSplit.feasible === true, "feasible=" + thinSplit.feasible + " eta=" + thinSplit.eta.toFixed(4));
+  }
+
+  /* ---- the top of the compression table (8192 / 16384) -------------------------------------
+   * LEVELS grew past 4096, and a static line runs ONE level for the whole phase, so picking the
+   * wrong one is not recoverable mid-run. A line capped at the top must be free to use the top:
+   * output per second is (L / cycle) x min(speed, cycle), which keeps climbing with L here. */
+  {
+    const top = scene([["Concrete",1e12]], [{max:16384, spx:50}], {});
+    const e = rowsOf(top)[0].entries[0];
+    record("static: a 16384x line may run at 16384x",
+      top.feasible === true && e.item === "Concrete" && e.lvl === 16384 && e.frac === 1,
+      "job=" + e.item + "@" + e.lvl + " label=" + compressionLabel(e.lvl) + " eta=" + top.eta.toFixed(4));
+    record("static: the top level renders through compressionLabel, not raw arithmetic",
+      compressionLabel(e.lvl) === "16.4k×" && compressionLabel(8192) === "8192×",
+      "16384=" + compressionLabel(16384) + " 8192=" + compressionLabel(8192));
+    const capped = scene([["Concrete",1e12]], [{max:8192, spx:50}], {});
+    const ce = rowsOf(capped)[0].entries[0];
+    record("static: a line never exceeds its own cap",
+      ce.lvl === 8192 && ce.lvl <= 8192 && LEVELS.indexOf(ce.lvl) >= 0,
+      "job=" + ce.item + "@" + ce.lvl + " (cap 8192)");
+    record("static: the taller cap really is the faster plan (so the choice matters)",
+      top.eta < capped.eta - 1e-12,
+      "eta@16384=" + top.eta.toFixed(4) + "h eta@8192=" + capped.eta.toFixed(4) + "h");
+  }
 
   __emit(JSON.stringify(results));
 })();
