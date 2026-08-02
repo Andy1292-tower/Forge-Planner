@@ -75,7 +75,7 @@ async function collectHorizontalOverflow(page) {
       paintedCache.set(element, result);
       return result;
     };
-    const pseudoPaintsOutside = (element, side) => {
+    const pseudoIsPainted = (element, side) => {
       const style = getComputedStyle(element, side);
       const content = style.content;
       if (!content || content === "none" || content === "normal"
@@ -84,28 +84,31 @@ async function collectHorizontalOverflow(page) {
         || Number(style.opacity) === 0
         || style.clip !== "auto"
         || style.clipPath !== "none") return false;
-
-      const length = property => {
-        const value = parseFloat(style[property]);
-        return Number.isFinite(value) ? value : 0;
-      };
-      let width = length("width");
-      if (style.boxSizing === "content-box") {
-        width += length("paddingLeft") + length("paddingRight")
-          + length("borderLeftWidth") + length("borderRightWidth");
-      }
-      width += length("marginLeft") + length("marginRight");
-
-      const positioned = ["absolute", "fixed"].includes(style.position);
-      const left = parseFloat(style.left);
-      const right = parseFloat(style.right);
-      if (positioned && Number.isFinite(left)
-        && (left < -tolerance || left + width > element.clientWidth + tolerance)) return true;
-      if (positioned && Number.isFinite(right) && right < -tolerance) return true;
-      return width > element.clientWidth + tolerance;
+      return true;
+    };
+    const hasPaintedPseudoOverflow = element => {
+      if (!pseudoIsPainted(element, "::before") && !pseudoIsPainted(element, "::after")) return false;
+      const style = getComputedStyle(element);
+      const borderWidth = parseFloat(style.borderLeftWidth || "0") + parseFloat(style.borderRightWidth || "0");
+      const clone = element.cloneNode(false);
+      clone.setAttribute("aria-hidden", "true");
+      clone.style.setProperty("position", "fixed", "important");
+      clone.style.setProperty("left", "-10000px", "important");
+      clone.style.setProperty("top", "0", "important");
+      clone.style.setProperty("display", "block", "important");
+      clone.style.setProperty("box-sizing", "border-box", "important");
+      clone.style.setProperty("width", `${element.clientWidth + borderWidth}px`, "important");
+      clone.style.setProperty("min-width", "0", "important");
+      clone.style.setProperty("max-width", "none", "important");
+      clone.style.setProperty("margin", "0", "important");
+      clone.style.setProperty("overflow", "visible", "important");
+      (element.parentElement || document.body).append(clone);
+      const overflows = clone.scrollWidth > clone.clientWidth + tolerance;
+      clone.remove();
+      return overflows;
     };
     const hasPaintedOverflow = element => {
-      if (pseudoPaintsOutside(element, "::before") || pseudoPaintsOutside(element, "::after")) return true;
+      if (hasPaintedPseudoOverflow(element)) return true;
       const box = element.getBoundingClientRect();
       const style = getComputedStyle(element);
       const left = box.left + parseFloat(style.borderLeftWidth || "0");
@@ -410,6 +413,48 @@ test("the overflow detector rejects and then releases a visible pseudo-element s
     delete window.__visualPseudoMutationSheet;
   });
   await expectHorizontalOverflowContract(page, "restored after pseudo mutation");
+});
+
+test("the overflow detector rejects and then releases auto-width inline generated content", async ({ page }) => {
+  // Break caught: parsing computed width "auto" as zero misses nowrap generated text with no DOM rectangle.
+  await loadPlanner(page, { width: 390, height: 844 });
+  await page.evaluate(() => {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(`#visual-auto-pseudo-mutation::after {
+      content: "auto width generated overflow";
+      white-space: nowrap;
+    }`);
+    const rogue = document.createElement("div");
+    rogue.id = "visual-auto-pseudo-mutation";
+    rogue.style.cssText = "width:120px;overflow:visible";
+    window.__visualAutoPseudoMutationSheet = sheet;
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    document.querySelector("main").append(rogue);
+  });
+  const metrics = await page.locator("#visual-auto-pseudo-mutation").evaluate(element => {
+    const pseudo = getComputedStyle(element, "::after");
+    return {
+      host: { scrollWidth: element.scrollWidth, clientWidth: element.clientWidth },
+      root: { scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth },
+      pseudo: { content: pseudo.content, display: pseudo.display, width: pseudo.width, whiteSpace: pseudo.whiteSpace },
+    };
+  });
+  expect(metrics.host.scrollWidth).toBeGreaterThan(metrics.host.clientWidth + PX_TOLERANCE);
+  expect(metrics.root.scrollWidth).toBeLessThanOrEqual(metrics.root.clientWidth + PX_TOLERANCE);
+  expect(metrics.pseudo).toEqual({
+    content: '"auto width generated overflow"',
+    display: "inline",
+    width: "auto",
+    whiteSpace: "nowrap",
+  });
+  const mutatedAudit = await collectHorizontalOverflow(page);
+  expect(() => assertHorizontalOverflowContract(mutatedAudit, "auto-width pseudo mutation")).toThrow(/#visual-auto-pseudo-mutation/);
+  await page.evaluate(() => {
+    document.getElementById("visual-auto-pseudo-mutation")?.remove();
+    document.adoptedStyleSheets = document.adoptedStyleSheets.filter(sheet => sheet !== window.__visualAutoPseudoMutationSheet);
+    delete window.__visualAutoPseudoMutationSheet;
+  });
+  await expectHorizontalOverflowContract(page, "restored after auto-width pseudo mutation");
 });
 
 test("long dialogs keep header and footer reachable while only the designated body scrolls", async ({ page }) => {
