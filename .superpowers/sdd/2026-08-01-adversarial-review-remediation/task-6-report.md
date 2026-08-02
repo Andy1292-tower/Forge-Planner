@@ -88,3 +88,22 @@ The current Worker implementation is bundled from the changed current modules by
 ## Remaining boundary
 
 No known Node-side blocker remains. The normal generated Blob Worker test is syntax-valid and CI-owned because local browser launch was prohibited for this task.
+
+## Formal review fix round 1 — neutral persistent labels
+
+Formal range review found that the persistent shell still said “get the optimal crafter setup” and titled the result card “Optimal setup.” Those labels contradicted the result-level **Best found, not proven best** state whenever Credits is capped or incomplete.
+
+The focused static regression was added first to `test/credits-contract.cjs`. Its valid RED exited 1 with:
+
+`FAIL persistent planner labels make no unqualified optimality promise [oldTagline=true, oldHeading=true]`
+
+`index.html` now uses the neutral end-user copy **Crafting production-line planner · enter your stats, compare crafter setups** and **Planner results**. The regression requires both exact labels and rejects either former unqualified claim.
+
+The adversarial child review also found that a stale result with one current physical line and `plan: [null, validExtraRow]` could enable Copy to Manual from the out-of-range row. Direct copying then switched modes, let `syncManual()` truncate the extra row, and saved an all-Idle setup. The focused RED recorded both failures:
+
+- `FAIL render ignores executable rows beyond the current physical line count [error=Cannot read properties of null (reading 'job'), copy=false]`
+- `FAIL direct copy ignores executable rows beyond the current physical line count [error=null, mode=manual, mutations=1]`
+
+Items/Credits rendering now derives a safe visible plan from the current physical `S.lines`, substitutes Idle for a missing/null in-range row, and ignores extra result rows for the assignment table, Copy eligibility, idle/pre-production notes, and Bits breakdown. `copyPlanToManual()` likewise considers only in-range rows and builds `st.manual` from current lines rather than arbitrary result length. The focused contract proves the adversarial result renders one Idle line with no Copy action and the direct call is a side-effect-free no-op.
+
+The focused Credits contract then exited 0. No solver mechanics, confidence fields, responsive geometry, Worker compatibility endpoint, browser state, or build graph changed.

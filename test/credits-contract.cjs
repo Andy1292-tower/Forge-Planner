@@ -9,11 +9,17 @@ globalThis.performance={now:()=>0};globalThis.__nativeNow=nativeNow;
 
 const src=["core.js","project-schedule.js","solver.js","results.js","manual.js"]
   .map(file=>fs.readFileSync(path.join(__dirname,"..","js",file),"utf8")).join("\n;\n");
+const indexHtml=fs.readFileSync(path.join(__dirname,"..","index.html"),"utf8");
 
 const runner=`
 (function(){
   let fail=0;
   const check=(name,ok,detail)=>{console.log((ok?"ok   ":"FAIL ")+name+" ["+detail+"]");if(!ok)fail++;};
+  check("persistent planner labels make no unqualified optimality promise",
+    indexHtml.includes("<p>Crafting production-line planner · enter your stats, compare crafter setups</p>")&&
+      indexHtml.includes('<div class="head results-head"><h2>Planner results</h2>')&&
+      !indexHtml.includes("get the optimal crafter setup")&&!indexHtml.includes("<h2>Optimal setup</h2>"),
+    "oldTagline="+indexHtml.includes("get the optimal crafter setup")+", oldHeading="+indexHtml.includes("<h2>Optimal setup</h2>"));
 
   S=defaults();S.mode="credits";S.margin=20;
   [...RAWS,...PRODUCTS].forEach(item=>S.sellPrice[item]=null);
@@ -170,9 +176,24 @@ const runner=`
     transitiveMissing.issues.includes("No material cost entered for Plates.")&&transitiveEl.innerHTML.includes("Missing data:")&&
       !transitiveEl.innerHTML.includes("No sustainable plan found"),
     "issues="+JSON.stringify(transitiveMissing.issues)+", noPlan="+transitiveEl.innerHTML.includes("No sustainable plan found"));
+  S=stateFor([],[{max:1,spx:1,turbo:0}]);
+  const beyondCurrentPlan=[null,{line:2,max:1,sp:1,dp:1,spx:1,dup:0,
+    job:{kind:"produce",res:"Bits",lvl:1,ct:1,prod:[[0,1]],cons:[]}}];
+  const beyondCurrentRes={...noPrices,issues:[],ranking:[],resIndex:{Bits:0},plan:beyondCurrentPlan,ms:1};
+  const beyondEl=new El(),beyondStat=new El();let beyondRenderError=null;
+  try{renderSolveResult(beyondCurrentRes,beyondEl,beyondStat);}catch(error){beyondRenderError=error;}
+  check("render ignores executable rows beyond the current physical line count",
+    !beyondRenderError&&!beyondEl.innerHTML.includes('id="btnCopyManual"')&&!beyondEl.innerHTML.includes('<td class="mono">#2</td>'),
+    "error="+(beyondRenderError&&beyondRenderError.message)+", copy="+beyondEl.innerHTML.includes('id="btnCopyManual"'));
   let mutations=0,saves=0,renders=0;
   globalThis.mutateState=fn=>{mutations++;fn(S);};globalThis.save=()=>{saves++;};globalThis.renderModeSwitch=()=>{};renderResults=()=>{renders++;};
-  const beforeMode=S.mode;copyPlanToManual({mode:"credits",bestItem:null,plan:idlePlan()});
+  const beforeMode=S.mode;let beyondCopyError=null;
+  try{copyPlanToManual({mode:"credits",bestItem:"Bits",plan:beyondCurrentPlan});}catch(error){beyondCopyError=error;}
+  check("direct copy ignores executable rows beyond the current physical line count",
+    !beyondCopyError&&S.mode===beforeMode&&mutations===0&&saves===0&&renders===0,
+    "error="+(beyondCopyError&&beyondCopyError.message)+", mode="+S.mode+", mutations="+mutations);
+  mutations=saves=renders=0;
+  copyPlanToManual({mode:"credits",bestItem:null,plan:idlePlan()});
   copyPlanToManual({mode:"credits",bestItem:null,plan:[{job:{kind:"craft",res:null,lvl:1}}]});
   copyPlanToManual({mode:"credits",bestItem:"OldItem",plan:[{job:{kind:"craft",res:"OldItem",lvl:1}}]});
   check("direct all-idle/malformed/stale copy is a side-effect-free no-op",S.mode===beforeMode&&mutations===0&&saves===0&&renders===0,
@@ -181,6 +202,7 @@ const runner=`
     job:{kind:"craft",res:"OldItem",lvl:1,ct:1,prod:[[0,0]],cons:[]}}],ms:1};
   const staleEl=new El(),staleStat=new El();renderSolveResult(staleRender,staleEl,staleStat);
   check("unknown-resource result hides Copy to Manual",!staleEl.innerHTML.includes('id="btnCopyManual"'),"copy="+staleEl.innerHTML.includes('id="btnCopyManual"'));
+  S=stateFor([]);
   const validPlan=S.lines.map((line,index)=>index===0?null:{job:index===1?{kind:"produce",res:"Bits",lvl:1}:{kind:"craft",res:"OldItem",lvl:1}});
   copyPlanToManual({mode:"credits",bestItem:"Bits",plan:validPlan});
   check("valid copy switches modes, idles null/stale rows, and sells only the winning item",S.mode==="manual"&&S.manual[0].job==="Idle"&&

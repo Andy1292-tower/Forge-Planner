@@ -357,14 +357,18 @@ function renderSolveResult(res,el,stat){
     html+=`</tbody></table>`;
   }
   // plan table
-  const canCopy=(res.plan||[]).some(row=>row&&row.job&&row.job.kind!=="idle"&&ALLITEMS.includes(row.job.res));
+  const sourcePlan=Array.isArray(res.plan)?res.plan:[],physicalLines=Array.isArray(S.lines)?S.lines:[];
+  const visiblePlan=physicalLines.map((line,index)=>{const row=sourcePlan[index];if(row&&row.job)return row;
+    const sp=lineSpeed(line),dp=dupeMult();return {line:index+1,max:line.max,spx:line.spx,dup:(dp-1)*100,sp,dp,
+      job:{kind:"idle",res:null,lvl:null,prod:[],cons:[]}};});
+  const canCopy=visiblePlan.some(row=>row.job.kind!=="idle"&&ALLITEMS.includes(row.job.res));
   html+=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:16px 0 8px">
     <div class="subhead" style="margin:0">Line assignment</div>${canCopy?`
     <button class="btn ghost" id="btnCopyManual" title="Copy this plan into Manual mode so you can fine-tune it by hand">Copy to Manual</button>`:""}
   </div>
     <table><thead><tr><th>Line</th><th>Cap</th><th>Job</th><th>Lvl</th>
       <th class="num">~s/craft</th><th class="num">Output /hr</th><th>Consumes /hr</th></tr></thead><tbody>`;
-  res.plan.forEach(p=>{
+  visiblePlan.forEach(p=>{
     const j=p.job;const rawSp=p.sp||1,dp=p.dp||1;
     // effective speed is capped at the craft cycle time (1s real-time floor)
     const sp=(j.ct>0&&rawSp>j.ct)?j.ct:rawSp;
@@ -385,9 +389,9 @@ function renderSolveResult(res,el,stat){
       <td class="num">${outv}</td><td style="color:var(--ink2);font-size:11.5px">${cons}</td></tr>`;
   });
   html+=`</tbody></table>`;
-  html+=idleLinesNote(res.plan,resultMinedUsage(res));
+  html+=idleLinesNote(visiblePlan,resultMinedUsage(res));
   // balance table — Frames' & Wire's pre-produced Bits ride along as a display-only row (never in the solver)
-  const ppBits=preprodBitsHr(res.plan);
+  const ppBits=preprodBitsHr(visiblePlan);
   if(res.balance&&res.balance.length){
     const rows=res.balance.map(b=>({...b}));
     if(ppBits>1e-6){   // fold the pre-produced Bits in, or add a row if Bits isn't already in play
@@ -419,7 +423,7 @@ function renderSolveResult(res,el,stat){
   // Bits-to-preproduce planner for Frames & Wire (Bits are assumed pre-produced, kept out of the line math)
   if(ppBits>1e-6){
     const fBits=num(S.forgie&&S.forgie.Bits)||0, net=ppBits-fBits;
-    const bd=preprodBitsBreakdown(res.plan), who=Object.keys(bd).filter(k=>bd[k]>1e-6);
+    const bd=preprodBitsBreakdown(visiblePlan), who=Object.keys(bd).filter(k=>bd[k]>1e-6);
     const verb=(who.length===1&&!/s$/.test(who[0]))?"consumes":"consume";
     html+=`<div class="subhead">Bits to pre-produce (${who.join(" & ")})</div>
       <div class="notice info" style="font-size:12px">${who.join(" &amp; ")} ${verb} <b>${disp(ppBits)}</b> Bits/hr (${preprodBitsNote(who)}, not part of the line plan above).`+
