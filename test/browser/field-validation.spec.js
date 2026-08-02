@@ -141,6 +141,8 @@ test("required line/global drafts preserve the last accepted state and storage a
   await priority.fill("9");
   expect((await stored(page)).state.targets.Frames.w).toBe(9);
 
+  await speed.fill("81");
+  await expect(page.getByRole("button", { name: "Resimulate" })).toBeVisible();
   await page.evaluate(() => { S.dupe = 101; });
   const postsBeforeRejectedState = await workerPostCount(page);
   await page.getByRole("button", { name: "Resimulate" }).click();
@@ -168,6 +170,9 @@ test("game-notation amount families accept suffixes, reject DOM-only drafts, and
 
   const postsBeforeHiddenDraft = await workerPostCount(page);
   await page.getByRole("button", { name: "Done editing sell prices" }).click();
+  const speed = page.getByRole("spinbutton", { name: "Line 1 currently displayed speed multiplier" });
+  await speed.fill("2");
+  await expect(page.getByRole("button", { name: "Resimulate" })).toBeVisible();
   await page.getByRole("button", { name: "Resimulate" }).click();
   await expect.poll(() => workerPostCount(page)).toBeGreaterThan(postsBeforeHiddenDraft);
 

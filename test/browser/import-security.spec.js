@@ -240,14 +240,12 @@ test.describe("imported markup stays inert with CSP bypassed", () => {
 
     await importCandidate(page, candidate, "project-wave-attack.json");
 
-    const waveHeaders = page.locator("#results .step-phase .step-h");
-    await expect(waveHeaders).toHaveCount(2);
-    const memberNames = await waveHeaders.evaluateAll(nodes =>
-      nodes.map(node => {
-        const member = node.querySelector(".proj-mini");
-        return member ? member.textContent : "";
-      }).sort()
+    const waveProjectNames = page.locator("#results .step-phase .step-h > b");
+    const importedProjectNames = () => waveProjectNames.evaluateAll((nodes, expectedNames) =>
+      nodes.map(node => node.textContent).filter(name => expectedNames.includes(name)).sort(), names
     );
+    await expect.poll(importedProjectNames).toEqual(names.slice().sort());
+    const memberNames = await importedProjectNames();
     const breakdown = page.locator("#results .breakdown-panel");
     await expect(breakdown).toContainText("Build order");
     const breakdownNames = await breakdown.evaluate(panel => {

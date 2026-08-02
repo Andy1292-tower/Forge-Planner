@@ -97,6 +97,22 @@ function assertUrlResolvesAtMount(directory, url, mount) {
   );
 }
 
+function assertStylesheetRelativeUrlResolvesAtMount(directory, url, stylesheetUrl, mount) {
+  assert.doesNotMatch(url, /^\//, `${url} must remain mount-relative`);
+  const resolved = new URL(url, `https://forge.invalid${mount}${stylesheetUrl}`);
+  const emittedPath = resolved.pathname.slice(mount.length);
+  assert.ok(
+    fs.existsSync(path.join(directory, ...emittedPath.split("/"))),
+    `${url} from ${stylesheetUrl} resolved to missing ${resolved.pathname}`
+  );
+}
+
+function tooltipCustomPropertyUrl(source, label) {
+  const matches = [...source.matchAll(/--tip-img:url\('([^']+)'\)/g)];
+  assert.equal(matches.length, 1, `${label} must emit one tooltip custom-property URL`);
+  return matches[0][1];
+}
+
 function assetNames(directory) {
   return {
     app: findOne(directory, /^app\.[0-9a-f]{16}\.js$/),
@@ -208,11 +224,18 @@ test("the generated page has a closed hashed asset graph and an in-memory Worker
   assert.doesNotMatch(app, ROOT_RELATIVE_OWNED_URL);
   assert.doesNotMatch(app, ANALYTICS_SIGNATURE);
 
+  const stylesName = findOne(temporary, /^styles\.[0-9a-f]{16}\.css$/);
+  const stylesheetUrl = `static/${stylesName}`;
+  const dupeName = findOne(temporary, /^dupe\.[0-9a-f]{16}\.jpg$/);
   const speedName = findOne(temporary, /^speed\.[0-9a-f]{16}\.jpg$/);
-  const speedUrl = `static/${speedName}`;
-  assert.match(app, new RegExp(speedUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assertUrlResolvesAtMount(temporary, speedUrl, "/");
-  assertUrlResolvesAtMount(temporary, speedUrl, "/Forge-Planner/");
+  const dupeUrl = tooltipCustomPropertyUrl(index, "the generated HTML");
+  const speedUrl = tooltipCustomPropertyUrl(app, "the generated app");
+  assert.equal(dupeUrl, `../static/${dupeName}`);
+  assert.equal(speedUrl, `../static/${speedName}`);
+  for (const mount of ["/", "/Forge-Planner/"]) {
+    assertStylesheetRelativeUrlResolvesAtMount(temporary, dupeUrl, stylesheetUrl, mount);
+    assertStylesheetRelativeUrlResolvesAtMount(temporary, speedUrl, stylesheetUrl, mount);
+  }
 
   for (const relative of walk(temporary).filter(file => /\.(?:html|css|js)$/.test(file))) {
     assert.doesNotMatch(

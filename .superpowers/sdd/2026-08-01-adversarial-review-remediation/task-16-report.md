@@ -36,3 +36,11 @@ The focused RED run failed `2/24`; the repaired lifecycle passes `24/24`. The fu
 - Playwright discovery: 85 browser, 11 accessibility, 26 visual, 4 release; no lane overlap
 
 No local browser, GUI, or persistent preview was launched; release smoke used only bounded ephemeral Node servers. The dedicated PR must execute the browser lanes. No current live save/export was supplied, so the exact live-save compatibility smoke remains an owner release gate rather than a passed claim.
+
+### Second PR-CI correction
+
+- Tooltip custom-property URLs are source-relative (`../assets/...`), so the existing content-hash substitutions emit `../static/<hash>` and resolve from `static/styles.<hash>.css` under both `/` and `/Forge-Planner/`. The static-graph regression extracts the actual generated custom-property URLs, requires those exact paths, and resolves them against the generated stylesheet at both mounts. No server alias or console filtering was added.
+- The field-validation browser specs now make a valid crafter-line speed edit and confirm Resimulate is visible before each existing Resimulate action. The first edit is before direct invalid-state corruption; the second follows closing Sell prices. Product behavior is unchanged.
+- The imported unlock-wave browser test now inspects `#results .step-phase .step-h > b`, waits for and filters to the two imported project names, and asserts each exactly once while retaining the two-row semantic Wave breakdown assertion. Warm-up/prerequisite phases are no longer counted as failures.
+
+Verification: `node test/static-asset-build.cjs` passes 11/11; `node --check` passes for `js/render.js`, the static test, and both changed browser specs; `git diff --check` passes. Browser execution was intentionally not run because this correction's handoff prohibits Chrome/browser/GUI; the PR browser lanes remain required CI verification.
