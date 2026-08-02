@@ -17,7 +17,7 @@
 - Vespium and Hydracite remain independent hard budgets. May-work margin must never borrow either one.
 - Credits remains a **dedicated-one-item comparison** unless a separate, explicitly approved mixed-sales mode is designed.
 - Crafter-line edits remain explicit Resimulate actions; improve visibility without bringing back expensive solve-on-every-keystroke behavior.
-- Line stability remains available, but its speed cost must be visible and optional.
+- Line stability remains available, but its full-schedule tradeoff must be visible and optional. A lower-throughput held phase may still finish sooner overall by avoiding recursive warm-ups and reordering.
 - The application stays usable without a backend or account.
 - User-controlled values must never enter executable HTML contexts.
 - Every UI change must be checked at desktop and mobile widths, with keyboard-only navigation and preserved focus.
@@ -342,11 +342,12 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 
 **Priority:** P2 trust
 
-**Depends on:** Task 4
+**Depends on:** Tasks 4 and 6
 
 **Files:**
 
 - Create: `test/stability-ui.cjs`
+- Modify: `js/fields.js`
 - Modify: `js/state.js`
 - Modify: `test/state-schema.cjs`
 - Modify: `js/core.js`
@@ -354,13 +355,66 @@ The final gate must also include a real browser/Worker solve, a warm-cache relea
 - Modify: `js/results.js`
 - Modify: `js/events.js`
 - Modify: `index.html`
+- Modify: `test/stability.cjs`
+- Modify: `test/project-transients.cjs`
+- Modify: `test/browser/smoke.spec.js`
+- Modify: `test/browser/state-recovery.spec.js`
+- Modify: `test/run-all.cjs`
+- Modify: `README.md`
+- Modify: `css/style.css` only if the new semantic block needs component styling
 
-- [ ] Reuse the existing 2.36% held-plan case as RED UI coverage.
-- [ ] Add persisted, schema-validated setting `projectStability: "prefer-current" | "fastest"`; default new and legacy saves to `prefer-current`, preserve it through export/import, and cover its migration.
-- [ ] When stabilized and slower, render each affected phase’s exact throughput/ETA difference plus the total plan ETA difference, the reason jobs were retained, and GUI actions **Keep current line jobs** / **Use fastest plan**.
-- [ ] Make the choice global and unambiguous: **Use fastest plan** changes the persisted setting to `fastest`, bypasses pins for every phase, and re-solves the entire plan. A future phase-specific override requires a separate design.
-- [ ] Remove unqualified “fastest/optimal” wording when a slower stable plan is displayed.
-- [ ] Test zero-gap swaps, sub-band holds, past-band releases, mode persistence, and serialization through the generated current Blob Worker; preserve the frozen v2 compatibility fixture unchanged.
+**State contract:** bump `CURRENT_SCHEMA_VERSION` from 1 to 2 without renaming `forgePlannerState_v3`. Add `projectStability: "prefer-current" | "reoptimize"`; default new, unversioned, and valid v1 saves to `prefer-current`, and require the exact enum for v2. Preserve strict validation of every v1-required field during migration—do not let the new version branch weaken old structural checks.
+
+**Cache policy:** a visible prefer-current solve may read pins and propose remembered stability records; a visible reoptimize solve ignores pins but may remember its selected jobs. Hidden comparison solves, ordering estimates, preliminary fixed-point passes, and warm-up solves may neither read nor write pins. `projectSchedule()` must not mutate stability state directly. `optimizeProjectTop()` commits only the selected visible plan’s proposed updates, atomically after a successful full run; failed selected runs retain the previous-good cache, unrelated keys survive, and the 256-entry cap remains.
+
+**Comparison contract:** return the selected visible plan plus this summary only; never expose the hidden alternative plan:
+
+```js
+{
+  projectStability,
+  stabilityComparison: null | {
+    comparable,
+    selectedExecutable,
+    alternativeExecutable,
+    selectedPhaseOrder,
+    alternativePhaseOrder,
+    orderChanged,
+    selectedTotalEta,
+    alternativeTotalEta,
+    alternativeMinusSelectedTotalEta,
+    selectedWorkEta,
+    alternativeWorkEta,
+    alternativeMinusSelectedWorkEta,
+    selectedWarmupEta,
+    alternativeWarmupEta,
+    alternativeMinusSelectedWarmupEta,
+    alternativeIsShorter,
+    phases: [{
+      phaseKey,
+      name,
+      selectedThroughput,
+      alternativeThroughput,
+      selectedEta,
+      alternativeEta,
+      selectedThroughputLossPct,
+      selectedEtaPenaltyPct
+    }]
+  }
+}
+```
+
+Every signed difference is `alternative - selected`; negative means re-optimization is shorter. Totals come from complete `executionPhases`; work/per-phase values come from semantic phases. Match phases by a stable semantic key—sequenced project ID, sorted combined IDs, or sorted wave IDs—never by display name or array index. Include only actually stabilized phases in the per-phase comparison.
+
+- [ ] Freeze the 420-Frames case as RED coverage: held phase throughput is 2.6304% lower and its ETA 2.7015% longer, but held warm-up is 129.94 seconds shorter and complete held ETA `0.6659750249h` beats reoptimized `0.6846583163h` by 67.26 seconds. Both schedules must remain executable and every replay boundary nonnegative.
+- [ ] Refactor a full-run path such as `solveProjectRun(sequence, net, perProject, policy)` through sequencing, waves/combined phases, recursive warm-ups, phase ordering, carried inventory, replay, and finish clocks. The hidden alternative is eligible only when prefer-current actually stabilizes a phase.
+- [ ] Make stability records an explicit input/output of schedule construction. Build records only from final converged feasible semantic phases; never mutate cache during preliminary, hidden, ordering, warm-up, failed, or partial work.
+- [ ] Add the Project policy selector in the Shopping-list controls with `aria-describedby` help explaining the 5% band and that re-optimization can improve phase throughput yet lose overall after warm-ups/order changes. Sync it from state and re-solve Project mode on a valid user change.
+- [ ] Render escaped affected-phase throughput/ETA differences, selected versus alternative complete ETA, warm-up difference, order changes, executability, and the retained-policy reason. Use actions **Keep current line jobs**, **Use shorter re-optimized plan** only when its total is shorter, **Use higher-throughput line jobs anyway** when truthful, and neutral **Use re-optimized line jobs anyway** for an effective zero throughput gap. When reoptimize is active, offer **Prefer current line jobs on future edits**.
+- [ ] Remove remaining unqualified Project-facing “fastest/optimal” wording, including the Project modal, sequence toggle, result summary, and README. Do not alter accurate Mined-mode “fastest current line” copy.
+- [ ] Cover sub-band holds, past-band release at the established 420/500 boundary, zero-gap swaps, both longer and shorter alternatives, duplicate display names, sequenced/wave key ordering, JSON roundtrip, eviction, schema migration/strictness, selector persistence/reset, malicious phase names, and truthful static copy.
+- [ ] Prove cache isolation with sentinels: hidden comparison, ordering, preliminary, and warm-up work cannot touch cache; repeated held runs remain held; visible reoptimize remembers its selected jobs; failed selected runs retain prior-good records.
+- [ ] Extend generated-app smoke coverage using the ordinary current Blob Worker: establish schema-v2 prefer-current pins, rerun the 420 case under both policies, assert the expected executable/full-ETA tradeoff and selected-only `__stab`, and require zero permanent Worker/dependency requests. Use no deterministic test hook in the browser path.
+- [ ] Preserve `js/solver.worker.js`, `compat/solver.worker.v2.js`, `test/fixtures/solver-worker-v2-request.json`, the compatibility checksums/golden, and both permanent endpoints byte-for-byte. No production change is expected in `js/solve-service.js` or the current Worker handler.
 
 ## Task 8: Unify Numeric Validation, Error Messaging, and UI Ranges
 

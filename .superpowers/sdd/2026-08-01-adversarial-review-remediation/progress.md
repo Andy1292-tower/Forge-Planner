@@ -1,0 +1,49 @@
+# SDD ledger — plan: /private/tmp/forge-planner-adversarial-resynced/docs/superpowers/plans/2026-08-01-adversarial-review-remediation.md
+
+- Branch start: 78f496a1ee442a062dd667b2fb85825fbd468261
+- Execution workspace: /private/tmp/forge-planner-adversarial-resynced
+- Process decision: one isolated plan worktree with task-scoped commits and serialized integration, preserving the plan's overlap constraints while following the SDD single-workspace review loop.
+- Pre-flight conflict scan: clean; no plan item contradicts the global constraints or mandates a known review defect.
+- Plan artifacts preserved in commit fc4caf9.
+- Task 0: fix round 1/5 (3 addressed, 0 open; commits 1b56e34..47db0b4)
+- Task 0: complete (commits fc4caf9..47db0b4, review clean)
+- Task 1: minor (deferred): recovery dismissal restores Import focus rather than the exact Export/Import invoker.
+- Task 1: review warning resolved: imported-markup sinks and direct mutation ownership are explicitly assigned to Tasks 2 and 3; untouched mechanics remain covered by the existing suite and final audit.
+- Task 1: fix round 1/5 (4 addressed, 0 open; commits b6b1f30..5cbbcea)
+- Task 1: complete (commits 47db0b4..5cbbcea, review clean)
+- Task 2: fix round 1/5 (2 addressed, 0 open; commits faf813d..3c83d46; local SDD report untracked)
+- Task 2: complete (commits 5cbbcea..3c83d46, review clean)
+- Task 3: minor (deferred): an onerror from an owned but idle reused Worker can increment failure state and expose fallback with no authoritative request.
+- Task 3: review warning resolved: Tasks 4–7 and Task 13 are explicitly downstream; full-suite evidence is recorded in the implementer report.
+- Task 3: fix round 1/5 (2 addressed, 0 open; commits 8d1e819..c4e5c39)
+- Task 3: complete (commits 3c83d46..c4e5c39, review clean)
+- Execution order adjustment: prioritize Tasks 9, 10, and 11A next to deliver approved P1 UI/UX geometry sooner; all declared dependencies are satisfied, and Tasks 4–8 remain pending.
+- Task 9: minor (deferred to Task 11C): dialog inert cleanup does not preserve pre-existing inert state on independent body children.
+- Task 9: review warning resolved: full Playwright and in-app QA evidence is recorded in the implementer report; the reviewer correctly did not rerun broad gates.
+- Task 9: fix round 1/5 (3 addressed, 0 open; commits 8063680..7e11d73)
+- Task 9: complete (commits c4e5c39..7e11d73, review clean)
+- Task 10: minor (deferred): skip-link destination suppresses a visible focus indicator after activation.
+- Task 10: review warning pending manual verification: real screen-reader timing and rendered 200% zoom/forced-colors/keyboard/mobile states will be included in Task 10 fix evidence and Task 11A visual QA.
+- Task 10: fix round 1/5 (5 addressed, 1 open; commits d9fb98f..b4264fb)
+- Task 10: fix round 2/5 (1 addressed, 0 open; commits b4264fb..eb950d4)
+- Task 10: complete (commits 7e11d73..eb950d4, review clean; manual announcement timing remains final rendered QA)
+- Task 11A: visual review approved all 13 before/after pairs; P2 observations deferred to 11B–11D.
+- Task 11A: minor (deferred): CI visual step is unnamed and test:browser re-runs visual-layout because only accessibility is excluded.
+- Task 11A: review warning resolved: RED/GREEN chronology, command evidence, flaky isolation, and live 561px inspection are recorded in the implementer report and ignored visual artifacts.
+- Task 11A: complete (commits e2879ca..f1e9bee; all 13 visual pairs approved; checkpoint merged to main by PR #93 at 5c351ca).
+- Emergency main audit/resync: branch `codex/adversarial-remediation-continuation-v2` starts clean at `1466a5d`, including `188e913` (permanent legacy Worker fence plus v2 source endpoint) and `1466a5d` (content-hashed static build, embedded Blob Worker, frozen compatibility endpoint, production cache headers/tests).
+- Plan reconciliation: commit `8940423` adds the global release/Worker contract and Task 3F; redirects current Worker work to `js/solver.worker.v2.js` plus the build graph; protects both permanent compatibility endpoints; constrains Tasks 5–8 and Task 13 to current factory/Blob seams; extends Task 11D for hashed/base-aware fonts; rewrites Task 14 around remaining subpath/warm-upgrade gaps; preserves every deferred minor owner; narrows Task 15 and expands Task 16 verification. Re-review also assigns inert-state restoration to Task 11C, adds the frozen v2 request fixture plus its existing browser-smoke owner to Task 3F, gives Task 4 browser-smoke ownership, and includes `js/render.js` in Task 14 tooltip-path scope.
+- Task 3F: fix round 1/5 (2 addressed, 0 open; commits `4741fbb..5c06a4f`): post-construction factory setup exceptions now terminate/release the created Worker, and idle errors silently discard the unhealthy Worker before a healthy replacement solve. Fresh scoped re-review approved with no findings.
+- Task 3F: complete (commits `8940423..5c06a4f`, review clean; controller independently reran 11/11 lifecycle, 6/6 static-build, 3/3 compatibility, browser-spec syntax, all 19 Node scripts with parity 16/16, deterministic build, compatibility-byte diff, and `git diff --check`; no browser launched).
+- Task 4: implementation committed as `1e36613` from base `5c06a4f`; independent review in progress. Direct/full gates are green with 20 Node scripts and parity 16/16; no browser launched. Read-only design preparation confirmed the exact `-2932.417170` Ingot transient, resolved pre-produced Frames/Wire Bits as explicit external prerequisites rather than Project LP lines, separated semantic `phases` from executable `executionPhases`, and replaced approximate clamped carry with exact replay ownership.
+- Task 4: fix round 1/5 in progress after independent review found 5 Important blockers: malformed schedule shapes fail open or throw; callback phases can inject external/untracked/unrelated resources; combined-root dependency recursion rejects a legitimate sibling-root ancestor; partial-stock Bits copy states the shortfall as the total actionable prerequisite; and blocked waved results retain imperative ordering copy. Reviewer Minor coverage/cleanup observations are included in the same fix round where safe. No browser is authorized locally.
+- Task 4: fix round 1/5 complete (commit `5e619fe`, 5 Important findings and all cheap reviewer Minors addressed, fresh scoped rereview approved with no Critical/Important/Minor findings). Controller independently reran all 20 Node scripts with parity 16/16, deterministic build, Project/stability/static/legacy focused gates, browser-spec syntax, compatibility-byte diff/checksums, and `git diff --check`; no browser launched. Task 4 is complete across commits `5c06a4f..5e619fe`.
+- Task 5 preparation: controller accepted the explicit 64-line complexity boundary in `task-5-brief.md`. `gelLoadout` remains exact/uncapped and is used by the capacity UI through 12 lines; solver seeds and >12-line UI use a separately named bounded helper, with the large-factory UI labeled `Estimated capacity` / `Best found loadout`. The 64-line save limit remains compatible, and no bounded result may claim an exact maximum.
+- Task 5: fix round 1/5 resolved assignment-order-dependent strict-budget feasibility and cross-signature dominance pruning (`e5affec..707772e`). Stable low-to-high aggregation and remaining-profile rank signatures now preserve exact physical-line equivalence.
+- Task 5: fix round 2/5 widened the dominance envelope to cover all four stable-sum error paths and protected far-cost Gel ordering (`707772e..a7dc5e5`).
+- Task 5: fix round 3/5 protected ordinary dominance from stable-sum Vespium-order reversal with an independent order-safe monotone query (`a7dc5e5..e5418e4`). Fresh scoped review approved the exact safety boundary, both cursor predicates, unchanged public tie semantics, and a 50,000-case optimized-versus-reference comparison.
+- Task 5: complete (commits `5e619fe..e5418e4`, review clean). Controller independently reran exact/oracle coverage, the full scale matrix, static release graph, parity `16/0/0`, immutable endpoint hashes, and diff/worktree checks. All 21 Node scripts and browser-spec syntax also passed; no browser was launched. Exact 12-line mixed cases remained below one second, and >12-line UI claims remain explicitly estimated.
+- Task 6: implementation committed as `32b70c4`; formal review found two Important blockers: persistent shell labels still promised an optimal setup during bounded Credits results, and stale executable rows beyond the current physical line count could pass Copy-to-Manual eligibility before being truncated to all Idle.
+- Task 6: fix round 1/5 complete (commit `49a9c36`, 2 Important findings addressed). Persistent labels are neutral, rendering/copy derive only from current physical lines, missing rows map safely to Idle, and out-of-range rows cannot trigger a mode switch. Fresh independent review approved exact range `32b70c4..49a9c36` with no findings.
+- Task 6: complete (commits `e5418e4..49a9c36`, review clean). Controller independently reran the focused Credits contract, all 22 Node scripts, deterministic static build, parity `16/0/0`, browser-spec syntax, immutable endpoint byte/hash checks, and `git diff --check`; no browser was launched.
+- Task 7 reconciliation: the executable-schedule model materially refines COR-06. In the frozen 420-Frames case, held phase throughput is 2.6304% lower and phase ETA 2.7015% longer, but held warm-up is 129.94 seconds shorter and the complete held run (`0.6659750249h`) beats reoptimization (`0.6846583163h`) by 67.26 seconds. The plan now uses `prefer-current | reoptimize`, compares complete replayed schedules, isolates hidden comparison/cache effects, and forbids any unconditional `fastest` action or claim.
