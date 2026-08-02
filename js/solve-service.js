@@ -63,17 +63,36 @@ function maxItemsJsonSafe(value,depth=0,budget){
   const keys=Object.keys(value);if(keys.length>5000)return false;
   return keys.every(key=>key.length<=200&&maxItemsJsonSafe(value[key],depth+1,budget));
 }
+function maxItemsPlanValid(result){
+  let needsIndex=false;
+  const valid=result.plan.every(row=>{
+    if(!row||Object.prototype.toString.call(row)!=="[object Object]"||!row.job||
+      Object.prototype.toString.call(row.job)!=="[object Object]")return false;
+    const job=row.job;
+    if(job.kind==="idle")return true;
+    if((job.kind!=="produce"&&job.kind!=="craft")||typeof job.res!=="string"||
+      !Number.isFinite(job.lvl)||!Number.isFinite(job.ct)||!Array.isArray(job.prod)||
+      !job.prod.length||!Array.isArray(job.prod[0])||!Number.isFinite(job.prod[0][1])||
+      !Array.isArray(job.cons))return false;
+    if(job.cons.length)needsIndex=true;
+    return job.cons.every(input=>Array.isArray(input)&&input.length>=2&&Number.isFinite(input[0])&&Number.isFinite(input[1]));
+  });
+  return valid&&(!needsIndex||Object.prototype.toString.call(result.resIndex)==="[object Object]");
+}
 function maxItemsResultValid(result){
   if(!result||Object.prototype.toString.call(result)!=="[object Object]"||result.mode!=="items")return false;
   if(!maxItemsJsonSafe(result))return false;
   if(result.empty===true)return true;
   return result.empty===false&&Array.isArray(result.issues)&&Array.isArray(result.targets)&&
     Array.isArray(result.plan)&&Array.isArray(result.balance)&&
-    Object.prototype.toString.call(result.out)==="[object Object]"&&Number.isFinite(result.ms);
+    result.issues.every(issue=>typeof issue==="string")&&result.targets.every(target=>typeof target==="string")&&
+    Object.prototype.toString.call(result.out)==="[object Object]"&&Number.isFinite(result.ms)&&maxItemsPlanValid(result);
 }
 function maxItemsRecordValid(record,now){
   if(!record||record.version!==MAX_ITEMS_CACHE_VERSION||typeof record.savedAt!=="number"||
     typeof record.id!=="string"||typeof record.conditionKey!=="string"||!maxItemsResultValid(record.result))return false;
+  try{if(JSON.stringify(record).length>MAX_ITEMS_CACHE_RECORD_CHARS)return false;}
+  catch(error){return false;}
   const age=now-record.savedAt;
   return age>=0&&age<MAX_ITEMS_CACHE_AGE_MS&&record.id===maxItemsConditionHash(record.conditionKey);
 }
