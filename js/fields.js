@@ -3,7 +3,7 @@
 /* Persisted-field rules are the one numeric authority for imports, live controls, the page-side
  * dispatch boundary, and the generated Blob Worker. Collection limits remain deliberately
  * generous security ceilings, not recommendations for ordinary planner builds. */
-const CURRENT_SCHEMA_VERSION=3;
+const CURRENT_SCHEMA_VERSION=4;
 const CURRENT_BASE_TIME_REVISION=2;
 const STATE_LIMITS=Object.freeze({
   maxBytes:2*1024*1024,

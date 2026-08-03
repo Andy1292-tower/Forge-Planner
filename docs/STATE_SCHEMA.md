@@ -4,7 +4,7 @@ This document describes the build data that Forge Planner accepts, stores, impor
 
 ## Current format
 
-- Current schema version: `3`
+- Current schema version: `4`
 - Primary browser-storage key: `forgePlannerState_v3`
 - Previous-good backup key: `forgePlannerState_v3_previous_good`
 - Rejected payload key: `forgePlannerState_v3_rejected`
@@ -17,14 +17,14 @@ Despite the historical storage-key suffix, `schemaVersion` inside the JSON is th
 
 | Field | Meaning |
 | --- | --- |
-| `schemaVersion` | Integer format version. Current exports write `3`. |
+| `schemaVersion` | Integer format version. Current exports write `4`. |
 | `lines[]` | Crafter lines: supported compression cap (`max`), displayed speed (`spx`), and current turbo stacks (`turbo`). |
 | `maxTurbo`, `dupe` | Global maximum turbo stacks and duplication percentage. |
 | `prodCost`, `baseTime`, `baseTimeRev` | Ordinary recipe costs at each supported compression, per-item base craft times, and their migration revision. Mined costs remain code-defined mechanics. |
 | `margin`, `mode`, `solveBudget` | May-work margin, selected mode, and bounded solve-time setting. |
 | `sellPrice`, `priceText` | Accepted sell prices plus the user's display drafts. |
 | `forgie`, `forgieText` | Accepted Lil' Forgie rates plus display drafts. |
-| `minedIncome`, `minedIncomeText` | Independent Vespium and Hydracite income values plus display drafts. |
+| `minedIncome`, `minedIncomeText` | Source-aware Vespium and Hydracite income values plus matching display drafts. |
 | `targets` | Per-item enabled state and priority weight. |
 | `projects[]` | Catalog or custom projects, level costs, active range, completion count, numeric order, and the `_open` card-disclosure state. |
 | `inventory`, `inventoryText` | Current ordinary-item stock plus display drafts. |
@@ -35,6 +35,44 @@ Despite the historical storage-key suffix, `schemaVersion` inside the JSON is th
 | `manualSaved[]`, `manualActiveId` | Named Manual presets and the selected preset ID. |
 
 Catalog-backed projects retain their `catId`, user range, completion, activation, and order. On normalization, their name, description, and level costs are refreshed from the current shipped catalog. Custom projects retain their exported level data.
+
+### Mined-resource source units
+
+Schema 4 stores the unit in each source property's name:
+
+```json
+{
+  "minedIncome": {
+    "Vespium": {
+      "rigPerMin": null,
+      "resourcesTradingPerSec": null
+    },
+    "Hydracite": {
+      "resourcesTradingPerSec": null
+    }
+  },
+  "minedIncomeText": {
+    "Vespium": {
+      "rigPerMin": "",
+      "resourcesTradingPerSec": ""
+    },
+    "Hydracite": {
+      "resourcesTradingPerSec": ""
+    }
+  }
+}
+```
+
+Every source and matching display-text leaf is required in a schema-4 build, although a numeric source may be blank (`null`). The effective independent hourly budgets are:
+
+```text
+Vespium/hour = max(0, rigPerMin) × 60
+              + max(0, resourcesTradingPerSec) × 3600
+
+Hydracite/hour = max(0, resourcesTradingPerSec) × 3600
+```
+
+Vespium cannot satisfy a Hydracite requirement, and Hydracite cannot satisfy a Vespium requirement.
 
 ## Validation boundaries
 
@@ -63,7 +101,19 @@ Compression values must be one of the levels declared in `LEVELS`. Item names mu
 
 ## Import, migration, and recovery
 
-The accepted inputs are current schema `3`, schemas `1` and `2`, and the recognized unversioned legacy shape containing `lines`, `prodCost`, and `targets`. Schema 3 raises the fresh/reset solve-time default to 10 seconds. Older accepted saves receive that 10-second value once during migration; after the save is written as schema 3, any exact user-selected value in the supported 200–60,000ms range is preserved. Schema 2 retains its original strict project-stability and unique-project-ID validation. Unknown/future versions and truncated lookalikes are rejected instead of guessed.
+The accepted inputs are current schema `4`, schemas `1`, `2`, and `3`, and recognized unversioned shapes containing `lines`, `prodCost`, and `targets`. Schema 2 retains its original strict project-stability and unique-project-ID validation. Unknown/future versions and truncated lookalikes are rejected instead of guessed.
+
+Schemas 1–3 store scalar per-minute values at `minedIncome.Vespium` and `minedIncome.Hydracite`. Those scalar leaves are validated under their original rules before conversion. During migration:
+
+- Vespium moves to `Vespium.rigPerMin`, retaining its display text;
+- Vespium Resources & Trading starts blank;
+- Hydracite moves to `Hydracite.resourcesTradingPerSec` after division by 60;
+- Hydracite display text is regenerated from the converted per-second number;
+- legacy `gelVesp` and `gelVespText` move to the Vespium Rig source.
+
+The conversion preserves the effective hourly budgets. A schema-3 build containing `{Vespium: 120, Hydracite: 60}` becomes 120 Vespium/min and 1 Hydracite/sec, retaining 7,200 Vespium/hour and 3,600 Hydracite/hour.
+
+Schema 3 raised the fresh/reset solve-time default to 10 seconds. Unversioned, schema-1, and schema-2 saves still receive that one-time value during migration. A schema-3 save has already passed that migration, so its exact accepted 200–60,000ms choice is preserved when it becomes schema 4.
 
 Import is transactional:
 
@@ -74,7 +124,9 @@ Import is transactional:
 
 At startup, an invalid stored build does not brick the GUI. Forge Planner starts from safe defaults, preserves the rejected text and reason, and offers **Download rejected save** and **Try another import**. A valid previous state is retained separately as the previous-good backup.
 
-When adding schema `4` or later, update defaults and `FIELD_SCHEMA`, add an explicit migration in `validateAndMigrate`, retain transactional rollback, and add current/legacy/future-version fixtures before changing `CURRENT_SCHEMA_VERSION`.
+Successful migration keeps using the historical `forgePlannerState_v3` keys. Before writing migrated schema-4 JSON to the primary key, startup rotates the exact accepted pre-migration primary bytes to `forgePlannerState_v3_previous_good`. A successful migration does not create or alter rejected-state records.
+
+When adding schema `5` or later, update defaults and `FIELD_SCHEMA`, add an explicit migration in `validateAndMigrate`, retain transactional rollback, and add current/legacy/future-version fixtures before changing `CURRENT_SCHEMA_VERSION`.
 
 ## Not persisted in the build
 

@@ -31,6 +31,8 @@ self.onmessage = function (e) {
     if (res && typeof getLineStability === "function") res.__stab = getLineStability();
     self.postMessage({ reqId, generation, mode, stateRevision, res });
   } catch (err) {
-    self.postMessage({ reqId, generation, mode, stateRevision, error: (err && err.stack) || String(err) });
+    const message=err&&typeof err.message==="string"?err.message:String(err);
+    const stack=err&&typeof err.stack==="string"?err.stack:"";
+    self.postMessage({ reqId, generation, mode, stateRevision, error: {message,stack} });
   }
 };

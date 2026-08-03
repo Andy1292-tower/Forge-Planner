@@ -245,7 +245,11 @@ const runner = `
     const s = defaults(); s.dupe = 0; s.margin = 0; s.mode = "project";
     s.projLineMode = (opts && opts.lineMode) || "static";
     s.lines = lines.map(l => ({max:l.max, spx:l.spx, turbo:0}));
-    s.minedIncome = Object.assign({Vespium:null, Hydracite:null}, (opts && opts.minedIncome) || {});
+    const mined=(opts && opts.minedIncome) || {};
+    if(Object.prototype.hasOwnProperty.call(mined,"Vespium"))s.minedIncome.Vespium.rigPerMin=mined.Vespium;
+    if(Object.prototype.hasOwnProperty.call(mined,"Hydracite"))
+      s.minedIncome.Hydracite.resourcesTradingPerSec=mined.Hydracite==null?mined.Hydracite:mined.Hydracite/60;
+    Object.assign(s.forgie,(opts && opts.forgie) || {});
     s.projects = [{id:"x",name:"X",catId:"",on:true,from:1,to:1,done:0,prio:null,
       levels:[{costs:costs.map(c=>({item:c[0], qty:c[1]}))}]}];
     normalize(s); syncManual(s); S = s;
@@ -285,6 +289,28 @@ const runner = `
       uses.filter(u => u.resource === "Hydracite" || u.resource === "Vespium")
           .every(u => u.lines > 0 && u.inputHr > 0 && u.outHr > 0),
       "burn=" + JSON.stringify(uses.map(u => u.resource + ":" + (u.inputHr > 0))));
+  }
+
+  {
+    const oneCraft = scene([["Batteries",5]], [{max:1,spx:1}], {
+      minedIncome:{Vespium:1e30,Hydracite:1e30},forgie:{Wire:1e30,Gel:1e30}
+    });
+    const ph=oneCraft.phases[0];
+    const entry=rowsOf(oneCraft).flatMap(row=>row.entries).find(e=>e.item==="Batteries");
+    const wire=(ph.balance||[]).find(row=>row.res==="Wire"),gel=(ph.balance||[]).find(row=>row.res==="Gel");
+    const hydra=(ph.minedUsage||[]).find(use=>use.item==="Batteries"&&use.resource==="Hydracite");
+    record("static Batteries: five units finish in one physical craft",
+      oneCraft.feasible===true&&Math.abs(oneCraft.eta-287.2984888888889)<=1e-9,
+      "eta="+oneCraft.eta+" feasible="+oneCraft.feasible);
+    record("static Batteries: replay preserves corrected outHr",
+      entry&&Math.abs(entry.outHr-0.01740350260572976)<=1e-15&&
+        Math.abs((ph.rate.Batteries||0)-0.01740350260572976)<=1e-15,
+      "entry="+(entry&&entry.outHr)+" rate="+(ph.rate.Batteries||0));
+    record("static Batteries: inputs remain per physical craft",
+      wire&&gel&&hydra&&Math.abs(wire.cons-1.7403502605729757)<=1e-12&&
+        Math.abs(gel.cons-348.0700521145951)<=1e-9&&
+        Math.abs(hydra.inputHr-17403502605.72976)<=1e-5,
+      "wire="+(wire&&wire.cons)+" gel="+(gel&&gel.cons)+" hydra="+(hydra&&hydra.inputHr));
   }
 
   /* ---- missing Hydracite income: blocked, and honestly PARTIAL in static mode --------------
@@ -363,7 +389,7 @@ const runner = `
       top.feasible === true && e.item === "Concrete" && e.lvl === 16384 && e.frac === 1,
       "job=" + e.item + "@" + e.lvl + " label=" + compressionLabel(e.lvl) + " eta=" + top.eta.toFixed(4));
     record("static: the top level renders through compressionLabel, not raw arithmetic",
-      compressionLabel(e.lvl) === "16.4k×" && compressionLabel(8192) === "8192×",
+      compressionLabel(e.lvl) === "16.38k×" && compressionLabel(8192) === "8192×",
       "16384=" + compressionLabel(16384) + " 8192=" + compressionLabel(8192));
     const capped = scene([["Concrete",1e12]], [{max:8192, spx:50}], {});
     const ce = rowsOf(capped)[0].entries[0];

@@ -50,11 +50,17 @@ function projPlanAnchorHtml(){
   </div>`;
 }
 
+function solveErrorMessage(error){
+  if(error&&typeof error==="object"&&typeof error.message==="string"&&error.message.trim())return error.message.trim();
+  const lines=String(error==null?"":error).split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
+  const useful=lines.find(line=>!/^at\s+/i.test(line)&&!/(?:^|@)blob:/i.test(line))||"Unknown solver failure";
+  return useful.replace(/^(?:Error|TypeError|RangeError):\s*/i,"");
+}
 function solveError(msg){
   const el=document.getElementById("results"),stat=document.getElementById("solveStat");
   if(el){
     const notice=domElement("div","notice warn");
-    notice.append(domElement("b","","Solver error."),document.createTextNode(" "+String(msg).split("\n")[0]));
+    notice.append(domElement("b","","Solver error."),document.createTextNode(" "+solveErrorMessage(msg)));
     el.replaceChildren(notice);
   }
   if(stat)stat.textContent="Solve failed. Check the message below and try again.";

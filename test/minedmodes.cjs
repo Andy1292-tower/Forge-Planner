@@ -16,10 +16,12 @@ const runner = `
 (function(){
   let fail=0;
   const check=(name,ok,detail)=>{console.log((ok?"ok   ":"FAIL ")+name+" ["+detail+"]");if(!ok)fail++;};
+  const setVesp=(s,value)=>{s.minedIncome.Vespium.rigPerMin=value;};
+  const setHydraPerMin=(s,value)=>{s.minedIncome.Hydracite.resourcesTradingPerSec=value/60;};
   function project(vesp,hydra){
     const s=defaults();s.mode="project";s.dupe=0;
     s.lines=Array.from({length:6},(_,i)=>({max:i<2?16:4,spx:10,turbo:0}));
-    s.minedIncome.Vespium=vesp;s.minedIncome.Hydracite=hydra;
+    setVesp(s,vesp);setHydraPerMin(s,hydra);
     s.projects=[{id:"battery",name:"Battery test",catId:"",on:true,from:1,to:1,done:0,prio:null,
       levels:[{costs:[{item:"Batteries",qty:1}]}]}];
     normalize(s);return s;
@@ -51,6 +53,29 @@ const runner = `
   }));
   check("project reports real informational Rocks consumption",rockUse&&Math.abs(rockUse.inputHr-expectedRocks)<=1e-9*Math.max(1,expectedRocks),"use="+(rockUse&&rockUse.inputHr)+", expected="+expectedRocks);
 
+  S=defaults();S.mode="project";S.projLineMode="split";S.dupe=0;
+  S.lines=[{max:1,spx:1,turbo:0}];S.forgie.Wire=1e30;S.forgie.Gel=1e30;
+  setVesp(S,1e30);S.minedIncome.Hydracite.resourcesTradingPerSec=1e30;
+  S.projects=[{id:"battery-five",name:"One Battery craft",catId:"",on:true,from:1,to:1,done:0,prio:null,
+    levels:[{costs:[{item:"Batteries",qty:5}]}]}];normalize(S);
+  r=optimize();
+  const exactPhase=r.phases[0],exactEntry=(exactPhase.plan||[]).flatMap(p=>p.entries||[]).find(e=>e.item==="Batteries");
+  const exactWire=(exactPhase.balance||[]).find(x=>x.res==="Wire"),exactGel=(exactPhase.balance||[]).find(x=>x.res==="Gel");
+  const exactHydra=(exactPhase.minedUsage||[]).find(x=>x.item==="Batteries"&&x.resource==="Hydracite");
+  check("split project completes five Batteries in one physical craft",
+    r.feasible&&Math.abs(r.eta-287.2984888888889)<=1e-9,
+    "eta="+r.eta+", feasible="+r.feasible);
+  check("split project replays corrected Batteries outHr",
+    exactEntry&&Math.abs(exactEntry.outHr-0.01740350260572976)<=1e-15&&
+      Math.abs((exactPhase.rate.Batteries||0)-0.01740350260572976)<=1e-15,
+    "entry="+(exactEntry&&exactEntry.outHr)+", rate="+(exactPhase.rate.Batteries||0));
+  check("split project keeps Batteries inputs per physical craft",
+    exactWire&&exactGel&&exactHydra&&
+      Math.abs(exactWire.cons-1.7403502605729757)<=1e-12&&
+      Math.abs(exactGel.cons-348.0700521145951)<=1e-9&&
+      Math.abs(exactHydra.inputHr-17403502605.72976)<=1e-5,
+    "wire="+(exactWire&&exactWire.cons)+", gel="+(exactGel&&exactGel.cons)+", hydra="+(exactHydra&&exactHydra.inputHr));
+
   S=project(1e40,1e40);
   S.lines=Array.from({length:5},()=>({max:1,spx:1,turbo:0}));
   S.projects=[{id:"skewed",name:"Skewed mixed project",catId:"",on:true,from:1,to:1,done:0,prio:null,
@@ -70,7 +95,7 @@ const runner = `
   const rcUses=(r.phases[0]&&r.phases[0].minedUsage)||[];
   check("reinforced project needs no mined income",r.feasible&&r.eta>0&&rcUses.length===0,"eta="+r.eta+", uses="+JSON.stringify(rcUses)+", lp="+r.lpFeasible+", failure="+JSON.stringify(r.scheduleValidation&&r.scheduleValidation.firstFailure));
   S=defaults();S.dupe=0;S.lines=Array.from({length:3},()=>({max:1,spx:1,turbo:0}));
-  S.minedIncome.Vespium=1e15;S.minedIncome.Hydracite=1e9;
+  setVesp(S,1e15);setHydraPerMin(S,1e9);
   S.manual=[{job:"Gel",lvl:1,sell:false},{job:"Batteries",lvl:1,sell:false},{job:"Reinforced Concrete",lvl:1,sell:false}];syncManual(S);
   const m=manualResult(),mb=m.minedBalances||[],v=mb.find(x=>x.resource==="Vespium"),h=mb.find(x=>x.resource==="Hydracite");
   check("manual tracks vespium",v&&v.consHr>0,"vesp="+(v&&v.consHr));

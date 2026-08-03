@@ -97,7 +97,7 @@ function buildJobs(maxVal,resIndex,relRaws,relProds,targets,w){
       // single fastest-rate feeder job.
       allowed.forEach(L=>{
         const t=craftTime(Rw,L);if(!(t>0))return;
-        const rate=L/t;
+        const rate=craftYield(Rw,L)/t;
         jobs.push({label:"Produce "+Rw,kind:"produce",res:Rw,lvl:L,ct:t,
           prod:[[resIndex[Rw],rate]],cons:[],h:rate/w[ti]});
       });
@@ -106,7 +106,7 @@ function buildJobs(maxVal,resIndex,relRaws,relProds,targets,w){
       let best=null;
       allowed.forEach(L=>{
         const t=craftTime(Rw,L);if(!(t>0))return;
-        const rate=L/t;
+        const rate=craftYield(Rw,L)/t;
         if(!best||rate>best.rate)best={rate,L,t};
       });
       if(best)jobs.push({label:"Produce "+Rw,kind:"produce",res:Rw,lvl:best.L,ct:best.t,
@@ -127,7 +127,7 @@ function buildJobs(maxVal,resIndex,relRaws,relProds,targets,w){
         if(c==null||isNaN(c)||c<0)ok=false;else cons.push([resIndex[r],c/tt]);
       }
       if(!ok)return;
-      const rate=L/tt;const ti=targets.indexOf(P);
+      const rate=craftYield(P,L)/tt;const ti=targets.indexOf(P);
       // ct = craft-cycle seconds at 1x speed; the line's effective speed is capped at ct (1s floor)
       jobs.push({label:"Craft "+P,kind:"craft",res:P,lvl:L,ct:tt,
         prod:[[resIndex[P],rate]],cons,h:ti>=0?rate/w[ti]:0});
@@ -153,13 +153,32 @@ function makeSolveControl(timeBudget,options){
   let work=0,stopped=false,deadlineReached=false,reason=null;
   const emit=event=>{if(observer)observer(event);};
   const readNow=()=>{let value=Number(clock());if(!Number.isFinite(value))value=lastNow;if(value<lastNow)value=lastNow;lastNow=value;return value;};
-  const checkpoint=(label,cost)=>{
+  const reserveWork=(label,cost)=>{
     if(stopped)return false;
     const units=Math.max(1,Math.floor(Number(cost)||1));
     if(work+units>workLimit){stopped=true;deadlineReached=true;reason="work";emit({type:"stopped",label,reason,work,elapsed:lastNow-startedAt});return false;}
-    work+=units;
-    const now=readNow();
+    work+=units;return true;
+  };
+  const stopAtDeadline=(label,now)=>{
     if(now>=deadline){stopped=true;deadlineReached=true;reason="deadline";emit({type:"stopped",label,reason,work,elapsed:now-startedAt});return false;}
+    return true;
+  };
+  const checkpoint=(label,cost)=>{
+    if(!reserveWork(label,cost))return false;
+    const now=readNow();
+    if(!stopAtDeadline(label,now))return false;
+    emit({type:"checkpoint",label,work,elapsed:now-startedAt});return true;
+  };
+  // Charge global work first, then use one clock sample to arbitrate local and root time limits.
+  // When the earlier local cutoff and the root deadline are both crossed by that sample, returning
+  // the candidate's last safe incumbent takes temporary precedence; finalization observes the same
+  // monotonic time and marks the root expired before any further shared work can begin.
+  const checkpointWithin=(label,cost,localDeadline,onLocalLimit)=>{
+    if(!reserveWork(label,cost))return false;
+    const now=readNow(),local=Number(localDeadline),hasLocal=Number.isFinite(local);
+    if(hasLocal&&local<deadline&&now>=local){if(onLocalLimit)onLocalLimit(label,now);return false;}
+    if(!stopAtDeadline(label,now))return false;
+    if(hasLocal&&now>=local){if(onLocalLimit)onLocalLimit(label,now);return false;}
     emit({type:"checkpoint",label,work,elapsed:now-startedAt});return true;
   };
   const event=(type,data)=>emit(Object.assign({type,work,elapsed:lastNow-startedAt},data||{}));
@@ -169,7 +188,7 @@ function makeSolveControl(timeBudget,options){
     if(now>=deadline){stopped=true;deadlineReached=true;reason="deadline";emit({type:"stopped",label:"result-finalize",reason,work,elapsed:now-startedAt});}
     return deadlineReached;
   };
-  return {__forgeSolveControl:true,startedAt,deadline,checkpoint,event,readNow,currentTime:()=>lastNow,
+  return {__forgeSolveControl:true,startedAt,deadline,checkpoint,checkpointWithin,event,readNow,currentTime:()=>lastNow,
     elapsed:()=>Math.max(0,lastNow-startedAt),work:()=>work,
     isStopped:()=>stopped,deadlineReached:refreshDeadline,reason:()=>reason};
 }
@@ -186,7 +205,7 @@ function makeLocalDeadlineControl(root,localDeadline,onLimit){
   };
   const checkpoint=(label,cost)=>{
     if(localStopped)return false;
-    if(root.currentTime()>=localDeadline)return stopLocal(label);
+    if(typeof root.checkpointWithin==="function")return root.checkpointWithin(label,cost,localDeadline,stopLocal);
     if(!root.checkpoint(label,cost))return false;
     return root.currentTime()>=localDeadline?stopLocal(label):true;
   };
@@ -642,7 +661,7 @@ function solveRaw(Rw,control){
     const allowed=LEVELS.filter(L=>L<=s.max);let bst=null;
     // pick the level that maximises floored output (effective speed capped at the cycle time)
     for(let li=0;li<allowed.length;li++){if(control&&!control.checkpoint("raw-level"))return {item:Rw,kind:"raw",out:0,plan:null,balance:null,resIndex,capped:false,feasible:false,interrupted:true};
-      const L=allowed[li],t=craftTime(Rw,L);if(t>0){const out=(L/t)*(s.sp>t?t:s.sp);if(!bst||out>bst.out)bst={rate:L/t,L,t,out};}}
+      const L=allowed[li],t=craftTime(Rw,L);if(t>0){const rate=craftYield(Rw,L)/t,out=rate*(s.sp>t?t:s.sp);if(!bst||out>bst.out)bst={rate,L,t,out};}}
     const job=bst?{kind:"produce",res:Rw,lvl:bst.L,ct:bst.t,prod:[[0,bst.rate]],cons:[]}:{kind:"idle",res:null,lvl:null,prod:[],cons:[]};
     if(bst)total+=bst.out*s.dp;
     plan[s.orig]={line:s.orig+1,max:s.max,spx:s.sp,dup:(s.dp-1)*100,sp:s.sp,dp:s.dp,job};
@@ -782,7 +801,7 @@ function optimizeInner(timeBudget,testOptions){
    Gel is a native resource in the solve now (see solveCore / projectSchedule). The player-facing
    capacity helper is exact; repeated solver prefixes use the separately named bounded seed. */
 // Gel output / vespium burn for a whole line running Gel @L (≤ the line's own cap), full time.
-function gelOutHr(row,L){const sp=lineSpeed(row),dp=dupeMult(),ct=craftTime(GEL,L);return ct>0?(L/ct)*effSpeed(sp,ct)*dp*3600:0;}
+function gelOutHr(row,L){const sp=lineSpeed(row),dp=dupeMult(),ct=craftTime(GEL,L);return ct>0?(craftYield(GEL,L)/ct)*effSpeed(sp,ct)*dp*3600:0;}
 function gelVespHr(row,L){const sp=lineSpeed(row),ct=craftTime(GEL,L);return ct>0?gelOreCost(L).vesp*(effSpeed(sp,ct)/ct)*3600:0;}
 // Cheap reservation seed for solveCore. It deliberately makes no optimality claim: each candidate
 // solve invokes this across ranked-line prefixes (and Credits repeats those solves), so bounded work
@@ -946,7 +965,7 @@ function gelLoadout(rows,vespBudgetHr){
   return {gelHr:gelLoadoutStableSum(perLine.map(line=>line.gelHr)),
     vespHr:gelLoadoutStableSum(perLine.map(line=>line.vespHr)),perLine};
 }
-// Vespium/hr income from the user's vespium/minute figure (0 if unset → Gel off).
+// Aggregate Vespium/hour from every declared source (0 if all are unset → Gel off).
 function gelVespBudgetHr(){return minedBudgetHr("Vespium");}
 function projectDemand(){
   const gross={};ALLITEMS.forEach(it=>gross[it]=0);
@@ -1057,13 +1076,13 @@ function projectSchedule(net,targets,avail,opts){
   lns.forEach((ln,li)=>{
     items.forEach(it=>{
       LEVELS.filter(L=>L<=ln.max).forEach(L=>{
-        if(RAWS.includes(it)){const t=craftTime(it,L);if(!(t>0))return;const es=effSpeed(ln.sp,t);vars.push({li,item:it,lvl:L,rate:(L/t)*es*ln.dp*3600,cons:[]});}
+        if(RAWS.includes(it)){const t=craftTime(it,L);if(!(t>0))return;const es=effSpeed(ln.sp,t);vars.push({li,item:it,lvl:L,rate:(craftYield(it,L)/t)*es*ln.dp*3600,cons:[]});}
         else if(PRODUCTS.includes(it)){const ins=RECIPE[it].inputs;const tt=craftTime(it,L);if(!(tt>0))return;
           if(!ins.every(k=>S.prodCost[it][k][L]!=null&&!isNaN(S.prodCost[it][k][L])))return;
           const es=effSpeed(ln.sp,tt),cons=ins.map(k=>({item:k,perHr:(S.prodCost[it][k][L]/tt)*es*3600}));
           const cfg=MINED_CRAFTS[it];
           if(cfg){if(!items.includes(cfg.resource))return;const c=minedCost(it,L)[cfg.resource];if(c==null||isNaN(c)||c<0)return;cons.push({item:cfg.resource,perHr:(c/tt)*es*3600});}
-          vars.push({li,item:it,lvl:L,rate:(L/tt)*es*ln.dp*3600,cons});}
+          vars.push({li,item:it,lvl:L,rate:(craftYield(it,L)/tt)*es*ln.dp*3600,cons});}
       });
     });
   });

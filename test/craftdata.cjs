@@ -13,7 +13,24 @@ const runner=`
   const d=defaults();S=d;
   eq("8192 tier",LEVELS[LEVELS.length-2],8192);
   eq("16384 tier",LEVELS[LEVELS.length-1],16384);
-  eq("16384 display",compressionLabel(16384),"16.4k×");
+  eq("16384 display",compressionLabel(16384),"16.38k×");
+  eq("default Vespium Rig income is blank",d.minedIncome.Vespium?.rigPerMin,null);
+  eq("default Vespium Resources & Trading income is blank",d.minedIncome.Vespium?.resourcesTradingPerSec,null);
+  eq("default Hydracite Resources & Trading income is blank",d.minedIncome.Hydracite?.resourcesTradingPerSec,null);
+  eq("default Vespium Rig text is blank",d.minedIncomeText.Vespium?.rigPerMin,"");
+  eq("default Vespium Resources & Trading text is blank",d.minedIncomeText.Vespium?.resourcesTradingPerSec,"");
+  eq("default Hydracite Resources & Trading text is blank",d.minedIncomeText.Hydracite?.resourcesTradingPerSec,"");
+  const sourceState={minedIncome:{
+    Vespium:{rigPerMin:2,resourcesTradingPerSec:3},
+    Hydracite:{resourcesTradingPerSec:4}
+  }};
+  eq("Vespium sources aggregate to an hourly budget",minedBudgetHr("Vespium",sourceState),10920);
+  eq("Hydracite seconds aggregate to an hourly budget",minedBudgetHr("Hydracite",sourceState),14400);
+  eq("unknown mined resources have no budget",minedBudgetHr("Rocks",sourceState),0);
+  eq("battery yield 1x",typeof craftYield==="function"?craftYield("Batteries",1):undefined,5);
+  eq("battery yield 2x",typeof craftYield==="function"?craftYield("Batteries",2):undefined,10);
+  eq("battery yield 4x",typeof craftYield==="function"?craftYield("Batteries",4):undefined,20);
+  eq("ordinary recipe yield remains compression",typeof craftYield==="function"?craftYield("Wire",4):undefined,4);
   eq("reinforced bricks 1x",d.prodCost["Reinforced Concrete"].Bricks[1],10000);
   eq("reinforced concrete 1x",d.prodCost["Reinforced Concrete"].Concrete[1],100000);
   eq("reinforced frames 1x",d.prodCost["Reinforced Concrete"].Frames[1],700);
@@ -33,19 +50,22 @@ const runner=`
     near("reinforced time scale "+L,craftTime("Reinforced Concrete",L),355531.88*Math.pow(1.5,i));
     near("battery time scale "+L,craftTime("Batteries",L),1034274.56*Math.pow(1.5,i));
   });
-  setMinedIncome("Vespium","7.25qu");setMinedIncome("Hydracite","-1");
-  eq("game notation parsed independently",S.minedIncome.Vespium,7.25e18);
-  eq("negative mined income is off",S.minedIncome.Hydracite,null);
-  eq("hydracite edit leaves vespium intact",S.minedIncome.Vespium,7.25e18);
+  setMinedIncome("Vespium","rigPerMin","7.25qu");
+  setMinedIncome("Vespium","resourcesTradingPerSec","3");
+  setMinedIncome("Hydracite","resourcesTradingPerSec","-1");
+  eq("game notation parsed into the selected source",S.minedIncome.Vespium?.rigPerMin,7.25e18);
+  eq("second Vespium source parsed independently",S.minedIncome.Vespium?.resourcesTradingPerSec,3);
+  eq("negative mined income is off",S.minedIncome.Hydracite?.resourcesTradingPerSec,null);
+  eq("sibling source edit leaves Vespium Rig intact",S.minedIncome.Vespium?.rigPerMin,7.25e18);
   const legacy=defaults();delete legacy.minedIncome;delete legacy.minedIncomeText;
   legacy.gelVesp=7250000000000000000;legacy.gelVespText="7.25qu";
   legacy.baseTime.Wire=12345;legacy.prodCost.Wire.Gel[4]=999;
   normalize(legacy);
-  eq("legacy vesp value",legacy.minedIncome.Vespium,7250000000000000000);
-  eq("legacy vesp text",legacy.minedIncomeText.Vespium,"7.25qu");
+  eq("legacy vesp value",legacy.minedIncome.Vespium?.rigPerMin,7250000000000000000);
+  eq("legacy vesp text",legacy.minedIncomeText.Vespium?.rigPerMin,"7.25qu");
   eq("custom base time preserved",legacy.baseTime.Wire,12345);
   eq("custom recipe cost preserved",legacy.prodCost.Wire.Gel[4],999);
-  eq("new hydracite blank",legacy.minedIncome.Hydracite,null);
+  eq("new Hydracite source blank",legacy.minedIncome.Hydracite?.resourcesTradingPerSec,null);
   eq("legacy numeric removed",Object.prototype.hasOwnProperty.call(legacy,"gelVesp"),false);
   eq("legacy text removed",Object.prototype.hasOwnProperty.call(legacy,"gelVespText"),false);
   if(fail)process.exitCode=1;

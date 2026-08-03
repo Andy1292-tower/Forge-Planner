@@ -119,7 +119,7 @@ function validateAndMigrate(candidate){
       _pushError(errors,"schemaVersion","was written by a newer version of Forge Planner");
       return {ok:false,errors,sourceVersion};
     }
-    if(sourceVersion!==1&&sourceVersion!==2&&sourceVersion!==CURRENT_SCHEMA_VERSION)return {ok:false,errors:["schemaVersion is not supported"],sourceVersion};
+    if(sourceVersion!==1&&sourceVersion!==2&&sourceVersion!==3&&sourceVersion!==CURRENT_SCHEMA_VERSION)return {ok:false,errors:["schemaVersion is not supported"],sourceVersion};
   }else{
     const legacyShape=Array.isArray(candidate.lines)&&_plainObject(candidate.prodCost)&&_plainObject(candidate.targets);
     if(!legacyShape)return {ok:false,errors:["unversioned save does not match a known Forge Planner shape"],sourceVersion:0};
@@ -173,7 +173,7 @@ function validateAndMigrate(candidate){
   const parsedSolveBudget=_own(candidate,"solveBudget")
     ?_number(_readData(candidate,"solveBudget","solveBudget",errors),FIELD_SCHEMA.solveBudget,"solveBudget",errors)
     :undefined;
-  if(sourceVersion<CURRENT_SCHEMA_VERSION)out.solveBudget=defaults().solveBudget;
+  if(sourceVersion<3)out.solveBudget=defaults().solveBudget;
   else if(parsedSolveBudget!==undefined)out.solveBudget=parsedSolveBudget;
 
   const rawBase=_readData(candidate,"baseTime","baseTime",errors),base=_object(rawBase,"baseTime",errors);
@@ -220,20 +220,70 @@ function validateAndMigrate(candidate){
   copyItemMap("inventory",FIELD_SCHEMA.inventory,false);
   copyItemMap("inventoryText",FIELD_SCHEMA.displayText,true);
 
-  if(_own(candidate,"minedIncome")){
-    const map=_object(_readData(candidate,"minedIncome","minedIncome",errors),"minedIncome",errors);
-    if(map)MINED_RESOURCES.forEach(resource=>{
-      if(versioned&&!_own(map,resource))_pushError(errors,"minedIncome."+resource,"is required");
-      if(_own(map,resource))out.minedIncome[resource]=_number(_readData(map,resource,"minedIncome."+resource,errors),FIELD_SCHEMA.minedIncome,"minedIncome."+resource,errors);
-    });
-  }else if(_own(candidate,"gelVesp"))out.minedIncome.Vespium=_number(_readData(candidate,"gelVesp","gelVesp",errors),FIELD_SCHEMA.minedIncome,"gelVesp",errors);
-  if(_own(candidate,"minedIncomeText")){
-    const map=_object(_readData(candidate,"minedIncomeText","minedIncomeText",errors),"minedIncomeText",errors);
-    if(map)MINED_RESOURCES.forEach(resource=>{
-      if(versioned&&!_own(map,resource))_pushError(errors,"minedIncomeText."+resource,"is required");
-      if(_own(map,resource))out.minedIncomeText[resource]=_string(_readData(map,resource,"minedIncomeText."+resource,errors),FIELD_SCHEMA.displayText,"minedIncomeText."+resource,errors);
-    });
-  }else if(_own(candidate,"gelVespText"))out.minedIncomeText.Vespium=_string(_readData(candidate,"gelVespText","gelVespText",errors),FIELD_SCHEMA.displayText,"gelVespText",errors);
+  const hasNestedMinedMap=key=>{
+    if(!_own(candidate,key))return false;
+    const map=_readData(candidate,key,key,errors);
+    return _plainObject(map)&&MINED_RESOURCES.some(resource=>_plainObject(_readData(map,resource,key+"."+resource,errors)));
+  };
+  // Fresh in-memory defaults are intentionally unversioned until the persistence boundary.
+  // Recognize their complete nested source shape without treating v1-v3 nested impostors as legacy.
+  const currentMinedShape=sourceVersion===CURRENT_SCHEMA_VERSION||
+    (sourceVersion===0&&(hasNestedMinedMap("minedIncome")||hasNestedMinedMap("minedIncomeText")));
+  if(currentMinedShape){
+    if(sourceVersion===0){
+      if(!_own(candidate,"minedIncome"))_pushError(errors,"minedIncome","is required for nested mined sources");
+      if(!_own(candidate,"minedIncomeText"))_pushError(errors,"minedIncomeText","is required for nested mined sources");
+    }
+    const copySourceMap=(key,rule,text)=>{
+      if(!_own(candidate,key))return;
+      const map=_object(_readData(candidate,key,key,errors),key,errors);if(!map)return;
+      MINED_RESOURCES.forEach(resource=>{
+        const resourcePath=key+"."+resource;
+        if(!_own(map,resource)){_pushError(errors,resourcePath,"is required");return;}
+        const resourceMap=_object(_readData(map,resource,resourcePath,errors),resourcePath,errors);if(!resourceMap)return;
+        Object.keys(MINED_INCOME_SOURCES[resource]).forEach(source=>{
+          const path=resourcePath+"."+source;
+          if(!_own(resourceMap,source)){_pushError(errors,path,"is required");return;}
+          out[key][resource][source]=text
+            ?_string(_readData(resourceMap,source,path,errors),rule,path,errors)
+            :_number(_readData(resourceMap,source,path,errors),rule,path,errors);
+        });
+      });
+    };
+    copySourceMap("minedIncome",FIELD_SCHEMA.minedIncome,false);
+    copySourceMap("minedIncomeText",FIELD_SCHEMA.displayText,true);
+  }else{
+    if(_own(candidate,"minedIncome")){
+      const map=_object(_readData(candidate,"minedIncome","minedIncome",errors),"minedIncome",errors);
+      if(map)MINED_RESOURCES.forEach(resource=>{
+        const path="minedIncome."+resource;
+        if(versioned&&!_own(map,resource))_pushError(errors,path,"is required");
+        if(!_own(map,resource))return;
+        const value=_number(_readData(map,resource,path,errors),FIELD_SCHEMA.minedIncome,path,errors);
+        if(value===undefined)return;
+        if(resource==="Vespium")out.minedIncome.Vespium.rigPerMin=value;
+        else out.minedIncome.Hydracite.resourcesTradingPerSec=value===null?null:value/60;
+      });
+    }else if(_own(candidate,"gelVesp")){
+      const value=_number(_readData(candidate,"gelVesp","gelVesp",errors),FIELD_SCHEMA.minedIncome,"gelVesp",errors);
+      if(value!==undefined)out.minedIncome.Vespium.rigPerMin=value;
+    }
+    if(_own(candidate,"minedIncomeText")){
+      const map=_object(_readData(candidate,"minedIncomeText","minedIncomeText",errors),"minedIncomeText",errors);
+      if(map)MINED_RESOURCES.forEach(resource=>{
+        const path="minedIncomeText."+resource;
+        if(versioned&&!_own(map,resource))_pushError(errors,path,"is required");
+        if(!_own(map,resource))return;
+        const text=_string(_readData(map,resource,path,errors),FIELD_SCHEMA.displayText,path,errors);
+        if(resource==="Vespium"&&text!==undefined)out.minedIncomeText.Vespium.rigPerMin=text;
+      });
+    }else if(_own(candidate,"gelVespText")){
+      const text=_string(_readData(candidate,"gelVespText","gelVespText",errors),FIELD_SCHEMA.displayText,"gelVespText",errors);
+      if(text!==undefined)out.minedIncomeText.Vespium.rigPerMin=text;
+    }
+    out.minedIncomeText.Hydracite.resourcesTradingPerSec=
+      formatFieldValue(FIELD_SCHEMA.minedIncome,out.minedIncome.Hydracite.resourcesTradingPerSec);
+  }
 
   const rawTargets=_readData(candidate,"targets","targets",errors),targets=_object(rawTargets,"targets",errors);
   if(targets)ALLITEMS.forEach(item=>{

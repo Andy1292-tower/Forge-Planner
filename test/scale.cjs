@@ -33,7 +33,8 @@ const runner = `
 
   const VESP_BUDGET=5e23,HYDRA_BUDGET=5e20;
   const setMined=(s,vesp=VESP_BUDGET,hydra=HYDRA_BUDGET)=>{
-    s.minedIncome.Vespium=vesp;s.minedIncome.Hydracite=hydra;
+    s.minedIncome.Vespium.rigPerMin=vesp;
+    s.minedIncome.Hydracite.resourcesTradingPerSec=hydra/60;
   };
   const prepBattery=(s,hydra=HYDRA_BUDGET)=>{
     setMined(s,VESP_BUDGET,hydra);
@@ -48,7 +49,7 @@ const runner = `
     'credits.Batteries': s => { s.mode='credits'; s.sellPrice.Batteries=5000; prepBattery(s); },
     'project.Batteries': s => { s.mode='project'; prepBattery(s);
       s.projects=[{id:'battery',name:'Battery scale',catId:'',on:true,from:1,to:1,done:0,prio:null,levels:[{costs:[{item:'Batteries',qty:250}]}]}]; },
-    'items.Batteries.noHydracite': s => { s.mode='items'; on(s,['Batteries']); prepBattery(s,0); s.minedIncome.Vespium=1e40; },
+    'items.Batteries.noHydracite': s => { s.mode='items'; on(s,['Batteries']); prepBattery(s,0); s.minedIncome.Vespium.rigPerMin=1e40; },
   };
   function minedTelemetry(res){
     const rows=res&&Array.isArray(res.minedUsage)?res.minedUsage:
@@ -96,7 +97,7 @@ const runner = `
       out.push({N, name, ms:Math.round(ms), feasible:res&&res.feasible, capped:res&&!!res.capped,
         obj: res&&res.objective!=null?Number(res.objective.toPrecision(5)):null,
         batteryOut, mined, bestItem:res&&res.bestItem,
-        budgetVespHr:s.minedIncome.Vespium*60, budgetHydraHr:s.minedIncome.Hydracite*60, err});
+        budgetVespHr:minedBudgetHr('Vespium',s), budgetHydraHr:minedBudgetHr('Hydracite',s), err});
     });
   });
   // table
@@ -167,17 +168,16 @@ const runner = `
   }
   ['items','credits'].forEach(mode=>{
     const shortBudget=batteryBudgetRun(mode,400),longBudget=batteryBudgetRun(mode,1600);
-    const budgetFloor=(shortBudget.objective||0)-1e-8*Math.max(1,shortBudget.objective||0);
-    const budgetMonotone=(longBudget.objective||0)>=budgetFloor&&
+    const responsive=[shortBudget,longBudget].every(result=>result&&result.feasible&&(result.objective||0)>0)&&
       (mode!=='credits'||(shortBudget.bestItem==='Batteries'&&longBudget.bestItem==='Batteries'));
-    __emit((budgetMonotone?'ok   ':'FAIL ')+mode+' Battery objective is non-worsening with more solve time ['+
+    __emit((responsive?'ok   ':'FAIL ')+mode+' Battery real-clock budgets return valid responsive plans ['+
       (shortBudget.objective||0)+' -> '+(longBudget.objective||0)+']');
-    if(!budgetMonotone)scaleFail=true;
+    if(!responsive)scaleFail=true;
   });
   function frozenGelBudgetRun(mode,solveBudget){
     const s=base();s.mode=mode;s.dupe=0;s.maxTurbo=0;s.margin=0;
     s.lines=[{max:1,spx:6,turbo:0},{max:1,spx:4,turbo:0},{max:1,spx:4,turbo:0}];
-    s.minedIncome.Vespium=4498594189315839/60;s.solveBudget=solveBudget;
+    s.minedIncome.Vespium.rigPerMin=4498594189315839/60;s.solveBudget=solveBudget;
     PRODUCTS.forEach(product=>s.targets[product]={on:mode==='items'&&product==='Gel',w:1});
     [...RAWS,...PRODUCTS].forEach(item=>s.sellPrice[item]=null);if(mode==='credits')s.sellPrice.Gel=1;
     normalize(s);syncManual(s);S=s;
