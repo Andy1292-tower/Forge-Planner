@@ -104,7 +104,9 @@ document.getElementById("btnResim").addEventListener("click",resimulate);
 
 document.getElementById("lines").addEventListener("change",e=>{
   const li=e.target.dataset.line;
-  if(li!==undefined)commitLineStructureEdit(st=>{st.lines[+li].max=+e.target.value;syncManual(st);},false);
+  // The line controls are deliberately not rebuilt here, so the level note under the
+  // picker has to be repainted by hand to follow the cap the user just chose.
+  if(li!==undefined&&commitLineStructureEdit(st=>{st.lines[+li].max=+e.target.value;syncManual(st);},false))refreshLineNotes();
 });
 document.getElementById("lines").addEventListener("input",e=>{
   const si=e.target.dataset.spx, ti=e.target.dataset.turbo;
@@ -479,7 +481,7 @@ function initCalib(){
   const it=document.getElementById("cbItem"), cp=document.getElementById("cbComp");
   if(it.options.length===0){
     [...RAWS,...PRODUCTS].forEach(n=>it.add(new Option(n,n)));
-    LEVELS.forEach(L=>cp.add(new Option(compressionLabel(L)+" (level "+Math.round(Math.log2(L))+")",L)));
+    LEVELS.forEach(L=>cp.add(new Option(compressionLabel(L)+" (level "+compressionLevel(L)+")",L)));
     it.value="Ingots"; cp.value="512";
   }
   const out=document.getElementById("cbOut"), apply=document.getElementById("cbApply");

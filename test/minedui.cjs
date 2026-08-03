@@ -43,6 +43,8 @@ const runner=`
   const lineMarkup=document.getElementById("lines").children[0].innerHTML;
   check("top-tier option keeps numeric state behind the display label",/value="16384"[^>]*>16\\.38k×<\\/option>/.test(lineMarkup),lineMarkup);
   check("line-cap help names the numeric top tier consistently",/1×–16\\.38k×/.test(TIPS.max),TIPS.max);
+  check("the cap picker is captioned with the level it corresponds to",/class="line-lvl[^"]*"[^>]*>level 14</.test(lineMarkup),lineMarkup);
+  check("the level caption describes the picker for screen readers",/aria-describedby="linesCapHelp field-line-0-level"/.test(lineMarkup),lineMarkup);
   const batteryCard=prodCard("Batteries").innerHTML;
   check("Battery recipe copy explains batch output and per-craft costs",/5 × compression/.test(batteryCard)&&/costs? (?:below )?(?:remain|are) per craft/i.test(batteryCard),batteryCard);
   check("Hydracite card discloses the Battery batch",/Batteries[^<]*5 × compression|5 × compression[^<]*Batteries/.test(indexHtml),"batch copy="+indexHtml.includes("5 × compression"));

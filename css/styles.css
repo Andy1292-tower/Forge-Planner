@@ -188,6 +188,11 @@ button.btn.ghost{background:transparent}
    the rows actually below max turbo grow */
 .line-proj{font-size:10px;color:var(--amber);letter-spacing:.2px;margin-top:3px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* the upgrade level behind the chosen multiplier, hung off the picker for the same
+   reason: this column is only as wide as its heading, so "16.38k× (level 14)" cannot
+   fit inside the closed select. Muted, because it restates the value above it. */
+.line-lvl{font-size:10px;color:var(--ink3);letter-spacing:.2px;margin-top:3px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ltable .col-x .iconbtn{margin-top:8px}
 .ltable tbody tr:hover .tag{background:rgba(210,129,58,.16);border-color:var(--copper)}
 
@@ -205,7 +210,9 @@ button.btn.ghost{background:transparent}
     background:linear-gradient(180deg,var(--bg2),var(--surface2))}
   .ltable tr::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;border-radius:2px;
     background:linear-gradient(180deg,var(--copper-d),var(--copper) 50%,var(--copper-d));opacity:.45}
-  .ltable td{padding:0}
+  /* the card border already separates rows, so the global cell rule's divider has no job
+     here — and once a cell carries a note under its control it lands as a stray underline */
+  .ltable td{padding:0;border-bottom:0}
   .ltable .col-n{grid-area:tag;align-self:center}
   .ltable .col-cap{grid-area:cap}
   .ltable .col-spx{grid-area:spx}

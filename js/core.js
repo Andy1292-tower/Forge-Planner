@@ -26,6 +26,9 @@ const MINED_INCOME_SOURCES=Object.freeze({
   })
 });
 function compressionLabel(L){return Number(L)===16384?"16.38k×":String(L)+"×";}
+// The in-game upgrade level behind a multiplier: level 0 is 1× and each level doubles it,
+// so the top tier (16384×) is level 14.
+function compressionLevel(L){return Math.round(Math.log2(Number(L)||1));}
 function craftYield(item,L){return (RECIPE[item]&&RECIPE[item].baseOutput||1)*L;}
 function minedCost(item,L){
   const cfg=MINED_CRAFTS[item],out={};if(!cfg)return out;
