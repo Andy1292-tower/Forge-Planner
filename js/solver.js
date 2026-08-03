@@ -699,7 +699,7 @@ function optimizeInner(timeBudget,testOptions){
   const baselineWorkLimit=Math.max(4000,(S.lines||[]).length*2000);
   const issues=[],cand=[];
   const addIssues=found=>(found||[]).forEach(issue=>{if(!issues.includes(issue))issues.push(issue);});
-  if(!priced.length)issues.push("No sell prices entered. Open the “Sell prices” button and add at least one.");
+  if(!priced.length)issues.push("No sell prices entered. Open “Projects + Prices” → “Sell prices” and add at least one.");
   const unevaluated=item=>({item,kind:RAWS.includes(item)?"raw":"product",out:0,price:num(S.sellPrice[item])||0,credits:0,
     plan:null,balance:null,minedUsage:[],gelReserved:null,resIndex:{},feasible:false,usesMargin:false,capped:false,evaluated:false,ms:0});
   const fromCore=(item,sr,ms,cappedOverride)=>{

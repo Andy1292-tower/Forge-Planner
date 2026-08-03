@@ -12,37 +12,51 @@ const TIPS={
 function tipHtml(id,label,text,className="",style=""){
   return `<button type="button" class="tip${className?" "+className:""}"${style?` style="${style}"`:""} aria-label="Help for ${label}" aria-describedby="${id}">?<span class="tip-text" id="${id}" role="tooltip">${text}</span></button>`;
 }
+// Lines render as a table: the three field labels and their help buttons belong to
+// the columns, not to each row, so seven lines cost seven rows instead of seven
+// label sets. The projected-speed readout is a column rather than a per-row note,
+// so every row stays the same height and the values line up for comparison.
 function renderLines(){
   const box=document.getElementById("lines");box.innerHTML="";
-  S.lines.forEach((ln,i)=>{
+  const mx=num(S.maxTurbo)||0;
+  const isProjected=ln=>(num(ln.turbo)||0)!==mx;
+  const rows=S.lines.map((ln,i)=>{
     const opts=LEVELS.map(L=>`<option value="${L}" ${L===ln.max?"selected":""}>${compressionLabel(L)}</option>`).join("");
-    const row=document.createElement("div");row.className="line-row";
     const speedError=`field-line-${i}-speed-error`,turboError=`field-line-${i}-turbo-error`;
-    const projected=(num(ln.turbo)||0)!==(num(S.maxTurbo)||0);
-    const spNote=projected?`<div class="line-final mono">→ ×${fmt(lineSpeed(ln),2)} at ${fmt(num(S.maxTurbo)||0,0)} turbo stacks</div>`:"";
-    row.innerHTML=`<div class="tag mono">#${i+1}</div>
-      <div><div class="lname">Line ${i+1}${tipHtml(`line${i+1}Help`,`Line ${i+1}`,TIPS.line)}</div>
-        <div class="line-fields">
-          <div class="fl"><span>max compression</span><select data-line="${i}" aria-label="Line ${i+1} max compression">${opts}</select></div>
-          <div class="fl"><span>speed × ${tipHtml(`line${i+1}SpeedHelp`,`Line ${i+1} speed`,TIPS.spx,"tip-right tip-ic","--tip-img:url('../assets/speed.jpg')")}</span><input type="number" ${htmlFieldInputAttributes(FIELD_SCHEMA.lineSpeed)} placeholder="1" value="${ln.spx??1}" data-spx="${i}" aria-describedby="line${i+1}SpeedHelp" data-field-error="${speedError}" aria-label="Line ${i+1} currently displayed speed multiplier"><div class="field-error" id="${speedError}" aria-live="polite" aria-atomic="true"></div></div>
-          <div class="fl"><span>turbo stacks ${tipHtml(`line${i+1}TurboHelp`,`Line ${i+1} turbo stacks`,TIPS.turbo,"tip-right")}</span><input type="number" ${htmlFieldInputAttributes(FIELD_SCHEMA.turbo)} placeholder="0" value="${ln.turbo??0}" data-turbo="${i}" aria-describedby="line${i+1}TurboHelp" data-field-error="${turboError}" aria-label="Line ${i+1} current turbo stacks"><div class="field-error" id="${turboError}" aria-live="polite" aria-atomic="true"></div></div>
-        </div>${spNote}</div>
-      <button class="iconbtn" data-del="${i}" title="${TIPS.del}" aria-label="Remove crafter line ${i+1}">×</button>`;
-    box.appendChild(row);
-  });
+    return `<tr>
+      <td class="col-n"><span class="tag mono">#${i+1}</span></td>
+      <td class="col-cap" data-label="Max compression"><select data-line="${i}" aria-label="Line ${i+1} max compression" aria-describedby="linesCapHelp">${opts}</select></td>
+      <td class="col-spx" data-label="Speed \u00d7"><input type="number" ${htmlFieldInputAttributes(FIELD_SCHEMA.lineSpeed)} placeholder="1" value="${ln.spx??1}" data-spx="${i}" aria-describedby="linesSpeedHelp" data-field-error="${speedError}" aria-label="Line ${i+1} currently displayed speed multiplier"><div class="field-error" id="${speedError}" aria-live="polite" aria-atomic="true"></div>${isProjected(ln)?`<div class="line-proj mono" title="Projected speed at ${fmt(mx,0)} turbo stacks">\u2192 \u00d7${fmt(lineSpeed(ln),2)}</div>`:""}</td>
+      <td class="col-turbo" data-label="Turbo stacks"><input type="number" ${htmlFieldInputAttributes(FIELD_SCHEMA.turbo)} placeholder="0" value="${ln.turbo??0}" data-turbo="${i}" aria-describedby="linesTurboHelp" data-field-error="${turboError}" aria-label="Line ${i+1} current turbo stacks"><div class="field-error" id="${turboError}" aria-live="polite" aria-atomic="true"></div></td>
+      <td class="col-x"><button class="iconbtn" data-del="${i}" title="${TIPS.del}" aria-label="Remove crafter line ${i+1}">\u00d7</button></td>
+    </tr>`;
+  }).join("");
+  const table=document.createElement("table");
+  table.className="ltable";
+  table.innerHTML=`<thead><tr>
+      <th class="col-n"><span class="lines-th">#${tipHtml("linesSlotHelp","the line number",TIPS.line)}</span></th>
+      <th class="col-cap"><span class="lines-th">max compression ${tipHtml("linesCapHelp","max compression",TIPS.max)}</span></th>
+      <th class="col-spx"><span class="lines-th">speed \u00d7 ${tipHtml("linesSpeedHelp","speed multiplier",TIPS.spx,"tip-ic","--tip-img:url('../assets/speed.jpg')")}</span></th>
+      <th class="col-turbo"><span class="lines-th">turbo ${tipHtml("linesTurboHelp","turbo stacks",TIPS.turbo)}</span></th>
+      <th class="col-x"><span class="lines-th-sr">Remove line</span></th>
+    </tr></thead><tbody>${rows}</tbody>`;
+  box.appendChild(table);
   document.getElementById("lineCount").textContent=S.lines.length+" line"+(S.lines.length>1?"s":"");
 }
-// Live-update the projected-speed readouts when speed/turbo/max-turbo change,
+// Live-update the projected-speed column when speed/turbo/max-turbo change,
 // without rebuilding the line inputs (which would steal focus while typing).
 function refreshLineNotes(){
   const mx=num(S.maxTurbo)||0;
-  document.querySelectorAll("#lines .line-row").forEach((row,i)=>{
+  const table=document.querySelector("#lines .ltable");if(!table)return;
+  table.querySelectorAll("tbody tr").forEach((row,i)=>{
     const ln=S.lines[i];if(!ln)return;
-    let note=row.querySelector(".line-final");
+    const cell=row.querySelector(".col-spx");if(!cell)return;
+    let note=cell.querySelector(".line-proj");
     if((num(ln.turbo)||0)!==mx){
-      const txt=`→ ×${fmt(lineSpeed(ln),2)} at ${fmt(mx,0)} turbo stacks`;
-      if(note)note.textContent=txt;
-      else{note=document.createElement("div");note.className="line-final mono";note.textContent=txt;row.querySelector(".line-fields").parentNode.appendChild(note);}
+      const txt=`\u2192 \u00d7${fmt(lineSpeed(ln),2)}`;
+      if(!note){note=document.createElement("div");note.className="line-proj mono";cell.appendChild(note);}
+      note.textContent=txt;
+      note.title=`Projected speed at ${fmt(mx,0)} turbo stacks`;
     }else if(note)note.remove();
   });
 }

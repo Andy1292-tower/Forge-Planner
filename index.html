@@ -18,16 +18,31 @@
   <header class="top">
     <div class="brand">
       <h1>Forge<span class="spark">·</span>Planner</h1>
-      <p>Crafting production-line planner · enter your stats, compare crafter setups</p>
-      <p><a href="https://github.com/Andy1292-tower/Forge-Planner/issues" target="_blank" rel="noopener" style="color:var(--amber);text-decoration:underline;text-underline-offset:2px">Submit Bug Reports and Feature Requests Here</a></p>
-      <p>Got a project that needs to be added to the project catalog that I haven't gotten to yet? Please either submit it and its costs by level as a github issue/feature request at the link above or add it to your personal projects and export your save and submit that</p>
+      <div class="brand-sub">
+        <p class="tagline">Crafting production-line planner · enter your stats, compare crafter setups</p>
+        <details class="contrib">
+          <summary>Report a bug or contribute a project</summary>
+          <p>Missing a project from the catalog? Submit it and its costs by level as a <a href="https://github.com/Andy1292-tower/Forge-Planner/issues" target="_blank" rel="noopener">GitHub issue or feature request</a>, or add it under your personal projects and export your save.</p>
+        </details>
+      </div>
     </div>
     <div class="tools">
+      <div class="rail" role="group" aria-label="Factory inputs">
+        <button class="rail-seg" type="button" id="btnInputs">
+          <span class="rail-lbl"><span class="rail-dot" aria-hidden="true"></span><span class="rail-name" data-short="Projects">Projects + Prices</span></span>
+          <span class="rail-state" id="stInputs"></span>
+        </button>
+        <button class="rail-seg" type="button" id="btnForgie">
+          <span class="rail-lbl"><span class="rail-dot" aria-hidden="true"></span><span class="rail-name" data-short="Forgie">Lil' Forgie</span></span>
+          <span class="rail-state" id="stForgie"></span>
+        </button>
+        <button class="rail-seg" type="button" id="btnMined">
+          <span class="rail-lbl"><span class="rail-dot" aria-hidden="true"></span><span class="rail-name" data-short="Mined">Mined</span></span>
+          <span class="rail-state" id="stMined"></span>
+        </button>
+      </div>
+      <button class="btn ghost rail-aside" id="btnSettings">Settings</button>
       <span class="saveind" id="saveind" role="status" aria-live="polite" aria-atomic="true"></span>
-      <button class="btn primary" id="btnInputs">Projects+Prices</button>
-      <button class="btn primary" id="btnForgie">Lil' Forgie</button>
-      <button class="btn primary" id="btnMined">Mined resources</button>
-      <button class="btn ghost" id="btnSettings">Settings</button>
     </div>
   </header>
 
