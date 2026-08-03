@@ -23,6 +23,22 @@ const runner=`
 (function(){
   let fail=0;const check=(name,ok,detail)=>{console.log((ok?"ok   ":"FAIL ")+name+" ["+detail+"]");if(!ok)fail++;};
 
+  S=defaults();S.dupe=0;S.maxTurbo=0;
+  S.lines=Array.from({length:6},(_,i)=>({max:512,spx:50-i,turbo:0}));
+  ["100n","1d","1e36"].forEach(income=>{
+    setMinedIncome("Vespium","rigPerMin",income);
+    document.getElementById("minedVespiumSummary").textContent="Gel/hr capacity: 0";
+    document.getElementById("minedGelLoadout").innerHTML="income too low";
+    let hugeBudgetError=null;
+    try{renderMinedResources();}catch(error){hugeBudgetError=error;}
+    const hugeCapacity=document.getElementById("minedVespiumSummary").textContent;
+    const hugeLoadout=document.getElementById("minedGelLoadout").innerHTML;
+    check(income+" Rig income renders a multi-line Gel capacity without overflowing",
+      !hugeBudgetError&&hugeCapacity==="Gel/hr capacity: 4.27k"&&
+        !hugeLoadout.includes("income too low")&&hugeLoadout.includes("#6")&&hugeLoadout.includes("512×"),
+      "error="+(hugeBudgetError&&hugeBudgetError.message)+", capacity="+hugeCapacity+", loadout="+hugeLoadout);
+  });
+
   const exactBudget=4498594189315839;
   S=defaults();S.dupe=0;S.maxTurbo=0;
   const counterLines=[{max:1,spx:6,turbo:0},{max:1,spx:4,turbo:0},{max:1,spx:4,turbo:0}];
