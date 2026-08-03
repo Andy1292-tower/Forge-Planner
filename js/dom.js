@@ -116,6 +116,49 @@ function syncAllTableScrollHints(){
 }
 if(typeof window!=="undefined")window.addEventListener("resize",syncAllTableScrollHints);
 
+// Tooltips open upward by default. Near the top of a scrolling panel that puts the
+// bubble outside the scroll container, where it is clipped and covers whatever sits
+// above the field. Measure the room actually available just before it shows and flip
+// it below the button when it will not fit. Measured with visibility:hidden so the
+// bubble is laid out but never painted in the wrong place first.
+function placeTip(tip){
+  if(!tip||typeof getComputedStyle!=="function")return;
+  const bubble=tip.querySelector(".tip-text");if(!bubble)return;
+  tip.classList.remove("tip-below");
+  const inline=bubble.getAttribute("style");
+  bubble.style.cssText="display:block;visibility:hidden;opacity:0;transition:none";
+  const bubbleBox=bubble.getBoundingClientRect(),tipBox=tip.getBoundingClientRect();
+  if(inline===null)bubble.removeAttribute("style");else bubble.setAttribute("style",inline);
+  // nearest scrolling ancestor clips the bubble; fall back to the viewport
+  const viewportBottom=(typeof window!=="undefined"&&window.innerHeight)||0;
+  let ceiling=0,floor=viewportBottom;
+  for(let el=tip.parentElement;el;el=el.parentElement){
+    const overflowY=getComputedStyle(el).overflowY;
+    if(overflowY==="auto"||overflowY==="scroll"){
+      const box=el.getBoundingClientRect();
+      ceiling=Math.max(ceiling,box.top);floor=Math.min(floor,box.bottom);break;
+    }
+  }
+  const needed=bubbleBox.height+12;
+  const roomAbove=tipBox.top-Math.max(ceiling,0);
+  const roomBelow=floor-tipBox.bottom;
+  // Flip only when below is actually the better side — a tip near the bottom of a short
+  // panel has no room either way, and moving it down would only trade one clip for another.
+  if(roomAbove<needed&&roomBelow>roomAbove)tip.classList.add("tip-below");
+}
+// Guarded on addEventListener, not just document: the node test harness supplies a
+// minimal document stub without it.
+if(typeof document!=="undefined"&&typeof document.addEventListener==="function"){
+  // pointerover/focusin rather than mouseenter: both bubble, so one listener covers
+  // every tip including those rendered later.
+  const place=event=>{
+    const tip=event.target&&event.target.closest&&event.target.closest(".tip");
+    if(tip)placeTip(tip);
+  };
+  document.addEventListener("pointerover",place,true);
+  document.addEventListener("focusin",place,true);
+}
+
 function domOption(value,label,selected){
   const option=document.createElement("option");
   option.value=String(value==null?"":value);
