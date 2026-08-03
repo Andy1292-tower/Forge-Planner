@@ -282,6 +282,14 @@ select:focus,input:focus{border-color:var(--copper);
 }
 .tip.tip-right .tip-text{left:-4px;right:auto;transform:translateX(0) translateY(3px)}
 .tip.tip-right:hover .tip-text,.tip.tip-right:focus-visible .tip-text{transform:translateX(0) translateY(0)}
+/* Tooltips open upward by default, which fails for a tip near the top of a scrolling
+   panel: inside .modal-b the bubble is clipped by the scroll container and covers the
+   card heading above it. placeTip() measures the room actually available and adds
+   .tip-below to flip the bubble under the button. Horizontal variants are untouched. */
+.tip.tip-below .tip-text{bottom:auto;top:calc(100% + 9px);transform:translateX(-50%) translateY(-3px)}
+.tip.tip-below.tip-right .tip-text{transform:translateX(0) translateY(-3px)}
+.tip.tip-below:hover .tip-text,.tip.tip-below:focus-visible .tip-text{transform:translateX(-50%) translateY(0)}
+.tip.tip-below.tip-right:hover .tip-text,.tip.tip-below.tip-right:focus-visible .tip-text{transform:translateX(0) translateY(0)}
 /* rightmost column header in the lines table: flip its tooltip inward so it can't
    overflow the card edge (previously the last .line-fields column did this) */
 @media(min-width:561px){
