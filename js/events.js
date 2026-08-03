@@ -417,25 +417,63 @@ function setRecipesOpen(open){
 }
 document.getElementById("recipeToggle").addEventListener("click",()=>setRecipesOpen(document.getElementById("recipeBody").hidden));
 
-/* ---------- "add sell prices" attention nudge ---------- */
-const pricePoke=document.createElement("div");
-pricePoke.className="poke";pricePoke.hidden=true;pricePoke.textContent="↑ Enter your sell prices";
-document.querySelector(".tools").appendChild(pricePoke);
-let pricePokeActive=false;
-function positionPoke(){
-  const b=document.getElementById("btnInputs");
-  pricePoke.style.left=(b.offsetLeft+b.offsetWidth/2)+"px";
-  pricePoke.style.top=(b.offsetTop+b.offsetHeight+9)+"px";
+/* ---------- input rail state ----------
+   Each rail segment reports what it holds, so "Credits needs sell prices" is a
+   visible state on the control rather than an animated nudge pointing at it. */
+let priceNeeded=false;
+function setPriceNeeded(on){
+  const next=!!on;
+  if(next===priceNeeded)return;
+  priceNeeded=next;renderInputState();
 }
-function setPricePoke(on){
-  pricePokeActive=!!on;
-  document.getElementById("btnInputs").classList.toggle("poke-on",pricePokeActive);
-  if(pricePokeActive){positionPoke();pricePoke.hidden=false;}else pricePoke.hidden=true;
+function countSet(map){
+  if(!map)return 0;
+  return [...RAWS,...PRODUCTS].filter(it=>(num(map[it])||0)>0).length;
+}
+function plural(n,word){return n+" "+word+(n===1?"":"s");}
+function renderInputState(){
+  // `short` is what a narrow segment shows instead of an ellipsised full string;
+  // `label` is the accessible name, which always carries the complete state.
+  const seg=(id,stateId,filled,html,short,label)=>{
+    const button=document.getElementById(id),state=document.getElementById(stateId);
+    if(!button||!state)return;
+    button.classList.toggle("filled",filled);
+    state.innerHTML=html;
+    state.setAttribute("data-short",short);
+    button.setAttribute("aria-label",label);
+  };
+
+  const projects=(S.projects||[]).filter(p=>p.on&&(p.levels||[]).length).length;
+  const prices=countSet(S.sellPrice),stock=countSet(S.inventory);
+  const parts=[],spoken=[];
+  if(projects){parts.push(plural(projects,"project"));spoken.push(plural(projects,"project")+" selected");}
+  if(priceNeeded){parts.push('<span class="rail-warn">no sell prices</span>');spoken.push("no sell prices set");}
+  else if(prices){parts.push(plural(prices,"price"));spoken.push(plural(prices,"sell price")+" set");}
+  if(stock){parts.push(stock+" in stock");spoken.push(plural(stock,"item")+" in inventory");}
+  // Two facts is what the segment can hold without wrapping; the rest is one click away.
+  seg("btnInputs","stInputs",!!(projects||prices||stock),
+    parts.slice(0,2).join(" · ")||"Nothing set",
+    priceNeeded?"no sell prices":(projects?plural(projects,"project"):prices?plural(prices,"price"):stock?stock+" in stock":"Nothing set"),
+    "Projects and prices — "+(spoken.slice(0,2).join(", ")||"nothing set"));
+  document.getElementById("btnInputs").classList.toggle("needs",priceNeeded);
+
+  const forgie=countSet(S.forgie);
+  seg("btnForgie","stForgie",forgie>0,
+    forgie?plural(forgie,"item")+" supplied":"No supply set",
+    forgie?plural(forgie,"item"):"None set",
+    "Lil' Forgie supply — "+(forgie?plural(forgie,"item")+" supplied":"nothing set"));
+
+  // via minedBudgetHr so the badge keeps working as income sources are added —
+  // each resource now sums several per-source rates rather than holding one number
+  const mined=MINED_RESOURCES.filter(r=>minedBudgetHr(r)>0);
+  seg("btnMined","stMined",mined.length>0,
+    mined.length?mined.join(" · "):"No income set",
+    mined.length>1?plural(mined.length,"income"):mined.length?mined[0]:"None set",
+    "Mined resources — "+(mined.length?mined.join(" and ")+" income set":"nothing set"));
 }
 document.getElementById("btnInputs").addEventListener("click",event=>{
-  openInputs(event.currentTarget,pricePokeActive?"prices":undefined,{remember:!pricePokeActive});
+  openInputs(event.currentTarget,priceNeeded?"prices":undefined,{remember:!priceNeeded});
 });
-window.addEventListener("resize",()=>{if(!pricePoke.hidden)positionPoke();});
 
 function initCalib(){
   const it=document.getElementById("cbItem"), cp=document.getElementById("cbComp");
@@ -482,7 +520,7 @@ function initCalib(){
   recalc();
 }
 function renderAll(){
-  renderModeSwitch();
+  renderModeSwitch();renderInputState();
   renderLines();renderTargets();renderMinedResources();renderRecipes();renderResults();
   const margin=document.getElementById("margin"),maxTurbo=document.getElementById("maxTurbo"),dupe=document.getElementById("dupe");
   applyFieldInputAttributes(margin,FIELD_SCHEMA.margin,{step:0.5});

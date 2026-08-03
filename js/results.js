@@ -25,6 +25,11 @@ function enhanceResultTables(){
     table.before(wrapper);wrapper.appendChild(table);
     markTableScroller(wrapper,resultsTableName(table));
   });
+  // Re-queue on every batch, not just when a table is newly wrapped: the last mutation
+  // to land is often one that changes width without adding a table, and the already-
+  // wrapped early return above would otherwise leave the hints measured against stale
+  // widths.
+  if(typeof queueTableScrollSync==="function")queueTableScrollSync();
 }
 if(typeof MutationObserver!=="undefined"){
   const resultTableObserver=new MutationObserver(enhanceResultTables);
@@ -408,7 +413,7 @@ function renderProjectResults(res,el,stat){
 function renderResults(options){
   options=options||{};
   if(typeof clearStaleUI==="function")clearStaleUI();   // results are about to reflect current inputs
-  if(typeof setPricePoke==="function")setPricePoke(false); // Credits owns this nudge; clear it before every synchronous mode path.
+  if(typeof setPriceNeeded==="function")setPriceNeeded(false); // Credits owns this flag; clear it before every synchronous mode path.
   const el=document.getElementById("results");
   const stat=document.getElementById("solveStat");
   if(S.mode==="manual"){solveService.cancel("Manual mode renders synchronously");renderManual(el,stat);return;}
@@ -428,8 +433,8 @@ function renderSolveResult(res,el,stat,solveKey,metadata){
     renderProjectResults(res,el,stat);return;
   }
   _lastItemsCreditsRes=res;
-  // nudge toward Sell prices when credits mode is selected but no prices exist yet
-  if(typeof setPricePoke==="function")setPricePoke(res.mode==="credits"&&![...RAWS,...PRODUCTS].some(it=>(num(S.sellPrice[it])||0)>0));
+  // flag the rail's Projects+Prices segment when credits mode is selected but no prices exist yet
+  if(typeof setPriceNeeded==="function")setPriceNeeded(res.mode==="credits"&&![...RAWS,...PRODUCTS].some(it=>(num(S.sellPrice[it])||0)>0));
   if(res.empty){el.innerHTML=`<div class="notice info">Select one or more outputs on the left to optimize — or switch to <b>Max credits/hr</b> mode to find the best dedicated sell plan.</div>`;stat.textContent="Plan updated. No outputs selected.";return;}
   let html="";
   if(res.mode==="credits"){
@@ -509,8 +514,9 @@ function renderSolveResult(res,el,stat,solveKey,metadata){
       consParts.push(...informationalMinedParts(j.res,j.lvl,j.ct>0?(sp/j.ct)*3600:0));
       cons=consParts.join(", ");}
     const mined=MINED_CRAFTS[j.res],resv=mined?' <span class="pill" style="background:rgba(63,182,160,.14);color:var(--teal);border:1px solid var(--teal-d)">mined craft</span>':"";
-    const tags=`${p.spx?` <span style="color:var(--ink3);font-size:10.5px">×${fmt(p.spx,2)} spd</span>`:""}${p.dup>0?` <span style="color:var(--ink3);font-size:10.5px">+${fmt(p.dup,2)}% dup</span>`:""}`;
-    html+=`<tr${mined?' style="background:rgba(63,182,160,.05)"':''}><td class="mono">#${p.line}</td><td class="mono">${compressionLabel(p.max)}${tags}</td>
+    // Speed and dupe are line settings the Crafter lines card already shows (including
+    // the projected speed at max turbo), so the Cap cell carries the compression only.
+    html+=`<tr${mined?' style="background:rgba(63,182,160,.05)"':''}><td class="mono">#${p.line}</td><td class="mono">${compressionLabel(p.max)}</td>
       <td>${pill} ${job}${resv}</td><td class="mono">${lvl}</td>
       <td class="num mono" style="color:var(--ink2)">${ct}</td>
       <td class="num">${outv}</td><td style="color:var(--ink2);font-size:11.5px">${cons}</td></tr>`;

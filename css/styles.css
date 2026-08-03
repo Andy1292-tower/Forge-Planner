@@ -43,11 +43,10 @@ body::before{
 @media(max-width:560px){
   .wrap{padding:18px 12px 48px}
   .brand h1{font-size:34px;letter-spacing:1.2px}
-  .tools{grid-template-columns:repeat(2,minmax(0,1fr));width:100%}
   button.btn{padding:8px 10px;font-size:11.5px}
 }
-header.top{display:flex;align-items:flex-start;justify-content:space-between;gap:18px 28px;flex-wrap:wrap;
-  border-bottom:1px solid var(--line);padding-bottom:20px;margin-bottom:26px;position:relative}
+header.top{display:flex;align-items:center;justify-content:space-between;gap:12px 28px;flex-wrap:wrap;
+  border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:18px;position:relative}
 .brand{flex:1 1 360px;min-width:0}
 header.top::after{
   content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;
@@ -67,12 +66,49 @@ header.top::after{
   0%,100%{opacity:1;filter:drop-shadow(0 0 6px rgba(255,184,105,.5))}
   50%{opacity:.78;filter:drop-shadow(0 0 2px rgba(255,184,105,.25))}
 }
-.brand p{color:var(--ink2);font-size:13px;margin-top:5px;letter-spacing:.3px;max-width:62ch}
-.brand p:first-of-type{color:var(--ink2);font-size:13.5px}
-.tools{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;position:relative;
-  flex:0 0 auto;width:536px;max-width:100%;align-content:start}
-.tools .saveind{grid-column:1/-1;text-align:right;margin-bottom:1px}
-.tools button.btn{width:100%;justify-content:center;text-align:center}
+.brand p{color:var(--ink2);font-size:13px;letter-spacing:.3px;max-width:62ch}
+/* tagline and the contribute link share one row so the brand block stays two lines tall */
+.brand-sub{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 16px;margin-top:6px}
+/* shrink-but-never-grow: the tagline keeps its own line-length beside the disclosure on
+   wide headers, and still wraps inside the brand column instead of overflowing it. */
+.brand .tagline{color:var(--ink2);font-size:13.5px;max-width:none;margin:0;flex:0 1 auto;min-width:0}
+.brand details.contrib{margin:0}
+.brand details.contrib[open]{flex:1 0 100%}
+.brand details.contrib>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:6px;
+  font-size:12.5px;color:var(--amber);letter-spacing:.3px;min-height:24px}
+.brand details.contrib>summary::-webkit-details-marker{display:none}
+.brand details.contrib>summary::after{content:"+";font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--ink3)}
+.brand details.contrib[open]>summary::after{content:"\2013"}
+.brand details.contrib>summary:hover{color:var(--ember)}
+.brand details.contrib p{color:var(--ink3);font-size:12.5px;margin-top:8px}
+.brand details.contrib a{color:var(--amber);text-decoration:underline;text-underline-offset:2px}
+
+/* Input rail — the three dialogs that hold solver input read as one object,
+   each segment reporting whether it has data. Settings sits outside it. */
+.tools{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px 10px;position:relative;
+  flex:0 0 auto;max-width:100%}
+/* save status sits beside the rail, not on its own row — it is ambient, not a control */
+.tools .saveind{order:0}
+.rail{order:1;display:flex;align-items:stretch;border:1px solid var(--line2);border-radius:6px;
+  background:var(--surface);overflow:hidden;max-width:100%}
+.rail-seg{appearance:none;background:transparent;border:0;cursor:pointer;color:var(--ink);
+  font-family:"Chakra Petch",sans-serif;text-align:left;padding:7px 14px 8px;min-height:var(--target);
+  display:flex;flex-direction:column;gap:3px;justify-content:center;transition:background .15s,color .15s}
+.rail-seg+.rail-seg{border-left:1px solid var(--line2)}
+.rail-seg:hover{background:rgba(210,129,58,.08)}
+.rail-seg:focus-visible{outline:3px solid var(--focus);outline-offset:-3px}
+.rail-lbl{font-size:11.5px;font-weight:600;letter-spacing:.7px;text-transform:uppercase;
+  display:flex;align-items:center;gap:7px;white-space:nowrap}
+.rail-dot{width:6px;height:6px;border-radius:50%;flex:0 0 auto;border:1px solid var(--line2);
+  background:transparent;transition:background .2s,border-color .2s,box-shadow .2s}
+.rail-seg.filled .rail-dot{background:var(--copper);border-color:var(--copper);box-shadow:0 0 8px rgba(242,169,78,.6)}
+.rail-state{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.3px;color:var(--ink3);
+  white-space:nowrap;padding-left:13px;font-variant-numeric:tabular-nums}
+.rail-seg.filled .rail-state{color:var(--ink2)}
+.rail-warn{color:var(--amber);font-weight:500}
+.rail-seg.needs{background:rgba(242,169,78,.07)}
+.rail-seg.needs .rail-dot{border-color:var(--amber);box-shadow:0 0 0 3px rgba(242,169,78,.14)}
+.tools button.btn.rail-aside{order:2;align-self:stretch}
 button.btn{font-family:"Chakra Petch",sans-serif;font-weight:600;font-size:12px;letter-spacing:.6px;
   background:var(--surface);color:var(--ink);border:1px solid var(--line2);border-radius:6px;
   min-height:var(--target);padding:8px 13px;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:6px;
@@ -87,15 +123,8 @@ button.btn.primary{
 button.btn.primary:hover{filter:brightness(1.08);color:#15110a;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.22), 0 7px 18px rgba(210,129,58,.32), 0 0 0 1px rgba(242,169,78,.28);}
 button.btn.ghost{background:transparent}
-/* attention nudge: pulse Projects+Prices + a bouncing arrow when Credits needs sell prices */
-@keyframes pokePulse{0%,100%{box-shadow:0 0 0 0 rgba(242,169,78,.65)}50%{box-shadow:0 0 0 9px rgba(242,169,78,0)}}
-button.btn.poke-on{animation:pokePulse 1.15s ease-out infinite}
-.poke{position:absolute;white-space:nowrap;background:var(--amber);color:#15110a;font-family:"Chakra Petch",sans-serif;
-  font-weight:700;font-size:11.5px;letter-spacing:.3px;padding:5px 10px;border-radius:6px;
-  box-shadow:0 6px 18px rgba(0,0,0,.45);z-index:6;pointer-events:none;animation:pokeBounce 1s ease-in-out infinite}
-.poke::before{content:"";position:absolute;bottom:100%;left:50%;margin-left:-6px;border:6px solid transparent;border-bottom-color:var(--amber)}
-@keyframes pokeBounce{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(-5px)}}
-.poke[hidden]{display:none}
+/* Sole remaining attention pulse: the stale-bar Resimulate button, which is a real pending action. */
+@keyframes attentionPulse{0%,100%{box-shadow:0 0 0 0 rgba(242,169,78,.65)}50%{box-shadow:0 0 0 9px rgba(242,169,78,0)}}
 .grid{display:grid;grid-template-columns:minmax(320px,380px) minmax(0,1fr);gap:18px;align-items:start}
 @media(max-width:880px){.grid{grid-template-columns:minmax(0,1fr)}}
 .grid > *{min-width:0}
@@ -125,49 +154,75 @@ button.btn.poke-on{animation:pokePulse 1.15s ease-out infinite}
   background:rgba(210,129,58,.10);border:1px solid var(--copper-d)}
 .stale-bar[hidden]{display:none}
 .stale-msg{font-size:12px;font-weight:600;color:var(--amber);letter-spacing:.2px}
-.stale-bar .btn{white-space:nowrap;animation:pokePulse 1.15s ease-out infinite}
+.stale-bar .btn{white-space:nowrap;animation:attentionPulse 1.15s ease-out infinite}
 #results.stale{opacity:.42;filter:saturate(.55);transition:opacity .15s,filter .15s}
 #results{min-width:0}
 #results table{min-width:520px}
 .stack{display:flex;flex-direction:column;gap:16px}
 
 /* lines */
-.line-row{display:grid;grid-template-columns:30px 1fr 28px;gap:9px;align-items:center;
-  padding:8px 8px 8px 10px;border:1px solid var(--line);border-radius:7px;
-  background:linear-gradient(180deg,var(--bg2),var(--surface2));margin-bottom:7px;
-  position:relative;transition:border-color .15s, background .15s}
-.line-row::before{
-  content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;border-radius:2px;
-  background:linear-gradient(180deg,var(--copper-d),var(--copper) 50%,var(--copper-d));
-  opacity:.45;transition:opacity .15s;
-}
-.line-row:hover{border-color:#3d434c}
-.line-row:hover::before{opacity:.95}
-.line-row .tag{
-  font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:700;
-  color:var(--amber);text-align:center;letter-spacing:.3px;
-  background:rgba(210,129,58,.08);border:1px solid var(--copper-d);
-  border-radius:4px;padding:4px 0;
-}
-.line-row .lname{font-size:13px;font-weight:600;letter-spacing:.3px;display:flex;align-items:center;gap:7px}
-.line-row .lname small{display:block;color:var(--ink3);font-weight:400;font-size:10.5px}
-.line-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:6px;align-items:end}
 .globals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--line);align-items:end}
-.line-fields .fl,.globals .fl{display:flex;flex-direction:column;gap:3px;justify-content:flex-end;min-width:0}
-.line-fields .fl span,.globals .fl span{font-size:9.5px;letter-spacing:.45px;text-transform:uppercase;color:var(--ink3);
-  display:inline-flex;align-items:center;gap:4px;line-height:1.2}
-/* labels wrap (block, not inline-flex) so a long one like "MAX COMPRESSION" never overflows into the next column */
-.line-fields .fl span{display:block;white-space:normal;min-width:0;line-height:1.25}
-.line-fields .fl span .tip{vertical-align:middle}
-.globals .fl span{flex-wrap:wrap}
-.line-fields .fl > select,.line-fields .fl > input,.globals .fl > input{min-height:var(--target)}
-.line-final{margin-top:6px;font-size:10.5px;color:var(--amber);letter-spacing:.3px}
-/* Keep the desktop 3-col field layout until every label has a font-safe column.
-   At 375px the longest label can exceed one third of the line-card content area. */
-@media(max-width:375px){
-  .line-fields{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 7px}
-  .line-fields>.fl:nth-child(3){grid-column:1/-1}
-  .globals{grid-template-columns:repeat(2,minmax(0,1fr))}
+.globals .fl{display:flex;flex-direction:column;gap:3px;justify-content:flex-end;min-width:0}
+.globals .fl span{font-size:9.5px;letter-spacing:.45px;text-transform:uppercase;color:var(--ink3);
+  display:inline-flex;align-items:center;gap:4px;line-height:1.2;flex-wrap:wrap}
+.globals .fl > input{min-height:var(--target)}
+
+/* Crafter lines table. Labels and help buttons live in the header row, so adding a
+   line costs one 44px row instead of a card carrying its own copy of every label. */
+.ltable{width:100%;border-collapse:collapse}
+.ltable th{text-align:left;padding:0 6px 8px 0;vertical-align:bottom;font-weight:600}
+.ltable td{padding:0 6px 7px 0;vertical-align:top}
+.ltable th:last-child,.ltable td:last-child{padding-right:0}
+.lines-th{font-size:9.5px;letter-spacing:.45px;text-transform:uppercase;color:var(--ink3);
+  display:inline-flex;align-items:center;gap:5px;line-height:1.25}
+.lines-th-sr{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;
+  clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
+.ltable .col-n{width:32px}
+.ltable .col-x{width:30px}
+.ltable .tag{font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:700;
+  color:var(--amber);letter-spacing:.3px;background:rgba(210,129,58,.08);
+  border:1px solid var(--copper-d);border-radius:4px;
+  display:flex;align-items:center;justify-content:center;min-height:var(--target)}
+.ltable select,.ltable input[type=number]{min-height:var(--target)}
+/* projected speed hangs off the entered speed: no column, no width cost, and only
+   the rows actually below max turbo grow */
+.line-proj{font-size:10px;color:var(--amber);letter-spacing:.2px;margin-top:3px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ltable .col-x .iconbtn{margin-top:8px}
+.ltable tbody tr:hover .tag{background:rgba(210,129,58,.16);border-color:var(--copper)}
+
+/* Below 560px a six-column table stops fitting, so each row folds back into a card.
+   Same DOM, same handlers — only the layout changes. */
+@media(max-width:560px){
+  .ltable,.ltable tbody,.ltable tr,.ltable td{display:block}
+  .ltable thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%)}
+  .ltable tr{display:grid;grid-template-columns:30px repeat(3,minmax(0,1fr)) 28px;
+    grid-template-areas:"tag cap spx turbo x";
+    /* start, not end: a speed cell carrying a projection is taller, and bottom
+       alignment would lift its label out of line with the others */
+    gap:7px 8px;align-items:start;padding:8px;margin-bottom:7px;position:relative;
+    border:1px solid var(--line);border-radius:7px;
+    background:linear-gradient(180deg,var(--bg2),var(--surface2))}
+  .ltable tr::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;border-radius:2px;
+    background:linear-gradient(180deg,var(--copper-d),var(--copper) 50%,var(--copper-d));opacity:.45}
+  .ltable td{padding:0}
+  .ltable .col-n{grid-area:tag;align-self:center}
+  .ltable .col-cap{grid-area:cap}
+  .ltable .col-spx{grid-area:spx}
+  .ltable .col-turbo{grid-area:turbo}
+  .ltable .col-x{grid-area:x;align-self:center}
+  /* reserve two lines for every label: "max compression" wraps and the others don't,
+     so without this the controls start at different heights across one row */
+  .ltable td[data-label]::before{content:attr(data-label);display:block;
+    font-size:9.5px;letter-spacing:.45px;text-transform:uppercase;color:var(--ink3);
+    line-height:1.25;margin-bottom:3px;min-height:2.5em}
+}
+/* Three fields stop fitting across a phone around here: the longest label needs more
+   than a third of the card, so fold to two columns. */
+@media(max-width:380px){
+  .ltable tr{grid-template-columns:30px minmax(0,1fr) minmax(0,1fr) 28px;
+    grid-template-areas:"tag cap spx x" "tag turbo turbo x"}
+  .ltable .col-x .iconbtn{margin-top:0}
 }
 select,input[type=number],input[type=text]{font-family:"JetBrains Mono",monospace;font-size:12.5px;
   background:var(--surface2);color:var(--ink);border:1px solid var(--line2);border-radius:5px;
@@ -227,10 +282,12 @@ select:focus,input:focus{border-color:var(--copper);
 }
 .tip.tip-right .tip-text{left:-4px;right:auto;transform:translateX(0) translateY(3px)}
 .tip.tip-right:hover .tip-text,.tip.tip-right:focus-visible .tip-text{transform:translateX(0) translateY(0)}
+/* rightmost column header in the lines table: flip its tooltip inward so it can't
+   overflow the card edge (previously the last .line-fields column did this) */
 @media(min-width:561px){
-  .line-fields>.fl:last-child .tip .tip-text{left:auto;right:-4px;transform:translateX(0) translateY(3px)}
-  .line-fields>.fl:last-child .tip:hover .tip-text,
-  .line-fields>.fl:last-child .tip:focus-visible .tip-text{transform:translateX(0) translateY(0)}
+  .ltable .col-turbo .tip .tip-text{left:auto;right:-4px;transform:translateX(0) translateY(3px)}
+  .ltable .col-turbo .tip:hover .tip-text,
+  .ltable .col-turbo .tip:focus-visible .tip-text{transform:translateX(0) translateY(0)}
 }
 /* icon variant: paints the in-game indicator beside the text (left), text wraps to its right */
 .tip.tip-ic .tip-text{
@@ -468,8 +525,14 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
   background:rgba(210,129,58,.12);color:var(--amber);font-size:9.5px;font-weight:600;letter-spacing:.45px;text-transform:uppercase}
 .mined-income-stack{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:start}
 .mined-income{display:flex;flex-direction:column;gap:4px;min-width:0}
-.mined-income>span,.mined-income>label{font-size:10px;letter-spacing:.45px;text-transform:uppercase;color:var(--ink3)}
-.mined-income input{width:100%;min-width:0}
+/* A label carrying a help button is 24px tall and a bare one is 13px, which pushed
+   the inputs beside it — and everything below them — out of line by 11px, both
+   within a card and across the two cards. Reserve the button's height for every
+   label so the fields align whether or not they have help. */
+.mined-income>span,.mined-income>label{font-size:10px;letter-spacing:.45px;text-transform:uppercase;
+  color:var(--ink3);display:flex;align-items:center;gap:4px;min-height:24px;line-height:1.2}
+/* these were the only text inputs in the app left at the browser default height */
+.mined-income input{width:100%;min-width:0;min-height:var(--target)}
 .mined-breakdown{margin-top:9px;color:var(--ink2);font-family:"JetBrains Mono",monospace;font-size:10.5px;line-height:1.5}
 .mined-capacity{margin-top:9px;color:var(--amber);font-family:"JetBrains Mono",monospace;font-size:12px;font-weight:600}
 .mined-help{margin:10px 0 0}
@@ -636,9 +699,24 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 /* P1 mobile geometry overrides live after their desktop declarations so the narrow cascade wins. */
 @media(max-width:560px){
   .brand h1{font-size:34px;letter-spacing:1.2px}
-  .tools{grid-template-columns:repeat(2,minmax(0,1fr));width:100%}
   .settings-actions{grid-template-columns:minmax(0,1fr)}
   button.btn{padding:8px 10px;font-size:11.5px}
+  /* rail goes full width as an even three-up band, labels centred over their state.
+     Segments only divide evenly if the labels shrink too — the full names would
+     force "Projects + Prices" wider than a third and squeeze the other two. The
+     accessible name comes from each button's aria-label, so swapping the visible
+     text here costs nothing to screen readers. */
+  .tools{width:100%}
+  .rail{flex:1 0 100%;order:1}
+  .rail-seg{flex:1 1 0;min-width:0;align-items:center;text-align:center;padding:8px 6px}
+  .rail-lbl{gap:5px;font-size:10.5px;letter-spacing:.4px;max-width:100%}
+  .rail-name{font-size:0}
+  .rail-name::after{content:attr(data-short);font-size:10.5px}
+  .rail-state{padding-left:0;font-size:0;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .rail-state::after{content:attr(data-short);font-size:9.5px}
+  .rail-seg.needs .rail-state::after{color:var(--amber);font-weight:500}
+  .tools .saveind{flex:1 1 auto;order:2;margin:0;text-align:left;align-self:center}
+  .tools button.btn.rail-aside{order:3;margin-left:auto;align-self:center}
 }
 @media(max-width:430px){
   .price-row{grid-template-columns:minmax(0,1fr);gap:var(--space-sm)}
@@ -665,10 +743,15 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 @media(max-width:260px){
   .wrap{padding:12px 8px 40px}
   .brand h1{font-size:25px;letter-spacing:.8px}
-  .tools{grid-template-columns:minmax(0,1fr)}
+  .rail{flex-direction:column}
+  .rail-seg+.rail-seg{border-left:0;border-top:1px solid var(--line2)}
+  .tools button.btn.rail-aside{width:100%;justify-content:center}
   .card>.head{align-items:stretch;flex-direction:column}
-  .globals,.line-fields{grid-template-columns:minmax(0,1fr)}
-  .line-row{gap:4px;padding-left:5px;padding-right:5px}
+  .globals{grid-template-columns:minmax(0,1fr)}
+  /* below 260px even the two-up card is too wide: stack every field */
+  .ltable tr{grid-template-columns:30px minmax(0,1fr) 28px;
+    grid-template-areas:"tag cap x" "tag spx x" "tag turbo x";
+    gap:6px;padding-left:5px;padding-right:5px}
   .margin-row{align-items:stretch!important;flex-direction:column}
   .margin-row>div:last-child{justify-content:space-between}
   .modesw{grid-template-columns:minmax(0,1fr)}

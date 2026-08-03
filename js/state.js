@@ -520,7 +520,9 @@ function save(){
     if(el)el.textContent="invalid value not saved";
     return false;
   }
-  _adoptValidatedClone(persisted.state);flashSaved();return true;
+  _adoptValidatedClone(persisted.state);
+  if(typeof renderInputState==="function")renderInputState(); // rail badges track whatever the save just accepted
+  flashSaved();return true;
 }
 function flashSaved(){
   const el=typeof document!=="undefined"?document.getElementById("saveind"):null;if(!el)return;

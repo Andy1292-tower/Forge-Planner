@@ -73,16 +73,48 @@ function updateFieldFeedback(input,error,rule,result,previousValue){
 function markTableScroller(element,label){
   if(!element)return;
   element.classList.add("table-scroll");
-  element.setAttribute("role","region");
   element.setAttribute("aria-label",label);
-  element.setAttribute("aria-describedby","tableScrollHelp");
-  element.tabIndex=0;
   if(!element.querySelector(":scope > .table-scroll-hint")){
     const hint=domElement("div","table-scroll-hint","Scroll horizontally to see all columns →");
     hint.setAttribute("aria-hidden","true");
     element.prepend(hint);
   }
+  queueTableScrollSync();
 }
+// Scrollers are built detached and inserted by the caller, so this element usually
+// isn't in the document yet and can't be measured. Defer one pass over the live DOM
+// instead of measuring the node we were handed.
+// A timer rather than requestAnimationFrame: rAF is suspended while the tab is in the
+// background, so a solve that finishes there would leave every hint stale until the
+// next resize. Reading scrollWidth forces the layout we need anyway.
+let _scrollSyncTimer=null;
+function queueTableScrollSync(){
+  if(_scrollSyncTimer!==null)return;
+  _scrollSyncTimer=setTimeout(()=>{_scrollSyncTimer=null;syncAllTableScrollHints();},0);
+}
+// A table that fits shouldn't claim to scroll, and shouldn't be a tab stop either —
+// announcing "scrollable region" on a table with nothing to scroll teaches people to
+// ignore the message on the tables that really do overflow.
+function syncTableScrollHint(element){
+  if(!element||!element.isConnected)return;
+  const overflowing=element.scrollWidth>element.clientWidth+1;
+  const hint=element.querySelector(":scope > .table-scroll-hint");
+  if(hint)hint.hidden=!overflowing;
+  if(overflowing){
+    element.setAttribute("role","region");
+    element.setAttribute("aria-describedby","tableScrollHelp");
+    element.tabIndex=0;
+  }else{
+    element.removeAttribute("role");
+    element.removeAttribute("aria-describedby");
+    element.removeAttribute("tabindex");
+  }
+}
+function syncAllTableScrollHints(){
+  if(typeof document==="undefined")return;
+  document.querySelectorAll(".table-scroll").forEach(syncTableScrollHint);
+}
+if(typeof window!=="undefined")window.addEventListener("resize",syncAllTableScrollHints);
 
 function domOption(value,label,selected){
   const option=document.createElement("option");
