@@ -14,6 +14,10 @@ const runner=`
   eq("8192 tier",LEVELS[LEVELS.length-2],8192);
   eq("16384 tier",LEVELS[LEVELS.length-1],16384);
   eq("16384 display",compressionLabel(16384),"16.38k×");
+  eq("1× is level 0",compressionLevel(1),0);
+  eq("64× is level 6",compressionLevel(64),6);
+  eq("16384× is the top level",compressionLevel(16384),LEVELS.length-1);
+  eq("every tier maps to its index",LEVELS.every((L,i)=>compressionLevel(L)===i),true);
   eq("default Vespium Rig income is blank",d.minedIncome.Vespium?.rigPerMin,null);
   eq("default Vespium Resources & Trading income is blank",d.minedIncome.Vespium?.resourcesTradingPerSec,null);
   eq("default Hydracite Resources & Trading income is blank",d.minedIncome.Hydracite?.resourcesTradingPerSec,null);
