@@ -171,7 +171,7 @@ button.btn.ghost{background:transparent}
    line costs one 44px row instead of a card carrying its own copy of every label. */
 .ltable{width:100%;border-collapse:collapse}
 .ltable th{text-align:left;padding:0 6px 8px 0;vertical-align:bottom;font-weight:600}
-.ltable td{padding:0 6px 7px 0;vertical-align:top}
+.ltable td{padding:3px 6px 3px 0;vertical-align:top}
 .ltable th:last-child,.ltable td:last-child{padding-right:0}
 .lines-th{font-size:9.5px;letter-spacing:.45px;text-transform:uppercase;color:var(--ink3);
   display:inline-flex;align-items:center;gap:5px;line-height:1.25}
