@@ -26,12 +26,12 @@ const runner=`
   const gelSummary=document.getElementById("minedVespiumSummary");
   check("three source controls use the approved player-facing units",
     /<label for="minedVespiumRig">Vespium Rig production \\(\\/min\\)<\\/label>/.test(indexHtml)&&
-    /<label for="minedVespiumTrading">Resources &amp; Trading Vespium \\(\\/sec\\)<\\/label>/.test(indexHtml)&&
-    /<label for="minedHydraciteTrading">Resources &amp; Trading Hydracite \\(\\/sec\\)<\\/label>/.test(indexHtml),
+    /<label for="minedVespiumTrading">Mined Vespium \\(\\/sec\\)<\\/label>/.test(indexHtml)&&
+    /<label for="minedHydraciteTrading">Mined Hydracite \\(\\/sec\\)<\\/label>/.test(indexHtml),
     "rig="+indexHtml.includes("minedVespiumRig")+", vespTrading="+indexHtml.includes("minedVespiumTrading")+", hydraTrading="+indexHtml.includes("minedHydraciteTrading"));
   check("vesp Rig draft is preserved",document.getElementById("minedVespiumRig").value==="2",document.getElementById("minedVespiumRig").value);
-  check("vesp Resources and Trading draft is preserved",document.getElementById("minedVespiumTrading").value==="3",document.getElementById("minedVespiumTrading").value);
-  check("hydra Resources and Trading draft is preserved",document.getElementById("minedHydraciteTrading").value==="4",document.getElementById("minedHydraciteTrading").value);
+  check("mined Vespium draft is preserved",document.getElementById("minedVespiumTrading").value==="3",document.getElementById("minedVespiumTrading").value);
+  check("mined Hydracite draft is preserved",document.getElementById("minedHydraciteTrading").value==="4",document.getElementById("minedHydraciteTrading").value);
   const breakdown=document.getElementById("minedVespiumBreakdown").textContent;
   check("vesp summary exposes the additive source conversion",breakdown.includes("120")&&breakdown.includes("10.8k")&&breakdown.includes("10.92k"),breakdown);
   const hydraSummary=document.getElementById("minedHydraciteSummary").textContent;

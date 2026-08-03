@@ -89,11 +89,11 @@ function renderMinedResources(){
   const vespTrading=num(S.minedIncome.Vespium.resourcesTradingPerSec)||0;
   const vespRigHr=Math.max(0,vespRig)*60,vespTradingHr=Math.max(0,vespTrading)*3600;
   const vespBreakdown=document.getElementById("minedVespiumBreakdown");
-  if(vespBreakdown)vespBreakdown.textContent=`Rig: ${disp(vespRig)}/min → ${disp(vespRigHr)}/hr + Resources & Trading: ${disp(vespTrading)}/sec → ${disp(vespTradingHr)}/hr = ${disp(vespHr)} Vespium/hr total`;
+  if(vespBreakdown)vespBreakdown.textContent=`Rig: ${disp(vespRig)}/min → ${disp(vespRigHr)}/hr + Mined: ${disp(vespTrading)}/sec → ${disp(vespTradingHr)}/hr = ${disp(vespHr)} Vespium/hr total`;
   const hydraTrading=num(S.minedIncome.Hydracite.resourcesTradingPerSec)||0;
   const hydraHr=minedBudgetHr("Hydracite");
   const hydraSummary=document.getElementById("minedHydraciteSummary");
-  if(hydraSummary)hydraSummary.textContent=`Resources & Trading: ${disp(hydraTrading)}/sec → ${disp(hydraHr)} Hydracite/hr total`;
+  if(hydraSummary)hydraSummary.textContent=`Mined: ${disp(hydraTrading)}/sec → ${disp(hydraHr)} Hydracite/hr total`;
   const rows=lineRows(),exact=rows.length<=GEL_EXACT_UI_MAX_LINES;
   // Exact multiple-choice capacity is responsive through the gameplay-scale 12-line boundary.
   // Larger compatible saves use the bounded solver seed with explicitly estimated copy.
