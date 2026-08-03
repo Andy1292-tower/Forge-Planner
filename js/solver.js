@@ -928,8 +928,12 @@ function gelLoadout(rows,vespBudgetHr){
     });
   const gelUpperBound=gelLoadoutStableSum(ordered.map(entry=>
     entry.options.reduce((best,option)=>Math.max(best,option.gelHr),0)));
+  const vespUpperBound=gelLoadoutStableSum(ordered.map(entry=>
+    entry.options.reduce((best,option)=>Math.max(best,option.vespHr),0)));
   const gelPruneBounds=gelLoadoutPruneBounds(gelUpperBound,ordered.length);
-  const vespPruneBounds=gelLoadoutPruneBounds(vespBudgetHr,ordered.length);
+  // Unused income cannot enlarge any candidate sum. Basing numeric pruning on an arbitrarily huge
+  // user budget makes its safety interval dwarf every attainable cost and disables dominance.
+  const vespPruneBounds=gelLoadoutPruneBounds(Math.min(vespBudgetHr,vespUpperBound),ordered.length);
   const futureProfiles=ordered.map((entry,index)=>[...new Set(ordered.slice(index+1)
     .map(future=>future.profileId))].sort((a,b)=>a-b));
   let frontier=[{gelHr:0,vespHr:0,choices:[],lastRanks:new Array(profileIds.size).fill(-1)}];
