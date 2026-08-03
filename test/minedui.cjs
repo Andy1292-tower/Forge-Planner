@@ -45,6 +45,10 @@ const runner=`
   check("line-cap help names the numeric top tier consistently",/1×–16\\.38k×/.test(TIPS.max),TIPS.max);
   check("the cap picker is captioned with the level it corresponds to",/class="line-lvl[^"]*"[^>]*>level 14</.test(lineMarkup),lineMarkup);
   check("the level caption describes the picker for screen readers",/aria-describedby="linesCapHelp field-line-0-level"/.test(lineMarkup),lineMarkup);
+  check("unselected options tag their level for the open list",/value="64"[^>]*>64× lv6<\\/option>/.test(lineMarkup),lineMarkup);
+  check("the selected option stays bare so the closed control cannot show a level",/value="16384" selected>16\\.38k×<\\/option>/.test(lineMarkup),lineMarkup);
+  // 12 characters is what this column absorbs for free; a longer tag takes pixels off speed and turbo
+  check("no option label outgrows the column's free width",[...lineMarkup.matchAll(/<option[^>]*>([^<]*)<\\/option>/g)].every(m=>m[1].length<=12),lineMarkup);
   const batteryCard=prodCard("Batteries").innerHTML;
   check("Battery recipe copy explains batch output and per-craft costs",/5 × compression/.test(batteryCard)&&/costs? (?:below )?(?:remain|are) per craft/i.test(batteryCard),batteryCard);
   check("Hydracite card discloses the Battery batch",/Batteries[^<]*5 × compression|5 × compression[^<]*Batteries/.test(indexHtml),"batch copy="+indexHtml.includes("5 × compression"));

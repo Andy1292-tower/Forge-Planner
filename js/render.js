@@ -2,7 +2,7 @@
 /* ---------- RENDER: lines ---------- */
 const TIPS={
   line:"Crafter unit slot. The solver auto-sorts lines by max compression — this number only identifies which row you're editing.",
-  max:"Highest compression tier this crafter is upgraded to (1×–16.38k×), with the matching in-game level under the picker: level 0 is 1× and every level doubles it, so 16.38k× is level 14. Each level doubles yield per craft but triples material cost per cycle — so the solver picks the most efficient level ≤ this cap.",
+  max:"Highest compression tier this crafter is upgraded to (1×–16.38k×). The list tags each tier with its in-game level (lv12) and the caption spells out the one you have picked: level 0 is 1× and every level doubles it, so 16.38k× is level 14. Each level doubles yield per craft but triples material cost per cycle — so the solver picks the most efficient level ≤ this cap.",
   spx:"The total speed × currently shown above the crafter unit in-game (e.g. ×49.38) — enter it exactly as displayed, with your current turbo stacks already baked in.",
   turbo:"How many turbo stacks this crafter has active right now (each stack = +1% speed). With the global max-turbo-stacks figure, the planner backs out your base speed and projects the speed you'll have at full turbo.",
   maxTurbo:"The most turbo stacks any crafter can reach — a global cap (each stack = +1% speed). The planner projects every line's current speed up to this many stacks, so the plan reflects your sustained speed at full turbo.",
@@ -13,6 +13,19 @@ function tipHtml(id,label,text,className="",style=""){
   return `<button type="button" class="tip${className?" "+className:""}"${style?` style="${style}"`:""} aria-label="Help for ${label}" aria-describedby="${id}">?<span class="tip-text" id="${id}" role="tooltip">${text}</span></button>`;
 }
 function lineLevelText(L){return "level "+compressionLevel(L);}
+// Levels belong in the open list, but a closed <select> mirrors its selected option's text
+// and this picker is far too narrow for one. So the selected option — and only it — stays
+// bare, which makes it structurally impossible for a level to reach the table; the caption
+// underneath carries that one. The rest get the abbreviated "lv12", which the caption anchors:
+// an option's text still feeds the column's intrinsic width, and 12 characters ("16.38k× lv14")
+// is the most this column absorbs without taking pixels off speed and turbo.
+function capOptionLabel(L,isSelected){return isSelected?compressionLabel(L):compressionLabel(L)+" lv"+compressionLevel(L);}
+function syncCapOptions(select,max){
+  [...select.options].forEach(o=>{
+    const text=capOptionLabel(+o.value,+o.value===max);
+    if(o.textContent!==text)o.textContent=text;
+  });
+}
 // Lines render as a table: the three field labels and their help buttons belong to
 // the columns, not to each row, so seven lines cost seven rows instead of seven
 // label sets. The projected-speed readout is a column rather than a per-row note,
@@ -22,11 +35,8 @@ function renderLines(){
   const mx=num(S.maxTurbo)||0;
   const isProjected=ln=>(num(ln.turbo)||0)!==mx;
   const rows=S.lines.map((ln,i)=>{
-    const opts=LEVELS.map(L=>`<option value="${L}" ${L===ln.max?"selected":""}>${compressionLabel(L)}</option>`).join("");
+    const opts=LEVELS.map(L=>`<option value="${L}" ${L===ln.max?"selected":""}>${capOptionLabel(L,L===ln.max)}</option>`).join("");
     const speedError=`field-line-${i}-speed-error`,turboError=`field-line-${i}-turbo-error`;
-    // The level goes under the picker, not inside it: this column is sized by its
-    // "max compression" heading, and the select only has room for the multiplier —
-    // "16.38k× (level 14)" would be clipped mid-word in the closed control.
     const levelNote=`field-line-${i}-level`;
     return `<tr>
       <td class="col-n"><span class="tag mono">#${i+1}</span></td>
@@ -58,6 +68,8 @@ function refreshLineNotes(){
     const ln=S.lines[i];if(!ln)return;
     const lvl=row.querySelector(".col-cap .line-lvl");
     if(lvl)lvl.textContent=lineLevelText(ln.max);
+    const cap=row.querySelector(".col-cap select");
+    if(cap)syncCapOptions(cap,ln.max);
     const cell=row.querySelector(".col-spx");if(!cell)return;
     let note=cell.querySelector(".line-proj");
     if((num(ln.turbo)||0)!==mx){
