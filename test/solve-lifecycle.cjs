@@ -65,7 +65,7 @@ function lifecycleHarness(options = {}) {
     domElement(_tag, _className, text) { const el = new FakeElement(); el.textContent = text || ""; return el; },
     getLineStability() { return stability; },
     setLineStability() {},
-    optimize() { return { mode: "sync-fallback" }; },
+    optimize: options.optimize || (() => ({ mode: "sync-fallback" })),
     num(value) { const number = Number(value); return Number.isFinite(number) ? number : null; },
     setTimeout(callback) { const id = nextTimer++; timers.set(id, callback); return id; },
     clearTimeout(id) { timers.delete(id); },
@@ -156,6 +156,37 @@ function lifecycleHarness(options = {}) {
       return value;
     },
     status() { return vm.runInContext("solveService.status()", context); },
+  };
+}
+
+function visibleText(node) {
+  if (node === null || node === undefined) return "";
+  if (typeof node === "string") return node;
+  return String(node.textContent || "") + (node.children || []).map(visibleText).join("");
+}
+
+function resultErrorHarness() {
+  const elements = { results: new FakeElement(), solveStat: new FakeElement() };
+  const context = {
+    console,
+    document: {
+      getElementById(id) { return elements[id] || null; },
+      createTextNode(text) { return { textContent: String(text), children: [] }; },
+    },
+    domElement(_tag, _className, text) { const el = new FakeElement();el.textContent = text || "";return el; },
+  };
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync(path.join(root, "js", "results.js"), "utf8"), context, {
+    filename: "results-error-renderer.js",
+  });
+  return {
+    show(error) {
+      context.__error = error;
+      vm.runInContext("solveError(globalThis.__error)", context);
+      delete context.__error;
+      return visibleText(elements.results);
+    },
+    status() { return elements.solveStat.textContent; },
   };
 }
 
@@ -259,7 +290,10 @@ function maxItemsState(overrides = {}) {
     baseTime: { Frames: 308.9 },
     prodCost: { Frames: { Rods: { 1: 2 } } },
     forgie: { Frames: 3 },
-    minedIncome: { Vespium: 7, Hydracite: 11 },
+    minedIncome: {
+      Vespium: { rigPerMin: 7, resourcesTradingPerSec: 0 },
+      Hydracite: { resourcesTradingPerSec: 11 },
+    },
     sellPrice: { Frames: 123 },
     projects: [{ id: "p1", done: 0, inventory: { Frames: 99 }, levels: [{ costs: [{ item: "Frames", qty: 4 }] }] }],
     manual: [{ line: 1, job: "Frames" }],
@@ -502,7 +536,18 @@ test("Items cache misses projected input changes and expired records", () => {
     ["base time", state => ({ ...state, baseTime: { Frames: 309 } })],
     ["production cost", state => ({ ...state, prodCost: { Frames: { Rods: { 1: 3 } } } })],
     ["Lil' Forgie production", state => ({ ...state, forgie: { Frames: 4 } })],
-    ["mined-resource income", state => ({ ...state, minedIncome: { Vespium: 8, Hydracite: 11 } })],
+    ["Vespium Rig income", state => ({ ...state, minedIncome: {
+      Vespium: { ...state.minedIncome.Vespium, rigPerMin: 8 },
+      Hydracite: { ...state.minedIncome.Hydracite },
+    } })],
+    ["Vespium Resources and Trading income", state => ({ ...state, minedIncome: {
+      Vespium: { ...state.minedIncome.Vespium, resourcesTradingPerSec: 1 },
+      Hydracite: { ...state.minedIncome.Hydracite },
+    } })],
+    ["Hydracite Resources and Trading income", state => ({ ...state, minedIncome: {
+      Vespium: { ...state.minedIncome.Vespium },
+      Hydracite: { resourcesTradingPerSec: 12 },
+    } })],
   ];
 
   for (const [name, change] of projectedChanges) {
@@ -522,6 +567,38 @@ test("Items cache misses projected input changes and expired records", () => {
   const expired = lifecycleHarness({ storage, now: 1_000 + 24 * 60 * 60 * 1_000 });
   expired.callRequest({ mode: "items", stateRevision: 2, budget: state.solveBudget, stateSnapshot: state }, () => {});
   assert.equal(expired.workers.length, 1, "a record exactly 24 hours old must dispatch a Worker");
+});
+
+test("daily cache version 3 rejects version 2 bytes and keys each raw mined source", () => {
+  const storage = new Map();
+  const original = maxItemsState({ minedIncome: {
+    Vespium: { rigPerMin: 2, resourcesTradingPerSec: 3 },
+    Hydracite: { resourcesTradingPerSec: 4 },
+  } });
+  primeItemsCache(storage, original);
+  const cacheKey = [...storage.keys()][0];
+  const persisted = JSON.parse(storage.get(cacheKey));
+  assert.equal(persisted.version, 3);
+  assert.ok(persisted.entries.every(entry => entry.version === 3));
+
+  const stale = JSON.parse(JSON.stringify(persisted));
+  stale.version = 2;
+  stale.entries.forEach(entry => { entry.version = 2; });
+  storage.set(cacheKey, JSON.stringify(stale));
+  const staleHarness = lifecycleHarness({ storage });
+  staleHarness.callRequest({ mode: "items", stateRevision: 2, budget: original.solveBudget, stateSnapshot: original }, () => {});
+  assert.equal(staleHarness.workers.length, 1, "a version-2 cache must not satisfy a corrected Battery/source solve");
+
+  const equalAggregateStorage = new Map();
+  primeItemsCache(equalAggregateStorage, original);
+  const equalAggregate = maxItemsState({ minedIncome: {
+    Vespium: { rigPerMin: 182, resourcesTradingPerSec: 0 },
+    Hydracite: { resourcesTradingPerSec: 4 },
+  } });
+  const equalAggregateHarness = lifecycleHarness({ storage: equalAggregateStorage });
+  equalAggregateHarness.callRequest({ mode: "items", stateRevision: 2, budget: equalAggregate.solveBudget, stateSnapshot: equalAggregate }, () => {});
+  assert.equal(equalAggregateHarness.workers.length, 1,
+    "equal hourly Vespium totals from different raw sources must have distinct cache identity");
 });
 
 test("mode isolation, forceFresh, and malformed daily-cache bytes fail open to a Worker", () => {
@@ -648,6 +725,53 @@ test("an owned Worker failure preserves the generation and callback through sync
   assert.deepEqual(painted, ["sync-fallback"]);
   assert.equal(harness.status().generation, generation);
   assert.equal(harness.elements.solveOverlay.hidden, true);
+});
+
+test("synchronous fallback failures use the structured Worker error shape", () => {
+  const thrown = new Error("Fallback validation failed");
+  thrown.stack = "Error: Fallback validation failed\n    at optimize (solver.js:1:1)";
+  const harness = lifecycleHarness({ optimize() { throw thrown; } });
+  const delivered = [];
+  harness.callRequest(request("items", 1, "A"), (_result, error) => delivered.push(error));
+  harness.workers[0].emitError("Worker unavailable");
+  harness.flushTimers();
+
+  assert.deepEqual(JSON.parse(JSON.stringify(delivered)), [{
+    message: "Fallback validation failed",
+    stack: "Error: Fallback validation failed\n    at optimize (solver.js:1:1)",
+  }]);
+});
+
+test("solver notices prefer useful messages over Chromium and Firefox stack frames", () => {
+  const harness = resultErrorHarness();
+  const structured = harness.show({
+    message: "Worker state rejected: manual[5].lvl exceeds its cap",
+    stack: "Error: Worker state rejected\n    at self.onmessage (blob:forge:1:2)",
+  });
+  assert.match(structured, /Worker state rejected: manual\[5\]\.lvl exceeds its cap/);
+  assert.doesNotMatch(structured, /blob:forge/);
+
+  const firefox = harness.show(
+    "self.onmessage@blob:https://forge.invalid/worker-id:1:234\n" +
+    "Error: Worker state rejected: manual[6].lvl exceeds its cap"
+  );
+  assert.match(firefox, /Worker state rejected: manual\[6\]\.lvl exceeds its cap/);
+  assert.doesNotMatch(firefox, /self\.onmessage@blob:/);
+
+  const chromium = harness.show(
+    "Error: Worker state rejected: manual[5].lvl exceeds its cap\n" +
+    "    at self.onmessage (blob:https://forge.invalid/worker-id:1:234)"
+  );
+  assert.match(chromium, /Worker state rejected: manual\[5\]\.lvl exceeds its cap/);
+  assert.doesNotMatch(chromium, /blob:https:/);
+
+  const blobOnly = harness.show(
+    "self.onmessage@blob:https://forge.invalid/worker-id:1:234\n" +
+    "dispatch@blob:https://forge.invalid/worker-id:1:240"
+  );
+  assert.match(blobOnly, /Unknown solver failure/);
+  assert.doesNotMatch(blobOnly, /blob:https:/);
+  assert.match(harness.status(), /Solve failed/i);
 });
 
 test("Worker retry cooldown is bounded and a later healthy solve clears fallback status", () => {
@@ -898,6 +1022,97 @@ test("changing the Worker factory releases the owned Worker before a controlled 
     "completion must release every request-currentness field with the callback");
 });
 
+function lineCapPersistenceHarness() {
+  let resultRenders = 0;
+  let lineRenders = 0;
+  let rejectWrites = false;
+  class EventElement extends FakeElement {
+    constructor() { super();this.listeners = new Map();this.value = "";this.dataset = {};this.validity = { badInput: false }; }
+    addEventListener(type, callback) { this.listeners.set(type, callback); }
+    emit(type, target = this) {
+      const callback = this.listeners.get(type);
+      assert.ok(callback, `missing ${type} listener`);
+      callback({ target, key: "", preventDefault() {} });
+    }
+    getAttribute(name) { return this[name] === undefined ? null : this[name]; }
+    setAttribute(name, value) { this[name] = String(value); }
+    removeAttribute(name) { delete this[name]; }
+    matches() { return false; }
+  }
+
+  const storage = new Map();
+  const elements = new Map();
+  const element = id => {
+    if (!elements.has(id)) elements.set(id, new EventElement());
+    return elements.get(id);
+  };
+  const context = {
+    console,
+    JSON,
+    Math,
+    Number,
+    Object,
+    String,
+    Date,
+    performance: { now() { return 0; } },
+    localStorage: {
+      getItem(key) { return storage.has(key) ? storage.get(key) : null; },
+      setItem(key, value) { if (rejectWrites) throw new Error("storage write rejected"); storage.set(key, String(value)); },
+      removeItem(key) { storage.delete(key); },
+    },
+    document: {
+      activeElement: null,
+      visibilityState: "visible",
+      getElementById: element,
+      querySelectorAll() { return []; },
+      addEventListener() {},
+      createElement() { return new EventElement(); },
+    },
+    window: { addEventListener() {} },
+    setTimeout() { return 1; },
+    clearTimeout() {},
+    solveStateSnapshot(state) { return JSON.parse(JSON.stringify(state)); },
+    renderResults() { resultRenders += 1; },
+    renderLines() { lineRenders += 1; },
+    refreshLineNotes() {},
+    solveService: { cancel() {} },
+  };
+  vm.createContext(context);
+  for (const file of ["catalog.js", "core.js", "fields.js", "state.js", "dom.js"]) {
+    vm.runInContext(fs.readFileSync(path.join(root, "js", file), "utf8"), context, { filename: file });
+  }
+  const events = fs.readFileSync(path.join(root, "js", "events.js"), "utf8");
+  const boundary = events.indexOf('document.getElementById("margin")');
+  assert.ok(boundary > 0, "line editing remains above the margin event boundary");
+  vm.runInContext(events.slice(0, boundary), context, { filename: "events-line-cap.js" });
+  vm.runInContext("const initial=normalize(defaults());initial.schemaVersion=CURRENT_SCHEMA_VERSION;syncManual(initial);commitState(initial);save();", context);
+
+  return {
+    addLine() { element("btnAddLine").emit("click"); },
+    removeLine(index) { element("lines").emit("click", { dataset: { del: String(index) } }); },
+    changeCap(index, value) { element("lines").emit("change", { dataset: { line: String(index) }, value: String(value) }); },
+    inputLine(source, index, value) {
+      const target = new EventElement();
+      target.dataset[source] = String(index);
+      target.value = String(value);
+      target["data-field-error"] = `field-line-${index}-${source}-error`;
+      element("lines").emit("input", target);
+    },
+    setMode(mode) { vm.runInContext(`S.mode=${JSON.stringify(mode)}`, context); },
+    rejectStorageWrites(on = true) { rejectWrites = on; },
+    resultRenders() { return resultRenders; },
+    lineRenders() { return lineRenders; },
+    state() { return JSON.parse(vm.runInContext("JSON.stringify(S)", context)); },
+    stored() {
+      const raw = vm.runInContext("localStorage.getItem(LSKEY)", context);
+      context.__raw = raw;
+      const recovery = vm.runInContext("parseStoredState(globalThis.__raw).recovery", context);
+      delete context.__raw;
+      return { raw: JSON.parse(raw), recovery };
+    },
+  };
+}
+
 function schedulerHarness(options = {}) {
   const source = fs.readFileSync(path.join(root, "js", "events.js"), "utf8");
   const boundary = source.indexOf("function readFieldDraft");
@@ -909,10 +1124,12 @@ function schedulerHarness(options = {}) {
   let renders = 0;
   let requests = 0;
   let cancels = 0;
+  let controlsSynced = 0;
   const lifecycle = [];
   const validateSave = options.validateSave || (() => true);
   const documentListeners = new Map();
   const windowListeners = new Map();
+  const saveIndicator = { textContent: "auto-saves locally" };
   const context = {
     console,
     stateRevision: 1,
@@ -924,6 +1141,7 @@ function schedulerHarness(options = {}) {
     },
     document: {
       querySelectorAll() { return []; },
+      getElementById(id) { return id === "saveind" ? saveIndicator : null; },
       visibilityState: "visible",
       addEventListener(type, callback) { documentListeners.set(type, callback); },
     },
@@ -933,10 +1151,13 @@ function schedulerHarness(options = {}) {
     save() {
       saves += 1;
       lifecycle.push("save");
-      if (!validateSave(context.S)) return false;
+      if (!validateSave(context.S)) { saveIndicator.textContent = "invalid value not saved";return false; }
       context.localStorage.setItem("test-state", JSON.stringify(context.S));
       return true;
     },
+    mutateState(mutator) { mutator(context.S);context.stateRevision += 1;return context.S; },
+    commitState(next) { context.S = next;context.stateRevision += 1;return context.S; },
+    solveStateSnapshot(state) { return JSON.parse(JSON.stringify(state)); },
     renderResults() { renders += 1; },
     solveService: {
       request() { requests += 1; },
@@ -955,7 +1176,13 @@ function schedulerHarness(options = {}) {
   assert.ok(lifecycleStart > boundary, "page lifecycle handlers remain registered at the event boundary");
   vm.runInContext(source.slice(lifecycleStart), context, { filename: "events-page-lifecycle.js" });
   return {
-    mutate() { context.stateRevision += 1; },
+    mutate(mutator) {
+      if (typeof mutator === "function") {
+        context.__mutator = mutator;
+        vm.runInContext("mutateState(globalThis.__mutator)", context);
+        delete context.__mutator;
+      } else context.stateRevision += 1;
+    },
     corruptWithoutRevision(mutator) {
       context.__mutator = mutator;
       vm.runInContext("globalThis.__mutator(S)", context);
@@ -965,6 +1192,17 @@ function schedulerHarness(options = {}) {
     scheduleSolve() { vm.runInContext("scheduleSolve()", context); },
     persistNow() { return vm.runInContext("persistNow()", context); },
     doSolve() { return vm.runInContext("doSolve()", context); },
+    commitResultMutation(mutator) {
+      context.__mutator = mutator;
+      context.__syncControls = () => { controlsSynced += 1; };
+      const value = vm.runInContext(
+        "typeof commitResultMutation === 'function' ? commitResultMutation(globalThis.__mutator, globalThis.__syncControls) : null",
+        context
+      );
+      delete context.__mutator;
+      delete context.__syncControls;
+      return value;
+    },
     pagehide() { windowListeners.get("pagehide")(); },
     hide() { context.document.visibilityState = "hidden";documentListeners.get("visibilitychange")(); },
     advance(ms) {
@@ -977,11 +1215,96 @@ function schedulerHarness(options = {}) {
       }
     },
     counts() { return { saves, renders, requests, cancels }; },
+    controlsSynced() { return controlsSynced; },
+    saveStatus() { return saveIndicator.textContent; },
+    state() { return JSON.parse(JSON.stringify(context.S)); },
     lifecycle() { return lifecycle.slice(); },
     revision() { return context.stateRevision; },
     storedState() { return JSON.parse(context.localStorage.raw); },
   };
 }
+
+test("line-cap edits clamp Manual state before the complete multi-line build persists", () => {
+  const harness = lineCapPersistenceHarness();
+  harness.addLine();
+  harness.addLine();
+  harness.changeCap(5, 64);
+  harness.changeCap(6, 32);
+  harness.changeCap(0, 256);
+  harness.inputLine("spx", 5, 27.5);
+  harness.inputLine("turbo", 6, 14);
+
+  const state = harness.state();
+  const stored = harness.stored();
+  assert.equal(state.lines.length, 7);
+  assert.equal(state.manual[5].lvl, 64);
+  assert.equal(state.manual[6].lvl, 32);
+  assert.equal(state.manual[0].lvl, 256);
+  assert.equal(state.lines[5].spx, 27.5);
+  assert.equal(state.lines[6].turbo, 14);
+  assert.deepEqual(stored.raw.lines, state.lines);
+  assert.deepEqual(stored.raw.manual, state.manual);
+  assert.equal(stored.recovery, null);
+});
+
+test("line structure and cap edits repaint synchronously while Manual mode is already selected", () => {
+  const harness = lineCapPersistenceHarness();
+  harness.setMode("manual");
+
+  harness.addLine();
+  harness.changeCap(5, 64);
+  harness.removeLine(5);
+
+  assert.equal(harness.resultRenders(), 3,
+    "Manual mode must not leave its editable table at the previous line count or cap");
+});
+
+test("a rejected Manual-mode line edit restores accepted state and controls without repainting results", () => {
+  const harness = lineCapPersistenceHarness();
+  harness.setMode("manual");
+  const accepted = harness.state();
+  const rendersBefore = harness.lineRenders();
+  harness.rejectStorageWrites();
+
+  harness.addLine();
+
+  assert.deepEqual(harness.state(), accepted, "the unsaved sixth line must be rolled back");
+  assert.equal(harness.resultRenders(), 0, "results must remain on the last persisted state");
+  assert.equal(harness.lineRenders(), rendersBefore + 1, "line controls must be restored from accepted state");
+});
+
+test("a rejected manual-preset selection restores the accepted dropdown value", () => {
+  const manualSource = fs.readFileSync(path.join(root, "js", "manual.js"), "utf8");
+  const select = { value: "attempted" };
+  const context = {
+    console,
+    ALLITEMS: ["Bits"],
+    S: {
+      lines: [{ max: 1 }],
+      manual: [{ job: "Idle", lvl: 1, sell: false }],
+      manualSaved: [
+        { id: "accepted", config: [{ job: "Idle", lvl: 1, sell: false }] },
+        { id: "attempted", config: [{ job: "Bits", lvl: 1, sell: true }] },
+      ],
+      manualActiveId: "accepted",
+    },
+    document: { getElementById(id) { return id === "manualPreset" ? select : null; } },
+    syncManual() {},
+    commitResultMutation(mutator, syncControls) {
+      const previous = JSON.parse(JSON.stringify(context.S));
+      mutator(context.S);
+      context.S = previous;
+      if (syncControls) syncControls();
+      return false;
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(manualSource, context, { filename: "manual-preset-rollback.js" });
+  vm.runInContext('loadManualPreset("attempted")', context);
+
+  assert.equal(context.S.manualActiveId, "accepted");
+  assert.equal(select.value, "accepted");
+});
 
 test("the persistence debounce saves accepted state before the solve debounce", () => {
   const harness = schedulerHarness();
@@ -1028,6 +1351,59 @@ test("doSolve revalidates changed state bytes even when the revision counter is 
 
   assert.deepEqual(harness.counts(), { saves: 2, renders: 0, requests: 0, cancels: 0 });
   assert.deepEqual(harness.storedState(), { mode: "items", dupe: 25 });
+});
+
+test("a rejected direct result mutation restores accepted state and controls without repainting", () => {
+  const harness = schedulerHarness({
+    validateSave(state) { return state.dupe >= 0 && state.dupe <= 100; },
+  });
+  assert.equal(harness.persistNow(), true);
+
+  const committed = harness.commitResultMutation(state => { state.dupe = 101; });
+
+  assert.equal(committed, false);
+  assert.deepEqual(harness.state(), { mode: "items", dupe: 25 });
+  assert.deepEqual(harness.storedState(), { mode: "items", dupe: 25 });
+  assert.equal(harness.controlsSynced(), 1);
+  assert.equal(harness.saveStatus(), "invalid value not saved");
+  assert.deepEqual(harness.counts(), { saves: 2, renders: 0, requests: 0, cancels: 0 });
+});
+
+test("a rejected direct result mutation retains an earlier valid pending edit for pagehide", () => {
+  let rejectNextWrite = false;
+  const harness = schedulerHarness({
+    validateSave() {
+      if (!rejectNextWrite) return true;
+      rejectNextWrite = false;
+      return false;
+    },
+  });
+  assert.equal(harness.persistNow(), true);
+  harness.mutate(state => { state.dupe = 30; });
+  harness.scheduleSolve();
+  rejectNextWrite = true;
+
+  assert.equal(harness.commitResultMutation(state => { state.mode = "credits"; }), false);
+  assert.deepEqual(harness.state(), { mode: "items", dupe: 30 }, "the earlier valid edit remains accepted in memory");
+  assert.deepEqual(harness.storedState(), { mode: "items", dupe: 25 }, "the failed transaction did not reach storage");
+
+  harness.pagehide();
+
+  assert.deepEqual(harness.storedState(), { mode: "items", dupe: 30 }, "pagehide flushes the restored pending edit");
+  assert.deepEqual(harness.counts(), { saves: 3, renders: 0, requests: 0, cancels: 1 });
+});
+
+test("an accepted direct result mutation persists, syncs controls, and renders once", () => {
+  const harness = schedulerHarness();
+  assert.equal(harness.persistNow(), true);
+
+  const committed = harness.commitResultMutation(state => { state.mode = "credits"; });
+
+  assert.equal(committed, true);
+  assert.deepEqual(harness.state(), { mode: "credits", dupe: 25 });
+  assert.deepEqual(harness.storedState(), { mode: "credits", dupe: 25 });
+  assert.equal(harness.controlsSynced(), 1);
+  assert.deepEqual(harness.counts(), { saves: 2, renders: 1, requests: 0, cancels: 0 });
 });
 
 test("pagehide flushes persistence, clears delayed solving, then cancels solve ownership", () => {

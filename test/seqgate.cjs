@@ -88,7 +88,11 @@ const runner = `
     const inv = (opt && opt.inventory) || null, mined = (opt && opt.minedIncome) || null;
     Object.assign(s, opt || {});
     if (inv) s.inventory = Object.assign({}, defaults().inventory, inv);
-    s.minedIncome = Object.assign({}, defaults().minedIncome, mined || {});
+    s.minedIncome = defaults().minedIncome;
+    MINED_RESOURCES.forEach(resource=>{
+      if(mined&&mined[resource]&&typeof mined[resource]==="object")
+        Object.assign(s.minedIncome[resource],mined[resource]);
+    });
     normalize(s); syncManual(s); S = s;
     return s;
   }
@@ -256,7 +260,7 @@ const runner = `
                        P("w","WireTower",[["Gel",10]],null,"wire-tower"),
                        P("c","Consumer",[["Wire",10]])],
                       {projLineMode:"static", projectSeq:false, projectGate:true,
-                       minedIncome:{Vespium:VESP_BUDGET}, solveBudget:3000});
+                       minedIncome:{Vespium:{rigPerMin:VESP_BUDGET}}, solveBudget:3000});
     record("L1: normal static waves finish under one root budget",
       waves.phases.length === 3 && waves.staticDeadlineReached === false &&
       waves.allPhasesEvaluated === true && waves.searchExhaustive === true,
@@ -357,7 +361,7 @@ const runner = `
    * step plan carries is built from each phase's own minedUsage — the honest version. */
   {
     const r = run([P("a","GlassProj",[["Glass",100]],1), P("b","WireProj",[["Wire",100]],2)],
-                  {minedIncome:{Vespium:VESP_BUDGET}});
+                  {minedIncome:{Vespium:{rigPerMin:VESP_BUDGET}}});
     const u0 = r.phases[0].minedUsage || [], u1 = r.phases[1].minedUsage || [];
     const gel1 = u1.filter(u => u.item === "Gel" && u.resource === "Vespium");
     record("M4: only the mined-forging phase reports mined usage",

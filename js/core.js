@@ -9,14 +9,24 @@ const RECIPE={
   Rods:{inputs:["Ingots"]},Frames:{inputs:["Plates","Rods"]},Gel:{inputs:[]},
   Wire:{inputs:["Gel","Rods"]},
   "Reinforced Concrete":{inputs:["Bricks","Concrete","Frames"]},
-  Batteries:{inputs:["Wire","Gel"]}
+  Batteries:{inputs:["Wire","Gel"],baseOutput:5}
 };
 const MINED_CRAFTS={
   Gel:{resource:"Vespium",baseCosts:{Vespium:5e14},informationalCosts:{Rocks:1e23}},
   Batteries:{resource:"Hydracite",baseCosts:{Hydracite:5e12},informationalCosts:{}}
 };
 const MINED_RESOURCES=["Vespium","Hydracite"];
-function compressionLabel(L){return Number(L)===16384?"16.4k×":String(L)+"×";}
+const MINED_INCOME_SOURCES=Object.freeze({
+  Vespium:Object.freeze({
+    rigPerMin:Object.freeze({perHourMultiplier:60}),
+    resourcesTradingPerSec:Object.freeze({perHourMultiplier:3600})
+  }),
+  Hydracite:Object.freeze({
+    resourcesTradingPerSec:Object.freeze({perHourMultiplier:3600})
+  })
+});
+function compressionLabel(L){return Number(L)===16384?"16.38k×":String(L)+"×";}
+function craftYield(item,L){return (RECIPE[item]&&RECIPE[item].baseOutput||1)*L;}
 function minedCost(item,L){
   const cfg=MINED_CRAFTS[item],out={};if(!cfg)return out;
   const mult=Math.pow(3,Math.log2(L));
@@ -24,11 +34,22 @@ function minedCost(item,L){
   return out;
 }
 function isMinedResource(r){return MINED_RESOURCES.includes(r);}
-function minedBudgetHr(r){return Math.max(0,num(S.minedIncome&&S.minedIncome[r])||0)*60;}
-function setMinedIncome(r,text){
-  if(!MINED_RESOURCES.includes(r))return;
-  S.minedIncomeText[r]=String(text==null?"":text);
-  const v=parseGameNum(text);S.minedIncome[r]=v!=null&&v>=0?v:null;
+function minedBudgetHr(resource,state=S){
+  const sources=MINED_INCOME_SOURCES[resource];if(!sources)return 0;
+  const income=state&&state.minedIncome&&state.minedIncome[resource];if(!income||typeof income!=="object")return 0;
+  return Object.entries(sources).reduce((total,[source,descriptor])=>{
+    const raw=income[source],value=raw===null||raw===undefined||raw===""?null:Number(raw);
+    return total+(Number.isFinite(value)&&value>0?value*descriptor.perHourMultiplier:0);
+  },0);
+}
+function setMinedIncome(resource,source,text){
+  if(!MINED_INCOME_SOURCES[resource]||!MINED_INCOME_SOURCES[resource][source])return;
+  if(!S.minedIncome||typeof S.minedIncome!=="object"||Array.isArray(S.minedIncome))S.minedIncome={};
+  if(!S.minedIncomeText||typeof S.minedIncomeText!=="object"||Array.isArray(S.minedIncomeText))S.minedIncomeText={};
+  if(!S.minedIncome[resource]||typeof S.minedIncome[resource]!=="object"||Array.isArray(S.minedIncome[resource]))S.minedIncome[resource]={};
+  if(!S.minedIncomeText[resource]||typeof S.minedIncomeText[resource]!=="object"||Array.isArray(S.minedIncomeText[resource]))S.minedIncomeText[resource]={};
+  S.minedIncomeText[resource][source]=String(text==null?"":text);
+  const value=parseGameNum(text);S.minedIncome[resource][source]=value!=null&&value>=0?value:null;
 }
 const KIND={Ingots:"raw",Bits:"raw",Concrete:"raw",Glass:"pr",Bricks:"pr",Plates:"pr",Rods:"pr",Frames:"fin",Gel:"pr",Wire:"fin","Reinforced Concrete":"fin",Batteries:"fin"};
 // Bits consumed per uncompressed unit by products that assume their Bits are PRE-PRODUCED —
@@ -106,7 +127,14 @@ function defaults(){
     prodCost,baseTime,margin:0,mode:"items",solveBudget:10000,
     sellPrice:nulls(),priceText:{},
     forgie:nulls(),forgieText:{},
-    minedIncome:{Vespium:null,Hydracite:null},minedIncomeText:{Vespium:"",Hydracite:""},
+    minedIncome:{
+      Vespium:{rigPerMin:null,resourcesTradingPerSec:null},
+      Hydracite:{resourcesTradingPerSec:null}
+    },
+    minedIncomeText:{
+      Vespium:{rigPerMin:"",resourcesTradingPerSec:""},
+      Hydracite:{resourcesTradingPerSec:""}
+    },
     targets:tg,
     projects:[],inventory:nulls(),inventoryText:{},projectSeq:true,projectGate:true,projectStability:"prefer-current",projLineMode:"split",
     planStart:null,
@@ -168,12 +196,28 @@ function normalize(st){
   RAWS.forEach(r=>{if(!st.targets[r])st.targets[r]={on:false,w:1};});
   if(!st.minedIncome||typeof st.minedIncome!=="object"||Array.isArray(st.minedIncome))st.minedIncome={};
   if(!st.minedIncomeText||typeof st.minedIncomeText!=="object"||Array.isArray(st.minedIncomeText))st.minedIncomeText={};
-  if(!Object.prototype.hasOwnProperty.call(st.minedIncome,"Vespium"))st.minedIncome.Vespium=st.gelVesp;
-  if(!Object.prototype.hasOwnProperty.call(st.minedIncomeText,"Vespium"))st.minedIncomeText.Vespium=st.gelVespText;
-  MINED_RESOURCES.forEach(r=>{
-    const raw=st.minedIncome[r],v=Number(raw);
-    st.minedIncome[r]=raw!==null&&raw!==undefined&&raw!==""&&Number.isFinite(v)&&v>=0?v:null;
-    if(typeof st.minedIncomeText[r]!=="string")st.minedIncomeText[r]=st.minedIncome[r]!=null?String(st.minedIncome[r]):"";
+  const legacyVesp=Object.prototype.hasOwnProperty.call(st.minedIncome,"Vespium")?st.minedIncome.Vespium:st.gelVesp;
+  const legacyVespText=Object.prototype.hasOwnProperty.call(st.minedIncomeText,"Vespium")?st.minedIncomeText.Vespium:st.gelVespText;
+  MINED_RESOURCES.forEach(resource=>{
+    const sources=MINED_INCOME_SOURCES[resource],rawResource=st.minedIncome[resource],textResource=st.minedIncomeText[resource];
+    const rawMap=rawResource&&typeof rawResource==="object"&&!Array.isArray(rawResource)?rawResource:{};
+    const textMap=textResource&&typeof textResource==="object"&&!Array.isArray(textResource)?textResource:{};
+    const legacyRaw=resource==="Vespium"?legacyVesp:rawResource;
+    const legacyText=resource==="Vespium"?legacyVespText:textResource;
+    const legacySource=resource==="Vespium"?"rigPerMin":"resourcesTradingPerSec";
+    const normalized={},normalizedText={};
+    Object.keys(sources).forEach(source=>{
+      let raw=Object.prototype.hasOwnProperty.call(rawMap,source)?rawMap[source]:undefined;
+      if(raw===undefined&&source===legacySource&&(!rawResource||typeof rawResource!=="object")){
+        raw=resource==="Hydracite"&&legacyRaw!=null?Number(legacyRaw)/60:legacyRaw;
+      }
+      const value=Number(raw);
+      normalized[source]=raw!==null&&raw!==undefined&&raw!==""&&Number.isFinite(value)&&value>=0?value:null;
+      let text=Object.prototype.hasOwnProperty.call(textMap,source)?textMap[source]:undefined;
+      if(text===undefined&&source===legacySource&&resource==="Vespium"&&typeof legacyText==="string")text=legacyText;
+      normalizedText[source]=typeof text==="string"?text:(normalized[source]!=null?String(normalized[source]):"");
+    });
+    st.minedIncome[resource]=normalized;st.minedIncomeText[resource]=normalizedText;
   });
   delete st.gelVesp;delete st.gelVespText;
   delete st.gelLines;delete st.gelComp;

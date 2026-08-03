@@ -23,7 +23,7 @@ function solveStateKey(state){
 /* Items and Credits solves can consume the full user budget even when nothing relevant changed.
  * Keep a small, separate daily cache keyed only by the inputs each mode actually reads. It never
  * enters the save/export schema, and every storage failure falls through to an ordinary solve. */
-const DAILY_SOLVE_CACHE_VERSION=2;
+const DAILY_SOLVE_CACHE_VERSION=3;
 // Retain the original storage key; the version invalidates pre-Credits records safely.
 const DAILY_SOLVE_CACHE_STORAGE_KEY="forgePlannerMaxItemsCache_v1";
 const DAILY_SOLVE_CACHE_AGE_MS=24*60*60*1000;
@@ -31,6 +31,15 @@ const DAILY_SOLVE_CACHE_ENTRIES=24;
 const DAILY_SOLVE_CACHE_RECORD_CHARS=512*1024;
 const DAILY_SOLVE_CACHE_TOTAL_CHARS=2*1024*1024;
 let dailySolveCacheMemory=null;
+
+function solveErrorPayload(error){
+  if(error&&typeof error==="object"&&typeof error.message==="string"){
+    return {message:error.message,stack:typeof error.stack==="string"?error.stack:""};
+  }
+  const stack=String(error==null?"Unknown solver failure":error);
+  const firstUseful=stack.split(/\r?\n/).map(line=>line.trim()).find(line=>line&&!/(?:^|@)blob:/i.test(line)&&!/^at\s+/i.test(line))||"Unknown solver failure";
+  return {message:firstUseful.replace(/^(?:Error|TypeError|RangeError):\s*/i,""),stack};
+}
 
 function dailySolveConditionKey(state){
   const source=state||{};
@@ -273,7 +282,7 @@ const solveService=(()=>{
       if(!isCurrent(requestGeneration)){cancel("accepted state changed before fallback");return;}
       let result;
       try{result=optimize();}
-      catch(error){deliver(requestGeneration,null,(error&&error.stack)||String(error));return;}
+      catch(error){deliver(requestGeneration,null,solveErrorPayload(error));return;}
       deliver(requestGeneration,result,null);
     },0);
   }

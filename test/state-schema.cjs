@@ -35,6 +35,28 @@ function currentState() {
   return state;
 }
 
+function legacyVersionedState(schemaVersion) {
+  const state = currentState();
+  state.schemaVersion = schemaVersion;
+  state.minedIncome = { Vespium: null, Hydracite: null };
+  state.minedIncomeText = { Vespium: "", Hydracite: "" };
+  return state;
+}
+
+function sourceAwareV4State() {
+  const state = currentState();
+  state.schemaVersion = 4;
+  state.minedIncome = {
+    Vespium: { rigPerMin: null, resourcesTradingPerSec: null },
+    Hydracite: { resourcesTradingPerSec: null },
+  };
+  state.minedIncomeText = {
+    Vespium: { rigPerMin: "", resourcesTradingPerSec: "" },
+    Hydracite: { resourcesTradingPerSec: "" },
+  };
+  return state;
+}
+
 function fixture(name) {
   return JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "state", name), "utf8"));
 }
@@ -56,7 +78,8 @@ const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
 
 test("exports a current schema and pure field descriptors", () => {
-  assert.equal(api("CURRENT_SCHEMA_VERSION"), 3);
+  assert.equal(api("CURRENT_SCHEMA_VERSION"), 4);
+  assert.equal(api("LSKEY"), "forgePlannerState_v3");
   const schema = api("FIELD_SCHEMA");
   assert.equal(schema.dupe.type, "number");
   assert.equal(schema.dupe.min, 0);
@@ -90,13 +113,12 @@ test("the current schema requires an exact Project line-job policy", () => {
 });
 
 test("strict v1 migration defaults Project line jobs without weakening old required fields", () => {
-  const v1 = currentState();
-  v1.schemaVersion = 1;
+  const v1 = legacyVersionedState(1);
   delete v1.projectStability;
   let result = api("validateAndMigrate")(v1);
   assert.equal(result.ok, true, JSON.stringify(result.errors));
   assert.equal(result.sourceVersion, 1);
-  assert.equal(result.state.schemaVersion, 3);
+  assert.equal(result.state.schemaVersion, 4);
   assert.equal(result.state.projectStability, "prefer-current");
 
   delete v1.targets;
@@ -107,14 +129,13 @@ test("strict v1 migration defaults Project line jobs without weakening old requi
 
 test("older schemas migrate once to 10 seconds while current user choices remain exact", () => {
   for (const sourceVersion of [1, 2]) {
-    const candidate = currentState();
-    candidate.schemaVersion = sourceVersion;
+    const candidate = legacyVersionedState(sourceVersion);
     candidate.solveBudget = sourceVersion === 1 ? 2000 : 2345;
     if (sourceVersion === 1) delete candidate.projectStability;
     const result = api("validateAndMigrate")(candidate);
     assert.equal(result.ok, true, JSON.stringify(result.errors));
     assert.equal(result.sourceVersion, sourceVersion);
-    assert.equal(result.state.schemaVersion, 3);
+    assert.equal(result.state.schemaVersion, 4);
     assert.equal(result.state.solveBudget, 10000);
   }
 
@@ -125,14 +146,13 @@ test("older schemas migrate once to 10 seconds while current user choices remain
   assert.equal(result.state.solveBudget, 2000);
   result = api("parseStoredState")(JSON.stringify(result.state));
   assert.equal(result.recovery, null);
-  assert.equal(result.state.schemaVersion, 3);
+  assert.equal(result.state.schemaVersion, 4);
   assert.equal(result.state.solveBudget, 2000);
 });
 
 test("older schema solve budgets are validated before the one-time replacement", () => {
   for (const sourceVersion of [1, 2]) for (const solveBudget of [199, 60001, 2345.5, "2000"]) {
-    const candidate = currentState();
-    candidate.schemaVersion = sourceVersion;
+    const candidate = legacyVersionedState(sourceVersion);
     candidate.solveBudget = solveBudget;
     if (sourceVersion === 1) delete candidate.projectStability;
     const result = api("validateAndMigrate")(candidate);
@@ -142,8 +162,7 @@ test("older schema solve budgets are validated before the one-time replacement",
 });
 
 test("schema v2 retains its former current-state project strictness", () => {
-  const candidate = currentState();
-  candidate.schemaVersion = 2;
+  const candidate = legacyVersionedState(2);
   delete candidate.projectStability;
   let result = api("validateAndMigrate")(candidate);
   assert.equal(result.ok, false);
@@ -163,8 +182,7 @@ test("legacy duplicate project IDs migrate deterministically while v2 duplicates
     id, name: "Same name", on: true, prio: null, from: 1, to: 1, done: 0,
     levels: [{ costs: [] }],
   });
-  const legacy = currentState();
-  legacy.schemaVersion = 1;
+  const legacy = legacyVersionedState(1);
   delete legacy.projectStability;
   legacy.projects = [project("repeat"), project("repeat"), project("legacy-project-2")];
   const first = api("validateAndMigrate")(legacy);
@@ -216,6 +234,125 @@ test("accepts a complete current state into a fresh object", () => {
   assert.notStrictEqual(result.state, candidate);
   assert.notStrictEqual(result.state.lines, candidate.lines);
   assert.equal(candidate.unknownRoot, "discard me");
+});
+
+test("schema v4 accepts only the complete nested mined-source shape", () => {
+  const complete = sourceAwareV4State();
+  complete.minedIncome.Vespium.rigPerMin = 2;
+  complete.minedIncome.Vespium.resourcesTradingPerSec = 3;
+  complete.minedIncome.Hydracite.resourcesTradingPerSec = 4;
+  complete.minedIncomeText.Vespium.rigPerMin = "2";
+  complete.minedIncomeText.Vespium.resourcesTradingPerSec = "3";
+  complete.minedIncomeText.Hydracite.resourcesTradingPerSec = "4";
+
+  let result = api("validateAndMigrate")(complete);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.sourceVersion, 4);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.state.minedIncome)), complete.minedIncome);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.state.minedIncomeText)), complete.minedIncomeText);
+
+  for (const [label, mutate, pathPattern] of [
+    ["Vespium Rig value", state => { delete state.minedIncome.Vespium.rigPerMin; }, /minedIncome\.Vespium\.rigPerMin.*required/i],
+    ["Vespium Resources value", state => { delete state.minedIncome.Vespium.resourcesTradingPerSec; }, /minedIncome\.Vespium\.resourcesTradingPerSec.*required/i],
+    ["Hydracite Resources value", state => { delete state.minedIncome.Hydracite.resourcesTradingPerSec; }, /minedIncome\.Hydracite\.resourcesTradingPerSec.*required/i],
+    ["Vespium Rig text", state => { delete state.minedIncomeText.Vespium.rigPerMin; }, /minedIncomeText\.Vespium\.rigPerMin.*required/i],
+    ["Vespium Resources text", state => { delete state.minedIncomeText.Vespium.resourcesTradingPerSec; }, /minedIncomeText\.Vespium\.resourcesTradingPerSec.*required/i],
+    ["Hydracite Resources text", state => { delete state.minedIncomeText.Hydracite.resourcesTradingPerSec; }, /minedIncomeText\.Hydracite\.resourcesTradingPerSec.*required/i],
+  ]) {
+    const candidate = sourceAwareV4State();
+    mutate(candidate);
+    const before = JSON.stringify(candidate);
+    result = api("validateAndMigrate")(candidate);
+    assert.equal(result.ok, false, `${label} omission was accepted`);
+    assert.match(result.errors.join(" "), pathPattern, label);
+    assert.equal(JSON.stringify(candidate), before, `${label} rejection mutated caller bytes`);
+  }
+});
+
+test("schema v4 validates every mined-source value and display leaf transactionally", () => {
+  const accepted = sourceAwareV4State();
+  accepted.minedIncome.Vespium.rigPerMin = 1e100;
+  accepted.minedIncome.Vespium.resourcesTradingPerSec = 0;
+  accepted.minedIncome.Hydracite.resourcesTradingPerSec = null;
+  accepted.minedIncomeText.Vespium.rigPerMin = "historical display text";
+  let result = api("validateAndMigrate")(accepted);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+
+  for (const [label, mutate, pathPattern] of [
+    ["negative Rig", state => { state.minedIncome.Vespium.rigPerMin = -1; }, /minedIncome\.Vespium\.rigPerMin/i],
+    ["oversized Vespium Resources", state => { state.minedIncome.Vespium.resourcesTradingPerSec = 1e101; }, /minedIncome\.Vespium\.resourcesTradingPerSec/i],
+    ["nonnumeric Hydracite Resources", state => { state.minedIncome.Hydracite.resourcesTradingPerSec = "4"; }, /minedIncome\.Hydracite\.resourcesTradingPerSec/i],
+    ["wrong Vespium value container", state => { state.minedIncome.Vespium = []; }, /minedIncome\.Vespium.*plain object/i],
+    ["wrong Hydracite text container", state => { state.minedIncomeText.Hydracite = 1; }, /minedIncomeText\.Hydracite.*plain object/i],
+    ["oversized source text", state => { state.minedIncomeText.Vespium.rigPerMin = "x".repeat(129); }, /minedIncomeText\.Vespium\.rigPerMin.*length/i],
+  ]) {
+    const candidate = sourceAwareV4State();
+    mutate(candidate);
+    const before = JSON.stringify(candidate);
+    result = api("validateAndMigrate")(candidate);
+    assert.equal(result.ok, false, `${label} was accepted`);
+    assert.match(result.errors.join(" "), pathPattern, label);
+    assert.equal(JSON.stringify(candidate), before, `${label} rejection mutated caller bytes`);
+  }
+});
+
+test("unversioned nested defaults require both complete source maps", () => {
+  const complete = sourceAwareV4State();
+  delete complete.schemaVersion;
+  let result = api("validateAndMigrate")(complete);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+
+  const missingTextMap = sourceAwareV4State();
+  delete missingTextMap.schemaVersion;
+  delete missingTextMap.minedIncomeText;
+  const before = JSON.stringify(missingTextMap);
+  result = api("validateAndMigrate")(missingTextMap);
+  assert.equal(result.ok, false, "missing nested display map was normalized into an accepted save");
+  assert.match(result.errors.join(" "), /minedIncomeText.*required/i);
+  assert.equal(JSON.stringify(missingTextMap), before, "rejection mutated caller bytes");
+});
+
+test("schema v3 scalar incomes migrate without changing hourly budgets or solve time", () => {
+  const candidate = legacyVersionedState(3);
+  candidate.solveBudget = 2345;
+  candidate.minedIncome = { Vespium: 120, Hydracite: 60 };
+  candidate.minedIncomeText = { Vespium: "120.0", Hydracite: "60 per minute" };
+  const before = JSON.stringify(candidate);
+
+  const result = api("validateAndMigrate")(candidate);
+
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.sourceVersion, 3);
+  assert.equal(result.state.schemaVersion, 4);
+  assert.equal(result.state.solveBudget, 2345);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.state.minedIncome)), {
+    Vespium: { rigPerMin: 120, resourcesTradingPerSec: null },
+    Hydracite: { resourcesTradingPerSec: 1 },
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(result.state.minedIncomeText)), {
+    Vespium: { rigPerMin: "120.0", resourcesTradingPerSec: "" },
+    Hydracite: { resourcesTradingPerSec: "1" },
+  });
+  assert.equal(result.state.minedIncome.Vespium.rigPerMin * 60, 7200);
+  assert.equal(result.state.minedIncome.Hydracite.resourcesTradingPerSec * 3600, 3600);
+  assert.equal(JSON.stringify(candidate), before, "migration must not mutate the v3 caller object");
+});
+
+test("schema v3 validates scalar mined incomes before conversion", () => {
+  for (const [label, mutate, pathPattern] of [
+    ["negative scalar", state => { state.minedIncome.Hydracite = -1; }, /minedIncome\.Hydracite/i],
+    ["nested value under v3", state => { state.minedIncome.Vespium = { rigPerMin: 2 }; }, /minedIncome\.Vespium.*finite number/i],
+    ["nonnumeric scalar", state => { state.minedIncome.Vespium = "120"; }, /minedIncome\.Vespium.*finite number/i],
+    ["nonnumeric text", state => { state.minedIncomeText.Hydracite = 60; }, /minedIncomeText\.Hydracite.*string/i],
+  ]) {
+    const candidate = legacyVersionedState(3);
+    mutate(candidate);
+    const before = JSON.stringify(candidate);
+    const result = api("validateAndMigrate")(candidate);
+    assert.equal(result.ok, false, `${label} was accepted`);
+    assert.match(result.errors.join(" "), pathPattern, label);
+    assert.equal(JSON.stringify(candidate), before, `${label} rejection mutated caller bytes`);
+  }
 });
 
 test("keeps an explicit set-and-forget line mode through validation", () => {
@@ -445,14 +582,17 @@ test("migrates retired Gel reservation fixture without retaining dead controls",
   assert.equal(result.state.lines[0].max, 1024);
   assert.equal(Object.hasOwn(result.state, "gelLines"), false);
   assert.equal(Object.hasOwn(result.state, "gelComp"), false);
-  assert.equal(result.state.minedIncome.Vespium, null);
+  assert.equal(result.state.minedIncome.Vespium?.rigPerMin, null);
+  assert.equal(result.state.minedIncome.Vespium?.resourcesTradingPerSec, null);
 });
 
 test("migrates Gel income, project first flag, and fills later compression costs", () => {
   const result = api("validateAndMigrate")(fixture("legacy-gel-vesp-project-first.json"));
   assert.equal(result.ok, true, JSON.stringify(result.errors));
-  assert.equal(result.state.minedIncome.Vespium, 7.25e18);
-  assert.equal(result.state.minedIncomeText.Vespium, "7.25qu");
+  assert.equal(result.state.minedIncome.Vespium.rigPerMin, 7.25e18);
+  assert.equal(result.state.minedIncome.Vespium.resourcesTradingPerSec, null);
+  assert.equal(result.state.minedIncomeText.Vespium.rigPerMin, "7.25qu");
+  assert.equal(result.state.minedIncomeText.Vespium.resourcesTradingPerSec, "");
   assert.equal(result.state.baseTime.Wire, 12345);
   assert.equal(result.state.prodCost.Wire.Gel[4], 18);
   assert.equal(result.state.prodCost.Wire.Gel[16384], api("defaults().prodCost.Wire.Gel[16384]"));
@@ -545,9 +685,43 @@ test("successful boot upgrades the existing key and retains the exact previous-g
   assert.equal(result.recovery, null);
   assert.equal(storage.value("forgePlannerState_v3_previous_good"), legacyRaw);
   const upgraded = JSON.parse(storage.value("forgePlannerState_v3"));
-  assert.equal(upgraded.schemaVersion, 3);
+  assert.equal(upgraded.schemaVersion, 4);
   assert.equal(upgraded.solveBudget, 10000);
   assert.equal(upgraded.dupe, 17.25);
+});
+
+test("v3 startup migrates in place while rotating exact primary bytes and preserving rejection records", () => {
+  const legacy = legacyVersionedState(3);
+  legacy.solveBudget = 2345;
+  legacy.minedIncome = { Vespium: 120, Hydracite: 60 };
+  legacy.minedIncomeText = { Vespium: "120.0", Hydracite: "60/min old UI" };
+  const primaryRaw = JSON.stringify(legacy, null, 2);
+  const oldBackup = "older previous-good bytes";
+  const rejectedRaw = "rejected bytes must remain";
+  const rejectedReason = "existing rejection reason";
+  const storage = storageWith({
+    forgePlannerState_v3: primaryRaw,
+    forgePlannerState_v3_previous_good: oldBackup,
+    forgePlannerState_v3_rejected: rejectedRaw,
+    forgePlannerState_v3_rejected_reason: rejectedReason,
+  });
+  context.localStorage = storage;
+
+  const result = api("initializeState")(() => {});
+
+  assert.equal(result.recovery, null);
+  assert.equal(storage.value("forgePlannerState_v3_previous_good"), primaryRaw);
+  const upgradedRaw = storage.value("forgePlannerState_v3");
+  assert.notEqual(upgradedRaw, primaryRaw);
+  const upgraded = JSON.parse(upgradedRaw);
+  assert.equal(upgraded.schemaVersion, 4);
+  assert.equal(upgraded.solveBudget, 2345);
+  assert.equal(upgraded.minedIncome.Vespium.rigPerMin, 120);
+  assert.equal(upgraded.minedIncome.Hydracite.resourcesTradingPerSec, 1);
+  assert.equal(storage.value("forgePlannerState_v4"), null);
+  assert.equal(storage.value("forgePlannerState_v4_previous_good"), null);
+  assert.equal(storage.value("forgePlannerState_v3_rejected"), rejectedRaw);
+  assert.equal(storage.value("forgePlannerState_v3_rejected_reason"), rejectedReason);
 });
 
 test("rejected boot bytes stay untouched while defaults render and quarantine remains downloadable", () => {
@@ -641,7 +815,7 @@ test("storage failure leaves both current and previous-good keys byte-for-byte u
 });
 
 test("accepts every numeric descriptor boundary including an exact 60000 ms budget", () => {
-  const candidate = currentState();
+  const candidate = sourceAwareV4State();
   candidate.lines[0] = { max: 16384, spx: 1e-6, turbo: 1e6 };
   candidate.maxTurbo = 1e6;
   candidate.dupe = 100;
@@ -651,7 +825,7 @@ test("accepts every numeric descriptor boundary including an exact 60000 ms budg
   candidate.prodCost.Glass.Bits[1] = 1e100;
   candidate.sellPrice.Frames = 1e100;
   candidate.forgie.Frames = 0;
-  candidate.minedIncome.Vespium = 1e100;
+  candidate.minedIncome.Vespium.rigPerMin = 1e100;
   candidate.inventory.Ingots = 0;
   candidate.targets.Frames.w = 9;
   candidate.projects = [{
@@ -681,12 +855,12 @@ test("rejects representative numeric values beyond every live field family", () 
     ["recipe", state => { state.prodCost.Glass.Bits[1] = 1e101; }],
     ["price", state => { state.sellPrice.Frames = -1; }],
     ["Forgie", state => { state.forgie.Frames = 1e101; }],
-    ["mined", state => { state.minedIncome.Hydracite = -1; }],
+    ["mined", state => { state.minedIncome.Hydracite.resourcesTradingPerSec = -1; }],
     ["inventory", state => { state.inventory.Ingots = 1e101; }],
     ["target", state => { state.targets.Frames.w = 1.5; }],
   ];
   for (const [label, mutate] of cases) {
-    const candidate = currentState();
+    const candidate = sourceAwareV4State();
     mutate(candidate);
     const before = JSON.stringify(candidate);
     const result = api("validateAndMigrate")(candidate);

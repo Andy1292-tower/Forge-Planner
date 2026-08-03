@@ -13,6 +13,8 @@ For a feasible optimized Items, Credits, or Project result, “best” means the
 
 Increasing the solve-time setting gives the search more opportunity; it does not promise that every device will explore the same amount of work or prove an optimum.
 
+Credits refinements retain their last completed incumbent when a candidate reaches its local time slice. A local cutoff cannot erase that completed plan; the shared root deadline still ends the overall comparison and is reported truthfully.
+
 ## Modes
 
 ### Items
@@ -48,11 +50,19 @@ Vespium and Hydracite are independent hard rate budgets:
 
 - Gel consumes Vespium.
 - Batteries consume Hydracite.
-- Each entered per-minute income is converted to an independent per-hour cap.
+- Vespium Rig production is entered per minute and contributes `rigPerMin × 60` to the hourly Vespium cap.
+- Resources & Trading Vespium is entered per second and contributes `resourcesTradingPerSec × 3600` to that same hourly Vespium cap.
+- Resources & Trading Hydracite is entered per second and contributes `resourcesTradingPerSec × 3600` to the independent hourly Hydracite cap.
 - One resource's unused budget cannot cover the other resource.
 - Rocks are informational and are not substituted for either hard cap.
 
 The planner reports mined usage separately from ordinary inventory because mined income is a rate, not stock carried between phases.
+
+## Craft output and per-craft costs
+
+Compression is a crafting tier. Most current recipes output exactly the compression amount per craft. Batteries have a base batch output of five, so they output `5 × compression`: 5 at 1×, 10 at 2×, 20 at 4×, and so on.
+
+Ordinary recipe costs and mined-resource costs are paid once per craft cycle regardless of batch output. Compression retains its existing input-cost and craft-time scaling. Duplication multiplies output only; it does not multiply Wire, Gel, Vespium, Hydracite, or any other input consumption.
 
 ## Pre-produced Bits are intentional
 
@@ -80,6 +90,8 @@ The solve service accepts a Worker response only for the active generation, mode
 
 - Frames/Wire pre-produced Bits are external only for those recipe obligations.
 - Vespium and Hydracite have separate non-transferable budgets.
+- Vespium sources aggregate with their declared `/min` and `/sec` units; Hydracite remains `/sec` and independent.
+- Battery output is `5 × compression`, while every Battery input remains a per-craft cost and duplication remains output-only.
 - Project inventory is carried and replayed across prerequisite, warm-up, and work phases.
 - Prefer-current stability may trade local phase throughput for a shorter or less disruptive complete run.
 - Explicit Resimulate for line-capacity edits is a deliberate user control.

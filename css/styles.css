@@ -466,8 +466,11 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
 .mined-card-head p{font-size:10.5px;line-height:1.4;color:var(--ink3)}
 .mined-badge{flex:0 0 auto;border:1px solid var(--copper-d);border-radius:20px;padding:3px 8px;
   background:rgba(210,129,58,.12);color:var(--amber);font-size:9.5px;font-weight:600;letter-spacing:.45px;text-transform:uppercase}
+.mined-income-stack{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:start}
 .mined-income{display:flex;flex-direction:column;gap:4px;min-width:0}
 .mined-income>span,.mined-income>label{font-size:10px;letter-spacing:.45px;text-transform:uppercase;color:var(--ink3)}
+.mined-income input{width:100%;min-width:0}
+.mined-breakdown{margin-top:9px;color:var(--ink2);font-family:"JetBrains Mono",monospace;font-size:10.5px;line-height:1.5}
 .mined-capacity{margin-top:9px;color:var(--amber);font-family:"JetBrains Mono",monospace;font-size:12px;font-weight:600}
 .mined-help{margin:10px 0 0}
 .mined-summary{font-size:11.5px;margin:10px 0 0}
@@ -483,6 +486,7 @@ footer{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;color:v
   .mined-modal .modal-b{padding:10px}
   .mined-card{padding:11px}
   .mined-card-head{flex-wrap:wrap}
+  .mined-income-stack{grid-template-columns:minmax(0,1fr)}
   .mined-table-wrap table{min-width:620px}
 }
 /* projects / shopping-list modal */

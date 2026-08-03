@@ -15,8 +15,10 @@ const runner=`
 (function(){
   let fail=0;
   const check=(name,ok,detail)=>{console.log((ok?"ok   ":"FAIL ")+name+" ["+detail+"]");if(!ok)fail++;};
+  const setVespRig=(state,value)=>{state.minedIncome.Vespium.rigPerMin=value;};
+  const setHydraPerMin=(state,value)=>{state.minedIncome.Hydracite.resourcesTradingPerSec=value/60;};
   check("persistent planner labels make no unqualified optimality promise",
-    indexHtml.includes("<p>Crafting production-line planner · enter your stats, compare crafter setups</p>")&&
+    indexHtml.includes("Crafting production-line planner · enter your stats, compare crafter setups")&&
       indexHtml.includes('<div class="head results-head"><h2>Planner results</h2>')&&
       !indexHtml.includes("get the optimal crafter setup")&&!indexHtml.includes("<h2>Optimal setup</h2>"),
     "oldTagline="+indexHtml.includes("get the optimal crafter setup")+", oldHeading="+indexHtml.includes("<h2>Optimal setup</h2>"));
@@ -65,16 +67,85 @@ const runner=`
       !creditsRefinementIsNondecreasing({credits:1_000_000},{credits:999_999.999999}),
     "equal/increase accepted; any decrease rejected");
 
+  {
+    const samples=[0,94,101,101],events=[];let sampleIndex=0,localHits=0;
+    const root=makeSolveControl(100,{now:()=>samples[Math.min(sampleIndex++,samples.length-1)],
+      onCheckpoint:event=>events.push(event)});
+    const local=makeLocalDeadlineControl(root,95,()=>{localHits++;});
+    const prior={credits:10},safeRefinement={credits:20};
+    local.readNow();
+    const checkpointAccepted=local.checkpoint("after-safe-refinement");
+    const winnerBeforeFinalization=local.isStopped()?prior:safeRefinement;
+    const rootStoppedBeforeFinalization=root.isStopped();
+    const finalDeadlineReached=root.deadlineReached();
+    check("a shared clock sample crossing local and root keeps the safe refinement until finalization",
+      !checkpointAccepted&&localHits===1&&!rootStoppedBeforeFinalization&&
+        winnerBeforeFinalization===safeRefinement&&finalDeadlineReached&&root.isStopped()&&root.reason()==="deadline",
+      "localHits="+localHits+", rootBefore="+rootStoppedBeforeFinalization+
+        ", winner="+winnerBeforeFinalization.credits+", final="+finalDeadlineReached+
+        ", events="+events.map(event=>event.type+":"+(event.reason||event.label)).join(","));
+  }
+
+  {
+    const samples=[0,99,101,101],events=[];let sampleIndex=0,firstLocalHits=0,secondLocalHits=0;
+    const root=makeSolveControl(1000,{now:()=>samples[Math.min(sampleIndex++,samples.length-1)],
+      onCheckpoint:event=>events.push(event)});
+    const first=makeLocalDeadlineControl(root,100,()=>{firstLocalHits++;});
+    first.readNow();
+    const firstAccepted=first.checkpoint("first-local-cutoff");
+    const second=makeLocalDeadlineControl(root,200,()=>{secondLocalHits++;});
+    const secondAccepted=second.checkpoint("next-candidate");
+    check("a local-only cutoff leaves the root available for the next candidate",
+      !firstAccepted&&firstLocalHits===1&&secondAccepted&&secondLocalHits===0&&!root.isStopped(),
+      "first="+firstAccepted+"/"+firstLocalHits+", second="+secondAccepted+"/"+secondLocalHits+
+        ", root="+root.isStopped()+", events="+events.map(event=>event.type+":"+(event.reason||event.label)).join(","));
+  }
+
+  {
+    let clockCalls=0,localHits=0;
+    const root=makeSolveControl(1000,{now:()=>{clockCalls++;return 0;},workLimit:1});
+    const local=makeLocalDeadlineControl(root,100,()=>{localHits++;});
+    const accepted=local.checkpoint("root-work-limit",2);
+    check("root work-limit exhaustion takes precedence over a local deadline",
+      !accepted&&root.isStopped()&&root.reason()==="work"&&localHits===0&&clockCalls===1,
+      "accepted="+accepted+", reason="+root.reason()+", localHits="+localHits+", clockCalls="+clockCalls);
+  }
+
   function stateFor(items,lines){
     const state=defaults();state.mode="credits";state.margin=0;
     if(lines)state.lines=lines;
     ALLITEMS.forEach(item=>state.sellPrice[item]=null);items.forEach(item=>state.sellPrice[item]=1);
-    state.minedIncome.Vespium=1e30;state.minedIncome.Hydracite=1e30;
+    setVespRig(state,1e30);setHydraPerMin(state,1e30);
     state.forgie.Gel=0;state.forgie.Wire=0;
     normalize(state);syncManual(state);return state;
   }
+  {
+    S=stateFor(["Glass"]);S.margin=20;
+    let baselineComplete=false;
+    const baselineAtBoundary=optimizeInner(200,{now:()=>baselineComplete?201:0,workLimit:100000000,
+      onCheckpoint:event=>{if(event.type==="baseline-complete")baselineComplete=true;}});
+
+    S=stateFor(["Glass"]);S.margin=20;
+    let refinementActive=false,crossNextSample=false,crossed=false;
+    const boundaryEvents=[];
+    const refinedAtBoundary=optimizeInner(200,{now:()=>crossNextSample?201:0,workLimit:100000000,
+      onCheckpoint:event=>{
+        boundaryEvents.push(event);
+        if(event.type==="refinement-start")refinementActive=true;
+        if(refinementActive&&!crossed&&event.type==="checkpoint"&&event.label==="deficit-pass"){
+          crossed=true;crossNextSample=true;
+        }
+      }});
+    const localBoundary=boundaryEvents.find(event=>event.type==="local-time-limit");
+    check("a completed better optimizeInner refinement survives a same-sample local and root deadline crossing",
+      baselineComplete&&crossed&&localBoundary&&refinedAtBoundary.deadlineReached&&
+        refinedAtBoundary.objective>baselineAtBoundary.objective&&refinedAtBoundary.bestItem==="Glass",
+      "baseline="+baselineAtBoundary.objective+", refined="+refinedAtBoundary.objective+
+        ", crossed="+crossed+", local="+(localBoundary&&localBoundary.label)+
+        ", deadline="+refinedAtBoundary.deadlineReached);
+  }
   function creditsSaveRegressionState(){
-    const state=defaults();state.schemaVersion=3;state.mode="credits";state.solveBudget=2000;
+    const state=defaults();state.schemaVersion=CURRENT_SCHEMA_VERSION;state.mode="credits";state.solveBudget=2000;
     state.lines=[
       {max:4096,spx:1477.94,turbo:19},{max:4096,spx:956.02,turbo:13},
       {max:2048,spx:986.62,turbo:14},{max:1024,spx:1207.59,turbo:30},
@@ -89,18 +160,20 @@ const runner=`
       Plates:4.79e57,Rods:6.39e57,Frames:8.36e59,Gel:2.22e60,Wire:3.53e68});
     Object.assign(state.forgie,{Ingots:44840000,Bits:51150000,Concrete:47680000,Glass:87943.76,Bricks:76157.11,
       Plates:251430,Rods:194740,Frames:19318.22,Gel:50914.82,Wire:4054.05});
-    state.minedIncome.Vespium=5.0000000000000005e28;state.minedIncome.Hydracite=300000000000;
+    setVespRig(state,5.0000000000000005e28);setHydraPerMin(state,300000000000);
     normalize(state);syncManual(state);return state;
   }
   function creditsSchemaV1State(){
     const state=creditsSaveRegressionState();state.schemaVersion=1;state.solveBudget=2000;
+    state.minedIncome={Vespium:5.0000000000000005e28,Hydracite:300000000000};
+    state.minedIncomeText={Vespium:"5e28",Hydracite:"300000000000"};
     delete state.projectStability;
     return JSON.parse(JSON.stringify(state));
   }
   const migratedCredits=validateAndMigrate(creditsSchemaV1State());
-  check("save-derived schema-v1 state migrates once to schema v3 and 10 seconds",
-    migratedCredits.ok&&migratedCredits.sourceVersion===1&&CURRENT_SCHEMA_VERSION===3&&
-      migratedCredits.state.schemaVersion===3&&migratedCredits.state.solveBudget===10000,
+  check("save-derived schema-v1 state migrates once to schema v4 and 10 seconds",
+    migratedCredits.ok&&migratedCredits.sourceVersion===1&&CURRENT_SCHEMA_VERSION===4&&
+      migratedCredits.state.schemaVersion===4&&migratedCredits.state.solveBudget===10000,
     "ok="+migratedCredits.ok+", source="+migratedCredits.sourceVersion+
       ", schema="+(migratedCredits.state&&migratedCredits.state.schemaVersion)+
       ", budget="+(migratedCredits.state&&migratedCredits.state.solveBudget)+
@@ -135,7 +208,7 @@ const runner=`
     Ingots:0.0000022882408714146587,Bits:0.0000020871215409567806,Concrete:0.0000021792266410571516,
     Glass:0.000089698395235427984,Bricks:0.00010412181071723304,Plates:0.000063752899301578622,
     Rods:0.000068795833566571448,Frames:0.0016603062582106654,Gel:0.00074709183844945122,
-    Wire:0.013197689890849474,"Reinforced Concrete":3.6325464461141621,Batteries:68.855378851460642
+    Wire:0.013197689890849474,"Reinforced Concrete":3.6325464461141621,Batteries:13.771075770292128
   };
   const independentReferenceCredits={
     Ingots:230,Bits:229,Concrete:228,Glass:231.39153103304082,Bricks:202.1831749948749,
@@ -180,7 +253,7 @@ const runner=`
     Ingots:1.0346828288135849e-6,Bits:9.3874899003732933e-7,Concrete:9.7491718152556779e-7,
     Glass:4.1399259339428304e-5,Bricks:5.4837486977742735e-5,Plates:3.3293180746379948e-5,
     Rods:3.5162314934025405e-5,Frames:7.0686306042632287e-4,Gel:3.5656655925996538e-4,
-    Wire:0.005738126039499772,"Reinforced Concrete":1.5256695073679483,Batteries:32.788275643552687
+    Wire:0.005738126039499772,"Reinforced Concrete":1.5256695073679483,Batteries:6.557655128710538
   };
   S=creditsSaveRegressionState();Object.assign(S.sellPrice,batteriesWinnerPrices);
   let batteriesNow=-0.0018;

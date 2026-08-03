@@ -91,14 +91,14 @@ const runner = `
   const scenarios = {
     "items.single.noGel":      s => { s.mode="items"; on(s,["Frames"]); },
     "items.multi.noGel":       s => { s.mode="items"; on(s,["Frames","Glass"]); },
-    "items.wire.gel":          s => { s.mode="items"; on(s,["Wire"]); s.minedIncome.Vespium=GEL_BUDGET; },
-    "items.multiWire.gel":     s => { s.mode="items"; on(s,["Wire","Rods"]); s.minedIncome.Vespium=GEL_BUDGET; },
+    "items.wire.gel":          s => { s.mode="items"; on(s,["Wire"]); s.minedIncome.Vespium.rigPerMin=GEL_BUDGET; },
+    "items.multiWire.gel":     s => { s.mode="items"; on(s,["Wire","Rods"]); s.minedIncome.Vespium.rigPerMin=GEL_BUDGET; },
     "credits.noGel":           s => { s.mode="credits"; prices(s,{Frames:10,Glass:3,Rods:1}); },
-    "credits.wire.gel":        s => { s.mode="credits"; prices(s,{Wire:50,Rods:1}); s.minedIncome.Vespium=GEL_BUDGET; },
+    "credits.wire.gel":        s => { s.mode="credits"; prices(s,{Wire:50,Rods:1}); s.minedIncome.Vespium.rigPerMin=GEL_BUDGET; },
     "project.frames.noGel":    s => { s.mode="project";
       s.projects=[{id:"a",name:"P",catId:"",on:true,from:1,to:1,done:0,prio:null,
         levels:[{costs:[{item:"Frames",qty:200}]}]}]; },
-    "project.wire.gel":        s => { s.mode="project"; s.minedIncome.Vespium=GEL_BUDGET;
+    "project.wire.gel":        s => { s.mode="project"; s.minedIncome.Vespium.rigPerMin=GEL_BUDGET;
       s.projects=[{id:"a",name:"P",catId:"",on:true,from:1,to:1,done:0,prio:null,
         levels:[{costs:[{item:"Wire",qty:120}]}]}]; },
   };

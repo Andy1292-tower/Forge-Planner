@@ -18,7 +18,7 @@ function manualResult(){
       job={kind:"idle",res:null,lvl:null,ct:0,prod:[],cons:[]};
     }else{
       const item=m.job, L=Math.min(LEVELS.includes(m.lvl)?m.lvl:ln.max,ln.max), ct=craftTime(item,L);
-      const eff=effSpeed(sp,ct), rate=ct>0?L/ct:0, cons=[];
+      const eff=effSpeed(sp,ct), rate=ct>0?craftYield(item,L)/ct:0, cons=[];
       if(!RAWS.includes(item)){
         RECIPE[item].inputs.forEach(k=>{const c=S.prodCost[item][k][L];
           if(c==null||isNaN(c)){issueSet.add("No material cost entered for "+item+" @"+compressionLabel(L)+".");}
@@ -56,7 +56,7 @@ function manualResult(){
 function copyPlanToManual(res){
   const source=res&&Array.isArray(res.plan)?res.plan:null,lineCount=Array.isArray(S.lines)?S.lines.length:0;
   if(!source||!source.some((p,i)=>i<lineCount&&p&&p.job&&p.job.kind!=="idle"&&ALLITEMS.includes(p.job.res)))return;
-  mutateState(st=>{
+  commitManualResultMutation(st=>{
     st.manual=(st.lines||[]).map((line,i)=>{
       const p=source[i],j=(p&&p.job)||{},cap=(line&&line.max)||1;
       if(j.kind==="idle"||!ALLITEMS.includes(j.res))return {job:"Idle",lvl:cap,sell:false};
@@ -64,13 +64,25 @@ function copyPlanToManual(res){
     });
     syncManual(st);
     st.mode="manual";
-  });
-  if(typeof renderModeSwitch==="function")renderModeSwitch();
-  save();renderResults();
+  },()=>{if(typeof renderModeSwitch==="function")renderModeSwitch();});
 }
 /* ---- saved manual setups (named presets of the per-line job/level/sell) ---- */
+function commitManualResultMutation(mutator,syncControls){
+  if(typeof commitResultMutation==="function")return commitResultMutation(mutator,syncControls);
+  // Lightweight harnesses can load Manual mode without the page event layer. Keep that isolated
+  // fallback transactional too; the shipped page normally uses the shared event-layer helper.
+  const previous=typeof solveStateSnapshot==="function"?solveStateSnapshot(S):JSON.parse(JSON.stringify(S));
+  mutateState(mutator);
+  if(save()===false){
+    if(typeof commitState==="function")commitState(previous);else S=previous;
+    if(typeof syncControls==="function")syncControls();
+    return false;
+  }
+  if(typeof syncControls==="function")syncControls();
+  renderResults();return true;
+}
 function saveManualPreset(name){
-  mutateState(st=>{
+  commitManualResultMutation(st=>{
     syncManual(st);
     const config=st.manual.map(m=>({job:m.job,lvl:m.lvl,sell:!!m.sell}));
     const id=newId();
@@ -78,20 +90,21 @@ function saveManualPreset(name){
     st.manualSaved.push({id,name,config});
     st.manualActiveId=id;
   });
-  save();renderResults();
 }
 function loadManualPreset(id){
   const p=(S.manualSaved||[]).find(x=>x.id===id);if(!p)return;
-  mutateState(st=>{st.manual=p.config.map(c=>({job:c.job,lvl:c.lvl,sell:!!c.sell}));st.manualActiveId=id;syncManual(st);});save();renderResults();
+  commitManualResultMutation(
+    st=>{st.manual=p.config.map(c=>({job:c.job,lvl:c.lvl,sell:!!c.sell}));st.manualActiveId=id;syncManual(st);},
+    ()=>{const select=document.getElementById("manualPreset");if(select)select.value=S.manualActiveId||"";}
+  );
 }
 // Overwrite an existing saved setup with the current line config (keeps its id + name).
 function updateManualPreset(id){
   if(!(S.manualSaved||[]).some(x=>x.id===id))return;
-  mutateState(st=>{const p=st.manualSaved.find(x=>x.id===id);syncManual(st);p.config=st.manual.map(m=>({job:m.job,lvl:m.lvl,sell:!!m.sell}));st.manualActiveId=id;});save();renderResults();
+  commitManualResultMutation(st=>{const p=st.manualSaved.find(x=>x.id===id);syncManual(st);p.config=st.manual.map(m=>({job:m.job,lvl:m.lvl,sell:!!m.sell}));st.manualActiveId=id;});
 }
 function deleteManualPreset(id){
-  mutateState(st=>{st.manualSaved=(st.manualSaved||[]).filter(p=>p.id!==id);if(st.manualActiveId===id)st.manualActiveId=null;});
-  save();renderResults();
+  commitManualResultMutation(st=>{st.manualSaved=(st.manualSaved||[]).filter(p=>p.id!==id);if(st.manualActiveId===id)st.manualActiveId=null;});
 }
 function renderManualPresetBar(container,saved,active){
   const select=domElement("select");

@@ -29,6 +29,26 @@ function flushPersist(){
   clearTimeout(persistT);persistT=null;
   return persistNow();
 }
+// Controls inside #results mutate the accepted state immediately, but the matching result must not
+// repaint unless those exact bytes also pass validation and persist. On rejection, restore the last
+// accepted/persisted state and put the still-visible control back in sync with it.
+function commitResultMutation(mutator,syncControls){
+  const previous=solveStateSnapshot(S);
+  mutateState(mutator);
+  if(persistNow()===false){
+    commitState(previous);
+    // persistNow() cancels any older debounce before trying this write. The restored snapshot may
+    // still contain an earlier accepted edit that has not reached storage yet, so recreate that
+    // pending persistence instead of pretending the restored revision is already durable.
+    if(stateMatchesPersisted())persistedRevision=stateRevision;
+    else{persistedRevision=-1;schedulePersist();}
+    if(typeof syncControls==="function")syncControls(false);
+    return false;
+  }
+  if(typeof syncControls==="function")syncControls(true);
+  renderResults();
+  return true;
+}
 function hasInvalidFieldDraft(){
   return [...document.querySelectorAll('[aria-invalid="true"]')].some(input=>input.offsetParent!==null);
 }
@@ -72,12 +92,19 @@ function showStale(on){
 }
 function clearStaleUI(){showStale(false);}
 function markStale(){clearTimeout(renderT);renderT=null;persistNow();showStale(true);}
+function commitLineStructureEdit(mutator,renderLineControls){
+  // Manual has no expensive solver to defer. Repaint it immediately so its editable rows and
+  // compression choices cannot lag behind the accepted line list while Manual is already active.
+  // The shared transaction also restores the line controls when persistence rejects the edit.
+  if(S.mode==="manual")return commitResultMutation(mutator,accepted=>{if(renderLineControls||!accepted)renderLines();});
+  mutateState(mutator);if(renderLineControls)renderLines();markStale();return true;
+}
 function resimulate(){doSolve({forceFresh:true});}   // explicit refresh replaces today's Items/Credits cache once
 document.getElementById("btnResim").addEventListener("click",resimulate);
 
 document.getElementById("lines").addEventListener("change",e=>{
   const li=e.target.dataset.line;
-  if(li!==undefined){mutateState(st=>{st.lines[+li].max=+e.target.value;});markStale();}
+  if(li!==undefined)commitLineStructureEdit(st=>{st.lines[+li].max=+e.target.value;syncManual(st);},false);
 });
 document.getElementById("lines").addEventListener("input",e=>{
   const si=e.target.dataset.spx, ti=e.target.dataset.turbo;
@@ -89,10 +116,10 @@ document.getElementById("lines").addEventListener("keydown",e=>{
 });
 document.getElementById("lines").addEventListener("click",e=>{
   const d=e.target.dataset.del;
-  if(d!==undefined&&S.lines.length>1){mutateState(st=>{st.lines.splice(+d,1);st.manual.splice(+d,1);syncManual(st);});renderLines();markStale();}
+  if(d!==undefined&&S.lines.length>1)commitLineStructureEdit(st=>{st.lines.splice(+d,1);st.manual.splice(+d,1);syncManual(st);},true);
 });
 document.getElementById("btnAddLine").addEventListener("click",()=>{
-  mutateState(st=>{st.lines.push({max:512,spx:1,turbo:0});syncManual(st);});renderLines();markStale();
+  commitLineStructureEdit(st=>{st.lines.push({max:512,spx:1,turbo:0});syncManual(st);},true);
 });
 
 document.getElementById("margin").addEventListener("input",e=>{
@@ -220,7 +247,7 @@ function renderModeSwitch(){
 }
 document.getElementById("modesw").addEventListener("click",e=>{
   const m=e.target.dataset.mode;if(!m||m===S.mode)return;
-  mutateState(st=>{st.mode=m;});renderModeSwitch();save();renderResults();
+  commitResultMutation(st=>{st.mode=m;},renderModeSwitch);
 });
 
 /* ---------- sell prices ---------- */
@@ -345,12 +372,12 @@ document.getElementById("forgieRows").addEventListener("input",e=>{
 
 /* ---------- mined resources modal ---------- */
 const btnMined=document.getElementById("btnMined");
-const minedDialog=dialogController.register({root:document.getElementById("minedModal"),panel:document.querySelector("#minedModal .modal"),opener:btnMined,initialFocus:()=>document.getElementById("minedVespium"),onOpen:renderMinedResources});
+const minedDialog=dialogController.register({root:document.getElementById("minedModal"),panel:document.querySelector("#minedModal .modal"),opener:btnMined,initialFocus:()=>document.getElementById("minedVespiumRig"),onOpen:renderMinedResources});
 function openMined(invoker){minedDialog.open(invoker);}
 function closeMined(){minedDialog.close();}
 document.getElementById("minedModal").addEventListener("input",e=>{
-  const resource=e.target.dataset.minedIncome;if(!resource)return;
-  const result=commitFieldDraft(e.target,FIELD_SCHEMA.minedIncome,S.minedIncome[resource],(st,value,raw)=>{st.minedIncomeText[resource]=raw;st.minedIncome[resource]=value;});
+  const resource=e.target.dataset.minedResource,source=e.target.dataset.minedSource;if(!resource||!source)return;
+  const result=commitFieldDraft(e.target,FIELD_SCHEMA.minedIncome,S.minedIncome[resource][source],(st,value,raw)=>{st.minedIncomeText[resource][source]=raw;st.minedIncome[resource][source]=value;});
   if(result.committed){save();renderMinedResources();scheduleSolve();}
 });
 
@@ -450,7 +477,7 @@ function initCalib(){
   [speedInput,secondsInput].forEach(input=>input.addEventListener("input",()=>recalc(true)));
   apply.addEventListener("click",()=>{
     if(computed==null)return;
-    mutateState(st=>{st.baseTime[it.value]=computed;}); save(); renderRecipes(); renderResults(); recalc();
+    commitResultMutation(st=>{st.baseTime[it.value]=computed;},()=>{renderRecipes();recalc();});
   });
   recalc();
 }
@@ -947,11 +974,11 @@ document.getElementById("results").addEventListener("change",e=>{
   // Manual-mode dropdowns also live inside #results (re-rendered each change)
   if(t.id==="manualPreset"){if(t.value)loadManualPreset(t.value);return;}
   const ri=t.getAttribute("data-mres");
-  if(ri!=null){const i=+ri;if(S.manual[i])mutateState(st=>{st.manual[i].job=t.value;if(st.manual[i].lvl>st.lines[i].max)st.manual[i].lvl=st.lines[i].max;});save();renderResults();return;}
+  if(ri!=null){const i=+ri;if(S.manual[i])commitResultMutation(st=>{st.manual[i].job=t.value;if(st.manual[i].lvl>st.lines[i].max)st.manual[i].lvl=st.lines[i].max;},()=>{t.value=S.manual[i].job;});return;}
   const lv=t.getAttribute("data-mlvl");
-  if(lv!=null){const i=+lv;if(S.manual[i])mutateState(st=>{st.manual[i].lvl=+t.value;});save();renderResults();return;}
+  if(lv!=null){const i=+lv;if(S.manual[i])commitResultMutation(st=>{st.manual[i].lvl=+t.value;},()=>{t.value=String(S.manual[i].lvl);});return;}
   const sl=t.getAttribute("data-msell");
-  if(sl!=null){const i=+sl;if(S.manual[i])mutateState(st=>{st.manual[i].sell=t.checked;});save();renderResults();return;}
+  if(sl!=null){const i=+sl;if(S.manual[i])commitResultMutation(st=>{st.manual[i].sell=t.checked;},()=>{t.checked=!!S.manual[i].sell;});return;}
 });
 document.getElementById("results").addEventListener("click",e=>{
   const cl=sel=>e.target.closest&&e.target.closest(sel);

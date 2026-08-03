@@ -39,6 +39,9 @@ test("creates deterministic collision-free DOM tokens for distinct input strings
 
 test("owns distinct numeric descriptors and the complete persisted ranges", () => {
   const schema = api("FIELD_SCHEMA");
+  assert.equal(schema.schemaVersion.defaultValue, 4);
+  assert.equal(schema.schemaVersion.min, 4);
+  assert.equal(schema.schemaVersion.max, 4);
   const expected = {
     lineSpeed: [1e-6, 1e9, false], turbo: [0, 1e6, false], maxTurbo: [0, 1e6, false],
     dupe: [0, 100, false], margin: [0, 20, false], solveBudget: [200, 60000, false],
@@ -185,7 +188,15 @@ test("round-trips calibrated boundaries and accepts historical display text inde
 test("state value validation rejects every representative numeric boundary transactionally", () => {
   const make = () => {
     const state = api("normalize(defaults())");
-    state.schemaVersion = api("CURRENT_SCHEMA_VERSION");
+    state.schemaVersion = 4;
+    state.minedIncome = {
+      Vespium: { rigPerMin: null, resourcesTradingPerSec: null },
+      Hydracite: { resourcesTradingPerSec: null },
+    };
+    state.minedIncomeText = {
+      Vespium: { rigPerMin: "", resourcesTradingPerSec: "" },
+      Hydracite: { resourcesTradingPerSec: "" },
+    };
     return state;
   };
   const cases = [
@@ -199,7 +210,7 @@ test("state value validation rejects every representative numeric boundary trans
     state => { state.prodCost.Glass.Bits[1] = -1; },
     state => { state.sellPrice.Frames = 1e101; },
     state => { state.forgie.Frames = -1; },
-    state => { state.minedIncome.Vespium = 1e101; },
+    state => { state.minedIncome.Vespium.rigPerMin = 1e101; },
     state => { state.inventory.Ingots = -1; },
     state => { state.targets.Frames.w = 1.5; },
   ];

@@ -422,7 +422,7 @@ const runner = `
   gelLoadout=function(){exactCalls++;throw new Error("solve paths must not invoke exact Gel loadout");};
   gelSeedLoadout=function(){seedCalls++;return seedOriginal.apply(null,arguments);};
   PRODUCTS.forEach(product=>S.targets[product]={on:product==="Gel",w:1});
-  S.mode="items";S.minedIncome.Vespium=budget/60;
+  S.mode="items";S.minedIncome.Vespium.rigPerMin=budget/60;
   let solved=optimize();
   assert.ok(solved.feasible&&seedCalls>0&&exactCalls===0,"Items must use only the bounded Gel seed helper");
   seedCalls=0;S.mode="credits";PRODUCTS.forEach(product=>S.targets[product].on=false);

@@ -27,13 +27,13 @@ const runner=`
   S=defaults();S.dupe=0;S.maxTurbo=0;
   const counterLines=[{max:1,spx:6,turbo:0},{max:1,spx:4,turbo:0},{max:1,spx:4,turbo:0}];
   S.lines=counterLines.concat(Array.from({length:9},()=>({max:1,spx:100,turbo:0})));
-  S.minedIncome.Vespium=exactBudget/60;S.minedIncomeText.Vespium=String(exactBudget/60);
+  S.minedIncome.Vespium.rigPerMin=exactBudget/60;S.minedIncomeText.Vespium.rigPerMin=String(exactBudget/60);
   const renderExact=gelLoadout,renderSeed=gelSeedLoadout;
   let renderExactCalls=0,renderSeedCalls=0;
   gelLoadout=function(){renderExactCalls++;return renderExact.apply(null,arguments);};
   gelSeedLoadout=function(){renderSeedCalls++;return renderSeed.apply(null,arguments);};
   renderMinedResources();
-  const minedInput=document.getElementById("minedVespium");
+  const minedInput=document.getElementById("minedVespiumRig");
   check("mined inputs receive descriptor-derived range and draft limits",
     minedInput.attributes.min==="0"&&minedInput.attributes.max==="1e+100"&&minedInput.attributes.maxlength==="128"&&minedInput.attributes.inputmode==="decimal",
     JSON.stringify(minedInput.attributes));
@@ -65,7 +65,7 @@ const runner=`
   gelLoadout=renderExact;gelSeedLoadout=renderSeed;
 
   S=defaults();S.mode="items";S.dupe=50;S.lines=[{max:1,spx:1,turbo:0}];
-  PRODUCTS.forEach(p=>S.targets[p]={on:p==="Gel",w:1});S.minedIncome.Vespium=1e30;
+  PRODUCTS.forEach(p=>S.targets[p]={on:p==="Gel",w:1});S.minedIncome.Vespium.rigPerMin=1e30;
   let result=optimize(),el=new El(),stat=new El();renderSolveResult(result,el,stat);
   const gelLine=result.plan.find(p=>p.job&&p.job.res==="Gel"),itemRocks=1e23/3201*3600;
   check("items Gel plan row renders real Rocks consumption",el.innerHTML.includes(disp(itemRocks)+" Rocks"),el.innerHTML);
@@ -74,7 +74,7 @@ const runner=`
   check("informational Rocks is not described as a solver budget",idleNote.includes("Gel / Vespium")&&!idleNote.includes("Gel / Rocks"),idleNote);
 
   S=defaults();S.mode="project";S.dupe=50;S.lines=Array.from({length:5},(_,i)=>({max:i<2?16:4,spx:10-i,turbo:0}));
-  S.minedIncome.Vespium=1e30;S.projects=[{id:"gel",name:"Gel render",catId:"",on:true,from:1,to:1,done:0,prio:null,
+  S.minedIncome.Vespium.rigPerMin=1e30;S.projects=[{id:"gel",name:"Gel render",catId:"",on:true,from:1,to:1,done:0,prio:null,
     levels:[{costs:[{item:"Gel",qty:100}]}]}];
   result=optimize();const phase=result.phases[0];let projectRocks=0;
   phase.plan.forEach(p=>(p.entries||[]).forEach(e=>{if(e.item!=="Gel")return;const tier=Math.log2(e.lvl),t=3201*Math.pow(1.5,tier),cost=1e23*Math.pow(3,tier);
@@ -86,13 +86,28 @@ const runner=`
 
   S=defaults();S.dupe=0;S.lines=[{max:1,spx:1,turbo:0},{max:1,spx:1,turbo:0}];
   S.manual=[{job:"Gel",lvl:1,sell:false},{job:"Ingots",lvl:1,sell:false}];syncManual(S);
-  S.minedIncome.Vespium=1e15;S.forgie.Ingots=123;
+  S.minedIncome.Vespium.rigPerMin=1e15;S.forgie.Ingots=123;
   el=new El();stat=new El();renderManual(el,stat);
   check("Manual gives mined income its own column",el.innerHTML.includes('<th class="num">Mined income</th>'),el.innerHTML);
   check("Manual keeps Forgie in Passive",el.innerHTML.includes('<th class="num">Passive</th>')&&el.innerHTML.includes(disp(123)),el.innerHTML);
   check("Manual no longer labels mined income as a line arrow",!el.innerHTML.includes("income →"),el.innerHTML);
-  S.minedIncome.Vespium=0;el=new El();stat=new El();renderManual(el,stat);
+  S.minedIncome.Vespium.rigPerMin=0;el=new El();stat=new El();renderManual(el,stat);
   check("Manual keeps the mined-income column at zero income",el.innerHTML.includes('<th class="num">Mined income</th>'),el.innerHTML);
+
+  S=defaults();S.dupe=0;S.maxTurbo=0;S.lines=[{max:1,spx:1,turbo:0}];
+  S.manual=[{job:"Batteries",lvl:1,sell:false}];syncManual(S);
+  S.minedIncome.Vespium.rigPerMin=1e100;S.minedIncome.Hydracite.resourcesTradingPerSec=1e100;
+  const manualBattery=manualResult(),batteryJob=manualBattery.plan[0].job,batterySeconds=1034274.56;
+  check("Manual Battery output uses the five-unit base batch",
+    Math.abs(batteryJob.prod[0][1]-5/batterySeconds)<1e-18,
+    "rate="+batteryJob.prod[0][1]+", expected="+(5/batterySeconds));
+  const wireIndex=manualBattery.resIndex.Wire,gelIndex=manualBattery.resIndex.Gel;
+  check("Manual Battery inputs remain one craft-cycle cost",
+    Math.abs(batteryJob.cons.find(row=>row[0]===wireIndex)[1]-500/batterySeconds)<1e-18&&
+    Math.abs(batteryJob.cons.find(row=>row[0]===gelIndex)[1]-100000/batterySeconds)<1e-18,
+    JSON.stringify(batteryJob.cons));
+  el=new El();stat=new El();renderManual(el,stat);
+  check("Manual renders the corrected Battery batch output",el.innerHTML.includes(disp(5/batterySeconds*3600)),el.innerHTML);
 
   const gelCard=prodCard("Gel").innerHTML;
   check("Gel copy says it is crafted on a line",/crafted on a crafter line/i.test(gelCard),gelCard);

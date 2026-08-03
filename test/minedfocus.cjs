@@ -15,15 +15,19 @@ class Target{
   querySelectorAll(){return [];}
 }
 const btn=new Target("btnMined"),close=new Target("minedClose"),done=new Target("minedDone");
-const vesp=new Target("minedVespium"),hydra=new Target("minedHydracite"),dialog=new Target("minedDialog");
-vesp.dataset.minedIncome="Vespium";hydra.dataset.minedIncome="Hydracite";
+const vespRig=new Target("minedVespiumRig"),vespTrading=new Target("minedVespiumTrading");
+const hydraTrading=new Target("minedHydraciteTrading"),dialog=new Target("minedDialog");
+vespRig.dataset.minedResource="Vespium";vespRig.dataset.minedSource="rigPerMin";
+vespTrading.dataset.minedResource="Vespium";vespTrading.dataset.minedSource="resourcesTradingPerSec";
+hydraTrading.dataset.minedResource="Hydracite";hydraTrading.dataset.minedSource="resourcesTradingPerSec";
 const modal=new Target("minedModal");modal.hidden=true;
-const focusables=[close,vesp,hydra,done];
+const focusables=[close,vespRig,vespTrading,hydraTrading,done];
 modal.querySelector=sel=>sel.includes("[role=\"dialog\"]")||sel.includes("[role='dialog']")?dialog:null;
 modal.querySelectorAll=()=>focusables;
 dialog.querySelectorAll=()=>focusables;
 close.closest=done.closest=sel=>sel==="[data-dialog-close]"?close:null;
-const els={btnMined:btn,minedModal:modal,minedClose:close,minedDone:done,minedVespium:vesp,minedHydracite:hydra};
+const els={btnMined:btn,minedModal:modal,minedClose:close,minedDone:done,
+  minedVespiumRig:vespRig,minedVespiumTrading:vespTrading,minedHydraciteTrading:hydraTrading};
 const doc=new Target("document");doc.activeElement=null;doc.getElementById=id=>els[id]||new Target(id);
 doc.querySelector=sel=>sel==="#minedModal .modal"?dialog:null;
 doc.body={children:[],classList:{toggle(){}}};
@@ -44,7 +48,7 @@ function open(){btn.focus();btn.dispatch("click");}
 function expectRestore(name,closeAction){open();closeAction();check(name,modal.hidden&&document.activeElement===btn,"hidden="+modal.hidden+", focus="+(document.activeElement&&document.activeElement.id));}
 
 open();
-check("opening Mined resources focuses the first income",document.activeElement===vesp,"focus="+(document.activeElement&&document.activeElement.id));
+check("opening Mined resources focuses Vespium Rig income",document.activeElement===vespRig,"focus="+(document.activeElement&&document.activeElement.id));
 done.focus();let ev=doc.dispatch("keydown",{key:"Tab"});
 check("Tab wraps within Mined resources",ev.defaultPrevented&&document.activeElement===close,"focus="+(document.activeElement&&document.activeElement.id));
 close.focus();ev=doc.dispatch("keydown",{key:"Tab",shiftKey:true});
@@ -52,6 +56,6 @@ check("Shift+Tab wraps within Mined resources",ev.defaultPrevented&&document.act
 
 expectRestore("Close restores focus to the invoker",()=>{close.focus();modal.dispatch("click",{target:close});});
 expectRestore("Done restores focus to the invoker",()=>{done.focus();modal.dispatch("click",{target:done});});
-expectRestore("backdrop restores focus to the invoker",()=>{vesp.focus();modal.dispatch("click",{target:modal});});
-expectRestore("Escape restores focus to the invoker",()=>{hydra.focus();doc.dispatch("keydown",{key:"Escape"});});
+expectRestore("backdrop restores focus to the invoker",()=>{vespTrading.focus();modal.dispatch("click",{target:modal});});
+expectRestore("Escape restores focus to the invoker",()=>{hydraTrading.focus();doc.dispatch("keydown",{key:"Escape"});});
 if(fail)process.exitCode=1;

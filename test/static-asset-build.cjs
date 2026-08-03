@@ -347,6 +347,36 @@ test("the current Worker payload registers Project scheduling before the solver"
   assert.doesNotMatch(payload, /importScripts\s*\(/);
 });
 
+test("the current Worker returns a structured schema-rejection envelope", () => {
+  const posted = [];
+  const context = {
+    console,
+    performance: { now() { return 0; } },
+    self: { postMessage(message) { posted.push(message); } },
+  };
+  vm.createContext(context);
+  vm.runInContext(buildWorkerPayload(root), context, { filename: "generated-current-worker.js" });
+  vm.runInContext(`
+    const rejectedState=normalize(defaults());
+    syncManual(rejectedState);
+    rejectedState.schemaVersion=CURRENT_SCHEMA_VERSION;
+    rejectedState.lines[0].max=1;
+    rejectedState.manual[0].lvl=512;
+    self.onmessage({data:{
+      reqId:7,generation:7,mode:rejectedState.mode,stateRevision:11,
+      state:rejectedState,budget:rejectedState.solveBudget,stab:{}
+    }});
+  `, context);
+
+  assert.equal(posted.length, 1);
+  assert.equal(posted[0].reqId, 7);
+  assert.equal(posted[0].generation, 7);
+  assert.equal(posted[0].stateRevision, 11);
+  assert.equal(typeof posted[0].error, "object");
+  assert.match(posted[0].error.message, /Worker state rejected: manual\[0\]\.lvl must not exceed its crafter line cap/);
+  assert.equal(typeof posted[0].error.stack, "string");
+});
+
 test("early generated Blob Worker termination releases its URL and backstop immediately", () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "forge-static-worker-release-"));
   buildStaticSite({ sourceRoot: root, outputRoot: temporary });

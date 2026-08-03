@@ -35,12 +35,13 @@ The release check builds the deployable files and verifies the static-server and
 
 - **Inputs:** Ingots, Bits, Concrete (raw producers — time only)
 - **Crafts:** Glass (←Bits), Bricks (←Concrete), Plates (←Ingots), Rods (←Ingots), Frames (←Plates + Rods; Bits pre-produced), Gel (←Vespium), Wire (←Gel + Rods), Reinforced Concrete (←Bricks + Concrete + Frames), Batteries (←Wire + Gel, plus Hydracite)
-- **Mined income:** enter Vespium and Hydracite income separately; the planner budgets each resource independently for Gel and Batteries
-- **Per-line caps:** each crafter line has its own max compression, 1×–16.4k×
+- **Mined income:** enter Vespium Rig production in `/min`, Resources & Trading Vespium in `/sec`, and Resources & Trading Hydracite in `/sec`. The two Vespium sources add together for Gel; Hydracite remains an independent Battery budget.
+- **Battery batches:** one Battery craft outputs `5 × compression` units (5 at 1×, 10 at 2×, 20 at 4×). Recipe and mined costs remain per craft, and duplication increases output only.
+- **Per-line caps:** each crafter line has its own max compression, 1×–16.38k×. The displayed top label represents the exact numeric tier 16384.
 - **Multi-output:** select several outputs at once; priority weights shape the shared weighted-output floor. The result reports when constraints are infeasible or the bounded search did not finish an exhaustive proof.
 - **Project plan + shopping list:** build named **projects** (each a list of levels and item costs), enter inventory, and ask **Project plan** mode for a replay-validated schedule. One-at-a-time ordering applies known unlocks first, then numeric order, then estimated completion time. Choose whether small edits preserve familiar line jobs within a 5% phase-throughput band or re-optimize them; complete-run comparisons include warm-ups and ordering. The **step-by-step** view is execution guidance only for a replay-valid schedule; blocked results retain a labeled analytical breakdown for diagnosis.
 - **Manual mode:** skip optimization and assign each line a resource and compression level. The live balance readout labels ordinary inputs healthy, tight, or short.
-- **Persistence and recovery:** auto-saves the complete schema-v3 build to `localStorage`, retains a previous-good backup, and provides GUI recovery for rejected saves. Export/Import covers the complete accepted build—not only crafting data—including lines, recipes, prices, projects, inventory, settings, and Manual presets.
+- **Persistence and recovery:** auto-saves the complete schema-v4 build to `localStorage`, retains a previous-good backup, and provides GUI recovery for rejected saves. Export/Import covers the complete accepted build—not only crafting data—including lines, recipes, prices, projects, inventory, settings, and Manual presets.
 
 The solver runs in a generated Blob Worker with a configurable 200 ms–60 s budget, so the interface remains responsive. Simple searches can finish early; larger searches may return a clearly labeled best-found bounded result.
 

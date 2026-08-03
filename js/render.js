@@ -2,7 +2,7 @@
 /* ---------- RENDER: lines ---------- */
 const TIPS={
   line:"Crafter unit slot. The solver auto-sorts lines by max compression — this number only identifies which row you're editing.",
-  max:"Highest compression tier this crafter is upgraded to (1×–16.4k×). Each level doubles yield per craft but triples material cost per cycle — so the solver picks the most efficient level ≤ this cap.",
+  max:"Highest compression tier this crafter is upgraded to (1×–16.38k×). Each level doubles yield per craft but triples material cost per cycle — so the solver picks the most efficient level ≤ this cap.",
   spx:"The total speed × currently shown above the crafter unit in-game (e.g. ×49.38) — enter it exactly as displayed, with your current turbo stacks already baked in.",
   turbo:"How many turbo stacks this crafter has active right now (each stack = +1% speed). With the global max-turbo-stacks figure, the planner backs out your base speed and projects the speed you'll have at full turbo.",
   maxTurbo:"The most turbo stacks any crafter can reach — a global cap (each stack = +1% speed). The planner projects every line's current speed up to this many stacks, so the plan reflects your sustained speed at full turbo.",
@@ -71,15 +71,29 @@ function renderTargets(){
 
 /* ---------- RENDER: mined resources ---------- */
 const GEL_EXACT_UI_MAX_LINES=12;
+const MINED_INCOME_INPUT_IDS=Object.freeze({
+  Vespium:Object.freeze({rigPerMin:"minedVespiumRig",resourcesTradingPerSec:"minedVespiumTrading"}),
+  Hydracite:Object.freeze({resourcesTradingPerSec:"minedHydraciteTrading"})
+});
 function renderMinedResources(){
   MINED_RESOURCES.forEach(resource=>{
-    const inp=document.getElementById("mined"+resource);
-    if(inp){
+    Object.keys(MINED_INCOME_SOURCES[resource]||{}).forEach(source=>{
+      const inp=document.getElementById(MINED_INCOME_INPUT_IDS[resource]&&MINED_INCOME_INPUT_IDS[resource][source]);
+      if(!inp)return;
       applyFieldInputAttributes(inp,FIELD_SCHEMA.minedIncome);
-      if(document.activeElement!==inp)inp.value=S.minedIncomeText[resource]||"";
-    }
+      if(document.activeElement!==inp)inp.value=(S.minedIncomeText[resource]&&S.minedIncomeText[resource][source])||"";
+    });
   });
   const vespHr=minedBudgetHr("Vespium");
+  const vespRig=num(S.minedIncome.Vespium.rigPerMin)||0;
+  const vespTrading=num(S.minedIncome.Vespium.resourcesTradingPerSec)||0;
+  const vespRigHr=Math.max(0,vespRig)*60,vespTradingHr=Math.max(0,vespTrading)*3600;
+  const vespBreakdown=document.getElementById("minedVespiumBreakdown");
+  if(vespBreakdown)vespBreakdown.textContent=`Rig: ${disp(vespRig)}/min → ${disp(vespRigHr)}/hr + Mined: ${disp(vespTrading)}/sec → ${disp(vespTradingHr)}/hr = ${disp(vespHr)} Vespium/hr total`;
+  const hydraTrading=num(S.minedIncome.Hydracite.resourcesTradingPerSec)||0;
+  const hydraHr=minedBudgetHr("Hydracite");
+  const hydraSummary=document.getElementById("minedHydraciteSummary");
+  if(hydraSummary)hydraSummary.textContent=`Mined: ${disp(hydraTrading)}/sec → ${disp(hydraHr)} Hydracite/hr total`;
   const rows=lineRows(),exact=rows.length<=GEL_EXACT_UI_MAX_LINES;
   // Exact multiple-choice capacity is responsive through the gameplay-scale 12-line boundary.
   // Larger compatible saves use the bounded solver seed with explicitly estimated copy.
@@ -102,8 +116,8 @@ function renderMinedGelLoadout(lo,vespHr,exact=true){
       : `Each line runs one compression full-time, burning <b>${disp(lo.vespHr)}</b> of your <b>${disp(vespHr)}</b> Vespium/hr.`)
     : `Each selected line runs one compression full-time. This bounded estimate burns <b>${disp(lo.vespHr)}</b> of your <b>${disp(vespHr)}</b> Vespium/hr; unused income may reflect the heuristic rather than a capacity limit.`;
   const claim=exact
-    ?`With <b>${disp(num(S.minedIncome.Vespium)||0)}</b> Vespium/min you can sustain up to <b>${disp(lo.gelHr)}</b> Gel/hr. ${head} Best loadout if you put everything you can on Gel:`
-    :`<b>Estimated capacity.</b> With <b>${disp(num(S.minedIncome.Vespium)||0)}</b> Vespium/min, the bounded search found <b>${disp(lo.gelHr)}</b> Gel/hr. ${head} Best found loadout if you put everything you can on Gel:`;
+    ?`With <b>${disp(vespHr)}</b> total Vespium/hr you can sustain up to <b>${disp(lo.gelHr)}</b> Gel/hr. ${head} Best loadout if you put everything you can on Gel:`
+    :`<b>Estimated capacity.</b> With <b>${disp(vespHr)}</b> total Vespium/hr, the bounded search found <b>${disp(lo.gelHr)}</b> Gel/hr. ${head} Best found loadout if you put everything you can on Gel:`;
   let h=`<div class="notice info mined-summary">${claim}</div>
     <div class="mined-table-wrap"><table><thead><tr><th>Line</th><th>Compression</th><th class="num">Gel /hr</th><th class="num">Vespium /hr</th></tr></thead><tbody>`;
   lo.perLine.slice().sort((a,b)=>a.__i-b.__i).forEach(p=>{
@@ -170,12 +184,17 @@ function prodCard(p){
     rows+=`<tr>${cells}</tr>`;
   });
   const subt=ins.length?ins.join(" + ")+" → "+p:"Vespium + Rocks → "+p;
+  const batchYield=RECIPE[p].baseOutput||1;
+  const batchNote=batchYield>1
+    ? `<div class="notice info" style="font-size:10.5px;margin:0 2px 8px"><b>Batch output:</b> ${disp(batchYield)} × compression units per craft. Costs below remain per craft; duplication increases output only.</div>`
+    : "";
   const body=ins.length
     ? `<table class="rtab"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`
     : `<div style="font-size:10.5px;color:var(--ink3);margin:0 2px">Gel is crafted on a crafter line. Each craft consumes <b>Vespium</b> from your mined-income budget and also has an informational <b>Rocks</b> cost. Review both in <b>Mined resources</b>.</div>`;
   c.innerHTML=`<div class="rh"><span class="nm">${p}</span><span class="ty ${tyCls}">${tyLbl}</span></div>
     <div class="rb"><div style="font-size:10.5px;color:var(--ink3);margin:0 2px 6px">${subt}</div>
     ${baseTimeField(p)}
+    ${batchNote}
     ${body}</div>`;
   const recipeTable=c.querySelector("table");
   if(recipeTable&&typeof markTableScroller==="function")markTableScroller(recipeTable.parentElement,`${p} recipe costs by compression table`);
