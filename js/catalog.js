@@ -685,7 +685,7 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Glass",
-            "qty": 288
+            "qty": 268
           },
           {
             "item": "Plates",
@@ -765,7 +765,7 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Glass",
-            "qty": 1857
+            "qty": 1657
           },
           {
             "item": "Plates",
