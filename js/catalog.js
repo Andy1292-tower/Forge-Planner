@@ -685,7 +685,7 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Glass",
-            "qty": 288
+            "qty": 268
           },
           {
             "item": "Plates",
@@ -765,7 +765,7 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Glass",
-            "qty": 1857
+            "qty": 1657
           },
           {
             "item": "Plates",
@@ -952,22 +952,20 @@ const PROJECT_CATALOG=[
             "qty": 65609
           }
         ]
-      }
-      /* Levels 29-30 — not yet in-game. To activate, delete this line and the closing marker below.
-      ,
+      },
       {
         "costs": [
           {
             "item": "Glass",
-            "qty": 566181
+            "qty": 566121
           },
           {
             "item": "Plates",
-            "qty": 754802
+            "qty": 754827
           },
           {
             "item": "Bricks",
-            "qty": 113372
+            "qty": 113225
           }
         ]
       },
@@ -975,19 +973,98 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Glass",
-            "qty": 978361
+            "qty": 978256
           },
           {
             "item": "Plates",
-            "qty": 1304298
+            "qty": 1304341
           },
           {
             "item": "Bricks",
-            "qty": 195907
+            "qty": 195652
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Glass",
+            "qty": 1690426
+          },
+          {
+            "item": "Plates",
+            "qty": 2253901
+          },
+          {
+            "item": "Bricks",
+            "qty": 338086
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Glass",
+            "qty": 2921056
+          },
+          {
+            "item": "Plates",
+            "qty": 3894741
+          },
+          {
+            "item": "Bricks",
+            "qty": 584212
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Glass",
+            "qty": 5047584
+          },
+          {
+            "item": "Plates",
+            "qty": 6730112
+          },
+          {
+            "item": "Bricks",
+            "qty": 1009517
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Glass",
+            "qty": 8722224
+          },
+          {
+            "item": "Plates",
+            "qty": 11629632
+          },
+          {
+            "item": "Bricks",
+            "qty": 1744445
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Glass",
+            "qty": 15072003
+          },
+          {
+            "item": "Plates",
+            "qty": 20096004
+          },
+          {
+            "item": "Bricks",
+            "qty": 3014401
           }
         ]
       }
-      */
     ]
   },
   {
@@ -1442,22 +1519,20 @@ const PROJECT_CATALOG=[
             "qty": 218445
           }
         ]
-      }
-      /* Levels 29-30 — not yet in-game. To activate, delete this line and the closing marker below.
-      ,
+      },
       {
         "costs": [
           {
             "item": "Concrete",
-            "qty": 1132294
+            "qty": 1132241
           },
           {
             "item": "Rods",
-            "qty": 754802
+            "qty": 754827
           },
           {
             "item": "Plates",
-            "qty": 377473
+            "qty": 377414
           }
         ]
       },
@@ -1465,19 +1540,98 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Concrete",
-            "qty": 1956604
+            "qty": 1956511
           },
           {
             "item": "Rods",
-            "qty": 1304298
+            "qty": 1304341
           },
           {
             "item": "Plates",
-            "qty": 652273
+            "qty": 652171
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 3380851
+          },
+          {
+            "item": "Rods",
+            "qty": 2253901
+          },
+          {
+            "item": "Plates",
+            "qty": 1126951
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 5842111
+          },
+          {
+            "item": "Rods",
+            "qty": 3894741
+          },
+          {
+            "item": "Plates",
+            "qty": 1947371
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 10095167
+          },
+          {
+            "item": "Rods",
+            "qty": 6730112
+          },
+          {
+            "item": "Plates",
+            "qty": 3365056
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 17444448
+          },
+          {
+            "item": "Rods",
+            "qty": 11629632
+          },
+          {
+            "item": "Plates",
+            "qty": 5814816
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 30144006
+          },
+          {
+            "item": "Rods",
+            "qty": 20096004
+          },
+          {
+            "item": "Plates",
+            "qty": 10048002
           }
         ]
       }
-      */
     ]
   },
   {
@@ -1932,22 +2086,20 @@ const PROJECT_CATALOG=[
             "qty": 21863
           }
         ]
-      }
-      /* Levels 29-30 — not yet in-game. To activate, delete this line and the closing marker below.
-      ,
+      },
       {
         "costs": [
           {
             "item": "Concrete",
-            "qty": 1132294
+            "qty": 1132241
           },
           {
             "item": "Glass",
-            "qty": 94456
+            "qty": 94354
           },
           {
             "item": "Bricks",
-            "qty": 37779
+            "qty": 37742
           }
         ]
       },
@@ -1955,19 +2107,98 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Concrete",
-            "qty": 1956604
+            "qty": 1956511
           },
           {
             "item": "Glass",
-            "qty": 163220
+            "qty": 163043
           },
           {
             "item": "Bricks",
-            "qty": 65282
+            "qty": 65218
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 3380851
+          },
+          {
+            "item": "Glass",
+            "qty": 281738
+          },
+          {
+            "item": "Bricks",
+            "qty": 112696
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 5842111
+          },
+          {
+            "item": "Glass",
+            "qty": 486843
+          },
+          {
+            "item": "Bricks",
+            "qty": 194738
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 10095167
+          },
+          {
+            "item": "Glass",
+            "qty": 841264
+          },
+          {
+            "item": "Bricks",
+            "qty": 336506
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 17444448
+          },
+          {
+            "item": "Glass",
+            "qty": 1453704
+          },
+          {
+            "item": "Bricks",
+            "qty": 581482
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 30144006
+          },
+          {
+            "item": "Glass",
+            "qty": 2512001
+          },
+          {
+            "item": "Bricks",
+            "qty": 1004801
           }
         ]
       }
-      */
     ]
   },
   {
@@ -2422,22 +2653,20 @@ const PROJECT_CATALOG=[
             "qty": 546074
           }
         ]
-      }
-      /* Levels 29-30 — not yet in-game. To activate, delete this line and the closing marker below.
-      ,
+      },
       {
         "costs": [
           {
             "item": "Bits",
-            "qty": 1132294
+            "qty": 1132241
           },
           {
             "item": "Rods",
-            "qty": 754802
+            "qty": 754827
           },
           {
             "item": "Concrete",
-            "qty": 943616
+            "qty": 943534
           }
         ]
       },
@@ -2445,19 +2674,98 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bits",
-            "qty": 1956604
+            "qty": 1956511
           },
           {
             "item": "Rods",
-            "qty": 1304298
+            "qty": 1304341
           },
           {
             "item": "Concrete",
-            "qty": 1630568
+            "qty": 1630426
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 3380851
+          },
+          {
+            "item": "Rods",
+            "qty": 2253901
+          },
+          {
+            "item": "Concrete",
+            "qty": 2817376
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 5842111
+          },
+          {
+            "item": "Rods",
+            "qty": 3894741
+          },
+          {
+            "item": "Concrete",
+            "qty": 4868426
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 10095167
+          },
+          {
+            "item": "Rods",
+            "qty": 6730112
+          },
+          {
+            "item": "Concrete",
+            "qty": 8412639
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 17444448
+          },
+          {
+            "item": "Rods",
+            "qty": 11629632
+          },
+          {
+            "item": "Concrete",
+            "qty": 14537040
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 30144006
+          },
+          {
+            "item": "Rods",
+            "qty": 20096004
+          },
+          {
+            "item": "Concrete",
+            "qty": 25120005
           }
         ]
       }
-      */
     ]
   },
   {
@@ -2912,22 +3220,20 @@ const PROJECT_CATALOG=[
             "qty": 54662
           }
         ]
-      }
-      /* Levels 29-30 — not yet in-game. To activate, delete this line and the closing marker below.
-      ,
+      },
       {
         "costs": [
           {
             "item": "Bits",
-            "qty": 1132294
+            "qty": 1132241
           },
           {
             "item": "Bricks",
-            "qty": 377473
+            "qty": 377414
           },
           {
             "item": "Glass",
-            "qty": 94456
+            "qty": 94354
           }
         ]
       },
@@ -2935,19 +3241,98 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bits",
-            "qty": 1956604
+            "qty": 1956511
           },
           {
             "item": "Bricks",
-            "qty": 652273
+            "qty": 652171
           },
           {
             "item": "Glass",
-            "qty": 163220
+            "qty": 163043
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 3380851
+          },
+          {
+            "item": "Bricks",
+            "qty": 1126951
+          },
+          {
+            "item": "Glass",
+            "qty": 281738
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 5842111
+          },
+          {
+            "item": "Bricks",
+            "qty": 1947371
+          },
+          {
+            "item": "Glass",
+            "qty": 486843
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 10095167
+          },
+          {
+            "item": "Bricks",
+            "qty": 3365056
+          },
+          {
+            "item": "Glass",
+            "qty": 841264
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 17444448
+          },
+          {
+            "item": "Bricks",
+            "qty": 5814816
+          },
+          {
+            "item": "Glass",
+            "qty": 1453704
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 30144006
+          },
+          {
+            "item": "Bricks",
+            "qty": 10048002
+          },
+          {
+            "item": "Glass",
+            "qty": 2512001
           }
         ]
       }
-      */
     ]
   },
   {
@@ -3402,22 +3787,20 @@ const PROJECT_CATALOG=[
             "qty": 546074
           }
         ]
-      }
-      /* Levels 29-30 — not yet in-game. To activate, delete this line and the closing marker below.
-      ,
+      },
       {
         "costs": [
           {
             "item": "Bricks",
-            "qty": 283058
+            "qty": 283061
           },
           {
             "item": "Plates",
-            "qty": 754802
+            "qty": 754827
           },
           {
             "item": "Bits",
-            "qty": 943616
+            "qty": 943534
           }
         ]
       },
@@ -3425,19 +3808,98 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bricks",
-            "qty": 489124
+            "qty": 489128
           },
           {
             "item": "Plates",
-            "qty": 1304298
+            "qty": 1304341
           },
           {
             "item": "Bits",
-            "qty": 1630568
+            "qty": 1630426
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bricks",
+            "qty": 845213
+          },
+          {
+            "item": "Plates",
+            "qty": 2253901
+          },
+          {
+            "item": "Bits",
+            "qty": 2817376
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bricks",
+            "qty": 1460528
+          },
+          {
+            "item": "Plates",
+            "qty": 3894741
+          },
+          {
+            "item": "Bits",
+            "qty": 4868426
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bricks",
+            "qty": 2523792
+          },
+          {
+            "item": "Plates",
+            "qty": 6730112
+          },
+          {
+            "item": "Bits",
+            "qty": 8412639
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bricks",
+            "qty": 4361112
+          },
+          {
+            "item": "Plates",
+            "qty": 11629632
+          },
+          {
+            "item": "Bits",
+            "qty": 14537040
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bricks",
+            "qty": 7536002
+          },
+          {
+            "item": "Plates",
+            "qty": 20096004
+          },
+          {
+            "item": "Bits",
+            "qty": 25120005
           }
         ]
       }
-      */
     ]
   },
   {
@@ -4290,9 +4752,7 @@ const PROJECT_CATALOG=[
             "qty": 1057150
           }
         ]
-      }
-      /* Levels 29-30 — not yet in-game. To activate, delete this line and the closing marker below.
-      ,
+      },
       {
         "costs": [
           {
@@ -4324,8 +4784,87 @@ const PROJECT_CATALOG=[
             "qty": 2615740
           }
         ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 4571720
+          },
+          {
+            "item": "Frames",
+            "qty": 731560
+          },
+          {
+            "item": "Plates",
+            "qty": 4114560
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 7191320
+          },
+          {
+            "item": "Frames",
+            "qty": 1150740
+          },
+          {
+            "item": "Plates",
+            "qty": 6472200
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 11311950
+          },
+          {
+            "item": "Frames",
+            "qty": 1810110
+          },
+          {
+            "item": "Plates",
+            "qty": 10180770
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 17793700
+          },
+          {
+            "item": "Frames",
+            "qty": 2847300
+          },
+          {
+            "item": "Plates",
+            "qty": 16014350
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 27989490
+          },
+          {
+            "item": "Frames",
+            "qty": 4478800
+          },
+          {
+            "item": "Plates",
+            "qty": 25190570
+          }
+        ]
       }
-      */
     ]
   },
   {
@@ -4720,9 +5259,7 @@ const PROJECT_CATALOG=[
             "qty": 2349230
           }
         ]
-      }
-      /* Levels 29-30 — not yet in-game. To activate, delete this line and the closing marker below.
-      ,
+      },
       {
         "costs": [
           {
@@ -4754,8 +5291,87 @@ const PROJECT_CATALOG=[
             "qty": 5812770
           }
         ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 457160
+          },
+          {
+            "item": "Gel",
+            "qty": 182910
+          },
+          {
+            "item": "Bits",
+            "qty": 9143490
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 719110
+          },
+          {
+            "item": "Gel",
+            "qty": 287720
+          },
+          {
+            "item": "Bits",
+            "qty": 14382710
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 1131160
+          },
+          {
+            "item": "Gel",
+            "qty": 452580
+          },
+          {
+            "item": "Bits",
+            "qty": 22624000
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 1779310
+          },
+          {
+            "item": "Gel",
+            "qty": 711910
+          },
+          {
+            "item": "Bits",
+            "qty": 35587550
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 2798850
+          },
+          {
+            "item": "Gel",
+            "qty": 1119830
+          },
+          {
+            "item": "Bits",
+            "qty": 55979220
+          }
+        ]
       }
-      */
     ]
   }
 ];
