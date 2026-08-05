@@ -76,7 +76,7 @@ After promotion, verify the production alias directly:
 5. Run one real planner solve and confirm no console errors, failed static requests, or current Worker-script request.
 6. Check HTML revalidation and immutable headers on generated `static/...` files.
 7. Check route-level request telemetry after the release; current solves should not create repeated Worker HTTP traffic.
-8. Open the header report disclosure and confirm the account-free button is enabled, which means `GITHUB_TOKEN` reached this deployment. A disabled button is the honest failure mode, not a broken page — the GitHub path still works. `curl /api/report-issue` returns `{"error":"unconfigured"}` when the variable is missing.
+8. Open the header report dialog and confirm the account-free button is enabled, which means a GitHub credential reached this deployment. A disabled button is the honest failure mode, not a broken page — the GitHub path still works. `curl /api/report-issue` returns `{"error":"unconfigured"}` when the variable is missing.
 
 A successful push, build log, or runtime log alone does not establish that the production alias and cached browser path are healthy.
 

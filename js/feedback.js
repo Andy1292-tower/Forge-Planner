@@ -16,6 +16,7 @@ const REPORT_MIN={title:5,body:20};
 const REPORT_MAX={title:120,body:4000,contact:120};
 
 const reportState={token:null,minWaitMs:0,fetchedAt:0,pending:false,available:null,sent:false};
+let reportDialog=null;
 
 function reportEl(id){return document.getElementById(id);}
 
@@ -155,7 +156,7 @@ async function reportAnonymously(){
   const values=reportValues();
   const problem=reportProblem(values);
   if(problem){reportSay(problem,"bad");return;}
-  if(reportState.sent){reportSay("That report was already sent. Reload the page to send another.","bad");return;}
+  if(reportState.sent){reportSay("That report was already sent. Close and reopen this to send another.","bad");return;}
 
   reportBusy(true);
   reportSay("Sending…");
@@ -190,12 +191,32 @@ async function reportAnonymously(){
   reportBusy(false);
 }
 
+/* Reopening the dialog starts a fresh report. The previous send stays visible until then
+ * so its issue link is clickable, and the server's rate limit — not this flag — is what
+ * actually bounds how much one person can post. */
+function reportOpened(){
+  if(reportState.sent){
+    reportState.sent=false;
+    reportSay("");
+    reportEl("reportContact").value="";
+  }
+  // Fetched on open, so a visitor who never reports makes no request at all.
+  reportPrepare();
+}
+
 function wireReportForm(){
-  const details=reportEl("reportDetails");
+  const root=reportEl("reportModal");
   const form=reportEl("reportForm");
-  if(!details||!form)return;
-  details.addEventListener("toggle",()=>{if(details.open)reportPrepare();});
-  if(details.open)reportPrepare();
+  if(!root||!form)return;
+  /* Same dialog controller as the planner's other modals, so this inherits the focus
+   * trap, Escape, backdrop dismissal, and background inerting rather than restating them. */
+  reportDialog=dialogController.register({
+    root,
+    panel:root.querySelector(".modal"),
+    opener:reportEl("btnReport"),
+    initialFocus:()=>reportEl("reportKind"),
+    onOpen:reportOpened,
+  });
   form.addEventListener("submit",event=>event.preventDefault());
   const github=reportEl("reportGithub");
   if(github)github.addEventListener("click",reportViaGithub);

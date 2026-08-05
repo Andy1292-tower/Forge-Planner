@@ -317,6 +317,100 @@ async function unconfiguredContract() {
   }
 }
 
+/* ---------- GitHub App authentication ---------- */
+
+async function appAuthContract() {
+  const crypto = require("crypto");
+  const { privateKey, publicKey } = crypto.generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    publicKeyEncoding: { type: "spki", format: "pem" },
+  });
+  const saved = { ...process.env };
+  const realFetch = global.fetch;
+
+  try {
+    delete process.env.GITHUB_TOKEN;
+    process.env.GITHUB_APP_ID = "123456";
+
+    // A PEM survives all three ways an environment variable tends to carry it.
+    process.env.GITHUB_APP_PRIVATE_KEY = privateKey;
+    assert.strictEqual(internals.appPrivateKey(), privateKey, "literal PEM was mangled");
+    process.env.GITHUB_APP_PRIVATE_KEY = privateKey.replace(/\n/g, "\\n");
+    assert.strictEqual(internals.appPrivateKey(), privateKey, "escaped newlines were not restored");
+    process.env.GITHUB_APP_PRIVATE_KEY = Buffer.from(privateKey).toString("base64");
+    assert.strictEqual(internals.appPrivateKey(), privateKey, "base64 PEM was not decoded");
+
+    assert.ok(internals.usingApp(), "app credentials not detected");
+    assert.ok(internals.credentialConfigured(), "app credentials not accepted as configured");
+
+    // The JWT must actually verify under the matching public key, and be time-boxed.
+    const jwt = internals.appJwt(NOW);
+    const [header, payload, signature] = jwt.split(".");
+    const unpad = value => value.replace(/-/g, "+").replace(/_/g, "/");
+    assert.ok(
+      crypto
+        .createVerify("RSA-SHA256")
+        .update(`${header}.${payload}`)
+        .verify(publicKey, Buffer.from(unpad(signature), "base64")),
+      "the app JWT does not verify under its own key"
+    );
+    const claims = JSON.parse(Buffer.from(unpad(payload), "base64").toString("utf8"));
+    assert.strictEqual(claims.iss, "123456");
+    // GitHub rejects a future iat and caps the lifetime at ten minutes.
+    assert.ok(claims.iat < Math.floor(NOW / 1000), "iat is not back-dated for clock skew");
+    assert.ok(claims.exp - claims.iat <= 600, "JWT lifetime exceeds the ten-minute maximum");
+
+    // The installation is discovered, then exchanged for a short-lived token.
+    const calls = [];
+    global.fetch = async (url, options) => {
+      calls.push({ url, method: (options && options.method) || "GET", headers: options.headers });
+      if (url.endsWith("/installation")) {
+        return { ok: true, status: 200, json: async () => ({ id: 42 }), text: async () => "" };
+      }
+      return {
+        ok: true, status: 201, text: async () => "",
+        json: async () => ({
+          token: "ghs_installation",
+          expires_at: new Date(NOW + 60 * 60 * 1000).toISOString(),
+        }),
+      };
+    };
+    const first = await internals.githubCredential(NOW);
+    assert.strictEqual(first, "ghs_installation");
+    assert.strictEqual(calls.length, 2, "expected an installation lookup and a token exchange");
+    assert.match(calls[0].url, /\/repos\/.+\/installation$/);
+    assert.match(calls[1].url, /\/app\/installations\/42\/access_tokens$/);
+    assert.strictEqual(calls[1].method, "POST");
+
+    // A live token is reused rather than re-minted on every report.
+    const second = await internals.githubCredential(NOW + 60 * 1000);
+    assert.strictEqual(second, "ghs_installation");
+    assert.strictEqual(calls.length, 2, "a valid installation token was re-minted");
+
+    // Close to expiry it is refreshed before a slow request can outlive it.
+    await internals.githubCredential(NOW + 58 * 60 * 1000);
+    assert.ok(calls.length > 2, "an almost-expired installation token was reused");
+
+    // A personal token still works when no app is configured.
+    delete process.env.GITHUB_APP_ID;
+    delete process.env.GITHUB_APP_PRIVATE_KEY;
+    process.env.GITHUB_TOKEN = "ghp_personal";
+    assert.ok(!internals.usingApp(), "app path claimed without credentials");
+    assert.strictEqual(await internals.githubCredential(NOW), "ghp_personal");
+
+    // Neither configured is a server misconfiguration, not a silent no-op.
+    delete process.env.GITHUB_TOKEN;
+    assert.ok(!internals.credentialConfigured(), "no credential reported as configured");
+  } finally {
+    global.fetch = realFetch;
+    for (const key of ["GITHUB_TOKEN", "GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY"]) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
+}
+
 /* ---------- the page offers both paths ---------- */
 
 function pageContract() {
@@ -329,6 +423,21 @@ function pageContract() {
   assert.ok(index.includes('id="reportAnon"'), "no account-free submit path in the page");
   assert.ok(index.includes('id="reportWebsite"'), "honeypot field missing");
   assert.ok(index.includes("A GitHub account is optional"), "the page does not say an account is optional");
+
+  /* The form opens in a dialog. Inline it displaced the whole planner when expanded, so
+   * it must stay hidden until asked for and must not reintroduce a header disclosure. */
+  assert.ok(/<div class="modal-bg" id="reportModal" hidden>/.test(index), "report form is not a hidden dialog");
+  assert.ok(index.includes('id="btnReport"'), "nothing opens the report dialog");
+  assert.ok(!/<details[^>]*class="contrib"/.test(index), "the report form expands in the header again");
+  // Registering with dialogController is what supplies Escape, the focus trap, and
+  // backdrop dismissal; hand-rolled show/hide would silently drop all three.
+  assert.ok(/dialogController\.register/.test(feedback), "the dialog is not registered with the shared controller");
+  const modalStart = index.indexOf('id="reportModal"');
+  const modalEnd = index.indexOf("</div>", index.indexOf('id="reportStatus"'));
+  for (const field of ["reportKind", "reportTitle", "reportBody", "reportGithub", "reportAnon"]) {
+    const at = index.indexOf(`id="${field}"`);
+    assert.ok(at > modalStart && at < modalEnd, `${field} is outside the report dialog`);
+  }
 
   // The bundler concatenates this list; a script the page loads but the build omits
   // would work in source and vanish in the release.
@@ -361,6 +470,7 @@ async function main() {
     ["origin gate", originContract],
     ["rate limit", rateLimitContract],
     ["handler", handlerContract],
+    ["app auth", appAuthContract],
     ["unconfigured", unconfiguredContract],
     ["page", pageContract],
   ];

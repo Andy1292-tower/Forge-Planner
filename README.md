@@ -45,6 +45,6 @@ The release check builds the deployable files and verifies the static-server and
 
 The solver runs in a generated Blob Worker with a configurable 200 ms–60 s budget, so the interface remains responsive. Simple searches can finish early; larger searches may return a clearly labeled best-found bounded result.
 
-- **Reporting without a GitHub account:** the header disclosure holds one report form with two submit paths. Reporters with an account open a prefilled issue they own, so replies reach them. Reporters without one send the same text through `/api/report-issue`, which opens the issue server-side, labels it `community`, and marks it unverified. Where that function is unreachable the account-free button disables itself rather than failing at submit.
+- **Reporting without a GitHub account:** the header button opens a report dialog holding one form with two submit paths. Reporters with an account open a prefilled issue they own, so replies reach them. Reporters without one send the same text through `/api/report-issue`, which opens the issue server-side, labels it `community`, and marks it unverified. Where that function is unreachable the account-free button disables itself rather than failing at submit.
 
 Operator contracts: [state schema](docs/STATE_SCHEMA.md), [solver behavior](docs/SOLVER_CONTRACT.md), [catalog provenance](docs/CATALOG.md), [issue intake](docs/ISSUE_INTAKE.md), and [release/rollback](docs/RELEASING.md).

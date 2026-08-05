@@ -53,13 +53,99 @@ const seenSubmissions = new Map();
 let instanceWindowStart = 0;
 let instanceWindowCount = 0;
 
+/* Two ways to authenticate to GitHub, preferred first:
+ *
+ * 1. A GitHub App. Issues are authored by the app's bot identity rather than a person,
+ *    and each request mints an installation token that expires within the hour, so no
+ *    long-lived credential sits in the environment.
+ * 2. A personal access token. Simpler to set up, but issues are authored by whoever owns
+ *    it, and it is long-lived until it expires.
+ *
+ * Both produce a bearer token for the same issue-creation call. */
+
+function appPrivateKey() {
+  const raw = process.env.GITHUB_APP_PRIVATE_KEY;
+  if (!raw) return null;
+  // A PEM pasted through a shell usually arrives with its newlines escaped, and base64 is
+  // the common way to sidestep multi-line values entirely. Accept all three spellings.
+  if (raw.includes("-----BEGIN")) return raw.replace(/\\n/g, "\n");
+  try {
+    const decoded = Buffer.from(raw, "base64").toString("utf8");
+    return decoded.includes("-----BEGIN") ? decoded : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function usingApp() {
+  return Boolean(process.env.GITHUB_APP_ID && appPrivateKey());
+}
+
+function credentialConfigured() {
+  return usingApp() || Boolean(process.env.GITHUB_TOKEN);
+}
+
 function submitSecret() {
   if (process.env.FORGE_SUBMIT_SECRET) return process.env.FORGE_SUBMIT_SECRET;
-  /* Derived so a working deployment needs exactly one secret configured. The GitHub
-   * token is already required, never leaves the server, and rotating it rotates this. */
-  const github = process.env.GITHUB_TOKEN;
-  if (!github) return null;
-  return crypto.createHmac("sha256", github).update("forge-planner-submit-token-v1").digest("hex");
+  /* Derived so a working deployment needs no second secret. Whichever GitHub credential
+   * is configured is already required, never leaves the server, and rotating it rotates
+   * this — which invalidates open forms, and reporters simply reload. */
+  const material = process.env.GITHUB_TOKEN || appPrivateKey();
+  if (!material) return null;
+  return crypto.createHmac("sha256", material).update("forge-planner-submit-token-v1").digest("hex");
+}
+
+function base64url(input) {
+  return Buffer.from(input).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function appJwt(now) {
+  const header = base64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const seconds = Math.floor(now / 1000);
+  // GitHub rejects a JWT issued in the future, so back-date `iat` to absorb clock skew.
+  const claims = { iat: seconds - 60, exp: seconds + 540, iss: process.env.GITHUB_APP_ID };
+  const payload = base64url(JSON.stringify(claims));
+  const signature = crypto.createSign("RSA-SHA256").update(`${header}.${payload}`).sign(appPrivateKey());
+  return `${header}.${payload}.${base64url(signature)}`;
+}
+
+let installationId = null;
+let installationToken = null;
+
+async function appToken(now) {
+  // Installation tokens last an hour; reuse one until it is close enough to expiry that a
+  // slow request could outlive it.
+  if (installationToken && installationToken.expiresAt - now > 5 * 60 * 1000) {
+    return installationToken.value;
+  }
+  const headers = {
+    Authorization: `Bearer ${appJwt(now)}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": USER_AGENT,
+  };
+  if (!installationId) {
+    // Discovered rather than configured, so installing the app is the only setup step.
+    const found = await fetch(`${GITHUB_API}/repos/${REPO}/installation`, { headers });
+    if (!found.ok) throw new Error(`installation lookup returned ${found.status}`);
+    installationId = (await found.json()).id;
+  }
+  const minted = await fetch(`${GITHUB_API}/app/installations/${installationId}/access_tokens`, {
+    method: "POST",
+    headers,
+  });
+  if (!minted.ok) {
+    // A revoked or reinstalled app changes the id; forget it so the next try re-discovers.
+    installationId = null;
+    throw new Error(`installation token returned ${minted.status}`);
+  }
+  const issued = await minted.json();
+  installationToken = { value: issued.token, expiresAt: Date.parse(issued.expires_at) };
+  return installationToken.value;
+}
+
+async function githubCredential(now) {
+  return usingApp() ? appToken(now) : process.env.GITHUB_TOKEN;
 }
 
 function sign(secret, payload) {
@@ -296,11 +382,10 @@ function failure(res, status, error) {
 module.exports = async function handler(req, res) {
   const now = Date.now();
   const secret = submitSecret();
-  const githubToken = process.env.GITHUB_TOKEN;
 
-  if (!secret || !githubToken) {
+  if (!secret || !credentialConfigured()) {
     // Configuration is a server problem; say so plainly without naming what is missing.
-    console.error("report-issue: GITHUB_TOKEN is not configured");
+    console.error("report-issue: no GitHub credential is configured");
     return sendJson(res, 503, {
       ok: false,
       error: "unconfigured",
@@ -342,7 +427,8 @@ module.exports = async function handler(req, res) {
 
   let result;
   try {
-    result = await postIssue(composeIssue(submission, now), githubToken);
+    // Minting an app token can fail on its own; that belongs in the upstream path below.
+    result = await postIssue(composeIssue(submission, now), await githubCredential(now));
   } catch (error) {
     console.error("report-issue: GitHub request failed", error && error.message);
     return sendJson(res, 502, {
@@ -366,10 +452,15 @@ module.exports = async function handler(req, res) {
 };
 
 module.exports.internals = {
+  appJwt,
+  appPrivateKey,
   cleanText,
   clientFingerprint,
   composeIssue,
+  credentialConfigured,
+  githubCredential,
   issueToken,
+  usingApp,
   neutralizeReferences,
   rateLimited,
   sameOrigin,

@@ -20,42 +20,7 @@
       <h1>Forge<span class="spark">·</span>Planner</h1>
       <div class="brand-sub">
         <p class="tagline">Crafting production-line planner · enter your stats, compare crafter setups</p>
-        <details class="contrib" id="reportDetails">
-          <summary>Report a bug or contribute a project</summary>
-          <p>Missing a project from the catalog? Send it with its costs by level. A GitHub account is optional — send it either way below, or add the project under your personal projects and export your save.</p>
-          <form class="contrib-form" id="reportForm" novalidate>
-            <div class="contrib-field">
-              <label for="reportKind">Kind</label>
-              <select id="reportKind">
-                <option value="bug">Bug report</option>
-                <option value="project">Project for the catalog</option>
-                <option value="feature">Feature request</option>
-              </select>
-            </div>
-            <div class="contrib-field">
-              <label for="reportTitle">Title</label>
-              <input id="reportTitle" type="text" maxlength="120" autocomplete="off" placeholder="One line summarizing it">
-            </div>
-            <div class="contrib-field">
-              <label for="reportBody">Details</label>
-              <textarea id="reportBody" rows="5" maxlength="4000" placeholder="For a project, list the costs by level. For a bug, what you did and what happened."></textarea>
-            </div>
-            <div class="contrib-field">
-              <label for="reportContact">Contact <span class="contrib-optional">optional</span></label>
-              <input id="reportContact" type="text" maxlength="120" autocomplete="off" placeholder="Only if you want a reply and are not using GitHub">
-            </div>
-            <div class="contrib-trap" aria-hidden="true">
-              <label for="reportWebsite">Website</label>
-              <input id="reportWebsite" type="text" tabindex="-1" autocomplete="off">
-            </div>
-            <div class="contrib-actions">
-              <button type="button" class="btn primary" id="reportGithub">Post with my GitHub account</button>
-              <button type="button" class="btn" id="reportAnon">Send without an account</button>
-            </div>
-            <p class="contrib-help" id="reportHelp">Posting with GitHub opens a prefilled issue you own, so replies reach you. Sending without an account posts the same text for you and is only read here.</p>
-            <p class="contrib-status" id="reportStatus" role="status" aria-live="polite"></p>
-          </form>
-        </details>
+        <button type="button" class="contrib-open" id="btnReport">Report a bug or contribute a project</button>
       </div>
     </div>
     <div class="tools">
@@ -285,6 +250,48 @@
 </div>
 
 <!-- SETTINGS MODAL -->
+<!-- REPORT / CONTRIBUTE MODAL -->
+<div class="modal-bg" id="reportModal" hidden>
+  <div class="modal dialog-shell" role="dialog" aria-modal="true" aria-labelledby="reportModalTitle">
+    <div class="modal-h"><h3 id="reportModalTitle">Report or contribute</h3><button class="iconbtn" id="reportClose" title="Close" aria-label="Close the report form" data-dialog-close>×</button></div>
+    <div class="modal-b" data-dialog-body>
+      <p class="help">Missing a project from the catalog? Send it with its costs by level. A GitHub account is optional — send it either way below, or add the project under your personal projects and export your save.</p>
+      <form class="contrib-form" id="reportForm" novalidate>
+        <div class="contrib-field">
+          <label for="reportKind">Kind</label>
+          <select id="reportKind">
+            <option value="bug">Bug report</option>
+            <option value="project">Project for the catalog</option>
+            <option value="feature">Feature request</option>
+          </select>
+        </div>
+        <div class="contrib-field">
+          <label for="reportTitle">Title</label>
+          <input id="reportTitle" type="text" maxlength="120" autocomplete="off" placeholder="One line summarizing it">
+        </div>
+        <div class="contrib-field">
+          <label for="reportBody">Details</label>
+          <textarea id="reportBody" rows="6" maxlength="4000" placeholder="For a project, list the costs by level. For a bug, what you did and what happened."></textarea>
+        </div>
+        <div class="contrib-field">
+          <label for="reportContact">Contact <span class="contrib-optional">optional</span></label>
+          <input id="reportContact" type="text" maxlength="120" autocomplete="off" placeholder="Only if you want a reply and are not using GitHub">
+        </div>
+        <div class="contrib-trap" aria-hidden="true">
+          <label for="reportWebsite">Website</label>
+          <input id="reportWebsite" type="text" tabindex="-1" autocomplete="off">
+        </div>
+        <div class="contrib-actions">
+          <button type="button" class="btn primary" id="reportGithub">Post with my GitHub account</button>
+          <button type="button" class="btn" id="reportAnon">Send without an account</button>
+        </div>
+        <p class="contrib-help" id="reportHelp">Posting with GitHub opens a prefilled issue you own, so replies reach you. Sending without an account posts the same text for you and is only read here.</p>
+        <p class="contrib-status" id="reportStatus" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="settingsModal" hidden>
   <div class="modal dialog-shell" style="max-width:520px" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
     <div class="modal-h"><h3 id="settingsTitle">Settings</h3><button class="iconbtn" id="settingsClose" title="Close" aria-label="Close settings" data-dialog-close>×</button></div>

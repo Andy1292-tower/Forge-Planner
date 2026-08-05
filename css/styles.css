@@ -72,20 +72,17 @@ header.top::after{
 /* shrink-but-never-grow: the tagline keeps its own line-length beside the disclosure on
    wide headers, and still wraps inside the brand column instead of overflowing it. */
 .brand .tagline{color:var(--ink2);font-size:13.5px;max-width:none;margin:0;flex:0 1 auto;min-width:0}
-.brand details.contrib{margin:0}
-.brand details.contrib[open]{flex:1 0 100%}
-.brand details.contrib>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:6px;
-  font-size:12.5px;color:var(--amber);letter-spacing:.3px;min-height:24px}
-.brand details.contrib>summary::-webkit-details-marker{display:none}
-.brand details.contrib>summary::after{content:"+";font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--ink3)}
-.brand details.contrib[open]>summary::after{content:"\2013"}
-.brand details.contrib>summary:hover{color:var(--ember)}
-.brand details.contrib p{color:var(--ink3);font-size:12.5px;margin-top:8px}
-.brand details.contrib a{color:var(--amber);text-decoration:underline;text-underline-offset:2px}
+/* The report form opens in a dialog rather than expanding here: at full size it pushed
+   the whole planner down the page, and the header must stay two lines tall. */
+.contrib-open{appearance:none;background:transparent;border:0;padding:0;cursor:pointer;margin:0;
+  font-family:"Chakra Petch",sans-serif;font-size:12.5px;color:var(--amber);letter-spacing:.3px;
+  display:inline-flex;align-items:center;gap:6px;min-height:24px;text-align:left}
+.contrib-open::after{content:"\2197";font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--ink3)}
+.contrib-open:hover{color:var(--ember)}
+.contrib-open:hover::after{color:var(--ember)}
 
-/* Report form — two submit paths over one set of fields. It lives inside the brand
-   disclosure, so it is capped to a readable column rather than the header's full width. */
-.contrib-form{display:flex;flex-direction:column;gap:10px;margin-top:12px;max-width:62ch}
+/* Report form — two submit paths over one set of fields, inside the report dialog. */
+.contrib-form{display:flex;flex-direction:column;gap:10px;margin-top:12px}
 .contrib-field{display:flex;flex-direction:column;gap:4px;min-width:0}
 .contrib-field label{color:var(--ink2);font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase}
 .contrib-optional{color:var(--ink3);font-weight:400;text-transform:none;letter-spacing:.2px}
@@ -103,10 +100,11 @@ header.top::after{
 .contrib-actions .btn{flex:0 1 auto}
 .contrib-actions .btn:disabled{opacity:.5;cursor:not-allowed;border-color:var(--line);color:var(--ink3);
   background:var(--surface);filter:none;box-shadow:none;transform:none}
-.brand details.contrib p.contrib-help{margin-top:0;font-size:11.5px;line-height:1.5}
-.brand details.contrib p.contrib-status{margin-top:0;font-size:12px;font-weight:600;min-height:1em}
-.brand details.contrib p.contrib-status.is-bad{color:#ff9b90}
-.brand details.contrib p.contrib-status.is-good{color:var(--teal)}
+.contrib-help{color:var(--ink3);font-size:11.5px;line-height:1.5}
+.contrib-status{font-size:12px;font-weight:600;min-height:1em;color:var(--ink2)}
+.contrib-status.is-bad{color:#ff9b90}
+.contrib-status.is-good{color:var(--teal)}
+.contrib-status a{color:var(--amber);text-decoration:underline;text-underline-offset:2px}
 
 /* Input rail — the three dialogs that hold solver input read as one object,
    each segment reporting whether it has data. Settings sits outside it. */
