@@ -83,6 +83,31 @@ header.top::after{
 .brand details.contrib p{color:var(--ink3);font-size:12.5px;margin-top:8px}
 .brand details.contrib a{color:var(--amber);text-decoration:underline;text-underline-offset:2px}
 
+/* Report form — two submit paths over one set of fields. It lives inside the brand
+   disclosure, so it is capped to a readable column rather than the header's full width. */
+.contrib-form{display:flex;flex-direction:column;gap:10px;margin-top:12px;max-width:62ch}
+.contrib-field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.contrib-field label{color:var(--ink2);font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase}
+.contrib-optional{color:var(--ink3);font-weight:400;text-transform:none;letter-spacing:.2px}
+.contrib-form textarea{font-family:"JetBrains Mono",monospace;font-size:12.5px;
+  background:var(--surface2);color:var(--ink);border:1px solid var(--line2);border-radius:5px;
+  padding:7px 9px;width:100%;line-height:1.45;resize:vertical;min-height:96px;
+  transition:border-color .15s, box-shadow .15s}
+.contrib-form textarea:hover{border-color:#454c57}
+.contrib-form textarea:focus{border-color:var(--copper);
+  box-shadow:0 0 0 2px rgba(210,129,58,.22), inset 0 0 0 1px rgba(242,169,78,.08)}
+/* Honeypot: reachable by a script that fills every input, and by nothing else. Kept out
+   of the layout without display:none, which some bots read as a field to skip. */
+.contrib-trap{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.contrib-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}
+.contrib-actions .btn{flex:0 1 auto}
+.contrib-actions .btn:disabled{opacity:.5;cursor:not-allowed;border-color:var(--line);color:var(--ink3);
+  background:var(--surface);filter:none;box-shadow:none;transform:none}
+.brand details.contrib p.contrib-help{margin-top:0;font-size:11.5px;line-height:1.5}
+.brand details.contrib p.contrib-status{margin-top:0;font-size:12px;font-weight:600;min-height:1em}
+.brand details.contrib p.contrib-status.is-bad{color:#ff9b90}
+.brand details.contrib p.contrib-status.is-good{color:var(--teal)}
+
 /* Input rail — the three dialogs that hold solver input read as one object,
    each segment reporting whether it has data. Settings sits outside it. */
 .tools{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px 10px;position:relative;

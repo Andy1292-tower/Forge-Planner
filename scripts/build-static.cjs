@@ -18,6 +18,7 @@ const PAGE_SCRIPTS = [
   "manual.js",
   "dialogs.js",
   "events.js",
+  "feedback.js",
 ];
 const WORKER_SCRIPTS = ["core.js", "fields.js", "state.js", "project-schedule.js", "solver.js"];
 const IMAGE_FILES = ["favicon.png", "dupe.jpg", "speed.jpg"];
