@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self' https://fonts.googleapis.com; style-src-attr 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'self'">
 <title>Forge Planner — Crafting Line Optimizer</title>
+<!-- Release id, filled in by scripts/build-static.cjs and compared against version.json by
+     js/update-check.js. An unbuilt source tree keeps the placeholder and never checks. -->
+<meta name="forge-build" content="__FORGE_BUILD_ID__">
 <link rel="icon" type="image/png" href="assets/favicon.png">
 <link rel="apple-touch-icon" href="assets/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -148,6 +151,15 @@
   <footer>
     Strict steady-state plans require produced inputs to keep pace with consumption; May-work can intentionally allow a disclosed paper shortfall. Project results disclose required warm-up or starting stock. Frames assume Bits are pre-produced. Calculations and saved planner state stay in this browser; the page loads Google Fonts but does not send them your planner state.
   </footer>
+</div>
+
+<!-- NEW BUILD NOTICE — unhidden by js/update-check.js when a newer deployment is live -->
+<div class="update-bar" id="updateBar" role="status" aria-live="polite" aria-atomic="true" hidden>
+  <span class="update-msg"><b>A new version of Forge Planner is available.</b> Your saved build is kept — refreshing just loads the update.</span>
+  <div class="update-actions">
+    <button class="btn primary" type="button" id="updateReload">Refresh now</button>
+    <button class="btn ghost" type="button" id="updateDismiss">Later</button>
+  </div>
 </div>
 
 <!-- PROJECTS + PRICES MODAL -->
@@ -345,5 +357,6 @@
 <script src="js/dialogs.js"></script>
 <script src="js/events.js"></script>
 <script src="js/feedback.js"></script>
+<script src="js/update-check.js"></script>
 </body>
 </html>

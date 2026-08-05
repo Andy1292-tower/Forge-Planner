@@ -45,6 +45,7 @@ The release check builds the deployable files and verifies the static-server and
 
 The solver runs in a generated Blob Worker with a configurable 200 ms–60 s budget, so the interface remains responsive. Simple searches can finish early; larger searches may return a clearly labeled best-found bounded result.
 
+- **New-build notice:** because every asset is content-hashed and immutable, a tab left open keeps running the build it loaded. The page compares its stamped release id against `/version.json` and offers a **Refresh now** button when a different release is deployed. It never reloads on its own, never checks on load or while the tab is hidden, checks at most once every 30 minutes while the tab is visible, and stops entirely once answered — a whole day in an open tab is a couple of dozen conditional requests answered `304` with no body.
 - **Reporting without a GitHub account:** the header button opens a report dialog holding one form with two submit paths. Reporters with an account open a prefilled issue they own, so replies reach them. Reporters without one send the same text through `/api/report-issue`, which opens the issue server-side, labels it `community`, and marks it unverified. Where that function is unreachable the account-free button disables itself rather than failing at submit.
 
 Operator contracts: [state schema](docs/STATE_SCHEMA.md), [solver behavior](docs/SOLVER_CONTRACT.md), [catalog provenance](docs/CATALOG.md), [issue intake](docs/ISSUE_INTAKE.md), and [release/rollback](docs/RELEASING.md).

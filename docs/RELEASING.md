@@ -53,6 +53,7 @@ The builder stages a complete release and atomically replaces `dist/`. Do not ha
 The release contract is:
 
 - HTML is revalidated (`public, max-age=0, must-revalidate`).
+- `/version.json` is revalidated on the same policy and is the one URL in the release that is deliberately *not* content-addressed: its name is a permanent contract with tabs that are already open. It holds the release id, which is the hash of the generated page before that id is stamped back into it, so it moves whenever a reader would see a different app, stylesheet, or image, and stays put when a deploy changes nothing they load. The same id is stamped into the page's `forge-build` meta; a release where those two disagree fails the build.
 - Generated JS, CSS, favicon, and tooltip images use content-hashed, document-relative `static/...` URLs and are immutable for one year.
 - The current app creates the solver from a Blob assembled into the hashed app bundle; a current solve should not request a Worker script.
 - `/js/solver.worker.js` and `/js/solver.worker.v2.js` are permanent compatibility URLs. Never change bytes at an immutable URL or remove either file; add a new versioned path for a genuinely new legacy endpoint.
@@ -77,11 +78,14 @@ After promotion, verify the production alias directly:
 6. Check HTML revalidation and immutable headers on generated `static/...` files.
 7. Check route-level request telemetry after the release; current solves should not create repeated Worker HTTP traffic.
 8. Open the header report dialog and confirm the account-free button is enabled, which means a GitHub credential reached this deployment. A disabled button is the honest failure mode, not a broken page — the GitHub path still works. `curl /api/report-issue` returns `{"error":"unconfigured"}` when the variable is missing.
+9. Confirm `curl /version.json` returns the same id as the deployed page's `forge-build` meta, and that a second request carrying its `ETag` answers `304`. A tab left open on the previous release then offers its reader a refresh within half an hour of being looked at; nothing reloads on its own.
 
 A successful push, build log, or runtime log alone does not establish that the production alias and cached browser path are healthy.
 
 ## Rollback
 
 Use the Vercel dashboard to restore/promote the last known-good deployment for the production alias. Because release assets are content-addressed, old and new hashed files may safely coexist; do not “clean up” immutable URLs during rollback.
+
+A rollback restores the earlier `/version.json` along with everything else, so tabs sitting on the withdrawn release are offered a refresh onto the restored one. That is the intended direction: the notice tracks "the deployment differs from what you are running", not "newer".
 
 After rollback, repeat the production checks above, including a warm-cache load and a real solve. Confirm the permanent Worker compatibility files are still available with their original bytes.
