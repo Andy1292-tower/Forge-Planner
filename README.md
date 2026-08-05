@@ -2,7 +2,7 @@
 
 A browser-based crafting-line planner for a power-law compression economy. Enter your per-level costs and times, crafter caps, and goals; Forge Planner returns the best plan it finds within your selected solve-time budget. A bounded result is not a proof of optimality, and a plan using the optional May-work margin can include a disclosed paper shortfall.
 
-Calculations, autosaves, imports, and exports stay in the browser. The page loads its existing typefaces from Google Fonts, but the generated app contains no analytics integration or planner backend and does not place planner state in those requests.
+Calculations, autosaves, imports, and exports stay in the browser. The page loads its existing typefaces from Google Fonts, but the generated app contains no analytics integration and does not place planner state in those requests. The only server the app talks to is `/api/report-issue`, which carries nothing but the text typed into the report form; there is no planner backend. See [issue intake](docs/ISSUE_INTAKE.md).
 
 ## Verify changes
 
@@ -45,4 +45,6 @@ The release check builds the deployable files and verifies the static-server and
 
 The solver runs in a generated Blob Worker with a configurable 200 ms–60 s budget, so the interface remains responsive. Simple searches can finish early; larger searches may return a clearly labeled best-found bounded result.
 
-Operator contracts: [state schema](docs/STATE_SCHEMA.md), [solver behavior](docs/SOLVER_CONTRACT.md), [catalog provenance](docs/CATALOG.md), and [release/rollback](docs/RELEASING.md).
+- **Reporting without a GitHub account:** the header button opens a report dialog holding one form with two submit paths. Reporters with an account open a prefilled issue they own, so replies reach them. Reporters without one send the same text through `/api/report-issue`, which opens the issue server-side, labels it `community`, and marks it unverified. Where that function is unreachable the account-free button disables itself rather than failing at submit.
+
+Operator contracts: [state schema](docs/STATE_SCHEMA.md), [solver behavior](docs/SOLVER_CONTRACT.md), [catalog provenance](docs/CATALOG.md), [issue intake](docs/ISSUE_INTAKE.md), and [release/rollback](docs/RELEASING.md).

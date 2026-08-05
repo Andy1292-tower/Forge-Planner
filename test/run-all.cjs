@@ -24,6 +24,7 @@ const tests = [
   "test/minedui.cjs",
   "test/project-transients.cjs",
   "test/rawtargets.cjs",
+  "test/report-issue.cjs",
   "test/scale.cjs",
   "test/seqgate.cjs",
   "test/solve-lifecycle.cjs",

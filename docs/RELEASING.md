@@ -61,6 +61,8 @@ The release contract is:
 
 The source page still requests Big Shoulders Stencil Display, Chakra Petch, and JetBrains Mono from Google Fonts. No font files or licenses are copied into this repository. Those network requests expose normal connection metadata to Google, but planner state is not put into the request. The application has no planner backend and the generated release contains no analytics integration.
 
+The one server route the app calls is `/api/report-issue`, the account-free half of the report form. It is a Vercel Function deployed from `api/`, outside `dist/`, so it sits outside the content-hash and immutable-cache contract above and answers `no-store`. It carries only the text typed into that form, never planner state. Setup, token scope, and rotation are in [issue intake](ISSUE_INTAKE.md).
+
 ## Deploy and verify
 
 Use the repository's configured Vercel PR/deployment workflow; this runbook does not invent a separate production CLI command or deployment ID. Before promotion, verify the PR checks and inspect the GUI preview generated for the exact commit when one is available.
@@ -74,6 +76,7 @@ After promotion, verify the production alias directly:
 5. Run one real planner solve and confirm no console errors, failed static requests, or current Worker-script request.
 6. Check HTML revalidation and immutable headers on generated `static/...` files.
 7. Check route-level request telemetry after the release; current solves should not create repeated Worker HTTP traffic.
+8. Open the header report dialog and confirm the account-free button is enabled, which means a GitHub credential reached this deployment. A disabled button is the honest failure mode, not a broken page — the GitHub path still works. `curl /api/report-issue` returns `{"error":"unconfigured"}` when the variable is missing.
 
 A successful push, build log, or runtime log alone does not establish that the production alias and cached browser path are healthy.
 
