@@ -19,10 +19,13 @@ const PAGE_SCRIPTS = [
   "dialogs.js",
   "events.js",
   "feedback.js",
+  "update-check.js",
 ];
 const WORKER_SCRIPTS = ["core.js", "fields.js", "state.js", "project-schedule.js", "solver.js"];
 const IMAGE_FILES = ["favicon.png", "dupe.jpg", "speed.jpg"];
 const HASH_LENGTH = 16;
+const BUILD_STAMP_PLACEHOLDER = "__FORGE_BUILD_ID__";
+const VERSION_FILE = "version.json";
 const LEGACY_V2_SHA256 = "9d8747eea5a5c0c8d88066532eb9c3f51da6ebeb14e803284734405f3bcd1cf2";
 const ANALYTICS_SIGNATURE = /(?:\/_vercel\/(?:insights|speed-insights)|va\.vercel-scripts\.com|vercelAnalytics)/i;
 const ROOT_RELATIVE_OWNED_URL = /["'`(=]\/(?:static|assets|js|css)\//;
@@ -173,7 +176,36 @@ function buildIndex(sourceRoot, urls) {
   return Buffer.from(html);
 }
 
-function verifyStage(stageRoot) {
+/* Identifies a release to a tab that is already running one. The generated page is exactly
+ * the right fingerprint: it names the content-hashed URL of every script, stylesheet, and
+ * image the release loads, so anything a reader would need to reload for changes these bytes,
+ * and a deploy that changes nothing they load leaves them alone. Hashed before the stamp is
+ * written back into the page, so the stamp can never feed into the id it is stamping.
+ *
+ * The stamp lives in the page rather than the bundle on purpose: the page is served
+ * must-revalidate and costs nothing to rotate, while stamping the bundle would give every
+ * CSS-only release a new app URL and re-download the whole of it for no reason. */
+function computeBuildId(index) {
+  return sha16(index);
+}
+
+function stampBuildId(index, buildId) {
+  return Buffer.from(replaceExactly(
+    index.toString("utf8"),
+    BUILD_STAMP_PLACEHOLDER,
+    buildId,
+    1,
+    "build id stamp"
+  ));
+}
+
+/* Deliberately not content-addressed: this is the one stable URL an old tab already knows
+ * how to ask for, so its name must survive every release. */
+function buildVersionFile(buildId) {
+  return Buffer.from(`${JSON.stringify({ build: buildId })}\n`);
+}
+
+function verifyStage(stageRoot, buildId) {
   const staticRoot = path.join(stageRoot, "static");
   for (const name of fs.readdirSync(staticRoot)) {
     const bytes = read(path.join(staticRoot, name));
@@ -186,6 +218,18 @@ function verifyStage(stageRoot) {
   if (appFiles.length !== 1) throw new Error(`Expected one generated app bundle, found ${appFiles.length}`);
   const html = readText(path.join(stageRoot, "index.html"));
   if (!html.includes(`static/${appFiles[0]}`)) throw new Error("Generated HTML does not load the emitted app bundle");
+
+  // An unstamped page or a version file that disagrees with it would tell every open tab
+  // either that nothing ever ships or that a reload is due on every single check.
+  if (html.includes(BUILD_STAMP_PLACEHOLDER)) throw new Error("Generated HTML still carries the build id placeholder");
+  if (!html.includes(`content="${buildId}"`)) throw new Error("Generated HTML is not stamped with the emitted build id");
+  let version;
+  try {
+    version = JSON.parse(readText(path.join(stageRoot, VERSION_FILE)));
+  } catch (error) {
+    throw new Error(`${VERSION_FILE} is not readable JSON: ${error.message}`);
+  }
+  if (version.build !== buildId) throw new Error(`${VERSION_FILE} does not carry the stamped build id`);
 }
 
 function buildStaticSite({ sourceRoot, outputRoot } = {}) {
@@ -208,14 +252,16 @@ function buildStaticSite({ sourceRoot, outputRoot } = {}) {
       throw new Error("styles.css contains url(...); add that dependency to the content-hash build graph");
     }
     const stylesUrl = emitHashed(stage, "styles", "css", styles);
-    const app = buildApp(source, imageUrls);
-    const appUrl = emitHashed(stage, "app", "js", app);
-    write(stage, "index.html", buildIndex(source, {
+    const appUrl = emitHashed(stage, "app", "js", buildApp(source, imageUrls));
+    const unstampedIndex = buildIndex(source, {
       app: appUrl,
       styles: stylesUrl,
       favicon: imageUrls.favicon,
       dupe: imageUrls.dupe,
-    }));
+    });
+    const buildId = computeBuildId(unstampedIndex);
+    write(stage, "index.html", stampBuildId(unstampedIndex, buildId));
+    write(stage, VERSION_FILE, buildVersionFile(buildId));
     write(stage, "js/solver.worker.js", read(path.join(source, "js", "solver.worker.js")));
     const legacyV2 = read(path.join(source, "compat", "solver.worker.v2.js"));
     if (sha256(legacyV2) !== LEGACY_V2_SHA256) {
@@ -223,7 +269,7 @@ function buildStaticSite({ sourceRoot, outputRoot } = {}) {
     }
     write(stage, "js/solver.worker.v2.js", legacyV2);
 
-    verifyStage(stage);
+    verifyStage(stage, buildId);
     fs.rmSync(output, { recursive: true, force: true });
     fs.renameSync(stage, output);
   } catch (error) {

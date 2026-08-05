@@ -188,6 +188,7 @@ test("the generated page has a closed hashed asset graph and an in-memory Worker
     "index.html",
     "js/solver.worker.js",
     "js/solver.worker.v2.js",
+    "version.json",
     ...staticFiles(temporary).map(file => `static/${file}`),
   ].sort());
 

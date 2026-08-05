@@ -179,6 +179,21 @@ button.btn.ghost{background:transparent}
 .stale-msg{font-size:12px;font-weight:600;color:var(--amber);letter-spacing:.2px}
 .stale-bar .btn{white-space:nowrap;animation:attentionPulse 1.15s ease-out infinite}
 #results.stale{opacity:.42;filter:saturate(.55);transition:opacity .15s,filter .15s}
+
+/* "new build shipped" notice — appears hours into a session, so it is pinned rather than
+   placed in the flow where a scrolled-down reader would never see it. It sits under the
+   modal layer (z-index 50) so an open dialog is never covered by it. */
+.update-bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:40;
+  display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  width:min(560px,calc(100vw - 24px));padding:11px 14px;border-radius:var(--r);
+  background:var(--surface);border:1px solid var(--copper);box-shadow:0 10px 28px rgba(0,0,0,.5),var(--glow)}
+.update-bar[hidden]{display:none}
+.update-msg{flex:1;min-width:200px;font-size:12px;line-height:1.5;color:var(--ink2);letter-spacing:.2px}
+.update-msg b{color:var(--amber)}
+.update-actions{display:flex;gap:8px;flex-wrap:wrap}
+.update-actions .btn{white-space:nowrap}
+@media(max-width:560px){.update-actions{width:100%}.update-actions .btn{flex:1;justify-content:center}}
+
 #results{min-width:0}
 #results table{min-width:520px}
 .stack{display:flex;flex-direction:column;gap:16px}
