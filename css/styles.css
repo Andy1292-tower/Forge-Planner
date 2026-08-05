@@ -146,7 +146,8 @@ button.btn.primary{
 button.btn.primary:hover{filter:brightness(1.08);color:#15110a;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.22), 0 7px 18px rgba(210,129,58,.32), 0 0 0 1px rgba(242,169,78,.28);}
 button.btn.ghost{background:transparent}
-/* Sole remaining attention pulse: the stale-bar Resimulate button, which is a real pending action. */
+/* Reserved for real pending actions, and only those: the stale-bar Resimulate button, and the
+   Refresh button on the new-build notice. Nothing ambient may borrow it. */
 @keyframes attentionPulse{0%,100%{box-shadow:0 0 0 0 rgba(242,169,78,.65)}50%{box-shadow:0 0 0 9px rgba(242,169,78,0)}}
 .grid{display:grid;grid-template-columns:minmax(320px,380px) minmax(0,1fr);gap:18px;align-items:start}
 @media(max-width:880px){.grid{grid-template-columns:minmax(0,1fr)}}
@@ -181,18 +182,34 @@ button.btn.ghost{background:transparent}
 #results.stale{opacity:.42;filter:saturate(.55);transition:opacity .15s,filter .15s}
 
 /* "new build shipped" notice — appears hours into a session, so it is pinned rather than
-   placed in the flow where a scrolled-down reader would never see it. It sits under the
-   modal layer (z-index 50) so an open dialog is never covered by it. */
+   placed in the flow where a scrolled-down reader would never see it. On a page this dark
+   and this dense a quiet bar in the corner is a bar nobody reads, so it slides in, throws a
+   few expanding rings to catch peripheral vision, then settles and leaves the pulse on
+   Refresh alone. It sits under the modal layer (z-index 50), so an open dialog still wins. */
 .update-bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:40;
   display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
-  width:min(560px,calc(100vw - 24px));padding:11px 14px;border-radius:var(--r);
-  background:var(--surface);border:1px solid var(--copper);box-shadow:0 10px 28px rgba(0,0,0,.5),var(--glow)}
+  width:min(560px,calc(100vw - 24px));padding:12px 15px;border-radius:var(--r);
+  background:linear-gradient(180deg,var(--surface2),var(--surface));
+  border:1px solid var(--amber);box-shadow:0 12px 30px rgba(0,0,0,.55),var(--glow);
+  animation:updateArrive .3s ease-out, updateFlash 1.4s ease-out .3s 5}
 .update-bar[hidden]{display:none}
-.update-msg{flex:1;min-width:200px;font-size:12px;line-height:1.5;color:var(--ink2);letter-spacing:.2px}
+.update-msg{flex:1;min-width:200px;font-size:12.5px;line-height:1.5;color:var(--ink);letter-spacing:.2px}
 .update-msg b{color:var(--amber)}
 .update-actions{display:flex;gap:8px;flex-wrap:wrap}
 .update-actions .btn{white-space:nowrap}
+#updateReload{animation:attentionPulse 1.15s ease-out infinite}
+@keyframes updateArrive{from{transform:translate(-50%,150%)}to{transform:translate(-50%,0)}}
+@keyframes updateFlash{
+  0%,100%{box-shadow:0 12px 30px rgba(0,0,0,.55),0 0 0 0 rgba(242,169,78,.55)}
+  50%{box-shadow:0 12px 30px rgba(0,0,0,.55),0 0 0 15px rgba(242,169,78,0)}
+}
 @media(max-width:560px){.update-actions{width:100%}.update-actions .btn{flex:1;justify-content:center}}
+/* Motion is the attention-getter here, so without it the bar keeps the loudest static
+   treatment available instead of quietly losing the thing that made it noticeable. */
+@media(prefers-reduced-motion:reduce){
+  .update-bar{animation:none;box-shadow:0 12px 30px rgba(0,0,0,.55),0 0 0 4px rgba(242,169,78,.28),var(--glow)}
+  #updateReload{animation:none}
+}
 
 #results{min-width:0}
 #results table{min-width:520px}
