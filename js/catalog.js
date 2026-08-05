@@ -4204,11 +4204,11 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Gel",
-            "qty": 18
+            "qty": 75
           },
           {
             "item": "Wire",
-            "qty": 10
+            "qty": 50
           }
         ]
       }
