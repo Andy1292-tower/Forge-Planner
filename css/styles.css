@@ -234,6 +234,23 @@ button.btn.ghost{background:transparent}
   clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
 .ltable .col-n{width:32px}
 .ltable .col-x{width:30px}
+/* Number inputs carry a 20-character intrinsic width, so speed and turbo bid for the
+   same space and the table splits it evenly: speed clips its five-figure values while
+   turbo, which never runs past three digits, sits half empty. Releasing that floor and
+   asking for the minimum on turbo hands the surplus to speed. Once the input lets go it
+   is the heading that holds the column open, so turbo's help button drops under its
+   label: one more line across the header row, paid once, against a wider speed field on
+   every line below it. */
+.ltable .col-turbo{width:48px}
+.ltable .col-turbo .lines-th{flex-wrap:wrap;gap:0 5px}
+.ltable td input[type=number]{min-width:0;padding-left:6px;padding-right:6px}
+/* the line's validation text takes the whole row: a sentence naming a field, its range
+   and the value still in force cannot be read a word at a time down a column three
+   digits wide. The row divider moves down with it, so the message stays inside the band
+   belonging to its line, and an error-free line costs no height. */
+.ltable tr.line-row>td{border-bottom:0}
+.ltable tr.line-errs>td{padding:0;border-bottom:1px solid var(--line)}
+.ltable tbody tr.line-errs:last-child>td{border-bottom:0}
 .ltable .tag{font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:700;
   color:var(--amber);letter-spacing:.3px;background:rgba(210,129,58,.08);
   border:1px solid var(--copper-d);border-radius:4px;
@@ -256,7 +273,8 @@ button.btn.ghost{background:transparent}
 @media(max-width:560px){
   .ltable,.ltable tbody,.ltable tr,.ltable td{display:block}
   .ltable thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%)}
-  .ltable tr{display:grid;grid-template-columns:30px repeat(3,minmax(0,1fr)) 28px;
+  .ltable tr{display:grid;
+    grid-template-columns:30px minmax(0,1.15fr) minmax(0,1.15fr) minmax(0,.7fr) 28px;
     grid-template-areas:"tag cap spx turbo x";
     /* start, not end: a speed cell carrying a projection is taller, and bottom
        alignment would lift its label out of line with the others */
@@ -265,13 +283,21 @@ button.btn.ghost{background:transparent}
     background:linear-gradient(180deg,var(--bg2),var(--surface2))}
   .ltable tr::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;border-radius:2px;
     background:linear-gradient(180deg,var(--copper-d),var(--copper) 50%,var(--copper-d));opacity:.45}
+  /* the errors are the card's own text, not a second card: they sit in the gap under it,
+     and an empty row collapses into the card's margin rather than adding to it */
+  .ltable tr.line-errs{display:block;padding:0 9px;margin-bottom:7px;
+    border:0;border-radius:0;background:none}
+  .ltable tr.line-errs::before{content:none}
+  /* the card border is the divider here, so the row's own rule has nothing to separate */
+  .ltable tr.line-errs>td{border-bottom:0}
   /* the card border already separates rows, so the global cell rule's divider has no job
      here — and once a cell carries a note under its control it lands as a stray underline */
   .ltable td{padding:0;border-bottom:0}
   .ltable .col-n{grid-area:tag;align-self:center}
   .ltable .col-cap{grid-area:cap}
   .ltable .col-spx{grid-area:spx}
-  .ltable .col-turbo{grid-area:turbo}
+  /* the card sizes turbo through the grid track, so drop the table's width hint */
+  .ltable .col-turbo{grid-area:turbo;width:auto}
   .ltable .col-x{grid-area:x;align-self:center}
   /* reserve two lines for every label: "max compression" wraps and the others don't,
      so without this the controls start at different heights across one row */
