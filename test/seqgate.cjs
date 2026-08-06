@@ -424,6 +424,38 @@ const runner = `
       JSON.stringify(flat) === "[0,0]", "layers=" + JSON.stringify(flat));
   }
 
+  /* ---- the late-material unlocks: Reinforced Concrete and Batteries ------------------------
+   * The Concrete Corner unlocks Reinforced Concrete and the Battery Factory unlocks Batteries,
+   * so every project costing either material has to wait for its unlock. The Battery Factory
+   * itself costs Reinforced Concrete, which makes the three a chain rather than two pairs.
+   * Input order is deliberately scrambled: the layer, not the list position, does the ordering. */
+  {
+    build([P("w","RCUser",[["Reinforced Concrete",1]]),
+           P("c","ConcreteCorner",[["Concrete",10]],null,"the-concrete-corner")], {});
+    const rc = unlockLayers(projectDemand().perProject);
+    record("a project costing Reinforced Concrete lands AFTER The Concrete Corner",
+      JSON.stringify(rc) === "[1,0]", "layers=" + JSON.stringify(rc));
+
+    build([P("v","BatteryUser",[["Batteries",1]]),
+           P("f","BatteryFactory",[["Bits",10]],null,"battery-factory")], {});
+    const bat = unlockLayers(projectDemand().perProject);
+    record("a project costing Batteries lands AFTER the Battery Factory",
+      JSON.stringify(bat) === "[1,0]", "layers=" + JSON.stringify(bat));
+
+    build([P("l","BiochemLab",[["Batteries",1],["Reinforced Concrete",1]]),
+           P("f","BatteryFactory",[["Bits",10],["Reinforced Concrete",1]],null,"battery-factory"),
+           P("c","ConcreteCorner",[["Concrete",10]],null,"the-concrete-corner")], {});
+    const chain = unlockLayers(projectDemand().perProject);
+    record("Concrete Corner -> Battery Factory -> a project needing both is three layers",
+      JSON.stringify(chain) === "[2,1,0]", "layers=" + JSON.stringify(chain));
+
+    // The unlock only bites while its project is in the list; a lone consumer stays on layer 0.
+    build([P("w","RCUser",[["Reinforced Concrete",1]]), P("v","BatteryUser",[["Batteries",1]])], {});
+    const unlisted = unlockLayers(projectDemand().perProject);
+    record("without the unlock projects in the list, their consumers are not held back",
+      JSON.stringify(unlisted) === "[0,0]", "layers=" + JSON.stringify(unlisted));
+  }
+
   /* ---- static infeasibility guidance: structural line scarcity is only a possibility --------
    * Frames on three static lines is impossible here, but the message must describe the general
    * one-job-per-line constraint without hard-coding a chain length or claiming line count is the

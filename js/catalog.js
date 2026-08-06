@@ -16,6 +16,18 @@
  *
  * ...then paste the result as the PROJECT_CATALOG value below. Add new projects
  * by appending entries to the array.
+ *
+ * ESTIMATED LEVELS. A few levels are too expensive to have been reached in game
+ * yet, so their costs were extrapolated instead of read (see docs/CATALOG.md).
+ * Every such entry says so in its `description`, which the catalog list shows:
+ *
+ *   the-tower-of-chad             Lv 3–5   per-item Lv1→Lv2 step (×3, RC ×3.75)
+ *   biochemical-laboratory        Lv 2–5   ×3.75 per level, from the only read level
+ *   gym-and-relaxation-center-mk2 Lv 4     geometric mean of the read Lv 3 and Lv 5
+ *   improved-silicate-scanner-mk2 Lv 5     ×5 per level, the project's own pattern
+ *
+ * Replace an estimate with the read value as soon as the level is visible in
+ * game, and drop the description note in the same change.
  * ========================================================================== */
 const PROJECT_CATALOG_METADATA=Object.freeze({
   schemaVersion:1,
@@ -104,6 +116,54 @@ const PROJECT_CATALOG=[
             "qty": 90
           }
         ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 13580
+          },
+          {
+            "item": "Glass",
+            "qty": 8209
+          },
+          {
+            "item": "Plates",
+            "qty": 10540
+          },
+          {
+            "item": "Frames",
+            "qty": 7551
+          },
+          {
+            "item": "Bricks",
+            "qty": 7703
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 61750
+          },
+          {
+            "item": "Glass",
+            "qty": 43640
+          },
+          {
+            "item": "Plates",
+            "qty": 51500
+          },
+          {
+            "item": "Frames",
+            "qty": 41420
+          },
+          {
+            "item": "Bricks",
+            "qty": 41930
+          }
+        ]
       }
     ]
   },
@@ -171,13 +231,69 @@ const PROJECT_CATALOG=[
             "qty": 169
           }
         ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 4557
+          },
+          {
+            "item": "Concrete",
+            "qty": 6075
+          },
+          {
+            "item": "Glass",
+            "qty": 254
+          },
+          {
+            "item": "Frames",
+            "qty": 254
+          },
+          {
+            "item": "Reinforced Concrete",
+            "qty": 7
+          },
+          {
+            "item": "Batteries",
+            "qty": 7
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 13670
+          },
+          {
+            "item": "Concrete",
+            "qty": 18230
+          },
+          {
+            "item": "Glass",
+            "qty": 760
+          },
+          {
+            "item": "Frames",
+            "qty": 760
+          },
+          {
+            "item": "Reinforced Concrete",
+            "qty": 21
+          },
+          {
+            "item": "Batteries",
+            "qty": 21
+          }
+        ]
       }
     ]
   },
   {
     "catId": "gym-and-relaxation-center-mk2",
     "name": "Gym and Relaxation Center Mk. 2",
-    "description": "Stamina Recharge Rate & EXP",
+    "description": "Stamina Recharge Rate & EXP · Lv 4 cost estimated",
     "levels": [
       {
         "costs": [
@@ -252,6 +368,62 @@ const PROJECT_CATALOG=[
           {
             "item": "Concrete",
             "qty": 1125
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 5595
+          },
+          {
+            "item": "Bricks",
+            "qty": 3109
+          },
+          {
+            "item": "Plates",
+            "qty": 5062
+          },
+          {
+            "item": "Rods",
+            "qty": 5062
+          },
+          {
+            "item": "Frames",
+            "qty": 976
+          },
+          {
+            "item": "Concrete",
+            "qty": 7484
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 46380
+          },
+          {
+            "item": "Bricks",
+            "qty": 42960
+          },
+          {
+            "item": "Plates",
+            "qty": 45520
+          },
+          {
+            "item": "Rods",
+            "qty": 45520
+          },
+          {
+            "item": "Frames",
+            "qty": 41420
+          },
+          {
+            "item": "Concrete",
+            "qty": 49790
           }
         ]
       }
@@ -380,6 +552,62 @@ const PROJECT_CATALOG=[
             "qty": 2600
           }
         ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 276800
+          },
+          {
+            "item": "Concrete",
+            "qty": 276800
+          },
+          {
+            "item": "Glass",
+            "qty": 205760
+          },
+          {
+            "item": "Bricks",
+            "qty": 206720
+          },
+          {
+            "item": "Plates",
+            "qty": 203840
+          },
+          {
+            "item": "Rods",
+            "qty": 210400
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 2210000
+          },
+          {
+            "item": "Concrete",
+            "qty": 2210000
+          },
+          {
+            "item": "Glass",
+            "qty": 1650000
+          },
+          {
+            "item": "Bricks",
+            "qty": 1650000
+          },
+          {
+            "item": "Plates",
+            "qty": 1630000
+          },
+          {
+            "item": "Rods",
+            "qty": 1680000
+          }
+        ]
       }
     ]
   },
@@ -495,6 +723,46 @@ const PROJECT_CATALOG=[
           {
             "item": "Frames",
             "qty": 23
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Rods",
+            "qty": 270
+          },
+          {
+            "item": "Plates",
+            "qty": 270
+          },
+          {
+            "item": "Frames",
+            "qty": 34
+          },
+          {
+            "item": "Batteries",
+            "qty": 4
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Rods",
+            "qty": 405
+          },
+          {
+            "item": "Plates",
+            "qty": 405
+          },
+          {
+            "item": "Frames",
+            "qty": 51
+          },
+          {
+            "item": "Batteries",
+            "qty": 6
           }
         ]
       }
@@ -4074,6 +4342,62 @@ const PROJECT_CATALOG=[
             "qty": 4
           }
         ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bricks",
+            "qty": 4000
+          },
+          {
+            "item": "Frames",
+            "qty": 2400
+          },
+          {
+            "item": "Glass",
+            "qty": 3200
+          },
+          {
+            "item": "Plates",
+            "qty": 8400
+          },
+          {
+            "item": "Wire",
+            "qty": 16
+          },
+          {
+            "item": "Reinforced Concrete",
+            "qty": 40
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bricks",
+            "qty": 16000
+          },
+          {
+            "item": "Frames",
+            "qty": 9600
+          },
+          {
+            "item": "Glass",
+            "qty": 12800
+          },
+          {
+            "item": "Plates",
+            "qty": 25600
+          },
+          {
+            "item": "Wire",
+            "qty": 64
+          },
+          {
+            "item": "Reinforced Concrete",
+            "qty": 160
+          }
+        ]
       }
     ]
   },
@@ -4133,6 +4457,54 @@ const PROJECT_CATALOG=[
             "qty": 8
           }
         ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 1680000
+          },
+          {
+            "item": "Concrete",
+            "qty": 96000
+          },
+          {
+            "item": "Glass",
+            "qty": 38400
+          },
+          {
+            "item": "Bricks",
+            "qty": 17600
+          },
+          {
+            "item": "Gel",
+            "qty": 160
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 84000000
+          },
+          {
+            "item": "Concrete",
+            "qty": 4800000
+          },
+          {
+            "item": "Glass",
+            "qty": 1920000
+          },
+          {
+            "item": "Bricks",
+            "qty": 880000
+          },
+          {
+            "item": "Gel",
+            "qty": 8000
+          }
+        ]
       }
     ]
   },
@@ -4172,13 +4544,53 @@ const PROJECT_CATALOG=[
             "qty": 270
           }
         ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Rods",
+            "qty": 270000
+          },
+          {
+            "item": "Plates",
+            "qty": 27000
+          },
+          {
+            "item": "Frames",
+            "qty": 810
+          },
+          {
+            "item": "Batteries",
+            "qty": 108
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Rods",
+            "qty": 1620000
+          },
+          {
+            "item": "Plates",
+            "qty": 162000
+          },
+          {
+            "item": "Frames",
+            "qty": 4860
+          },
+          {
+            "item": "Batteries",
+            "qty": 648
+          }
+        ]
       }
     ]
   },
   {
     "catId": "improved-silicate-scanner-mk2",
     "name": "Improved Silicate Scanner Mk. 2",
-    "description": "",
+    "description": "Lv 5 cost estimated",
     "levels": [
       {
         "costs": [
@@ -4209,6 +4621,46 @@ const PROJECT_CATALOG=[
           {
             "item": "Wire",
             "qty": 50
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 375
+          },
+          {
+            "item": "Wire",
+            "qty": 250
+          },
+          {
+            "item": "Batteries",
+            "qty": 125
+          },
+          {
+            "item": "Reinforced Concrete",
+            "qty": 125
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 1875
+          },
+          {
+            "item": "Wire",
+            "qty": 1250
+          },
+          {
+            "item": "Batteries",
+            "qty": 625
+          },
+          {
+            "item": "Reinforced Concrete",
+            "qty": 625
           }
         ]
       }
@@ -4290,6 +4742,62 @@ const PROJECT_CATALOG=[
             "qty": 80
           }
         ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 540000
+          },
+          {
+            "item": "Bricks",
+            "qty": 4000
+          },
+          {
+            "item": "Plates",
+            "qty": 192000
+          },
+          {
+            "item": "Rods",
+            "qty": 89600
+          },
+          {
+            "item": "Frames",
+            "qty": 8000
+          },
+          {
+            "item": "Wire",
+            "qty": 800
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 27000000
+          },
+          {
+            "item": "Bricks",
+            "qty": 200000
+          },
+          {
+            "item": "Plates",
+            "qty": 9600000
+          },
+          {
+            "item": "Rods",
+            "qty": 4480000
+          },
+          {
+            "item": "Frames",
+            "qty": 400000
+          },
+          {
+            "item": "Wire",
+            "qty": 40000
+          }
+        ]
       }
     ]
   },
@@ -4355,6 +4863,62 @@ const PROJECT_CATALOG=[
           {
             "item": "Wire",
             "qty": 200
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Frames",
+            "qty": 4800
+          },
+          {
+            "item": "Glass",
+            "qty": 4800
+          },
+          {
+            "item": "Bricks",
+            "qty": 4800
+          },
+          {
+            "item": "Gel",
+            "qty": 800
+          },
+          {
+            "item": "Wire",
+            "qty": 400
+          },
+          {
+            "item": "Batteries",
+            "qty": 480
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Frames",
+            "qty": 57600
+          },
+          {
+            "item": "Glass",
+            "qty": 57600
+          },
+          {
+            "item": "Bricks",
+            "qty": 57600
+          },
+          {
+            "item": "Gel",
+            "qty": 9600
+          },
+          {
+            "item": "Wire",
+            "qty": 4800
+          },
+          {
+            "item": "Batteries",
+            "qty": 5760
           }
         ]
       }
@@ -5369,6 +5933,278 @@ const PROJECT_CATALOG=[
           {
             "item": "Bits",
             "qty": 55979220
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "catId": "battery-factory",
+    "name": "Battery Factory",
+    "description": "Unlocks Batteries",
+    "levels": [
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 60000000
+          },
+          {
+            "item": "Glass",
+            "qty": 150000
+          },
+          {
+            "item": "Frames",
+            "qty": 150000
+          },
+          {
+            "item": "Gel",
+            "qty": 150000
+          },
+          {
+            "item": "Reinforced Concrete",
+            "qty": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "catId": "the-concrete-corner",
+    "name": "The Concrete Corner",
+    "description": "Unlocks Reinforced Concrete",
+    "levels": [
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 40000000
+          },
+          {
+            "item": "Glass",
+            "qty": 100000
+          },
+          {
+            "item": "Bricks",
+            "qty": 100000
+          },
+          {
+            "item": "Gel",
+            "qty": 100000
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "catId": "the-tower-of-chad",
+    "name": "The Tower of Chad",
+    "description": "Lv 3–5 costs estimated",
+    "levels": [
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 50000000
+          },
+          {
+            "item": "Concrete",
+            "qty": 50000000
+          },
+          {
+            "item": "Bricks",
+            "qty": 1000000
+          },
+          {
+            "item": "Reinforced Concrete",
+            "qty": 800
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 150000000
+          },
+          {
+            "item": "Concrete",
+            "qty": 150000000
+          },
+          {
+            "item": "Bricks",
+            "qty": 3000000
+          },
+          {
+            "item": "Reinforced Concrete",
+            "qty": 3000
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 450000000
+          },
+          {
+            "item": "Concrete",
+            "qty": 450000000
+          },
+          {
+            "item": "Bricks",
+            "qty": 9000000
+          },
+          {
+            "item": "Reinforced Concrete",
+            "qty": 11250
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 1350000000
+          },
+          {
+            "item": "Concrete",
+            "qty": 1350000000
+          },
+          {
+            "item": "Bricks",
+            "qty": 27000000
+          },
+          {
+            "item": "Reinforced Concrete",
+            "qty": 42190
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 4050000000
+          },
+          {
+            "item": "Concrete",
+            "qty": 4050000000
+          },
+          {
+            "item": "Bricks",
+            "qty": 81000000
+          },
+          {
+            "item": "Reinforced Concrete",
+            "qty": 158200
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "catId": "biochemical-laboratory",
+    "name": "Biochemical Laboratory",
+    "description": "Lv 2–5 costs estimated",
+    "levels": [
+      {
+        "costs": [
+          {
+            "item": "Reinforced Concrete",
+            "qty": 400
+          },
+          {
+            "item": "Batteries",
+            "qty": 200
+          },
+          {
+            "item": "Wire",
+            "qty": 400000
+          },
+          {
+            "item": "Frames",
+            "qty": 100000
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Reinforced Concrete",
+            "qty": 1500
+          },
+          {
+            "item": "Batteries",
+            "qty": 750
+          },
+          {
+            "item": "Wire",
+            "qty": 1500000
+          },
+          {
+            "item": "Frames",
+            "qty": 375000
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Reinforced Concrete",
+            "qty": 5625
+          },
+          {
+            "item": "Batteries",
+            "qty": 2813
+          },
+          {
+            "item": "Wire",
+            "qty": 5625000
+          },
+          {
+            "item": "Frames",
+            "qty": 1406000
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Reinforced Concrete",
+            "qty": 21090
+          },
+          {
+            "item": "Batteries",
+            "qty": 10550
+          },
+          {
+            "item": "Wire",
+            "qty": 21090000
+          },
+          {
+            "item": "Frames",
+            "qty": 5273000
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Reinforced Concrete",
+            "qty": 79100
+          },
+          {
+            "item": "Batteries",
+            "qty": 39550
+          },
+          {
+            "item": "Wire",
+            "qty": 79100000
+          },
+          {
+            "item": "Frames",
+            "qty": 19780000
           }
         ]
       }

@@ -39,12 +39,22 @@ The catalog, each `levels` array, and each `costs` array must be dense: every nu
 
 `PROJECT_PREREQS` maps a dependent catalog ID to catalog IDs that must finish before it. Each enumerable mapping value must be an own data property containing a dense array whose numeric slots are own data properties. Non-array or accessor-backed values and sparse or accessor-backed entries are rejected and omitted from the sanitized adjacency used for cycle detection. Every key and target must resolve, duplicates/self-dependencies are invalid, and the validated graph must remain acyclic. `UNLOCKS` maps a catalog ID to the material it unlocks; each key and item must resolve, and a material may have only one catalog unlock owner. These edges participate only when the relevant projects are selected and still have remaining levels in the current Shopping-list solve.
 
+## Estimated levels
+
+Some late project levels cost more than any player has been able to pay, so their in-game costs cannot be read yet. Where the planner is more useful with a placeholder than with a missing level, the catalog may carry an extrapolated level, but only under all of these conditions:
+
+- The extrapolation rule comes from that project's own read levels (its observed per-item step), not from a rule invented for it.
+- The entry's `description` says which levels are estimated, so the catalog list shows the caveat wherever the project appears.
+- The rule used for each such entry is listed in the `js/catalog.js` header comment.
+
+An estimate is a placeholder, not data. Replace it with the read value as soon as the level is visible in game, and drop the description note in the same change. Everything else in the catalog is read from a save export.
+
 ## Updating the catalog
 
 1. Obtain a trusted game/save export for the intended game build. Preserve the original artifact unchanged.
 2. Record the exact game version shown by the source, the artifact/export timestamp, and its SHA-256. If any value is unavailable, leave it `null` and keep the status unverified.
 3. Generate `{ catId, name, description, levels }` entries from the artifact. The browser-console transform documented at the top of `js/catalog.js` is a starting point, not verification by itself.
-4. Keep existing `catId` values stable. Compare additions/removals and every changed level against the source; do not extrapolate quantities from neighboring levels unless the game artifact explicitly supplies that rule.
+4. Keep existing `catId` values stable. Compare additions/removals and every changed level against the source; do not extrapolate quantities from neighboring levels except under Estimated levels above.
 5. Update `PROJECT_PREREQS` and `UNLOCKS` only from confirmed unlock relationships.
 6. Set provenance fields to non-null values only when the retained artifact supports them. Mark `verified: true` only after an independent source-to-catalog comparison.
 7. Run:
