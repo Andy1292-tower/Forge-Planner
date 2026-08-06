@@ -1,6 +1,6 @@
 "use strict";
 /* ---------- NEW BUILD NOTICE ----------
- * Every asset this page loads is content-hashed and immutable, so a tab left open keeps
+ * Every asset this page runs on is content-hashed and immutable, so a tab left open keeps
  * running the build it started with no matter what ships afterwards. The build stamps a
  * release id into the page's forge-build meta and writes the same id to version.json, so a
  * mismatch means a newer deployment is live and a reload will pick it up.

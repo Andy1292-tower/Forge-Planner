@@ -26,6 +26,7 @@ const IMAGE_FILES = ["favicon.png", "dupe.jpg", "speed.jpg"];
 const HASH_LENGTH = 16;
 const BUILD_STAMP_PLACEHOLDER = "__FORGE_BUILD_ID__";
 const VERSION_FILE = "version.json";
+const BOOT_SCRIPT = "boot.js";
 const LEGACY_V2_SHA256 = "9d8747eea5a5c0c8d88066532eb9c3f51da6ebeb14e803284734405f3bcd1cf2";
 const ANALYTICS_SIGNATURE = /(?:\/_vercel\/(?:insights|speed-insights)|va\.vercel-scripts\.com|vercelAnalytics)/i;
 const ROOT_RELATIVE_OWNED_URL = /["'`(=]\/(?:static|assets|js|css)\//;
@@ -151,6 +152,10 @@ function buildApp(sourceRoot, assetUrls) {
 
 function buildIndex(sourceRoot, urls) {
   let html = readText(path.join(sourceRoot, "index.html"));
+  // Out of the hashed graph on purpose: a page too stale to load its own bundle can only be
+  // rescued by a URL that survives the release it was cut from. Flattened to the release root
+  // so it keeps the closed-graph assertion below honest about js/, css/ and assets/.
+  html = replaceExactly(html, "js/" + BOOT_SCRIPT, BOOT_SCRIPT, 1, "recovery boot script");
   html = replaceExactly(html, "assets/favicon.png", urls.favicon, 2, "favicon references");
   html = replaceExactly(
     html,
@@ -219,6 +224,15 @@ function verifyStage(stageRoot, buildId) {
   const html = readText(path.join(stageRoot, "index.html"));
   if (!html.includes(`static/${appFiles[0]}`)) throw new Error("Generated HTML does not load the emitted app bundle");
 
+  // The recovery script only catches the bundle's load failure if the browser has already run
+  // it by the time that failure fires, and it can only be fetched at all if it shipped.
+  if (!fs.existsSync(path.join(stageRoot, BOOT_SCRIPT))) throw new Error(`The release is missing ${BOOT_SCRIPT}`);
+  const bootAt = html.indexOf(`src="${BOOT_SCRIPT}"`);
+  if (bootAt < 0) throw new Error(`Generated HTML does not load ${BOOT_SCRIPT}`);
+  if (bootAt > html.indexOf(`static/${appFiles[0]}`)) {
+    throw new Error(`Generated HTML loads ${BOOT_SCRIPT} after the bundle it recovers from`);
+  }
+
   // An unstamped page or a version file that disagrees with it would tell every open tab
   // either that nothing ever ships or that a reload is due on every single check.
   if (html.includes(BUILD_STAMP_PLACEHOLDER)) throw new Error("Generated HTML still carries the build id placeholder");
@@ -262,6 +276,7 @@ function buildStaticSite({ sourceRoot, outputRoot } = {}) {
     const buildId = computeBuildId(unstampedIndex);
     write(stage, "index.html", stampBuildId(unstampedIndex, buildId));
     write(stage, VERSION_FILE, buildVersionFile(buildId));
+    write(stage, BOOT_SCRIPT, read(path.join(source, "js", BOOT_SCRIPT)));
     write(stage, "js/solver.worker.js", read(path.join(source, "js", "solver.worker.js")));
     const legacyV2 = read(path.join(source, "compat", "solver.worker.v2.js"));
     if (sha256(legacyV2) !== LEGACY_V2_SHA256) {
