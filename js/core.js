@@ -65,8 +65,9 @@ const FRAME_BITS=PREPROD_BITS.Frames;   // back-compat alias
    A project that unlocks a craftable material: anything consuming that material must be
    scheduled after it. Keyed by catalog id → unlocked material. Only enforced when the
    unlock project is itself in the list (the only signal we have that it's still locked). */
-const UNLOCKS={"frame-factory":"Frames","gel-refinery":"Gel","wire-tower":"Wire"};
-const UNLOCK_MATERIALS=Object.keys(UNLOCKS).map(k=>UNLOCKS[k]);   // ["Frames","Gel","Wire"]
+const UNLOCKS={"frame-factory":"Frames","gel-refinery":"Gel","wire-tower":"Wire",
+  "the-concrete-corner":"Reinforced Concrete","battery-factory":"Batteries"};
+const UNLOCK_MATERIALS=Object.keys(UNLOCKS).map(k=>UNLOCKS[k]);   // ["Frames","Gel","Wire","Reinforced Concrete","Batteries"]
 /* Explicit "finish project X before project Y" building unlocks not captured by material
    costs. Keyed by the dependent's catId → prerequisite catIds; extend as the tree is
    confirmed. (Subsurface Scan Towers gate Frame Factory but aren't catalog projects, so
