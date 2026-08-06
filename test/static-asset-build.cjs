@@ -185,6 +185,7 @@ test("the generated page has a closed hashed asset graph and an in-memory Worker
   buildStaticSite({ sourceRoot: root, outputRoot: temporary });
 
   assert.deepEqual(walk(temporary), [
+    "boot.js",
     "index.html",
     "js/solver.worker.js",
     "js/solver.worker.v2.js",
