@@ -38,13 +38,14 @@ function renderLines(){
     const opts=LEVELS.map(L=>`<option value="${L}" ${L===ln.max?"selected":""}>${capOptionLabel(L,L===ln.max)}</option>`).join("");
     const speedError=`field-line-${i}-speed-error`,turboError=`field-line-${i}-turbo-error`;
     const levelNote=`field-line-${i}-level`;
-    return `<tr>
+    return `<tr class="line-row">
       <td class="col-n"><span class="tag mono">#${i+1}</span></td>
       <td class="col-cap" data-label="Max compression"><select data-line="${i}" aria-label="Line ${i+1} max compression" aria-describedby="linesCapHelp ${levelNote}">${opts}</select><div class="line-lvl mono" id="${levelNote}">${lineLevelText(ln.max)}</div></td>
-      <td class="col-spx" data-label="Speed \u00d7"><input type="number" ${htmlFieldInputAttributes(FIELD_SCHEMA.lineSpeed)} placeholder="1" value="${ln.spx??1}" data-spx="${i}" aria-describedby="linesSpeedHelp" data-field-error="${speedError}" aria-label="Line ${i+1} currently displayed speed multiplier"><div class="field-error" id="${speedError}" aria-live="polite" aria-atomic="true"></div>${isProjected(ln)?`<div class="line-proj mono" title="Projected speed at ${fmt(mx,0)} turbo stacks">\u2192 \u00d7${fmt(lineSpeed(ln),2)}</div>`:""}</td>
-      <td class="col-turbo" data-label="Turbo stacks"><input type="number" ${htmlFieldInputAttributes(FIELD_SCHEMA.turbo)} placeholder="0" value="${ln.turbo??0}" data-turbo="${i}" aria-describedby="linesTurboHelp" data-field-error="${turboError}" aria-label="Line ${i+1} current turbo stacks"><div class="field-error" id="${turboError}" aria-live="polite" aria-atomic="true"></div></td>
+      <td class="col-spx" data-label="Speed \u00d7"><input type="number" ${htmlFieldInputAttributes(FIELD_SCHEMA.lineSpeed)} placeholder="1" value="${ln.spx??1}" data-spx="${i}" aria-describedby="linesSpeedHelp" data-field-error="${speedError}" aria-label="Line ${i+1} currently displayed speed multiplier">${isProjected(ln)?`<div class="line-proj mono" title="Projected speed at ${fmt(mx,0)} turbo stacks">\u2192 \u00d7${fmt(lineSpeed(ln),2)}</div>`:""}</td>
+      <td class="col-turbo" data-label="Turbo stacks"><input type="number" ${htmlFieldInputAttributes(FIELD_SCHEMA.turbo)} placeholder="0" value="${ln.turbo??0}" data-turbo="${i}" aria-describedby="linesTurboHelp" data-field-error="${turboError}" aria-label="Line ${i+1} current turbo stacks"></td>
       <td class="col-x"><button class="iconbtn" data-del="${i}" title="${TIPS.del}" aria-label="Remove crafter line ${i+1}">\u00d7</button></td>
-    </tr>`;
+    </tr>
+    <tr class="line-errs"><td colspan="5"><div class="field-error" id="${speedError}" aria-live="polite" aria-atomic="true"></div><div class="field-error" id="${turboError}" aria-live="polite" aria-atomic="true"></div></td></tr>`;
   }).join("");
   const table=document.createElement("table");
   table.className="ltable";
@@ -64,7 +65,7 @@ function renderLines(){
 function refreshLineNotes(){
   const mx=num(S.maxTurbo)||0;
   const table=document.querySelector("#lines .ltable");if(!table)return;
-  table.querySelectorAll("tbody tr").forEach((row,i)=>{
+  table.querySelectorAll("tbody tr.line-row").forEach((row,i)=>{
     const ln=S.lines[i];if(!ln)return;
     const lvl=row.querySelector(".col-cap .line-lvl");
     if(lvl)lvl.textContent=lineLevelText(ln.max);
