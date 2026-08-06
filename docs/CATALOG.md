@@ -49,6 +49,12 @@ Some late project levels cost more than any player has been able to pay, so thei
 
 An estimate is a placeholder, not data. Replace it with the read value as soon as the level is visible in game, and drop the description note in the same change. Everything else in the catalog is read from a save export.
 
+### Level counts
+
+An entry's level count is a separate claim from its costs. `addCatalogProject` defaults a newly added project to `to = levels.length`.
+
+The `completed / n` counter on the in-game project screen reports how far that player has unlocked, not how many levels the project has. It is not evidence about an entry's level count.
+
 ## Updating the catalog
 
 1. Obtain a trusted game/save export for the intended game build. Preserve the original artifact unchanged.

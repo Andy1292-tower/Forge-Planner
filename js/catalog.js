@@ -21,10 +21,32 @@
  * yet, so their costs were extrapolated instead of read (see docs/CATALOG.md).
  * Every such entry says so in its `description`, which the catalog list shows:
  *
- *   the-tower-of-chad             Lv 3–5   per-item Lv1→Lv2 step (×3, RC ×3.75)
- *   biochemical-laboratory        Lv 2–5   ×3.75 per level, from the only read level
+ *   the-tower-of-chad             Lv 3–5   each item's own Lv1→Lv2 step
+ *   biochemical-laboratory        Lv 3–5   each item's own Lv1→Lv2 step
  *   gym-and-relaxation-center-mk2 Lv 4     geometric mean of the read Lv 3 and Lv 5
  *   improved-silicate-scanner-mk2 Lv 5     ×5 per level, the project's own pattern
+ *   the six backbone projects     Lv 36–40 the shared backbone curve, continued
+ *   rig-parts-production-facility Lv 29–40 chained ×1.573, no in-game reading
+ *   all-round-giga-scanner        Lv 31–40 ×1.573 from the read Lv 30
+ *
+ * Per-item steps differ within a project; estimates keep a whole-number step
+ * exactly and round anything else to four significant figures.
+ *
+ * BACKBONE CURVE — finance-center, jade-refinery, hospital-wing,
+ * off-rock-mining-operation, tokenium-mining-center, vespium-drill-hub:
+ *
+ *   b(n)  = 60 · 1.2^min(n-1,10) · 1.44^clamp(n-11,0,10) · 1.728^max(n-21,0)
+ *   cost  = ceil(b(n) · share),  share ∈ 1, 5/6, 2/3, 1/2, 1/3, 1/4, 1/10, 1/12, 1/30
+ *
+ * The share applies to the unrounded b(n): entry 29 at 2/3 is
+ * ceil(1132240.11 · 2/3) = 754827, not 754828. In-game readings at entries 32
+ * and 33 fix the curve through entry 35.
+ *
+ * rig-parts-production-facility and all-round-giga-scanner use 1.3 / 1.43 /
+ * 1.573 phasing. Rig Parts chains each item ×1.573 to the nearest 10 from entry
+ * 29 — the precision of its capture. The Giga-Scanner's entry 30 is read (Wire
+ * 290640, Gel 116256, Bits 5812800; Gel = 2/5 of Wire, Bits = 20×) and entries
+ * 31+ chain the unrounded Wire, taking those shares from it.
  *
  * Replace an estimate with the read value as soon as the level is visible in
  * game, and drop the description note in the same change.
@@ -771,7 +793,7 @@ const PROJECT_CATALOG=[
   {
     "catId": "finance-center",
     "name": "Finance Center",
-    "description": "",
+    "description": "Lv 36–40 costs estimated",
     "levels": [
       {
         "costs": [
@@ -1332,13 +1354,93 @@ const PROJECT_CATALOG=[
             "qty": 3014401
           }
         ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Glass",
+            "qty": 26044422
+          },
+          {
+            "item": "Plates",
+            "qty": 34725895
+          },
+          {
+            "item": "Bricks",
+            "qty": 5208885
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Glass",
+            "qty": 45004760
+          },
+          {
+            "item": "Plates",
+            "qty": 60006347
+          },
+          {
+            "item": "Bricks",
+            "qty": 9000952
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Glass",
+            "qty": 77768225
+          },
+          {
+            "item": "Plates",
+            "qty": 103690967
+          },
+          {
+            "item": "Bricks",
+            "qty": 15553645
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Glass",
+            "qty": 134383493
+          },
+          {
+            "item": "Plates",
+            "qty": 179177990
+          },
+          {
+            "item": "Bricks",
+            "qty": 26876699
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Glass",
+            "qty": 232214675
+          },
+          {
+            "item": "Plates",
+            "qty": 309619566
+          },
+          {
+            "item": "Bricks",
+            "qty": 46442935
+          }
+        ]
       }
     ]
   },
   {
     "catId": "jade-refinery",
     "name": "Jade Refinery",
-    "description": "",
+    "description": "Lv 36–40 costs estimated",
     "levels": [
       {
         "costs": [
@@ -1899,13 +2001,93 @@ const PROJECT_CATALOG=[
             "qty": 10048002
           }
         ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 52088843
+          },
+          {
+            "item": "Rods",
+            "qty": 34725895
+          },
+          {
+            "item": "Plates",
+            "qty": 17362948
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 90009520
+          },
+          {
+            "item": "Rods",
+            "qty": 60006347
+          },
+          {
+            "item": "Plates",
+            "qty": 30003174
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 155536450
+          },
+          {
+            "item": "Rods",
+            "qty": 103690967
+          },
+          {
+            "item": "Plates",
+            "qty": 51845484
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 268766985
+          },
+          {
+            "item": "Rods",
+            "qty": 179177990
+          },
+          {
+            "item": "Plates",
+            "qty": 89588995
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 464429349
+          },
+          {
+            "item": "Rods",
+            "qty": 309619566
+          },
+          {
+            "item": "Plates",
+            "qty": 154809783
+          }
+        ]
       }
     ]
   },
   {
     "catId": "hospital-wing",
     "name": "Hospital Wing",
-    "description": "",
+    "description": "Lv 36–40 costs estimated",
     "levels": [
       {
         "costs": [
@@ -2466,13 +2648,93 @@ const PROJECT_CATALOG=[
             "qty": 1004801
           }
         ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 52088843
+          },
+          {
+            "item": "Glass",
+            "qty": 4340737
+          },
+          {
+            "item": "Bricks",
+            "qty": 1736295
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 90009520
+          },
+          {
+            "item": "Glass",
+            "qty": 7500794
+          },
+          {
+            "item": "Bricks",
+            "qty": 3000318
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 155536450
+          },
+          {
+            "item": "Glass",
+            "qty": 12961371
+          },
+          {
+            "item": "Bricks",
+            "qty": 5184549
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 268766985
+          },
+          {
+            "item": "Glass",
+            "qty": 22397249
+          },
+          {
+            "item": "Bricks",
+            "qty": 8958900
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Concrete",
+            "qty": 464429349
+          },
+          {
+            "item": "Glass",
+            "qty": 38702446
+          },
+          {
+            "item": "Bricks",
+            "qty": 15480979
+          }
+        ]
       }
     ]
   },
   {
     "catId": "off-rock-mining-operation",
     "name": "Off-Rock Mining Operation",
-    "description": "",
+    "description": "Lv 36–40 costs estimated",
     "levels": [
       {
         "costs": [
@@ -3033,13 +3295,93 @@ const PROJECT_CATALOG=[
             "qty": 25120005
           }
         ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 52088843
+          },
+          {
+            "item": "Rods",
+            "qty": 34725895
+          },
+          {
+            "item": "Concrete",
+            "qty": 43407369
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 90009520
+          },
+          {
+            "item": "Rods",
+            "qty": 60006347
+          },
+          {
+            "item": "Concrete",
+            "qty": 75007933
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 155536450
+          },
+          {
+            "item": "Rods",
+            "qty": 103690967
+          },
+          {
+            "item": "Concrete",
+            "qty": 129613708
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 268766985
+          },
+          {
+            "item": "Rods",
+            "qty": 179177990
+          },
+          {
+            "item": "Concrete",
+            "qty": 223972487
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 464429349
+          },
+          {
+            "item": "Rods",
+            "qty": 309619566
+          },
+          {
+            "item": "Concrete",
+            "qty": 387024458
+          }
+        ]
       }
     ]
   },
   {
     "catId": "tokenium-mining-center",
     "name": "Tokenium Mining Center",
-    "description": "",
+    "description": "Lv 36–40 costs estimated",
     "levels": [
       {
         "costs": [
@@ -3600,13 +3942,93 @@ const PROJECT_CATALOG=[
             "qty": 2512001
           }
         ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 52088843
+          },
+          {
+            "item": "Bricks",
+            "qty": 17362948
+          },
+          {
+            "item": "Glass",
+            "qty": 4340737
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 90009520
+          },
+          {
+            "item": "Bricks",
+            "qty": 30003174
+          },
+          {
+            "item": "Glass",
+            "qty": 7500794
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 155536450
+          },
+          {
+            "item": "Bricks",
+            "qty": 51845484
+          },
+          {
+            "item": "Glass",
+            "qty": 12961371
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 268766985
+          },
+          {
+            "item": "Bricks",
+            "qty": 89588995
+          },
+          {
+            "item": "Glass",
+            "qty": 22397249
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bits",
+            "qty": 464429349
+          },
+          {
+            "item": "Bricks",
+            "qty": 154809783
+          },
+          {
+            "item": "Glass",
+            "qty": 38702446
+          }
+        ]
       }
     ]
   },
   {
     "catId": "vespium-drill-hub",
     "name": "Vespium Drill Hub",
-    "description": "",
+    "description": "Lv 36–40 costs estimated",
     "levels": [
       {
         "costs": [
@@ -4165,6 +4587,86 @@ const PROJECT_CATALOG=[
           {
             "item": "Bits",
             "qty": 25120005
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bricks",
+            "qty": 13022211
+          },
+          {
+            "item": "Plates",
+            "qty": 34725895
+          },
+          {
+            "item": "Bits",
+            "qty": 43407369
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bricks",
+            "qty": 22502380
+          },
+          {
+            "item": "Plates",
+            "qty": 60006347
+          },
+          {
+            "item": "Bits",
+            "qty": 75007933
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bricks",
+            "qty": 38884113
+          },
+          {
+            "item": "Plates",
+            "qty": 103690967
+          },
+          {
+            "item": "Bits",
+            "qty": 129613708
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bricks",
+            "qty": 67191747
+          },
+          {
+            "item": "Plates",
+            "qty": 179177990
+          },
+          {
+            "item": "Bits",
+            "qty": 223972487
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Bricks",
+            "qty": 116107338
+          },
+          {
+            "item": "Plates",
+            "qty": 309619566
+          },
+          {
+            "item": "Bits",
+            "qty": 387024458
           }
         ]
       }
@@ -4927,7 +5429,7 @@ const PROJECT_CATALOG=[
   {
     "catId": "rig-parts-production-facility",
     "name": "Rig Parts Production Facility",
-    "description": "",
+    "description": "Lv 29–40 costs estimated",
     "levels": [
       {
         "costs": [
@@ -5428,13 +5930,93 @@ const PROJECT_CATALOG=[
             "qty": 25190570
           }
         ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 44027470
+          },
+          {
+            "item": "Frames",
+            "qty": 7045150
+          },
+          {
+            "item": "Plates",
+            "qty": 39624770
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 69255210
+          },
+          {
+            "item": "Frames",
+            "qty": 11082020
+          },
+          {
+            "item": "Plates",
+            "qty": 62329760
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 108938450
+          },
+          {
+            "item": "Frames",
+            "qty": 17432020
+          },
+          {
+            "item": "Plates",
+            "qty": 98044710
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 171360180
+          },
+          {
+            "item": "Frames",
+            "qty": 27420570
+          },
+          {
+            "item": "Plates",
+            "qty": 154224330
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Gel",
+            "qty": 269549560
+          },
+          {
+            "item": "Frames",
+            "qty": 43132560
+          },
+          {
+            "item": "Plates",
+            "qty": 242594870
+          }
+        ]
       }
     ]
   },
   {
     "catId": "all-round-giga-scanner",
     "name": "All Round Giga-Scanner",
-    "description": "",
+    "description": "Lv 31–40 costs estimated",
     "levels": [
       {
         "costs": [
@@ -5844,15 +6426,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Wire",
-            "qty": 290630
+            "qty": 290640
           },
           {
             "item": "Gel",
-            "qty": 116280
+            "qty": 116256
           },
           {
             "item": "Bits",
-            "qty": 5812770
+            "qty": 5812800
           }
         ]
       },
@@ -5860,15 +6442,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Wire",
-            "qty": 457160
+            "qty": 457177
           },
           {
             "item": "Gel",
-            "qty": 182910
+            "qty": 182871
           },
           {
             "item": "Bits",
-            "qty": 9143490
+            "qty": 9143534
           }
         ]
       },
@@ -5876,15 +6458,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Wire",
-            "qty": 719110
+            "qty": 719139
           },
           {
             "item": "Gel",
-            "qty": 287720
+            "qty": 287656
           },
           {
             "item": "Bits",
-            "qty": 14382710
+            "qty": 14382780
           }
         ]
       },
@@ -5892,15 +6474,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Wire",
-            "qty": 1131160
+            "qty": 1131206
           },
           {
             "item": "Gel",
-            "qty": 452580
+            "qty": 452482
           },
           {
             "item": "Bits",
-            "qty": 22624000
+            "qty": 22624112
           }
         ]
       },
@@ -5908,15 +6490,15 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Wire",
-            "qty": 1779310
+            "qty": 1779386
           },
           {
             "item": "Gel",
-            "qty": 711910
+            "qty": 711755
           },
           {
             "item": "Bits",
-            "qty": 35587550
+            "qty": 35587729
           }
         ]
       },
@@ -5924,15 +6506,95 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Wire",
-            "qty": 2798850
+            "qty": 2798975
           },
           {
             "item": "Gel",
-            "qty": 1119830
+            "qty": 1119590
           },
           {
             "item": "Bits",
-            "qty": 55979220
+            "qty": 55979497
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 4402787
+          },
+          {
+            "item": "Gel",
+            "qty": 1761115
+          },
+          {
+            "item": "Bits",
+            "qty": 88055749
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 6925585
+          },
+          {
+            "item": "Gel",
+            "qty": 2770234
+          },
+          {
+            "item": "Bits",
+            "qty": 138511693
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 10893945
+          },
+          {
+            "item": "Gel",
+            "qty": 4357578
+          },
+          {
+            "item": "Bits",
+            "qty": 217878894
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 17136175
+          },
+          {
+            "item": "Gel",
+            "qty": 6854470
+          },
+          {
+            "item": "Bits",
+            "qty": 342723500
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Wire",
+            "qty": 26955203
+          },
+          {
+            "item": "Gel",
+            "qty": 10782081
+          },
+          {
+            "item": "Bits",
+            "qty": 539104065
           }
         ]
       }
@@ -6106,7 +6768,7 @@ const PROJECT_CATALOG=[
   {
     "catId": "biochemical-laboratory",
     "name": "Biochemical Laboratory",
-    "description": "Lv 2–5 costs estimated",
+    "description": "Lv 3–5 costs estimated",
     "levels": [
       {
         "costs": [
@@ -6132,19 +6794,19 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Reinforced Concrete",
-            "qty": 1500
+            "qty": 1800
           },
           {
             "item": "Batteries",
-            "qty": 750
+            "qty": 1200
           },
           {
             "item": "Wire",
-            "qty": 1500000
+            "qty": 1200000
           },
           {
             "item": "Frames",
-            "qty": 375000
+            "qty": 300600
           }
         ]
       },
@@ -6152,19 +6814,19 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Reinforced Concrete",
-            "qty": 5625
+            "qty": 8100
           },
           {
             "item": "Batteries",
-            "qty": 2813
+            "qty": 7200
           },
           {
             "item": "Wire",
-            "qty": 5625000
+            "qty": 3600000
           },
           {
             "item": "Frames",
-            "qty": 1406000
+            "qty": 903600
           }
         ]
       },
@@ -6172,19 +6834,19 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Reinforced Concrete",
-            "qty": 21090
+            "qty": 36450
           },
           {
             "item": "Batteries",
-            "qty": 10550
+            "qty": 43200
           },
           {
             "item": "Wire",
-            "qty": 21090000
+            "qty": 10800000
           },
           {
             "item": "Frames",
-            "qty": 5273000
+            "qty": 2716000
           }
         ]
       },
@@ -6192,19 +6854,19 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Reinforced Concrete",
-            "qty": 79100
+            "qty": 164025
           },
           {
             "item": "Batteries",
-            "qty": 39550
+            "qty": 259200
           },
           {
             "item": "Wire",
-            "qty": 79100000
+            "qty": 32400000
           },
           {
             "item": "Frames",
-            "qty": 19780000
+            "qty": 8165000
           }
         ]
       }
