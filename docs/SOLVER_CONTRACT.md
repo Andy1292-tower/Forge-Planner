@@ -19,7 +19,16 @@ Credits refinements retain their last completed incumbent when a candidate reach
 
 ### Items
 
-Items mode uses the enabled outputs and their priority weights to maximize the shared weighted output floor. When a feasible solution exists, the weights shape the output ratio; they do not turn the result into independent per-item maximums.
+Items mode uses the enabled outputs and their mix numbers to maximize the shared weighted output floor. When a feasible solution exists, the numbers shape the output ratio; they do not turn the result into independent per-item maximums.
+
+Two mix modes select which number each output contributes, and the mode is a solve input:
+
+- **Ratio** asks for an output ratio counted in item units. An item whose ceiling is lower costs proportionally more to demand at the same number.
+- **Share of max** asks for a percentage of what that output could reach with the whole factory dedicated to it. The planner measures each enabled output's dedicated ceiling with one single-target solve, converts to a ratio weight of `share x ceiling`, and reports the ceilings alongside the plan. Calibration shares the solve's time budget rather than adding to it, and is cached against the factory inputs so changing a share does not re-measure. An output with a zero ceiling cannot be made at all and is named in the result, because every output shares one floor and leaving such an output enabled holds all the others at zero.
+
+The search itself is unchanged by the mix mode: both modes produce a ratio weight per output and hand the same weighted max-min problem to the same solver.
+
+The result names which output is setting the floor and how much room each other output has above it. Slider positions do not map one-to-one onto plans: an output's achievable rate is quantized by whole line assignments, so a range of positions can legitimately produce the same plan.
 
 ### Credits
 

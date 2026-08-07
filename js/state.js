@@ -293,11 +293,19 @@ function validateAndMigrate(candidate){
     const target=_object(_readData(targets,item,path,errors),path,errors);if(!target)return;
     if(!_own(target,"on"))_pushError(errors,path+".on","is required");
     if(!_own(target,"w"))_pushError(errors,path+".w","is required");
+    // `share` is additive: builds written before the share-of-max mode existed carry only `w`
+    // and import with the default percentage rather than being rejected.
     out.targets[item]={
       on:_boolean(_readData(target,"on",path+".on",errors),path+".on",errors),
-      w:_number(_readData(target,"w",path+".w",errors),FIELD_SCHEMA.targetWeight,path+".w",errors)
+      w:_number(_readData(target,"w",path+".w",errors),FIELD_SCHEMA.targetWeight,path+".w",errors),
+      share:_own(target,"share")
+        ?_number(_readData(target,"share",path+".share",errors),FIELD_SCHEMA.targetShare,path+".share",errors)
+        :FIELD_SCHEMA.targetShare.defaultValue
     };
   });
+  if(_own(candidate,"targetMode")){
+    out.targetMode=_enum(_readData(candidate,"targetMode","targetMode",errors),FIELD_SCHEMA.targetMode,"targetMode",errors);
+  }
 
   // Saved output sets are additive: a build written before they existed simply has none,
   // so they are read when present rather than demanded of every versioned save.
@@ -314,11 +322,17 @@ function validateAndMigrate(candidate){
         const item=_enum(_readData(entry,"item",entryPath+".item",errors),FIELD_SCHEMA.item,entryPath+".item",errors);
         if(usedItems.has(item))_pushError(errors,entryPath+".item","is listed more than once in this output set");
         usedItems.add(item);
-        copiedConfig.push({item,w:_number(_readData(entry,"w",entryPath+".w",errors),FIELD_SCHEMA.targetWeight,entryPath+".w",errors)});
+        copiedConfig.push({item,
+          w:_number(_readData(entry,"w",entryPath+".w",errors),FIELD_SCHEMA.targetWeight,entryPath+".w",errors),
+          share:_own(entry,"share")
+            ?_number(_readData(entry,"share",entryPath+".share",errors),FIELD_SCHEMA.targetShare,entryPath+".share",errors)
+            :FIELD_SCHEMA.targetShare.defaultValue});
       });
       out.targetSaved.push({
         id:_own(set,"id")?_string(_readData(set,"id",path+".id",errors),FIELD_SCHEMA.id,path+".id",errors):"",
         name:_own(set,"name")?_string(_readData(set,"name",path+".name",errors),FIELD_SCHEMA.projectName,path+".name",errors):"",
+        // A set written before share mode existed is a ratio set; that is what its numbers meant.
+        mode:_own(set,"mode")?_enum(_readData(set,"mode",path+".mode",errors),FIELD_SCHEMA.targetMode,path+".mode",errors):"ratio",
         config:copiedConfig
       });
     });}

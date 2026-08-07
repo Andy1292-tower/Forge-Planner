@@ -49,6 +49,15 @@ const FIELD_SCHEMA=Object.freeze({
   calibrationSeconds:_field("number",null,{min:1e-6,max:1e15,allowBlank:false,notation:"decimal",inputMode:"decimal",label:"craft seconds"}),
   targetEnabled:_field("boolean",false,{allowBlank:false,label:"target enabled"}),
   targetWeight:_field("integer",1,{min:1,max:9,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"target priority"}),
+  /* Share mode states the wanted output as a percentage of what that item alone could reach, so
+     items with very different ceilings stay comparable.
+     The 5% step is measured, not taste. Sweeping one output across the whole range at 1% on a
+     7-line factory produced 96 slider positions but only 14 distinct plans, and neighbouring
+     positions flip-flopped between the same two of them — the plan is quantised by whole line
+     assignments, so most of that travel is search noise rather than control. A 5% step keeps 10
+     of the 14 with a fifth of the positions; 10% keeps only 7. */
+  targetShare:_field("integer",50,{min:5,max:100,step:5,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"target share of maximum"}),
+  targetMode:_field("enum","ratio",{values:Object.freeze(["ratio","share"]),allowBlank:false,label:"output mix mode"}),
   mode:_field("enum",_FIELD_DEFAULTS.mode,{values:Object.freeze(["items","credits","project","manual"]),allowBlank:false,label:"planner mode"}),
   projectStability:_field("enum",_FIELD_DEFAULTS.projectStability,{values:Object.freeze(["prefer-current","reoptimize"]),allowBlank:false,label:"Project line-job policy"}),
   projLineMode:_field("enum",_FIELD_DEFAULTS.projLineMode,{values:Object.freeze(["split","static"]),allowBlank:false,label:"Project line plan"}),
@@ -186,7 +195,7 @@ function fieldInputAttributes(rule,overrides={}){
   if(rule&&(rule.type==="number"||rule.type==="integer")){
     attrs.min=String(rule.min);
     attrs.max=String(rule.max);
-    attrs.step=rule.type==="integer"?"1":"any";
+    attrs.step=rule.step!=null?String(rule.step):(rule.type==="integer"?"1":"any");
     attrs.inputmode=rule.inputMode||(rule.type==="integer"?"numeric":"decimal");
     if(rule.maxDraftLength)attrs.maxlength=String(rule.maxDraftLength);
   }

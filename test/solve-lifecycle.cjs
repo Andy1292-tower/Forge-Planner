@@ -569,7 +569,7 @@ test("Items cache misses projected input changes and expired records", () => {
   assert.equal(expired.workers.length, 1, "a record exactly 24 hours old must dispatch a Worker");
 });
 
-test("daily cache version 3 rejects version 2 bytes and keys each raw mined source", () => {
+test("daily cache version 4 rejects version 3 bytes and keys each raw mined source", () => {
   const storage = new Map();
   const original = maxItemsState({ minedIncome: {
     Vespium: { rigPerMin: 2, resourcesTradingPerSec: 3 },
@@ -578,16 +578,16 @@ test("daily cache version 3 rejects version 2 bytes and keys each raw mined sour
   primeItemsCache(storage, original);
   const cacheKey = [...storage.keys()][0];
   const persisted = JSON.parse(storage.get(cacheKey));
-  assert.equal(persisted.version, 3);
-  assert.ok(persisted.entries.every(entry => entry.version === 3));
+  assert.equal(persisted.version, 4);
+  assert.ok(persisted.entries.every(entry => entry.version === 4));
 
   const stale = JSON.parse(JSON.stringify(persisted));
-  stale.version = 2;
-  stale.entries.forEach(entry => { entry.version = 2; });
+  stale.version = 3;
+  stale.entries.forEach(entry => { entry.version = 3; });
   storage.set(cacheKey, JSON.stringify(stale));
   const staleHarness = lifecycleHarness({ storage });
   staleHarness.callRequest({ mode: "items", stateRevision: 2, budget: original.solveBudget, stateSnapshot: original }, () => {});
-  assert.equal(staleHarness.workers.length, 1, "a version-2 cache must not satisfy a corrected Battery/source solve");
+  assert.equal(staleHarness.workers.length, 1, "a version-3 cache predates the mix mode and must not satisfy an Items solve");
 
   const equalAggregateStorage = new Map();
   primeItemsCache(equalAggregateStorage, original);

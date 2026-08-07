@@ -3,6 +3,8 @@
 let _lastProjectRes=null;
 let _lastProjectKey=null;
 let _lastItemsCreditsRes=null;   // items/credits solve result, cached so "Copy to Manual" has something to read
+let _lastItemsSoloMax=null;      // per-item dedicated-factory ceilings from the last share-mode solve
+function lastItemsCalibration(){return _lastItemsSoloMax||{};}
 // The step-by-step plan is now the main Project-mode panel (was a modal). These two flags persist the
 // state of its collapsible sections across the frequent #results re-renders (every solve rebuilds the
 // panel's innerHTML), so an expanded "Full breakdown" doesn't slam shut when you tweak a level. Flipped
@@ -433,6 +435,10 @@ function renderSolveResult(res,el,stat,solveKey,metadata){
     renderProjectResults(res,el,stat);return;
   }
   _lastItemsCreditsRes=res;
+  // The share sliders need the measured ceilings to say what a percentage is a percentage of.
+  // Keyed on nothing because a ceiling depends only on the factory: checking or unchecking an
+  // output leaves every other item's ceiling correct, and a line edit raises the stale-results bar.
+  if(res.mode==="items"&&res.soloMax){_lastItemsSoloMax=res.soloMax;if(typeof refreshTargetCeilings==="function")refreshTargetCeilings();}
   // flag the rail's Projects+Prices segment when credits mode is selected but no prices exist yet
   if(typeof setPriceNeeded==="function")setPriceNeeded(res.mode==="credits"&&![...RAWS,...PRODUCTS].some(it=>(num(S.sellPrice[it])||0)>0));
   if(res.empty){el.innerHTML=`<div class="notice info">Select one or more outputs on the left to optimize — or switch to <b>Max credits/hr</b> mode to find the best dedicated sell plan.</div>`;stat.textContent="Plan updated. No outputs selected.";return;}
@@ -442,6 +448,14 @@ function renderSolveResult(res,el,stat,solveKey,metadata){
   }
   if(res.issues.length){
     html+=`<div class="notice warn"><b>Missing data:</b><br>${res.issues.join("<br>")}</div>`;
+  }
+  // All the outputs share one floor, so a single unmakeable one drags every other to zero. Without
+  // this the result is an all-zero plan and a generic "try adding a line", with no hint that one
+  // checkbox caused it. Only share mode measures each item's ceiling, so only it can name the item.
+  if(Array.isArray(res.blocked)&&res.blocked.length){
+    html+=`<div class="notice warn"><b>${res.blocked.join(" and ")} cannot be made at all</b> with the current lines and data —
+      no compression level any line can reach produces ${res.blocked.length>1?"them":"it"}. Every output shares one floor, so
+      leaving ${res.blocked.length>1?"them":"it"} checked holds all the others at zero. Uncheck ${res.blocked.length>1?"them":"it"}, or fix the missing costs.</div>`;
   }
   const anyOut=res.mode==="credits"?res.credits>1e-6:Object.values(res.out).some(v=>v>1e-6);
   if(!anyOut&&!res.issues.length&&(res.mode!=="credits"||res.searchExhaustive===true)){
@@ -464,9 +478,19 @@ function renderSolveResult(res,el,stat,solveKey,metadata){
     html+=`<div class="metric"><div class="l">Best — sell ${res.bestItem||"—"}</div>
       <div class="v">${disp(res.credits||0)}</div><div class="u">credits per hour</div></div>`;
   }else{
+    // Every output shares one weighted floor, so exactly one of them is holding the rest down.
+    // Naming it turns "everything came out low" into a decision: that is the item worth spending
+    // the next line or compression upgrade on. The others report how much room they have above it.
     res.targets.forEach(t=>{
-      html+=`<div class="metric"><div class="l">${t}</div>
-        <div class="v">${disp(res.out[t]||0)}</div><div class="u">per hour</div></div>`;
+      const isBinding=res.binding===t;
+      const slack=res.slack&&res.slack[t];
+      const share=res.shareOfMax&&res.shareOfMax[t];
+      let tag="";
+      if(isBinding)tag=`<div class="binding-tag">setting the pace</div>`;
+      else if(slack>0.005)tag=`<div class="slack-tag">${fmt(slack*100,0)}% spare</div>`;
+      if(share>0)tag+=`<div class="slack-tag">${fmt(share*100,0)}% of its max</div>`;
+      html+=`<div class="metric${isBinding?" binding":""}"><div class="l">${t}</div>
+        <div class="v">${disp(res.out[t]||0)}</div><div class="u">per hour</div>${tag}</div>`;
     });
   }
   html+=`</div>`;

@@ -27,7 +27,7 @@ function solveStateKey(state){
 /* Items and Credits solves can consume the full user budget even when nothing relevant changed.
  * Keep a small, separate daily cache keyed only by the inputs each mode actually reads. It never
  * enters the save/export schema, and every storage failure falls through to an ordinary solve. */
-const DAILY_SOLVE_CACHE_VERSION=3;
+const DAILY_SOLVE_CACHE_VERSION=4;
 // Retain the original storage key; the version invalidates pre-Credits records safely.
 const DAILY_SOLVE_CACHE_STORAGE_KEY="forgePlannerMaxItemsCache_v1";
 const DAILY_SOLVE_CACHE_AGE_MS=24*60*60*1000;
@@ -58,7 +58,9 @@ function dailySolveConditionKey(state){
     prodCost:source.prodCost||{},forgie:source.forgie||{},minedIncome:source.minedIncome||{}
   };
   if(mode==="credits")projected.sellPrice=source.sellPrice||{};
-  else projected.targets=source.targets||{};
+  // The mix mode reads a different number off each target, so two states with identical `targets`
+  // still solve to different plans under it. It belongs in the key beside them.
+  else{projected.targets=source.targets||{};projected.targetMode=source.targetMode==="share"?"share":"ratio";}
   return canonicalSolveJson(projected);
 }
 function dailySolveConditionHash(value){

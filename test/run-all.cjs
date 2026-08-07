@@ -27,6 +27,7 @@ const tests = [
   "test/report-issue.cjs",
   "test/scale.cjs",
   "test/seqgate.cjs",
+  "test/sharemode.cjs",
   "test/solve-lifecycle.cjs",
   "test/static-asset-build.cjs",
   "test/state-schema.cjs",
