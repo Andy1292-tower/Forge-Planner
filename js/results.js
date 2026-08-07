@@ -429,6 +429,29 @@ function renderResults(options){
     if(res)renderSolveResult(res,el,stat,solveKey,metadata);
   });
 }
+// A bounded search reports how far the plan could still be from the ceiling the LP relaxation
+// already proved. Without it every unproven solve reads the same, whether it converged almost
+// immediately or ran out of budget far from the ceiling. `bound` is absent when a margin is set,
+// because the relaxation encodes strict feasibility and cannot bound a may-work optimum.
+function optimalityNotice(res){
+  const bounded=Number.isFinite(res.bound)&&res.bound>0&&res.feasible&&res.objective>0;
+  if(!bounded){
+    const why=res.tol>0
+      ?"An optimality bound is not available while a margin is set."
+      :"The search did not finish an exhaustive proof.";
+    return `<div class="notice info" style="font-size:11.5px">Large search space — this is the best plan found within the time budget. ${why}</div>`;
+  }
+  const gap=Math.max(0,(res.bound-res.objective)/res.bound);
+  // Rounded up, never down: a quoted ceiling has to stay true at the precision it is stated to.
+  const pct=gap<0.001?"0.1%":fmt(gap*100,1)+"%";
+  if(gap>0.15){
+    return `<div class="notice warn" style="font-size:11.5px"><b>Best found so far — up to ${pct} below the ceiling.</b> The search ran out of time well short of proving this plan. Raise the solve-time budget for a materially better answer.</div>`;
+  }
+  const more=gap<0.02
+    ?"The search stopped once it stopped improving."
+    :`Raising the solve time may close some of the remaining ${pct}.`;
+  return `<div class="notice info" style="font-size:11.5px"><b>Within ${pct} of the best possible.</b> ${more} No plan can beat this one by more than ${pct}.</div>`;
+}
 function renderSolveResult(res,el,stat,solveKey,metadata){
   if(res.mode==="project"){
     if(typeof solveKey==="string")_lastProjectKey=solveKey;
@@ -467,7 +490,10 @@ function renderSolveResult(res,el,stat,solveKey,metadata){
   }else if(res.mode==="credits"&&res.searchExhaustive===false){
     html+=`<div class="notice info" style="font-size:11.5px"><b>Best found, not proven best.</b> Every priced item received a bounded baseline, but deeper search reached its limit for at least one candidate.</div>`;
   }else if(res.mode!=="credits"&&res.capped){
-    html+=`<div class="notice info" style="font-size:11.5px">Large search space — this is the best plan found within the time budget, but the search did not finish an exhaustive proof.</div>`;
+    html+=optimalityNotice(res);
+  }else if(res.mode!=="credits"&&res.feasible){
+    // An exhausted search is optimal on its own terms; a loose LP ceiling above it says nothing.
+    html+=`<div class="notice good" style="font-size:11.5px"><b>Proven optimal.</b> The search finished — no better plan exists for these lines and costs.</div>`;
   }
   if(res.usesMargin){
     html+=`<div class="notice info"><b>May-work plan.</b> This uses your ${fmt(res.tol*100,1)}% margin — one or more inputs runs a small paper shortfall (see balance below). Likely fine if it's inside your game's rounding/duplication slack, but not strictly guaranteed.</div>`;

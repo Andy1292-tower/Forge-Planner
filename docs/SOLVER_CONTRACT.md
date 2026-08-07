@@ -7,6 +7,7 @@ This document separates what the planner guarantees from what it estimates. The 
 For a feasible optimized Items, Credits, or Project result, “best” means the best plan found within the applicable selected time budget unless the result explicitly says the relevant search was exhaustive. Manual assignments and blocked or analytical diagnostics make no best-plan claim. A bounded result is not a mathematical proof of optimality.
 
 - `capped: true` means search ended before exhaustive proof.
+- Items `bound` is the LP relaxation's ceiling on the objective, in the same per-hour units, and is never below the `objective` it bounds. It is `null` when no completed relaxation applies — including every solve with a margin set, because the relaxation encodes strict feasibility and cannot bound a may-work optimum. When `capped: true` and `bound` is present, no plan can beat the reported one by more than `(bound - objective) / bound`. A `capped: false` result is optimal whatever the bound says, because the ceiling stays loose even after the search proves the optimum.
 - Credits `allCandidatesEvaluated: false` means one or more priced items did not receive a completed baseline; a displayed winner covers evaluated items only.
 - Credits `searchExhaustive: false` with all candidates evaluated means every item received a baseline, but deeper search did not finish for at least one candidate.
 - A feasible Project result is actionable only when its full replay is valid: `feasible`, `lpFeasible`, and `scheduleValidation.ok` must all be true and no first failure may remain.
