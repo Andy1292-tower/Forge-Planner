@@ -412,6 +412,16 @@ select:focus,input:focus{border-color:var(--copper);
 }
 
 /* targets */
+/* Saved output sets sit above the checkbox list they rewrite. The picker keeps a row of its own:
+   it never displays a chosen set, so its prompt is the only label it ever shows and must not be
+   clipped in this narrow column. Buttons carry a user-chosen set name, which renderTargetPresetBar
+   shortens for the label — the full name stays in the tooltip. */
+.tg-presets{display:flex;flex-wrap:wrap;align-items:center;gap:8px;
+  margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.tg-presets select{flex:1 0 100%;width:100%}
+.tg-presets .btn{flex:0 1 auto;max-width:100%;white-space:nowrap}
+.tg-presets .btn:disabled{opacity:.45;cursor:not-allowed;border-color:var(--line);color:var(--ink3);
+  background:transparent;filter:none;box-shadow:none;transform:none}
 .tg{display:flex;flex-direction:column;gap:8px}
 .tg-sub{font-size:10px;color:var(--ink3);letter-spacing:.6px;text-transform:uppercase;font-weight:600;
   margin:6px 2px 0;padding-top:8px;border-top:1px solid var(--line)}

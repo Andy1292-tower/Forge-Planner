@@ -26,6 +26,7 @@ Despite the historical storage-key suffix, `schemaVersion` inside the JSON is th
 | `forgie`, `forgieText` | Accepted Lil' Forgie rates plus display drafts. |
 | `minedIncome`, `minedIncomeText` | Source-aware Vespium and Hydracite income values plus matching display drafts. |
 | `targets` | Per-item enabled state and priority weight. |
+| `targetSaved[]`, `targetActiveId` | Named output sets and the ID of the set most recently loaded or saved. |
 | `projects[]` | Catalog or custom projects, level costs, active range, completion count, numeric order, and the `_open` card-disclosure state. |
 | `inventory`, `inventoryText` | Current ordinary-item stock plus display drafts. |
 | `projectSeq`, `projectGate` | Project ordering and one-phase choices. |
@@ -35,6 +36,12 @@ Despite the historical storage-key suffix, `schemaVersion` inside the JSON is th
 | `manualSaved[]`, `manualActiveId` | Named Manual presets and the selected preset ID. |
 
 Catalog-backed projects retain their `catId`, user range, completion, activation, and order. On normalization, their name, description, and level costs are refreshed from the current shipped catalog. Custom projects retain their exported level data.
+
+### Saved output sets
+
+A `targetSaved[]` entry is `{id, name, config}`, where `config` lists only the checked outputs as `{item, w}`. Applying a set clears every checkbox first, so an item the set does not name is off afterwards regardless of its previous state. Each item may appear at most once per set, and the shared 128-preset ceiling applies.
+
+`targetSaved` and `targetActiveId` are additive: a build written before they existed imports with no saved sets rather than being rejected, and every other accepted schema keeps its own required fields.
 
 ### Mined-resource source units
 
@@ -130,6 +137,6 @@ When adding schema `5` or later, update defaults and `FIELD_SCHEMA`, add an expl
 
 ## Not persisted in the build
 
-Solver results, active Worker requests, generation tokens, solve overlays, active dialog/focus state, and the internal line-job stability cache are runtime-only. Project card `_open` is intentionally persisted, but it and `planStart` are display-only and omitted from solve equivalence. The Worker receives a complete cloned accepted state so it can use the same strict schema boundary as import and persistence; the optimizer does not consume those display-only values. The chosen stability policy is persisted; the cached prior assignment is not.
+Solver results, active Worker requests, generation tokens, solve overlays, active dialog/focus state, and the internal line-job stability cache are runtime-only. Project card `_open` is intentionally persisted, but it and `planStart` are display-only and omitted from solve equivalence. `targetSaved` and `targetActiveId` are persisted and likewise omitted: only `targets` is a solve input, so naming or deleting a set never discards a running solve. The Worker receives a complete cloned accepted state so it can use the same strict schema boundary as import and persistence; the optimizer does not consume those display-only values. The chosen stability policy is persisted; the cached prior assignment is not.
 
 Planner state is local-first. The shipped app has no planner backend or analytics payload. It still loads a font stylesheet and font files from Google Fonts, so a browser makes ordinary third-party font requests; planner state is not placed in those request URLs or bodies.

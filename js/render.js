@@ -102,6 +102,48 @@ function renderTargets(){
   sub.textContent="Raw materials";
   box.appendChild(sub);
   RAWS.forEach(r=>box.appendChild(targetRow(r)));
+  renderTargetPresetBar();
+}
+// The picker is a loader, not a mirror of the current checkboxes: it always sits on its own
+// prompt and never marks a set as selected. Marking one would be a claim the checkboxes still
+// match it — untrue the moment anything is toggled by hand — and it would make re-picking the
+// same set fire no change event, so the set you just left could not be loaded back.
+// S.targetActiveId is the set most recently loaded or saved, and the buttons name it.
+// Set names are user-chosen and unbounded, but these buttons sit in the narrow input column.
+// Shorten what the label shows; the button's tooltip still carries the whole name.
+const TARGET_PRESET_LABEL_MAX=22;
+function targetPresetLabelName(name){
+  return name.length>TARGET_PRESET_LABEL_MAX?name.slice(0,TARGET_PRESET_LABEL_MAX-1).trimEnd()+"…":name;
+}
+function renderTargetPresetBar(){
+  const box=document.getElementById("targetPresetBar");if(!box)return;
+  const saved=S.targetSaved||[],active=saved.find(p=>p.id===S.targetActiveId);
+  const checked=ALLITEMS.filter(it=>S.targets[it]&&S.targets[it].on).length;
+  const select=domElement("select");
+  select.id="targetPreset";
+  select.setAttribute("aria-label","Load a saved output set");
+  select.appendChild(domOption("",saved.length?"— load a saved output set —":"— no saved output sets yet —",true));
+  saved.forEach(p=>select.appendChild(domOption(p.id,p.name,false)));
+  const controls=[select];
+  if(active){
+    const update=domElement("button","btn ghost",`Update “${targetPresetLabelName(active.name)}”`);
+    update.id="targetUpdate";update.type="button";
+    update.title=`Overwrite “${active.name}” with the currently checked outputs`;
+    controls.push(update);
+    const del=domElement("button","btn ghost","Delete");
+    del.id="targetDelPreset";del.type="button";del.title=`Delete “${active.name}”`;
+    controls.push(del);
+  }
+  const saveNew=domElement("button","btn ghost","Save as new…");
+  saveNew.id="targetSaveNew";saveNew.type="button";
+  saveNew.title="Save the currently checked outputs and their priorities as a named set";
+  controls.push(saveNew);
+  const clear=domElement("button","btn ghost","Uncheck all");
+  clear.id="targetUncheckAll";clear.type="button";
+  clear.title="Uncheck every output";
+  clear.disabled=checked===0;
+  controls.push(clear);
+  box.replaceChildren(...controls);
 }
 
 /* ---------- RENDER: mined resources ---------- */

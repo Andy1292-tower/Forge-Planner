@@ -139,7 +139,7 @@ function defaults(){
       Vespium:{rigPerMin:"",resourcesTradingPerSec:""},
       Hydracite:{resourcesTradingPerSec:""}
     },
-    targets:tg,
+    targets:tg,targetSaved:[],targetActiveId:null,
     projects:[],inventory:nulls(),inventoryText:{},projectSeq:true,projectGate:true,projectStability:"prefer-current",projLineMode:"split",
     planStart:null,
     manual:[],manualSaved:[],manualActiveId:null
@@ -161,6 +161,18 @@ function syncManual(st){
     st.manual[i]=m;
   });
   st.manual.length=(st.lines||[]).length;
+}
+
+// Saved output sets: the checked outputs are the question a Max items/hr solve answers, and
+// people ask several different ones of the same factory. A set records only the checked items
+// and their priorities, so applying one clears every checkbox first — an item the set does not
+// name is off, whatever it was before.
+function targetPresetConfig(st){
+  return ALLITEMS.filter(it=>st.targets[it]&&st.targets[it].on).map(it=>({item:it,w:st.targets[it].w}));
+}
+function applyTargetPresetConfig(st,config){
+  ALLITEMS.forEach(it=>{if(st.targets[it])st.targets[it].on=false;});
+  (config||[]).forEach(c=>{if(st.targets[c.item])st.targets[c.item]={on:true,w:c.w};});
 }
 
 const LSKEY="forgePlannerState_v3";
@@ -198,6 +210,25 @@ function normalize(st){
   if(!st.targets)st.targets={};
   PRODUCTS.forEach(p=>{if(!st.targets[p])st.targets[p]={on:false,w:1};});
   RAWS.forEach(r=>{if(!st.targets[r])st.targets[r]={on:false,w:1};});
+  // Saved output sets record only the checked items and their priorities, so loading one is
+  // "clear every checkbox, then apply these" — an item missing from a set is simply off.
+  if(!Array.isArray(st.targetSaved))st.targetSaved=[];
+  const _wRule=typeof FIELD_SCHEMA!=="undefined"?FIELD_SCHEMA.targetWeight:{min:1,max:9,defaultValue:1};
+  st.targetSaved=st.targetSaved.filter(p=>p&&typeof p==="object"&&Array.isArray(p.config)).map(p=>{
+    const seen=new Set();
+    return {
+      id:typeof p.id==="string"?p.id:newId(),
+      name:typeof p.name==="string"?p.name:"Outputs",
+      config:p.config.filter(c=>{
+        if(!c||!ALLITEMS.includes(c.item)||seen.has(c.item))return false;
+        seen.add(c.item);return true;
+      }).map(c=>{
+        const w=Math.floor(Number(c.w));
+        return {item:c.item,w:Number.isFinite(w)?Math.max(_wRule.min,Math.min(_wRule.max,w)):_wRule.defaultValue};
+      })
+    };
+  });
+  if(typeof st.targetActiveId!=="string")st.targetActiveId=null;
   if(!st.minedIncome||typeof st.minedIncome!=="object"||Array.isArray(st.minedIncome))st.minedIncome={};
   if(!st.minedIncomeText||typeof st.minedIncomeText!=="object"||Array.isArray(st.minedIncomeText))st.minedIncomeText={};
   const legacyVesp=Object.prototype.hasOwnProperty.call(st.minedIncome,"Vespium")?st.minedIncome.Vespium:st.gelVesp;

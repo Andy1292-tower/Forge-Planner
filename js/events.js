@@ -147,6 +147,66 @@ document.getElementById("targets").addEventListener("input",e=>{
   if(w){const result=commitFieldDraft(e.target,FIELD_SCHEMA.targetWeight,S.targets[w].w,(st,value)=>{st.targets[w].w=value;});if(result.committed){e.target.parentElement.querySelector(".pv").textContent=String(result.value);save();scheduleSolve();}}
 });
 
+/* ---------- saved output sets ---------- */
+// Every one of these rewrites the checkbox list, which renderTargets() rebuilds from scratch —
+// so the control the user is operating is destroyed mid-interaction. Restore focus to the
+// replacement by id, or a keyboard user is dropped back to the top of the page after each edit.
+function commitTargetPresetEdit(mutator,focusId,resolve){
+  mutateState(mutator);
+  renderTargets();
+  // Uncheck all disables itself the moment nothing is checked, so fall back to the set picker
+  // rather than leaving focus on a dead control.
+  const replacement=document.getElementById(focusId);
+  const focusTarget=replacement&&!replacement.disabled?replacement:document.getElementById("targetPreset");
+  if(focusTarget)focusTarget.focus();
+  if(resolve)scheduleSolve();else schedulePersist();
+}
+function saveTargetPreset(name){
+  commitTargetPresetEdit(st=>{
+    const id=newId();
+    if(!Array.isArray(st.targetSaved))st.targetSaved=[];
+    st.targetSaved.push({id,name,config:targetPresetConfig(st)});
+    st.targetActiveId=id;
+  },"targetPreset",false);
+}
+function loadTargetPreset(id){
+  const preset=(S.targetSaved||[]).find(p=>p.id===id);if(!preset)return;
+  commitTargetPresetEdit(st=>{applyTargetPresetConfig(st,preset.config);st.targetActiveId=id;},"targetPreset",true);
+}
+// Overwrite a saved set with the currently checked outputs (keeps its id and name).
+function updateTargetPreset(id){
+  if(!(S.targetSaved||[]).some(p=>p.id===id))return;
+  commitTargetPresetEdit(st=>{
+    st.targetSaved.find(p=>p.id===id).config=targetPresetConfig(st);
+    st.targetActiveId=id;
+  },"targetPreset",false);
+}
+function deleteTargetPreset(id){
+  commitTargetPresetEdit(st=>{
+    st.targetSaved=(st.targetSaved||[]).filter(p=>p.id!==id);
+    if(st.targetActiveId===id)st.targetActiveId=null;
+  },"targetPreset",false);
+}
+function uncheckAllTargets(){
+  // Clearing leaves the loaded set selected so "Update" still names something; the set itself
+  // is only rewritten when the user asks for it.
+  commitTargetPresetEdit(st=>applyTargetPresetConfig(st,[]),"targetUncheckAll",true);
+}
+document.getElementById("targetPresetBar").addEventListener("change",e=>{
+  if(e.target.id==="targetPreset"&&e.target.value)loadTargetPreset(e.target.value);
+});
+document.getElementById("targetPresetBar").addEventListener("click",e=>{
+  const button=e.target.closest&&e.target.closest("button");if(!button)return;
+  if(button.id==="targetUpdate"){if(S.targetActiveId)updateTargetPreset(S.targetActiveId);return;}
+  if(button.id==="targetSaveNew"){const name=(prompt("Name this output set:","")||"").trim();if(name)saveTargetPreset(name);return;}
+  if(button.id==="targetDelPreset"){
+    const active=(S.targetSaved||[]).find(p=>p.id===S.targetActiveId);
+    if(active&&confirm(`Delete the saved output set “${active.name}”?`))deleteTargetPreset(active.id);
+    return;
+  }
+  if(button.id==="targetUncheckAll")uncheckAllTargets();
+});
+
 document.getElementById("recipes").addEventListener("input",e=>{
   const d=e.target.dataset;if(!d.res)return;
   const rule=d.fld==="baseT"?FIELD_SCHEMA.baseTime:FIELD_SCHEMA.recipeCost;
