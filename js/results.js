@@ -429,10 +429,10 @@ function renderResults(options){
     if(res)renderSolveResult(res,el,stat,solveKey,metadata);
   });
 }
-// A bounded search reports how far the plan could still be from the ceiling the LP relaxation
-// already proved. Without it every unproven solve reads the same, whether it converged almost
-// immediately or ran out of budget far from the ceiling. `bound` is absent when a margin is set,
-// because the relaxation encodes strict feasibility and cannot bound a may-work optimum.
+// A bounded search reports what separates its plan from the ceiling the LP relaxation proved.
+// Without it every unproven solve reads the same, whether it converged almost immediately or was
+// still climbing when the clock stopped it. `bound` is absent when a margin is set, because the
+// relaxation encodes strict feasibility and cannot bound a may-work optimum.
 function optimalityNotice(res){
   const bounded=Number.isFinite(res.bound)&&res.bound>0&&res.feasible&&res.objective>0;
   if(!bounded){
@@ -444,13 +444,19 @@ function optimalityNotice(res){
   const gap=Math.max(0,(res.bound-res.objective)/res.bound);
   // Rounded up, never down: a quoted ceiling has to stay true at the precision it is stated to.
   const pct=gap<0.001?"0.1%":fmt(gap*100,1)+"%";
-  if(gap>0.15){
-    return `<div class="notice warn" style="font-size:11.5px"><b>Best found so far — up to ${pct} below the ceiling.</b> The search ran out of time well short of proving this plan. Raise the solve-time budget for a materially better answer.</div>`;
+  // The ceiling comes from a relaxation that lets one line split its time across several jobs. A
+  // real line runs one job, so part of every gap is unreachable by construction, and more outputs
+  // means more of it: on a five-output solve the relaxation splits most lines, on a single-output
+  // one it often splits none and the gap closes to zero. Leading with the shortfall would read as a
+  // fault in a plan the search could not improve on.
+  const ceiling=`Its theoretical ceiling is ${pct} higher, but that ceiling lets one line split its time across several jobs, so some of the gap is not reachable by any real plan.`;
+  // The advice follows why the search stopped, not how wide the gap is. Seeds, the ILS stagnation
+  // cutoff and the convergence window are all budget-independent by design, so a search that
+  // stopped improving returns this same plan at any larger budget.
+  if(res.deadlineReached===true){
+    return `<div class="notice ${gap>0.15?"warn":"info"}" style="font-size:11.5px"><b>Best plan found so far.</b> The time budget ended the search before it settled, so a larger budget may find a better plan. ${ceiling}</div>`;
   }
-  const more=gap<0.02
-    ?"The search stopped once it stopped improving."
-    :`Raising the solve time may close some of the remaining ${pct}.`;
-  return `<div class="notice info" style="font-size:11.5px"><b>Within ${pct} of the best possible.</b> ${more} No plan can beat this one by more than ${pct}.</div>`;
+  return `<div class="notice info" style="font-size:11.5px"><b>Best plan found.</b> The search stopped improving with budget to spare, so a larger budget returns this same plan. ${ceiling}</div>`;
 }
 function renderSolveResult(res,el,stat,solveKey,metadata){
   if(res.mode==="project"){

@@ -89,6 +89,22 @@ const runner = `
     small.capped===false&&Number.isFinite(small.bound)&&small.bound>=small.objective,
     "capped="+small.capped+" bound="+round(small.bound)+" objective="+round(small.objective));
 
+  /* ---- the result says why the search stopped ---- */
+  // The notice's advice hangs on this: a budget the search never reached must not be reported as
+  // exhausted, or the reader is told to raise a limit that was never the constraint.
+  const roomy=solve(MIX,WIDE,20000);
+  check("a search that converges well inside its budget does not report the deadline as reached",
+    roomy.deadlineReached===false&&roomy.ms<20000*0.9,
+    "ms="+Math.round(roomy.ms)+" of 20000, deadlineReached="+roomy.deadlineReached);
+  check("a converged solve returns the same objective however much budget it is given",
+    Math.abs(roomy.objective-patient.objective)<=1e-9*Math.max(1,patient.objective),
+    "12s="+round(patient.objective)+" 20s="+round(roomy.objective));
+
+  const HUGE=Array.from({length:12},(_,i)=>({max:[64,32,16,8][i%4],spx:40-i*1.5,turbo:0}));
+  const starved=solve({Frames:1,Wire:1,Batteries:1},HUGE,250);
+  check("a search cut off by its budget does report the deadline as reached",
+    starved.deadlineReached===true,"ms="+Math.round(starved.ms)+" deadlineReached="+starved.deadlineReached);
+
   /* ---- no bound can be quoted for a margin pass ---- */
   // lpRelax's resource rows use baseArr with no tolerance, so its z cannot bound a may-work optimum.
   const margin=solve(MIX,WIDE,1500,s=>{s.margin=5;});
@@ -109,18 +125,36 @@ const noticeRunner = `
 (function(){
   let fail=0;
   const check=(name,ok,detail)=>{console.log((ok?"ok   ":"FAIL ")+name+" ["+detail+"]");if(!ok)fail++;};
-  const at=gap=>optimalityNotice({feasible:true,objective:100*(1-gap),bound:100,tol:0,capped:true});
+  const at=(gap,deadlineReached)=>optimalityNotice(
+    {feasible:true,objective:100*(1-gap),bound:100,tol:0,capped:true,deadlineReached:!!deadlineReached});
 
   check("a near-proven plan rounds its gap up to 0.1% rather than down to zero",
     at(0.0004).includes("0.1%")&&!at(0.0004).includes("0.0%"),at(0.0004));
-  check("a small gap says the search stopped improving, not that it ran out of time",
-    at(0.004).includes("0.4%")&&at(0.004).includes("stopped improving"),at(0.004));
-  check("a middling gap points at the solve-time budget as the lever",
-    at(0.09).includes("9%")&&at(0.09).includes("Raising the solve time"),at(0.09));
-  check("a wide gap escalates to a warning instead of an informational notice",
-    at(0.38).includes("notice warn")&&at(0.38).includes("38%"),at(0.38));
-  check("every quoted gap states the ceiling as a limit no plan can beat",
-    [0.004,0.09].every(g=>at(g).includes("No plan can beat this one by more than")),"0.4% and 9% bands");
+  check("the notice names how far the theoretical ceiling sits above the plan",
+    at(0.09).includes("9%")&&at(0.09).includes("theoretical ceiling"),at(0.09));
+
+  /* ---- a plan the search could not improve on is reported as the plan, not as a shortfall ---- */
+  // A wide gap on a converged search is mostly the relaxation splitting lines, not a weak plan.
+  // Leading with "up to X% below the ceiling" reads as a fault the reader cannot act on.
+  [0.004,0.09,0.38].forEach(g=>{
+    const conv=at(g,false);
+    check("a converged solve at a "+(g*100).toFixed(1)+"% gap leads with the plan, not the shortfall",
+      conv.includes("<b>Best plan found.</b>")&&!conv.includes("below the ceiling"),conv);
+    check("a converged solve at a "+(g*100).toFixed(1)+"% gap never recommends a larger budget",
+      !conv.includes("larger budget may")&&conv.includes("larger budget returns this same plan"),conv);
+    check("a converged solve at a "+(g*100).toFixed(1)+"% gap stays informational, never a warning",
+      conv.includes('class="notice info"'),conv);
+    check("a deadline-bound solve at a "+(g*100).toFixed(1)+"% gap does offer the budget as a lever",
+      at(g,true).includes("larger budget may find a better plan"),at(g,true));
+  });
+  check("a wide gap that the clock caused escalates to a warning",
+    at(0.38,true).includes("notice warn"),at(0.38,true));
+  check("every quoted gap explains that line-splitting puts part of it out of reach",
+    [0.004,0.38].every(g=>[true,false].every(d=>at(g,d).includes("split its time across several jobs"))),
+    "both bands, both stop reasons");
+  check("a result predating the stop-reason field is not read as having hit the deadline",
+    optimalityNotice({feasible:true,objective:81,bound:100,tol:0,capped:true}).includes("budget to spare"),
+    "deadlineReached absent");
 
   const noBound=optimalityNotice({feasible:true,objective:100,bound:null,tol:0,capped:true});
   check("a result with no bound falls back to the unquantified notice",

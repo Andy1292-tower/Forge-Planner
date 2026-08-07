@@ -391,7 +391,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     // incumbent while the optimum the user asked for is still the relaxed one — which sits above
     // the ceiling and would turn the reported gap into a claim the search cannot make.
     const bound=(lpBound!=null&&tol===0)?lpBound:null;
-    return {best,sorted,lineJobs,resources,resIndex,R,N,tIdx,tol,capped,usesMargin,issues,forgie,bound,
+    return {best,sorted,lineJobs,resources,resIndex,R,N,tIdx,tol,capped,usesMargin,issues,forgie,bound,deadlineReached,
       feasible:best.score>1e-9,interrupted:workInterrupted,localLimitReached,ms:Math.max(0,control.elapsed()-(solveStarted-control.startedAt))};
   }
   function targetChoice(res){const ch=new Array(N);for(let i=0;i<N;i++){const bj=bestJobFor(i,res);ch[i]=bj>=0?bj:idleIdx(i);}return ch;}
@@ -799,7 +799,8 @@ function optimizeInner(timeBudget,testOptions){
     }
     return {empty:false,mode,issues:sr.issues,plan,balance,minedUsage,gelReserved,out,resIndex:sr.resIndex,targets,objective,bound,
       mixMode:S.targetMode==="share"?"share":"ratio",binding,slack,shareOfMax,soloMax:mix.soloMax,blocked:mix.blocked,
-      tol:sr.tol,usesMargin:sr.usesMargin,feasible:sr.feasible,capped:sr.capped,ms:Math.max(0,itemControl.readNow()-t0)};
+      tol:sr.tol,usesMargin:sr.usesMargin,feasible:sr.feasible,capped:sr.capped,deadlineReached:!!sr.deadlineReached,
+      ms:Math.max(0,itemControl.readNow()-t0)};
   }
   // Credits is intentionally a dedicated-item comparison: each priced item gets a whole-factory
   // plan, then those plans are ranked. It is not a theorem that a mixed-sales factory is inferior.
