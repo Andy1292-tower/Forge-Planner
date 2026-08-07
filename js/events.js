@@ -82,16 +82,34 @@ function commitFieldDraft(input,rule,previousValue,mutator){
 }
 
 // Crafter-line edits can drive a heavy re-solve (credits mode runs ~1s+), and people
-// typically batch many speed/turbo changes before checking output. So rather than
-// auto-solving on every keystroke, those edits just persist (save) and mark the shown
+// typically batch many speed/turbo changes before checking output. Ticking projects on and off
+// is the same shape of edit — unticking four projects should cost one solve, not four. So rather
+// than auto-solving on every change, those edits just persist (save) and mark the shown
 // results stale; the user clicks Resimulate — or presses Enter in a line field — to
 // recompute once. Any actual repaint (resimulate, mode switch, …) clears the stale UI.
-function showStale(on){
-  const bar=document.getElementById("staleBar");if(bar)bar.hidden=!on;
+// The bar names what was changed, so a plan left stale is still legible after a tab switch;
+// batching two kinds of edit before resimulating names both.
+const STALE_CAUSES={lines:"crafter line inputs",projects:"project selection"};
+const staleCauses=new Set();
+function showStale(){
+  const on=staleCauses.size>0;
+  const bar=document.getElementById("staleBar");
+  if(bar){
+    const msg=bar.querySelector&&bar.querySelector(".stale-msg");
+    if(msg&&on)msg.textContent=`Plan out of date — ${[...staleCauses].map(c=>STALE_CAUSES[c]).join(" and ")} changed. Press Resimulate to update it.`;
+    bar.hidden=!on;
+  }
   const res=document.getElementById("results");if(res)res.classList.toggle("stale",on);
 }
-function clearStaleUI(){showStale(false);}
-function markStale(){clearTimeout(renderT);renderT=null;persistNow();showStale(true);}
+function clearStaleUI(){staleCauses.clear();showStale();}
+function markStale(cause){clearTimeout(renderT);renderT=null;persistNow();staleCauses.add(STALE_CAUSES[cause]?cause:"lines");showStale();}
+// Ticking a project in or out of the schedule, from either place that offers the tick. Only Project
+// plan reads the selection, so anywhere else this is a quiet edit — raising a "plan out of date" bar
+// over a Max items plan the tick cannot affect would be a false alarm.
+function commitProjectInclusion(mutator){
+  mutateState(mutator);
+  if(S.mode==="project")markStale("projects");else save();
+}
 function commitLineStructureEdit(mutator,renderLineControls){
   // Manual has no expensive solver to defer. Repaint it immediately so its editable rows and
   // compression choices cannot lag behind the accepted line list while Manual is already active.
@@ -858,7 +876,9 @@ document.getElementById("projList").addEventListener("input",e=>{
 });
 document.getElementById("projList").addEventListener("change",e=>{
   const t=e.target,g=a=>t.getAttribute(a);let v;
-  if((v=g("data-pon"))!=null){mutateState(st=>{st.projects[+v].on=t.checked;});save();scheduleSolve();return;}
+  // Ticking projects in or out is batched work — accept and persist each tick, then let the
+  // Resimulate bar apply the whole batch, rather than re-solving between them.
+  if((v=g("data-pon"))!=null){commitProjectInclusion(st=>{st.projects[+v].on=t.checked;});return;}
   if((v=g("data-citem"))!=null){const[pi,li,ci]=v.split("_").map(Number);mutateState(st=>{st.projects[pi].levels[li].costs[ci].item=t.value;});save();scheduleSolve();return;}
 });
 document.getElementById("invRows").addEventListener("input",e=>{
@@ -1083,7 +1103,9 @@ document.getElementById("results").addEventListener("change",e=>{
   if(t.id==="spStart"){const val=t.value,ms=val?new Date(val).getTime():null;if(!val||!isNaN(ms))mutateState(st=>{st.planStart=ms;});save();repaintProject();return;}
   // Inline project controls — same fields as Projects / Track progress, kept in sync. These change
   // demand, so re-solve; doSolve() rebuilds #results (and thus the plan) right away.
-  if((v=t.getAttribute("data-spon"))!=null){const p=stepsProj(v);if(p){mutateState(()=>{p.on=t.checked;});save();doSolve();}return;}
+  // Except the on/off tick: solving there would rebuild this very panel under the pointer, one solve
+  // per tick, so it only marks the plan stale and the Resimulate bar above applies the batch.
+  if((v=t.getAttribute("data-spon"))!=null){const p=stepsProj(v);if(p)commitProjectInclusion(()=>{p.on=t.checked;});return;}
   if((v=t.getAttribute("data-spfrom"))!=null||(v=t.getAttribute("data-spto"))!=null){
     const p=stepsProj(v),row=t.closest(".proj-inline-row");if(!p||!row)return;
     const fromInput=row.querySelector("[data-spfrom]"),toInput=row.querySelector("[data-spto]");

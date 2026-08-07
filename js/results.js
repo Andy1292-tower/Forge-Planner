@@ -332,8 +332,10 @@ function renderProjectResults(res,el,stat){
   </div>`;
   // Quick project controls (on/off, level range, mark done) — collapsed so the plan stays the hero.
   // Same fields as Projects+Prices / Track progress, kept in sync; wired via delegated #results handlers.
+  // .proj-adjust keeps this panel out of the stale dimming: an on/off tick is what marks the plan
+  // stale, so the ticks stay readable while the plan they invalidated fades.
   const adj=stepsProjControls();
-  if(adj)html+=`<details class="cat-panel" ${_projAdjustOpen?"open":""}><summary data-paneltoggle="adjust"><span class="cat-sum-lbl">Adjust project levels &amp; completion</span><span class="cat-sum-meta">on/off · levels · mark done</span></summary><div class="panel-pad">${adj}</div></details>`;
+  if(adj)html+=`<details class="cat-panel proj-adjust" ${_projAdjustOpen?"open":""}><summary data-paneltoggle="adjust"><span class="cat-sum-lbl">Adjust project levels &amp; completion</span><span class="cat-sum-meta">on/off · levels · mark done</span></summary><div class="panel-pad">${adj}</div></details>`;
   // ── The step-by-step plan: the main event ──
   html+=`<div class="step-main">${stepPlanHtml(res)}</div>`;
   // Everything analytical folds into one collapsed breakdown so it's a click away, not in the way.

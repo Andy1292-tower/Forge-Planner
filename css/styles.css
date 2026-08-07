@@ -172,14 +172,20 @@ button.btn.ghost{background:transparent}
 }
 .card>.head .sub{font-size:11.5px;color:var(--ink3);letter-spacing:.3px}
 .card>.body,.card-body{padding:var(--card-inset)}
-/* "results out of date" bar — shown when crafter-line inputs change before a resolve */
+/* "results out of date" bar — shown when crafter-line inputs or the project selection change
+   before a resolve */
 .stale-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
   margin:14px 14px 0;padding:9px 12px;border-radius:6px;
   background:rgba(210,129,58,.10);border:1px solid var(--copper-d)}
 .stale-bar[hidden]{display:none}
 .stale-msg{font-size:12px;font-weight:600;color:var(--amber);letter-spacing:.2px}
 .stale-bar .btn{white-space:nowrap;animation:attentionPulse 1.15s ease-out infinite}
-#results.stale{opacity:.42;filter:saturate(.55);transition:opacity .15s,filter .15s}
+/* Dim the children rather than #results itself: the project on/off panel lives inside #results and
+   is the control that made the plan stale, so it has to stay readable while everything it invalidated
+   fades. Opacity on the container would take the panel down with it — a child cannot out-opaque its
+   parent — which is why this is a child selector and not a shorter rule on #results. */
+#results.stale>*{opacity:.42;filter:saturate(.55);transition:opacity .15s,filter .15s}
+#results.stale>.proj-adjust{opacity:1;filter:none}
 
 /* "new build shipped" notice — appears hours into a session, so it is pinned rather than
    placed in the flow where a scrolled-down reader would never see it. On a page this dark
