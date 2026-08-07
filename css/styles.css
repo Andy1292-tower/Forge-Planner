@@ -491,6 +491,7 @@ tr:last-child td{border-bottom:none}
 .notice{border-radius:6px;padding:10px 12px;font-size:12.5px;line-height:1.5;margin-bottom:12px}
 .notice.warn{background:var(--danger-d);border:1px solid var(--danger);color:#f3c4be}
 .notice.info{background:var(--bg2);border:1px solid var(--line2);color:var(--ink2)}
+.notice.good{background:var(--teal-d);border:1px solid var(--teal);color:#cdeee6}
 .subhead{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink3);margin:16px 0 8px;font-weight:600}
 
 /* recipe data */

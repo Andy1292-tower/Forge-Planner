@@ -429,6 +429,24 @@ function renderResults(options){
     if(res)renderSolveResult(res,el,stat,solveKey,metadata);
   });
 }
+// Only a solve the clock cut short has anything to say. Seeds, the ILS stagnation cutoff and the
+// convergence window are all budget-independent by design, so a search that settles returns that
+// same plan however long it is given — there is no action behind a caveat on it, and the distance
+// to the relaxation's ceiling is not one either: the relaxation lets a line divide its time across
+// several jobs, so a plan that cannot be improved still sits well under a ceiling no real factory
+// reaches. Reaching the deadline is the one case the reader can act on, by budget or by hardware.
+function optimalityNotice(res){
+  if(res.deadlineReached!==true)return "";
+  const bounded=Number.isFinite(res.bound)&&res.bound>0&&res.feasible&&res.objective>0;
+  let headroom="";
+  if(bounded){
+    const gap=Math.max(0,(res.bound-res.objective)/res.bound);
+    // Rounded up, never down: a quoted ceiling has to stay true at the precision it is stated to.
+    const pct=gap<0.001?"0.1%":fmt(gap*100,1)+"%";
+    headroom=` Its theoretical ceiling is ${pct} higher, though that ceiling lets one line split its time across several jobs, so not all of that is reachable.`;
+  }
+  return `<div class="notice warn" style="font-size:11.5px"><b>The solve ran out of time.</b> This is the best plan found before the budget ended the search, not the plan it would have settled on. Raise the max solve time to give it room.${headroom}</div>`;
+}
 function renderSolveResult(res,el,stat,solveKey,metadata){
   if(res.mode==="project"){
     if(typeof solveKey==="string")_lastProjectKey=solveKey;
@@ -467,7 +485,10 @@ function renderSolveResult(res,el,stat,solveKey,metadata){
   }else if(res.mode==="credits"&&res.searchExhaustive===false){
     html+=`<div class="notice info" style="font-size:11.5px"><b>Best found, not proven best.</b> Every priced item received a bounded baseline, but deeper search reached its limit for at least one candidate.</div>`;
   }else if(res.mode!=="credits"&&res.capped){
-    html+=`<div class="notice info" style="font-size:11.5px">Large search space — this is the best plan found within the time budget, but the search did not finish an exhaustive proof.</div>`;
+    html+=optimalityNotice(res);
+  }else if(res.mode!=="credits"&&res.feasible){
+    // An exhausted search is optimal on its own terms; a loose LP ceiling above it says nothing.
+    html+=`<div class="notice good" style="font-size:11.5px"><b>Proven optimal.</b> The search finished — no better plan exists for these lines and costs.</div>`;
   }
   if(res.usesMargin){
     html+=`<div class="notice info"><b>May-work plan.</b> This uses your ${fmt(res.tol*100,1)}% margin — one or more inputs runs a small paper shortfall (see balance below). Likely fine if it's inside your game's rounding/duplication slack, but not strictly guaranteed.</div>`;

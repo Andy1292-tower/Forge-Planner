@@ -253,6 +253,10 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // (strict tol=0, then the user's margin) so its result is monotone in margin — see the staged
   // search at the bottom of solveCore (issue #60).
   let curTol=tol;
+  // Ceiling on the objective from the LP relaxation, in the same per-second units as best.score.
+  // Declared here rather than read off `lp` because finishCoreResult runs before `lp` is
+  // initialized on the baselineOnly path. Null until lpRelax returns a completed solve.
+  let lpBound=null;
   // Exogenous supply (per second) of each resource, added to the produced side. Craftable
   // materials use Lil' Forgie; mined resources use their own independent income budgets.
   const baseArr=Float64Array.from(resources.map(r=>
@@ -381,7 +385,13 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     const deadlineReached=control.deadlineReached();if(deadlineReached)capped=true;
     let usesMargin=false;for(let r=0;r<R;r++)if(best.produced[r]<best.consumed[r]-1e-6)usesMargin=true;
     const forgie={};resources.forEach((r,i)=>forgie[r]=baseArr[i]*3600);
-    return {best,sorted,lineJobs,resources,resIndex,R,N,tIdx,tol,capped,usesMargin,issues,forgie,
+    // The LP ceiling only bounds a strictly feasible optimum: lpRelax's resource rows use baseArr
+    // with no tolerance applied. This gates on the requested tolerance rather than the pass that
+    // happened to run last, because a budget that expires before the margin pass leaves a strict
+    // incumbent while the optimum the user asked for is still the relaxed one — which sits above
+    // the ceiling and would turn the reported gap into a claim the search cannot make.
+    const bound=(lpBound!=null&&tol===0)?lpBound:null;
+    return {best,sorted,lineJobs,resources,resIndex,R,N,tIdx,tol,capped,usesMargin,issues,forgie,bound,deadlineReached,
       feasible:best.score>1e-9,interrupted:workInterrupted,localLimitReached,ms:Math.max(0,control.elapsed()-(solveStarted-control.startedAt))};
   }
   function targetChoice(res){const ch=new Array(N);for(let i=0;i<N;i++){const bj=bestJobFor(i,res);ch[i]=bj>=0?bj:idleIdx(i);}return ch;}
@@ -499,6 +509,8 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // then iterated local search. Pure argmax rounding flattens lines the LP split between Gel and a
   // target and loses a lot, so we also draw several randomized roundings weighted by the LP fractions.
   const lp=N>0?lpRelax():null;
+  // An incomplete simplex leaves z short of a proven ceiling, so only a completed solve is kept.
+  if(lp&&lp.complete&&Number.isFinite(lp.z))lpBound=lp.z;
   if(interrupted){capped=true;return finishCoreResult();}
   // Two-pass margin search for monotonicity (issue #60). A plan feasible with NO margin is feasible
   // at ANY margin with the same objective, so we solve strict (tol=0) first, then seed the relaxed
@@ -778,9 +790,17 @@ function optimizeInner(timeBudget,testOptions){
       shareOfMax={};
       targets.forEach(t=>{const ceiling=mix.soloMax[t];if(ceiling>1e-9)shareOfMax[t]=(out[t]||0)/ceiling;});
     }
-    return {empty:false,mode,issues:sr.issues,plan,balance,minedUsage,gelReserved,out,resIndex:sr.resIndex,targets,objective,
+    // Same per-hour units as `objective`, so the two are directly comparable. Never below the
+    // objective it bounds: a rounding-scale overshoot is clamped rather than shown as a negative gap.
+    let bound=null;
+    if(sr.feasible&&Number.isFinite(sr.bound)){
+      const scaled=sr.bound*3600;
+      if(Number.isFinite(scaled))bound=Math.max(scaled,objective);
+    }
+    return {empty:false,mode,issues:sr.issues,plan,balance,minedUsage,gelReserved,out,resIndex:sr.resIndex,targets,objective,bound,
       mixMode:S.targetMode==="share"?"share":"ratio",binding,slack,shareOfMax,soloMax:mix.soloMax,blocked:mix.blocked,
-      tol:sr.tol,usesMargin:sr.usesMargin,feasible:sr.feasible,capped:sr.capped,ms:Math.max(0,itemControl.readNow()-t0)};
+      tol:sr.tol,usesMargin:sr.usesMargin,feasible:sr.feasible,capped:sr.capped,deadlineReached:!!sr.deadlineReached,
+      ms:Math.max(0,itemControl.readNow()-t0)};
   }
   // Credits is intentionally a dedicated-item comparison: each priced item gets a whole-factory
   // plan, then those plans are ranked. It is not a theorem that a mixed-sales factory is inferior.

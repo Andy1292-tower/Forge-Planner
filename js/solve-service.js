@@ -120,8 +120,11 @@ function dailySolveResultValid(result,conditionKey){
   if(result.empty!==false||!Array.isArray(result.issues)||!Array.isArray(result.plan)||
     !Array.isArray(result.balance)||!result.issues.every(issue=>typeof issue==="string")||
     !Number.isFinite(result.ms)||result.ms<0||!dailySolvePlanValid(result))return false;
+  // `bound` is optional so a cache written before it existed still replays; anything present must be
+  // a usable ceiling, since the notice divides by it.
   if(result.mode==="items")return Array.isArray(result.targets)&&
     result.targets.every(target=>typeof target==="string")&&
+    (result.bound==null||(Number.isFinite(result.bound)&&result.bound>=0))&&
     Object.prototype.toString.call(result.out)==="[object Object]";
   if(!Array.isArray(result.ranking)||result.ranking.length>100||
     (result.bestItem!==null&&typeof result.bestItem!=="string")||

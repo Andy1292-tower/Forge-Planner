@@ -22,6 +22,7 @@ const tests = [
   "test/minedrender.cjs",
   "test/minedsolver.cjs",
   "test/minedui.cjs",
+  "test/optimality-gap.cjs",
   "test/project-transients.cjs",
   "test/rawtargets.cjs",
   "test/report-issue.cjs",
