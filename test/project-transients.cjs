@@ -327,13 +327,20 @@ assert.doesNotMatch(partialBitsCopy,/Have <b>40k Bits<\/b>/,
   "step-plan copy must not present the additional shortfall as the total requirement");
 
 const resultsSrc = fs.readFileSync(path.join(root, "js", "results.js"), "utf8");
-const renderStart = resultsSrc.indexOf("function renderProjectResults(res,el,stat){");
+// Start at the on/off panel builder, not the renderer: every Project-mode path emits that panel, so
+// the real one has to come along rather than being stubbed out of the extract.
+const renderStart = resultsSrc.indexOf("function projAdjustPanelHtml(forceOpen){");
 const renderEnd = resultsSrc.indexOf("\n\n\nfunction renderResults", renderStart);
 assert.ok(renderStart >= 0 && renderEnd > renderStart, "Project result renderer remains extractable for blocked-copy coverage");
+assert.ok(resultsSrc.indexOf("function renderProjectResults(res,el,stat){") > renderStart,
+  "the on/off panel builder remains above the renderer that emits it");
+// Mutable so a case can decide whether any project offers ticks, and what S holds while it renders.
+const renderState = {planStart:1,projects:[],inventory:{Bits:40000}};
+let projRows = "";
 const renderProjectResults = Function("S","mutateState","save","projectForgieNote","projPlanAnchorHtml","htmlText","disp","fmtDuration",
   "stepsProjControls","stepPlanHtml","ALLITEMS","num","resultMinedUsage","minedUsageNote","lineAssignTableHtml","idleLinesNote","projectStabilityHtml","projOrderHeader","projLineModeHtml","staticHeldFeederItems",
   `let _lastProjectRes=null,_breakdownOpen=false,_projAdjustOpen=false;${resultsSrc.slice(renderStart,renderEnd)};return renderProjectResults;`)(
-    {planStart:1,projects:[],inventory:{Bits:40000}},()=>{},()=>{},()=>"",()=>"",String,testDisp,()=>"1h",()=>"",()=>partialCopy,[],Number,()=>[],()=>"",()=>"",()=>"",()=>"",()=>"Order",()=>"",()=>[]);
+    renderState,()=>{},()=>{},()=>"",()=>"",String,testDisp,()=>"1h",()=>projRows,()=>partialCopy,[],Number,()=>[],()=>"",()=>"",()=>"",()=>"",()=>"Order",()=>"",()=>[]);
 const bitsEl={innerHTML:""},bitsStat={textContent:""};
 renderProjectResults({empty:false,sequenced:false,waved:false,single:true,feasible:true,lpFeasible:true,partial:false,
   eta:3,workEta:2,ms:1,perProject:[],phases:[{name:"Frames",eta:2,demandSub:{}}],executionPhases:[partialBitsPhase],
@@ -360,3 +367,28 @@ renderProjectResults({empty:false,sequenced:false,waved:true,single:false,feasib
   blockedMined:{},infeasItems:[],atRiskItems:[],demandItems:[],rate:{},net:{},balance:[],plan:[]},blockedWaveEl,blockedWaveStat);
 assert.doesNotMatch(blockedWaveEl.innerHTML,/Order:|finish each wave|Build order|Completion order|Done by/i,
   "blocked waved results suppress every imperative ordering instruction");
+
+// Unticking the last project empties the plan. The ticks have to survive that render, or the tick
+// that emptied it can only be undone from the Projects+Prices dialog.
+const emptyRender = (rows, projects) => {
+  projRows = rows;renderState.projects = projects;
+  const el = {innerHTML:""}, stat = {textContent:""};
+  renderProjectResults({empty:true}, el, stat);
+  return el.innerHTML;
+};
+const withLevels = on => [{id:"p1",name:"Alpha",on,levels:[{costs:[]}]}];
+
+const untickedAll = emptyRender('<div class="proj-inline-row">rows</div>', withLevels(false));
+assert.match(untickedAll,/class="cat-panel proj-adjust" open/,
+  "an emptied plan keeps the on/off ticks, opened — a collapsed panel would hide the way back");
+assert.match(untickedAll,/No projects ticked on/,"the empty copy points at the ticks below, not at the dialog");
+assert.doesNotMatch(untickedAll,/No project demand yet/,"projects that exist are not reported as never configured");
+
+const allComplete = emptyRender('<div class="proj-inline-row">rows</div>', withLevels(true));
+assert.match(allComplete,/All projects complete/);
+assert.match(allComplete,/class="cat-panel proj-adjust" open/,"a completed plan keeps the ticks too");
+
+const nothingConfigured = emptyRender("", []);
+assert.match(nothingConfigured,/No project demand yet/,"with no project to tick, the original setup copy stands");
+assert.doesNotMatch(nothingConfigured,/proj-adjust/,"an empty panel is not rendered");
+projRows = "";renderState.projects = [];
