@@ -1130,10 +1130,14 @@ function schedulerHarness(options = {}) {
   const documentListeners = new Map();
   const windowListeners = new Map();
   const saveIndicator = { textContent: "auto-saves locally" };
+  const staleMessage = { textContent: "" };
+  const staleBar = { hidden: true, querySelector: () => staleMessage };
+  const resultsClasses = new Set();
+  const resultsElement = { classList: { toggle(name, on) { if (on) resultsClasses.add(name);else resultsClasses.delete(name); } } };
   const context = {
     console,
     stateRevision: 1,
-    S: { mode: "items", dupe: 25 },
+    S: { mode: options.mode || "items", dupe: 25 },
     LSKEY: "test-state",
     localStorage: {
       getItem(key) { return key === "test-state" ? this.raw || null : null; },
@@ -1141,7 +1145,12 @@ function schedulerHarness(options = {}) {
     },
     document: {
       querySelectorAll() { return []; },
-      getElementById(id) { return id === "saveind" ? saveIndicator : null; },
+      getElementById(id) {
+        if (id === "saveind") return saveIndicator;
+        if (id === "staleBar") return staleBar;
+        if (id === "results") return resultsElement;
+        return null;
+      },
       visibilityState: "visible",
       addEventListener(type, callback) { documentListeners.set(type, callback); },
     },
@@ -1172,6 +1181,12 @@ function schedulerHarness(options = {}) {
   };
   vm.createContext(context);
   vm.runInContext(source.slice(0, boundary), context, { filename: "events-schedulers.js" });
+  // The stale-plan bar sits past the field-draft parser but belongs to the same scheduler: it is what
+  // a deferred edit raises instead of solving. Take that block without the DOM wiring after it.
+  const staleStart = source.indexOf("const STALE_CAUSES");
+  const staleEnd = source.indexOf("function commitLineStructureEdit");
+  assert.ok(staleStart > boundary && staleEnd > staleStart, "the deferred-solve block remains isolated above line editing");
+  vm.runInContext(source.slice(staleStart, staleEnd), context, { filename: "events-stale.js" });
   const lifecycleStart = source.indexOf('document.addEventListener("visibilitychange"');
   assert.ok(lifecycleStart > boundary, "page lifecycle handlers remain registered at the event boundary");
   vm.runInContext(source.slice(lifecycleStart), context, { filename: "events-page-lifecycle.js" });
@@ -1192,6 +1207,10 @@ function schedulerHarness(options = {}) {
     scheduleSolve() { vm.runInContext("scheduleSolve()", context); },
     persistNow() { return vm.runInContext("persistNow()", context); },
     doSolve() { return vm.runInContext("doSolve()", context); },
+    markStale(cause) { vm.runInContext(`markStale(${JSON.stringify(cause)})`, context); },
+    clearStaleUI() { vm.runInContext("clearStaleUI()", context); },
+    toggleProject(on) { vm.runInContext(`commitProjectInclusion(st=>{st.projectOn=${on === true};})`, context); },
+    staleBar() { return { hidden: staleBar.hidden, message: staleMessage.textContent, dimmed: resultsClasses.has("stale") }; },
     commitResultMutation(mutator) {
       context.__mutator = mutator;
       context.__syncControls = () => { controlsSynced += 1; };
@@ -1425,6 +1444,61 @@ test("visibility hiding flushes persistence without cancelling or changing sched
   assert.deepEqual(harness.counts(), { saves: 1, renders: 0, requests: 0, cancels: 0 });
   harness.advance(500);
   assert.deepEqual(harness.counts(), { saves: 1, renders: 1, requests: 0, cancels: 0 });
+});
+
+test("ticking projects on and off costs one deferred solve, not one per tick", () => {
+  const harness = schedulerHarness({ mode: "project" });
+  harness.toggleProject(false);
+  harness.toggleProject(true);
+  harness.toggleProject(false);
+  harness.advance(600);   // nothing is waiting on a timer: the batch only resolves on Resimulate
+
+  assert.deepEqual(harness.counts(), { saves: 3, renders: 0, requests: 0, cancels: 0 });
+  assert.equal(harness.state().projectOn, false, "each tick is accepted immediately");
+  assert.equal(harness.storedState().projectOn, false, "each tick persists immediately");
+  assert.deepEqual(harness.staleBar(), {
+    hidden: false,
+    message: "Plan out of date — project selection changed. Press Resimulate to update it.",
+    dimmed: true,
+  });
+
+  harness.doSolve();   // what Resimulate runs
+  assert.deepEqual(harness.counts(), { saves: 3, renders: 1, requests: 0, cancels: 0 });
+});
+
+test("a tick outside Project plan persists quietly rather than claiming the shown plan expired", () => {
+  // Max items/Credits never read the project selection, so a tick there invalidates nothing.
+  const harness = schedulerHarness({ mode: "items" });
+  harness.toggleProject(true);
+  harness.advance(600);
+
+  assert.deepEqual(harness.counts(), { saves: 1, renders: 0, requests: 0, cancels: 0 });
+  assert.equal(harness.state().projectOn, true);
+  assert.deepEqual(harness.staleBar(), { hidden: true, message: "", dimmed: false });
+});
+
+test("the stale bar names every kind of edit batched into one Resimulate", () => {
+  const harness = schedulerHarness({ mode: "project" });
+  harness.mutate();
+  harness.markStale();            // a crafter-line edit
+  assert.equal(harness.staleBar().message,
+    "Plan out of date — crafter line inputs changed. Press Resimulate to update it.");
+
+  harness.toggleProject(false);
+  assert.equal(harness.staleBar().message,
+    "Plan out of date — crafter line inputs and project selection changed. Press Resimulate to update it.");
+
+  // renderResults() clears the bar ahead of every repaint (js/results.js), so one Resimulate
+  // discharges both causes rather than leaving the line edit still flagged.
+  harness.clearStaleUI();
+  assert.deepEqual(harness.staleBar(), {
+    hidden: true,
+    message: "Plan out of date — crafter line inputs and project selection changed. Press Resimulate to update it.",
+    dimmed: false,
+  });
+  harness.markStale("projects");
+  assert.equal(harness.staleBar().message,
+    "Plan out of date — project selection changed. Press Resimulate to update it.");
 });
 
 test("opening Progress never invokes the synchronous Project optimizer", () => {

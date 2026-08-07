@@ -251,6 +251,17 @@ function projectStabilityHtml(res){
     <div style="margin-top:9px"><button type="button" class="btn ghost" data-project-stability="reoptimize">${action}</button></div>
   </section>`;
 }
+// Quick project controls (on/off, level range, mark done) — collapsed so the plan stays the hero,
+// and rendered on every Project-mode path including the empty ones, so the tick that emptied the
+// plan can always be undone where it was made. Same fields as Projects+Prices / Track progress, kept
+// in sync; wired via delegated #results handlers. .proj-adjust keeps the panel out of the stale
+// dimming: an on/off tick is what marks the plan stale, so the ticks stay readable while the plan
+// they invalidated fades. Returns "" when no project carries levels to adjust.
+function projAdjustPanelHtml(forceOpen){
+  const adj=stepsProjControls();
+  if(!adj)return "";
+  return `<details class="cat-panel proj-adjust" ${(forceOpen||_projAdjustOpen)?"open":""}><summary data-paneltoggle="adjust"><span class="cat-sum-lbl">Adjust project levels &amp; completion</span><span class="cat-sum-meta">on/off · levels · mark done</span></summary><div class="panel-pad">${adj}</div></details>`;
+}
 function renderProjectResults(res,el,stat){
   _lastProjectRes=res;
   if(typeof refreshProgressIfOpen==="function")refreshProgressIfOpen();
@@ -263,6 +274,11 @@ function renderProjectResults(res,el,stat){
     // projects exist but are fully checked off, keep the Track-progress opener so the user can still
     // review or reopen them — the button re-wires via the delegated #results handler.
     const hasActive=(S.projects||[]).some(p=>p.on&&(p.levels||[]).length);
+    // Unticking the last project is the ordinary way to reach an empty plan, so the ticks come with
+    // it — dropping them here would strand the screen, with the dialog the only way to undo the tick
+    // that emptied it. Forced open: there is no plan to be the hero, and a collapsed panel would hide
+    // the one control that recovers the page.
+    const ticks=projAdjustPanelHtml(true);
     if(hasActive){
       el.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px">
         <div class="proj-mini" style="font-size:11.5px">Every ticked project is complete.</div>
@@ -270,11 +286,14 @@ function renderProjectResults(res,el,stat){
           <button class="btn primary" id="btnProgress">Track progress</button>
           <button class="btn ghost" type="button" data-open-projects>Edit projects</button>
         </div></div>
-        <div class="notice info"><b>All projects complete 🎉</b> Nothing left to craft. Open <b>Track progress</b> to review or reopen a level, or use <b>Edit projects</b> to add another project in <b>Projects+Prices</b>.</div>`;
+        <div class="notice info"><b>All projects complete 🎉</b> Nothing left to craft. Open <b>Track progress</b> to review or reopen a level, or use <b>Edit projects</b> to add another project in <b>Projects+Prices</b>.</div>${ticks}`;
       stat.textContent="Plan updated. All selected projects are complete.";return;
     }
-    el.innerHTML=`<div class="notice info">No project demand yet. Add a project with item costs in <b>Projects+Prices</b>, tick it <b>on</b>, then come back. Enter your current <b>inventory</b> there too — it's subtracted from what you need to craft.
-      <div style="margin-top:10px"><button class="btn primary" type="button" data-open-projects>Edit projects</button></div></div>`;
+    el.innerHTML=(ticks
+      ?`<div class="notice info"><b>No projects ticked on.</b> Tick one back on below and press <b>Resimulate</b> to plan it, or use <b>Edit projects</b> to add another in <b>Projects+Prices</b>.
+        <div style="margin-top:10px"><button class="btn ghost" type="button" data-open-projects>Edit projects</button></div></div>`
+      :`<div class="notice info">No project demand yet. Add a project with item costs in <b>Projects+Prices</b>, tick it <b>on</b>, then come back. Enter your current <b>inventory</b> there too — it's subtracted from what you need to craft.
+        <div style="margin-top:10px"><button class="btn primary" type="button" data-open-projects>Edit projects</button></div></div>`)+ticks;
     stat.textContent="Plan updated. No project demand selected.";return;
   }
   let html="";
@@ -330,10 +349,7 @@ function renderProjectResults(res,el,stat){
     <div class="metric"><div class="l">Projects</div><div class="v">${res.perProject.length}</div><div class="u">${scheduleExecutable?(res.sequenced?"one at a time":res.waved?res.phases.length+" unlock waves":res.single?"all in one phase":"scheduled together"):res.phases.length+" analytical phase"+(res.phases.length===1?"":"s")}</div></div>
     ${!res.sequenced&&!res.waved&&res.bottleneck?`<div class="metric"><div class="l">Bottleneck</div><div class="v" style="font-size:17px">${res.bottleneck}</div><div class="u">${scheduleExecutable?`sets the ${res.partial?"partial plan":"finish"} time`:"analytical LP bottleneck only"}</div></div>`:""}
   </div>`;
-  // Quick project controls (on/off, level range, mark done) — collapsed so the plan stays the hero.
-  // Same fields as Projects+Prices / Track progress, kept in sync; wired via delegated #results handlers.
-  const adj=stepsProjControls();
-  if(adj)html+=`<details class="cat-panel" ${_projAdjustOpen?"open":""}><summary data-paneltoggle="adjust"><span class="cat-sum-lbl">Adjust project levels &amp; completion</span><span class="cat-sum-meta">on/off · levels · mark done</span></summary><div class="panel-pad">${adj}</div></details>`;
+  html+=projAdjustPanelHtml(false);
   // ── The step-by-step plan: the main event ──
   html+=`<div class="step-main">${stepPlanHtml(res)}</div>`;
   // Everything analytical folds into one collapsed breakdown so it's a click away, not in the way.
