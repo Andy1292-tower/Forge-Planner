@@ -299,6 +299,35 @@ function validateAndMigrate(candidate){
     };
   });
 
+  // Saved output sets are additive: a build written before they existed simply has none,
+  // so they are read when present rather than demanded of every versioned save.
+  if(_own(candidate,"targetSaved")){
+    const sets=_array(_readData(candidate,"targetSaved","targetSaved",errors),"targetSaved",errors,STATE_LIMITS.maxPresets);
+    if(sets){out.targetSaved=[];sets.slice(0,STATE_LIMITS.maxPresets).forEach((raw,index)=>{
+      const path="targetSaved["+index+"]",set=_object(raw,path,errors);if(!set)return;
+      ["id","name","config"].forEach(key=>{if(!_own(set,key))_pushError(errors,path+"."+key,"is required");});
+      const config=_array(_readData(set,"config",path+".config",errors),path+".config",errors,ALLITEMS.length);if(!config)return;
+      const copiedConfig=[],usedItems=new Set();
+      config.slice(0,ALLITEMS.length).forEach((rawEntry,entryIndex)=>{
+        const entryPath=path+".config["+entryIndex+"]",entry=_object(rawEntry,entryPath,errors);if(!entry)return;
+        ["item","w"].forEach(key=>{if(!_own(entry,key))_pushError(errors,entryPath+"."+key,"is required");});
+        const item=_enum(_readData(entry,"item",entryPath+".item",errors),FIELD_SCHEMA.item,entryPath+".item",errors);
+        if(usedItems.has(item))_pushError(errors,entryPath+".item","is listed more than once in this output set");
+        usedItems.add(item);
+        copiedConfig.push({item,w:_number(_readData(entry,"w",entryPath+".w",errors),FIELD_SCHEMA.targetWeight,entryPath+".w",errors)});
+      });
+      out.targetSaved.push({
+        id:_own(set,"id")?_string(_readData(set,"id",path+".id",errors),FIELD_SCHEMA.id,path+".id",errors):"",
+        name:_own(set,"name")?_string(_readData(set,"name",path+".name",errors),FIELD_SCHEMA.projectName,path+".name",errors):"",
+        config:copiedConfig
+      });
+    });}
+  }
+  if(_own(candidate,"targetActiveId")){
+    const active=_readData(candidate,"targetActiveId","targetActiveId",errors);
+    out.targetActiveId=active===null?null:_string(active,FIELD_SCHEMA.id,"targetActiveId",errors);
+  }
+
   let totalLevels=0,totalCosts=0;
   if(_own(candidate,"projects")){
     const projects=_array(_readData(candidate,"projects","projects",errors),"projects",errors,STATE_LIMITS.maxProjects);

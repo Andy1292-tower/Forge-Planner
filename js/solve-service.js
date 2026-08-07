@@ -1,8 +1,10 @@
 "use strict";
 
 // The Worker receives a complete accepted-state clone so the shared schema boundary can validate it.
-// Only planStart and a Project card's disclosure state are removed from the separate equivalence key
-// that decides whether an in-flight solve remains authoritative after accepted UI state changes.
+// Only planStart, a Project card's disclosure state, and the saved output sets are removed from the
+// separate equivalence key that decides whether an in-flight solve remains authoritative after
+// accepted UI state changes. Naming or deleting an output set leaves S.targets — the solved input —
+// untouched, so it must not discard a solve that is already running.
 function solveStateSnapshot(state){
   return JSON.parse(JSON.stringify(state||{}));
 }
@@ -16,6 +18,8 @@ function canonicalSolveJson(value){
 function solveStateKey(state){
   const snapshot=solveStateSnapshot(state);
   delete snapshot.planStart;
+  delete snapshot.targetSaved;
+  delete snapshot.targetActiveId;
   if(Array.isArray(snapshot.projects))snapshot.projects.forEach(project=>{if(project&&typeof project==="object")delete project._open;});
   return canonicalSolveJson(snapshot);
 }
