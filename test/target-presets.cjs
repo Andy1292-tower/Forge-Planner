@@ -51,8 +51,8 @@ const runner=`
   S=defaults();
   S.targets.Frames={on:true,w:9};S.targets.Plates={on:true,w:4};S.targets.Bits={on:true,w:2};S.targets.Glass={on:false,w:7};
   const captured=targetPresetConfig(S);
-  check("a set records only the checked outputs, each with its priority",
-    JSON.stringify(captured)===JSON.stringify([{item:"Bits",w:2},{item:"Plates",w:4},{item:"Frames",w:9}]),
+  check("a set records only the checked outputs, with both mix numbers",
+    JSON.stringify(captured)===JSON.stringify([{item:"Bits",w:2,share:50},{item:"Plates",w:4,share:50},{item:"Frames",w:9,share:50}]),
     JSON.stringify(captured));
 
   S.targets.Glass={on:true,w:3};S.targets.Frames={on:false,w:1};
@@ -117,8 +117,10 @@ const runner=`
   dirty.targetActiveId=7;
   normalize(dirty);
   check("a repeated, unknown, or out-of-range entry cannot survive normalization",
-    JSON.stringify(dirty.targetSaved[0].config)===JSON.stringify([{item:"Frames",w:5},{item:"Rods",w:9},{item:"Glass",w:1},{item:"Bits",w:1}]),
+    JSON.stringify(dirty.targetSaved[0].config)===JSON.stringify([{item:"Frames",w:5,share:50},{item:"Rods",w:9,share:50},{item:"Glass",w:1,share:50},{item:"Bits",w:1,share:50}]),
     JSON.stringify(dirty.targetSaved[0].config));
+  check("a set with no recorded mix mode normalizes to the ratio it was written in",
+    dirty.targetSaved[0].mode==="ratio",String(dirty.targetSaved[0].mode));
   check("a set without a usable config is dropped and a missing name is filled",
     dirty.targetSaved.length===2&&dirty.targetSaved[1].name==="Outputs"&&typeof dirty.targetSaved[1].id==="string",
     JSON.stringify(dirty.targetSaved.map(p=>({id:p.id,name:p.name}))));
@@ -127,12 +129,35 @@ const runner=`
   /* ---- the import boundary ---- */
   const build=()=>{const st=normalize(defaults())||defaults();st.schemaVersion=CURRENT_SCHEMA_VERSION;st.baseTimeRev=2;return JSON.parse(JSON.stringify(st));};
   const carrier=build();
-  carrier.targetSaved=[{id:"pset1",name:"Frames rush",config:[{item:"Frames",w:9},{item:"Rods",w:2}]}];
+  carrier.targetSaved=[{id:"pset1",name:"Frames rush",mode:"share",
+    config:[{item:"Frames",w:9,share:80},{item:"Rods",w:2,share:25}]}];
   carrier.targetActiveId="pset1";
   const round=validateAndMigrate(carrier);
   check("a saved set survives export and import unchanged",
     round.ok&&JSON.stringify(round.state.targetSaved)===JSON.stringify(carrier.targetSaved)&&round.state.targetActiveId==="pset1",
     round.ok?JSON.stringify(round.state.targetSaved)+" active="+round.state.targetActiveId:round.errors.join("; "));
+
+  // The mix mode and share percentage are additive: a build written before they existed must import
+  // as the ratio set its numbers were always meant as, rather than being rejected or re-read as
+  // percentages. Loading such a set must also put the app back into ratio mode.
+  const legacySet=build();
+  legacySet.targetSaved=[{id:"pset1",name:"Frames rush",config:[{item:"Frames",w:9},{item:"Rods",w:2}]}];
+  legacySet.targetActiveId="pset1";
+  const legacyRound=validateAndMigrate(legacySet);
+  check("a set written before share mode imports as a ratio set with default shares",
+    legacyRound.ok&&legacyRound.state.targetSaved[0].mode==="ratio"&&
+    JSON.stringify(legacyRound.state.targetSaved[0].config)===JSON.stringify([{item:"Frames",w:9,share:50},{item:"Rods",w:2,share:50}]),
+    legacyRound.ok?JSON.stringify(legacyRound.state.targetSaved[0]):legacyRound.errors.join("; "));
+
+  // Applying a set must carry its mode across, or a share set silently re-reads its percentages as
+  // ratio weights and solves a different question than the one that was saved.
+  S=defaults();S.targetMode="ratio";
+  applyTargetPresetConfig(S,[{item:"Frames",w:9,share:80}],"share");
+  check("applying a share set switches the mix mode with it",
+    S.targetMode==="share"&&S.targets.Frames.share===80,
+    S.targetMode+" Frames.share="+S.targets.Frames.share);
+  applyTargetPresetConfig(S,[{item:"Frames",w:9,share:80}],"ratio");
+  check("applying a ratio set switches back",S.targetMode==="ratio",S.targetMode);
 
   const older=build();
   delete older.targetSaved;delete older.targetActiveId;

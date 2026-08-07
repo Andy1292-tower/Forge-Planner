@@ -25,7 +25,8 @@ Despite the historical storage-key suffix, `schemaVersion` inside the JSON is th
 | `sellPrice`, `priceText` | Accepted sell prices plus the user's display drafts. |
 | `forgie`, `forgieText` | Accepted Lil' Forgie rates plus display drafts. |
 | `minedIncome`, `minedIncomeText` | Source-aware Vespium and Hydracite income values plus matching display drafts. |
-| `targets` | Per-item enabled state and priority weight. |
+| `targets` | Per-item enabled state, ratio weight, and share-of-maximum percentage. |
+| `targetMode` | Which of those two numbers an Items solve reads: `ratio` or `share`. |
 | `targetSaved[]`, `targetActiveId` | Named output sets and the ID of the set most recently loaded or saved. |
 | `projects[]` | Catalog or custom projects, level costs, active range, completion count, numeric order, and the `_open` card-disclosure state. |
 | `inventory`, `inventoryText` | Current ordinary-item stock plus display drafts. |
@@ -39,9 +40,13 @@ Catalog-backed projects retain their `catId`, user range, completion, activation
 
 ### Saved output sets
 
-A `targetSaved[]` entry is `{id, name, config}`, where `config` lists only the checked outputs as `{item, w}`. Applying a set clears every checkbox first, so an item the set does not name is off afterwards regardless of its previous state. Each item may appear at most once per set, and the shared 128-preset ceiling applies.
+A `targetSaved[]` entry is `{id, name, mode, config}`, where `config` lists only the checked outputs as `{item, w, share}`. Applying a set clears every checkbox first, so an item the set does not name is off afterwards regardless of its previous state. Each item may appear at most once per set, and the shared 128-preset ceiling applies.
+
+A set records the mix mode it was saved in, and loading one restores that mode. The same figure means different things in each — `w` is a demanded ratio in item units, `share` is a percentage of the item's own ceiling — so a set restored without its mode would silently ask a different question than the one that was saved.
 
 `targetSaved` and `targetActiveId` are additive: a build written before they existed imports with no saved sets rather than being rejected, and every other accepted schema keeps its own required fields.
+
+`targetMode`, `targets.*.share`, and a saved set's `mode` and `config[].share` are likewise additive. A build written before the share-of-maximum mode existed imports as the ratio build its numbers were always meant as, with default percentages, rather than being rejected or re-read as percentages.
 
 ### Mined-resource source units
 

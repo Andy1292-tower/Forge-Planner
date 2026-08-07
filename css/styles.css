@@ -447,6 +447,19 @@ select:focus,input:focus{border-color:var(--copper);
 .prio input[type=range]{width:84px;accent-color:var(--copper)}
 .prio .pv{font-family:"JetBrains Mono",monospace;font-size:12.5px;font-weight:700;color:var(--amber);width:16px;text-align:center;
   text-shadow:0 0 8px rgba(242,169,78,.35)}
+/* "100%" needs more room than a single ratio digit. */
+.prio .pv.wide{width:34px;text-align:right}
+/* The mix-mode switch sits in the card head, where the subtitle used to be. */
+.tg-modesw{flex:0 0 auto}
+.tg-modesw button{padding-inline:10px}
+.tg-modehelp{font-size:10.5px;line-height:1.45;color:var(--ink3);margin-bottom:10px}
+/* Measured ceiling under a share slider: a percentage is unreadable without its base. */
+.tg-ceiling{grid-column:1/-1;font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--ink3);
+  margin-top:-2px;letter-spacing:.2px}
+/* The output holding the shared floor down — the one worth spending the next line on. */
+.metric.binding{border-color:var(--copper)}
+.metric .binding-tag{font-size:9.5px;letter-spacing:.5px;text-transform:uppercase;font-weight:700;color:var(--amber)}
+.metric .slack-tag{font-size:9.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--ink3)}
 
 /* results */
 .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px}

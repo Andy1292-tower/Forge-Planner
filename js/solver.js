@@ -313,6 +313,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   function bestJobFor(i,res){let bj=-1,bg=0;lineJobs[i].forEach((job,k)=>{for(const[r,a]of job.prod)if(r===res){const g=a*sorted[i].sp*sorted[i].dp;if(g>bg){bg=g;bj=k;}}});return bj;}
   const needFrac=r=>isMinedResource(resources[r])?1:(1-curTol);
   const feasibleNow=()=>{for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac(r)-1e-7)return false;return true;};
+  // Shared weighted floor: the smallest output-to-weight ratio across the targets.
   const scoreNow=()=>{let sc=Infinity;for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]];sc=Math.min(sc,net/w[k]);}return sc;};
   // repair input shortfall down to a feasible plan: each step makes the single line-switch
   // (toward producing ANY short resource) that cuts total shortfall most. Returns feasibility.
@@ -671,6 +672,79 @@ function solveRaw(Rw,control){
   return {item:Rw,kind:"raw",out,plan,balance:[{res:Rw,prod:lineOut,forgie:fHr,cons:0}],resIndex,capped:false,feasible:out>1e-9,interrupted:false};
 }
 
+/* ---------- share-of-max calibration ----------
+ * A ratio weight is a demand in raw item units, so the same number means wildly different effort
+ * per item: on a representative 7-line factory Plates tops out near 7.0m/hr while Gel tops out near
+ * 1.6m/hr, and "Plates 9, Gel 3" therefore asks far more of Gel than of Plates. Share mode states
+ * each wanted output as a percentage of what that item alone could reach, which puts every slider on
+ * the same footing, and converts to a ratio weight of share x that item's own ceiling.
+ *
+ * The ceiling is itself a solve — one dedicated single-target solve per checked output. Those
+ * converge quickly and are insensitive to the budget (each single-target solve stops on the
+ * convergence window well inside 500ms), so the pass is affordable.
+ *
+ * Cached on the factory inputs alone. Shares are deliberately not part of the key: dragging a share
+ * slider re-solves the plan but reuses the ceilings, which is the hot path this cache exists for.
+ * The cache lives in the worker, so it survives ordinary back-to-back solves and is simply rebuilt
+ * after a superseded solve terminates the worker. */
+let _soloMaxCache={key:"",values:{}};
+const SHARE_CALIBRATION_FRACTION=0.5;   // ceiling on the solve budget calibration may consume
+function soloMaxKey(){
+  return canonicalShareKey({
+    lines:(S.lines||[]).map(line=>[line.max,line.spx,line.turbo]),
+    maxTurbo:S.maxTurbo,dupe:S.dupe,margin:S.margin,
+    baseTime:S.baseTime||{},prodCost:S.prodCost||{},forgie:S.forgie||{},minedIncome:S.minedIncome||{}
+  });
+}
+function canonicalShareKey(value){
+  if(Array.isArray(value))return "["+value.map(canonicalShareKey).join(",")+"]";
+  if(value&&typeof value==="object"){
+    return "{"+Object.keys(value).sort().map(k=>JSON.stringify(k)+":"+canonicalShareKey(value[k])).join(",")+"}";
+  }
+  return JSON.stringify(value);
+}
+// Output per hour with the whole factory dedicated to this one item. Returns null when the slice
+// ran out before a usable figure existed, so the caller can fall back rather than calibrate on noise.
+function soloMaxFor(item,control,slice){
+  if(RAWS.includes(item)){
+    const raw=solveRaw(item,control);
+    return raw.interrupted?null:raw.out;
+  }
+  const rc=relevantChain([item]);
+  const options={control};
+  if(Number.isFinite(slice))options.localDeadline=control.readNow()+slice;
+  const sr=solveCore([item],[1],rc.prods,rc.raws,Math.max(300,slice||0),options);
+  if(sr.interrupted)return null;
+  return sr.feasible?(sr.best.produced[sr.resIndex[item]]-sr.best.consumed[sr.resIndex[item]])*3600:0;
+}
+/* Ratio weights for the checked outputs under the active mix mode. Ratio mode passes the sliders
+ * straight through. Share mode returns the converted weights plus the ceilings behind them, and
+ * names any output whose ceiling is zero — an item nothing in this factory can make, which would
+ * otherwise silently drag the whole shared floor to zero with no indication of the culprit. */
+function mixWeights(targets,control,budget){
+  if(S.targetMode!=="share")return {weights:targets.map(it=>S.targets[it].w),soloMax:null,blocked:[],calibrated:false};
+  const key=soloMaxKey();
+  if(_soloMaxCache.key!==key)_soloMaxCache={key,values:{}};
+  const cache=_soloMaxCache.values;
+  const missing=targets.filter(it=>cache[it]==null);
+  const slice=missing.length?Math.max(300,Math.floor(budget*SHARE_CALIBRATION_FRACTION/missing.length)):0;
+  let calibrated=true;
+  for(let i=0;i<missing.length;i++){
+    const value=soloMaxFor(missing[i],control,slice);
+    if(value==null){calibrated=false;break;}
+    cache[missing[i]]=value;
+  }
+  const soloMax={},blocked=[];
+  const weights=targets.map(it=>{
+    const ceiling=cache[it];
+    if(ceiling==null)return S.targets[it].w;                 // uncalibrated: fall back to the raw slider
+    soloMax[it]=ceiling;
+    if(!(ceiling>1e-9)){blocked.push(it);return 1e-9;}       // unmakeable; keep the weight positive
+    return Math.max(1e-9,(targetShareOf(S.targets[it])/100)*ceiling);
+  });
+  return {weights,soloMax:calibrated||Object.keys(soloMax).length?soloMax:null,blocked,calibrated};
+}
+
 function optimizeInner(timeBudget,testOptions){
   // User-set max solve time (ms). It is an anytime cap, so easy factories still finish early; a
   // larger default gives slower devices and deep Credits chains room to improve. Solves run off the
@@ -681,14 +755,32 @@ function optimizeInner(timeBudget,testOptions){
   if(mode==="items"){
     const targets=[...PRODUCTS,...RAWS].filter(it=>S.targets[it]&&S.targets[it].on);
     if(targets.length===0)return {empty:true,mode};
-    const w=targets.map(it=>S.targets[it].w);
-    const rc=relevantChain(targets);
     const itemControl=makeSolveControl(itemsBudget,testOptions),t0=itemControl.readNow();
+    // Calibration runs before the plan solve and shares its control, so it is bounded by the same
+    // user budget rather than added on top of it.
+    const mix=mixWeights(targets,itemControl,itemsBudget);
+    const w=mix.weights;
+    const rc=relevantChain(targets);
     const sr=solveCore(targets,w,rc.prods,rc.raws,itemsBudget,{control:itemControl});
     const {plan,balance,minedUsage,gelReserved}=planFrom(sr);
     const out={};targets.forEach((t,k)=>{out[t]=sr.feasible?(sr.best.produced[sr.tIdx[k]]-sr.best.consumed[sr.tIdx[k]])*3600:0;});
-    const objective=sr.feasible?Math.min(...targets.map((t,k)=>(out[t]||0)/w[k])):0;
-    return {empty:false,mode,issues:sr.issues,plan,balance,minedUsage,gelReserved,out,resIndex:sr.resIndex,targets,objective,tol:sr.tol,usesMargin:sr.usesMargin,feasible:sr.feasible,capped:sr.capped,ms:Math.max(0,itemControl.readNow()-t0)};
+    // The objective is the shared weighted floor: the smallest output-to-weight ratio. Reporting it
+    // alongside which output owns it, and how far every other output sits above it, is what turns
+    // "everything came out low" into "Gel is holding the floor and the rest have room to spare".
+    const ratios=targets.map((t,k)=>(out[t]||0)/w[k]);
+    const objective=sr.feasible?Math.min(...ratios):0;
+    let binding=null,slack=null,shareOfMax=null;
+    if(sr.feasible&&objective>0){
+      binding=targets[ratios.indexOf(Math.min(...ratios))];
+      slack={};targets.forEach((t,k)=>{slack[t]=ratios[k]/objective-1;});
+    }
+    if(mix.soloMax){
+      shareOfMax={};
+      targets.forEach(t=>{const ceiling=mix.soloMax[t];if(ceiling>1e-9)shareOfMax[t]=(out[t]||0)/ceiling;});
+    }
+    return {empty:false,mode,issues:sr.issues,plan,balance,minedUsage,gelReserved,out,resIndex:sr.resIndex,targets,objective,
+      mixMode:S.targetMode==="share"?"share":"ratio",binding,slack,shareOfMax,soloMax:mix.soloMax,blocked:mix.blocked,
+      tol:sr.tol,usesMargin:sr.usesMargin,feasible:sr.feasible,capped:sr.capped,ms:Math.max(0,itemControl.readNow()-t0)};
   }
   // Credits is intentionally a dedicated-item comparison: each priced item gets a whole-factory
   // plan, then those plans are ranked. It is not a theorem that a mixed-sales factory is inferior.

@@ -145,6 +145,24 @@ document.getElementById("targets").addEventListener("change",e=>{
 document.getElementById("targets").addEventListener("input",e=>{
   const w=e.target.dataset.w;
   if(w){const result=commitFieldDraft(e.target,FIELD_SCHEMA.targetWeight,S.targets[w].w,(st,value)=>{st.targets[w].w=value;});if(result.committed){e.target.parentElement.querySelector(".pv").textContent=String(result.value);save();scheduleSolve();}}
+  const share=e.target.dataset.share;
+  if(share){
+    const result=commitFieldDraft(e.target,FIELD_SCHEMA.targetShare,targetShareOf(S.targets[share]),(st,value)=>{st.targets[share].share=value;});
+    if(result.committed){e.target.parentElement.querySelector(".pv").textContent=result.value+"%";save();scheduleSolve();}
+  }
+});
+// Switching mode re-reads a different number off every checked output, so it is a solve input, not
+// a display toggle. Both numbers are kept, so switching back restores what was there.
+document.getElementById("targetModeSw").addEventListener("click",e=>{
+  const button=e.target.closest&&e.target.closest("button");if(!button)return;
+  const mode=button.dataset.targetmode;
+  if(mode!=="ratio"&&mode!=="share")return;
+  if(S.targetMode===mode)return;
+  mutateState(st=>{st.targetMode=mode;});
+  renderTargets();
+  const replacement=document.querySelector(`#targetModeSw button[data-targetmode="${mode}"]`);
+  if(replacement)replacement.focus();
+  scheduleSolve();
 });
 
 /* ---------- saved output sets ---------- */
@@ -165,19 +183,20 @@ function saveTargetPreset(name){
   commitTargetPresetEdit(st=>{
     const id=newId();
     if(!Array.isArray(st.targetSaved))st.targetSaved=[];
-    st.targetSaved.push({id,name,config:targetPresetConfig(st)});
+    st.targetSaved.push({id,name,mode:st.targetMode,config:targetPresetConfig(st)});
     st.targetActiveId=id;
   },"targetPreset",false);
 }
 function loadTargetPreset(id){
   const preset=(S.targetSaved||[]).find(p=>p.id===id);if(!preset)return;
-  commitTargetPresetEdit(st=>{applyTargetPresetConfig(st,preset.config);st.targetActiveId=id;},"targetPreset",true);
+  commitTargetPresetEdit(st=>{applyTargetPresetConfig(st,preset.config,preset.mode);st.targetActiveId=id;},"targetPreset",true);
 }
 // Overwrite a saved set with the currently checked outputs (keeps its id and name).
 function updateTargetPreset(id){
   if(!(S.targetSaved||[]).some(p=>p.id===id))return;
   commitTargetPresetEdit(st=>{
-    st.targetSaved.find(p=>p.id===id).config=targetPresetConfig(st);
+    const preset=st.targetSaved.find(p=>p.id===id);
+    preset.config=targetPresetConfig(st);preset.mode=st.targetMode;
     st.targetActiveId=id;
   },"targetPreset",false);
 }

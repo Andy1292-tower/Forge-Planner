@@ -118,7 +118,7 @@ function defaults(){
   };
   const baseTime={Ingots:10,Bits:6.178,Concrete:9.273,Glass:92.68,Bricks:108.2,Plates:30.89,Rods:46.34,Frames:308.9,Gel:3201,Wire:5400.8,"Reinforced Concrete":355531.88,Batteries:1034274.56};
   const nulls=()=>{const o={};[...RAWS,...PRODUCTS].forEach(it=>o[it]=null);return o;};
-  const tg={};PRODUCTS.forEach(p=>tg[p]={on:p==="Frames",w:1});RAWS.forEach(r=>tg[r]={on:false,w:1});
+  const tg={};PRODUCTS.forEach(p=>tg[p]={on:p==="Frames",w:1,share:50});RAWS.forEach(r=>tg[r]={on:false,w:1,share:50});
   return {
     lines:[
       {max:512,spx:49.38,turbo:0},
@@ -139,7 +139,7 @@ function defaults(){
       Vespium:{rigPerMin:"",resourcesTradingPerSec:""},
       Hydracite:{resourcesTradingPerSec:""}
     },
-    targets:tg,targetSaved:[],targetActiveId:null,
+    targets:tg,targetMode:"ratio",targetSaved:[],targetActiveId:null,
     projects:[],inventory:nulls(),inventoryText:{},projectSeq:true,projectGate:true,projectStability:"prefer-current",projLineMode:"split",
     planStart:null,
     manual:[],manualSaved:[],manualActiveId:null
@@ -167,12 +167,27 @@ function syncManual(st){
 // people ask several different ones of the same factory. A set records only the checked items
 // and their priorities, so applying one clears every checkbox first — an item the set does not
 // name is off, whatever it was before.
+const TARGET_SHARE_DEFAULT=50;
 function targetPresetConfig(st){
-  return ALLITEMS.filter(it=>st.targets[it]&&st.targets[it].on).map(it=>({item:it,w:st.targets[it].w}));
+  return ALLITEMS.filter(it=>st.targets[it]&&st.targets[it].on)
+    .map(it=>({item:it,w:st.targets[it].w,share:targetShareOf(st.targets[it])}));
 }
-function applyTargetPresetConfig(st,config){
+// A set records both numbers and the mode it was saved in, because the same figure means different
+// things in each: w is a demanded ratio in raw item units, share is a percentage of that item's own
+// ceiling. Restoring a set without its mode would silently read one as the other, so a set saved as
+// "Gel at 30% of its max" would come back as "3 Gel per 1 of everything else".
+function applyTargetPresetConfig(st,config,mode){
   ALLITEMS.forEach(it=>{if(st.targets[it])st.targets[it].on=false;});
-  (config||[]).forEach(c=>{if(st.targets[c.item])st.targets[c.item]={on:true,w:c.w};});
+  (config||[]).forEach(c=>{
+    if(st.targets[c.item])st.targets[c.item]={on:true,w:c.w,share:targetShareOf(c)};
+  });
+  if(mode==="ratio"||mode==="share")st.targetMode=mode;
+}
+// Share is additive: sets and saves written before it existed carry no percentage, and default
+// rather than being rejected.
+function targetShareOf(source){
+  const value=Math.floor(Number(source&&source.share));
+  return Number.isFinite(value)?Math.max(5,Math.min(100,value)):TARGET_SHARE_DEFAULT;
 }
 
 const LSKEY="forgePlannerState_v3";
@@ -210,6 +225,8 @@ function normalize(st){
   if(!st.targets)st.targets={};
   PRODUCTS.forEach(p=>{if(!st.targets[p])st.targets[p]={on:false,w:1};});
   RAWS.forEach(r=>{if(!st.targets[r])st.targets[r]={on:false,w:1};});
+  ALLITEMS.forEach(it=>{st.targets[it].share=targetShareOf(st.targets[it]);});
+  if(st.targetMode!=="ratio"&&st.targetMode!=="share")st.targetMode="ratio";
   // Saved output sets record only the checked items and their priorities, so loading one is
   // "clear every checkbox, then apply these" — an item missing from a set is simply off.
   if(!Array.isArray(st.targetSaved))st.targetSaved=[];
@@ -219,12 +236,15 @@ function normalize(st){
     return {
       id:typeof p.id==="string"?p.id:newId(),
       name:typeof p.name==="string"?p.name:"Outputs",
+      mode:p.mode==="share"?"share":"ratio",
       config:p.config.filter(c=>{
         if(!c||!ALLITEMS.includes(c.item)||seen.has(c.item))return false;
         seen.add(c.item);return true;
       }).map(c=>{
         const w=Math.floor(Number(c.w));
-        return {item:c.item,w:Number.isFinite(w)?Math.max(_wRule.min,Math.min(_wRule.max,w)):_wRule.defaultValue};
+        return {item:c.item,
+          w:Number.isFinite(w)?Math.max(_wRule.min,Math.min(_wRule.max,w)):_wRule.defaultValue,
+          share:targetShareOf(c)};
       })
     };
   });

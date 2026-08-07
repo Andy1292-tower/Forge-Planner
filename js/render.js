@@ -83,17 +83,68 @@ function refreshLineNotes(){
 }
 
 /* ---------- RENDER: targets ---------- */
+// Ratio mode asks for an output ratio in raw item units; share mode asks for a percentage of what
+// that item alone could make. The two controls therefore carry different numbers and each keeps its
+// own, so switching modes never overwrites the other's settings.
 function targetRow(it){
   const t=S.targets[it];
+  const share=S.targetMode==="share";
   const row=document.createElement("div");row.className="tg-row"+(t.on?" on":"");
+  const control=share
+    ?`<span>SHARE</span>
+      <input type="range" ${htmlFieldInputAttributes(FIELD_SCHEMA.targetShare)} value="${targetShareOf(t)}" data-share="${it}"
+        aria-label="${it} share of its maximum">
+      <span class="pv mono wide">${targetShareOf(t)}%</span>`
+    :`<span>RATIO</span>
+      <input type="range" ${htmlFieldInputAttributes(FIELD_SCHEMA.targetWeight)} value="${t.w}" data-w="${it}" aria-label="${it} output ratio">
+      <span class="pv mono">${t.w}</span>`;
   row.innerHTML=`<label><input type="checkbox" data-tg="${it}" ${t.on?"checked":""}> ${it}</label>
-    <div class="prio" style="${t.on?"":"visibility:hidden"}">
-      <span>PRIORITY</span>
-      <input type="range" ${htmlFieldInputAttributes(FIELD_SCHEMA.targetWeight)} value="${t.w}" data-w="${it}" aria-label="${it} priority">
-      <span class="pv mono">${t.w}</span></div>`;
+    <div class="prio" style="${t.on?"":"visibility:hidden"}">${control}</div>`;
+  // In share mode the percentage is meaningless without the number it is a percentage OF, so the
+  // measured ceiling goes under the slider. It depends only on the factory, not on which outputs
+  // are checked, so toggling a checkbox does not invalidate it; editing a line does, and the
+  // existing out-of-date results bar already covers that.
+  if(share&&t.on)applyTargetCeiling(row,it);
   return row;
 }
+function applyTargetCeiling(row,it){
+  const ceiling=lastItemsCalibration()[it];
+  let note=row.querySelector(".tg-ceiling");
+  if(!(ceiling>0)){if(note)note.remove();return;}
+  if(!note){note=domElement("div","tg-ceiling");row.appendChild(note);}
+  note.textContent=`asking for ${fmt(ceiling*targetShareOf(S.targets[it])/100,0)} /hr of a possible ${fmt(ceiling,0)}`;
+}
+// The ceilings only exist once a share solve has returned them, which is after the rows were built.
+// Patch the notes in place rather than rebuilding the list: these rows carry the slider the user may
+// still be dragging, and a rebuild would destroy it mid-interaction.
+function refreshTargetCeilings(){
+  if(S.targetMode!=="share")return;
+  document.querySelectorAll("#targets .tg-row").forEach(row=>{
+    const box=row.querySelector("input[data-share]");if(!box)return;
+    const it=box.dataset.share;
+    if(S.targets[it]&&S.targets[it].on)applyTargetCeiling(row,it);
+  });
+}
+// Two buttons rather than a checkbox: the modes are peers, and naming both makes it legible which
+// one the numbers on screen belong to.
+function renderTargetModeSwitch(){
+  const box=document.getElementById("targetModeSw");if(!box)return;
+  const share=S.targetMode==="share";
+  box.innerHTML="";
+  [["ratio","Ratio","Ask for an output ratio in item units — higher makes more of that item"],
+   ["share","Share of max","Ask for a percentage of what each item could make on its own"]].forEach(([mode,label,title])=>{
+    const button=domElement("button","btn"+(S.targetMode===mode?" on":""),label);
+    button.type="button";button.dataset.targetmode=mode;button.title=title;
+    button.setAttribute("aria-pressed",String(S.targetMode===mode));
+    box.appendChild(button);
+  });
+  const help=document.getElementById("targetModeHelp");
+  if(help)help.textContent=share
+    ?"Each output asks for a share of what it could make alone, so items with very different ceilings stay comparable."
+    :"Each output asks for a share of a shared ratio, counted in item units — an item that is harder to make costs more to demand.";
+}
 function renderTargets(){
+  renderTargetModeSwitch();
   const box=document.getElementById("targets");box.innerHTML="";
   PRODUCTS.forEach(p=>box.appendChild(targetRow(p)));
   // Raw materials (Ingots / Bits / Concrete) are selectable too, so you can read their
