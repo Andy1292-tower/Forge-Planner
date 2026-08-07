@@ -128,42 +128,39 @@ const noticeRunner = `
   const at=(gap,deadlineReached)=>optimalityNotice(
     {feasible:true,objective:100*(1-gap),bound:100,tol:0,capped:true,deadlineReached:!!deadlineReached});
 
-  check("a near-proven plan rounds its gap up to 0.1% rather than down to zero",
-    at(0.0004).includes("0.1%")&&!at(0.0004).includes("0.0%"),at(0.0004));
-  check("the notice names how far the theoretical ceiling sits above the plan",
-    at(0.09).includes("9%")&&at(0.09).includes("theoretical ceiling"),at(0.09));
-
-  /* ---- a plan the search could not improve on is reported as the plan, not as a shortfall ---- */
-  // A wide gap on a converged search is mostly the relaxation splitting lines, not a weak plan.
-  // Leading with "up to X% below the ceiling" reads as a fault the reader cannot act on.
-  [0.004,0.09,0.38].forEach(g=>{
-    const conv=at(g,false);
-    check("a converged solve at a "+(g*100).toFixed(1)+"% gap leads with the plan, not the shortfall",
-      conv.includes("<b>Best plan found.</b>")&&!conv.includes("below the ceiling"),conv);
-    check("a converged solve at a "+(g*100).toFixed(1)+"% gap never recommends a larger budget",
-      !conv.includes("larger budget may")&&conv.includes("larger budget returns this same plan"),conv);
-    check("a converged solve at a "+(g*100).toFixed(1)+"% gap stays informational, never a warning",
-      conv.includes('class="notice info"'),conv);
-    check("a deadline-bound solve at a "+(g*100).toFixed(1)+"% gap does offer the budget as a lever",
-      at(g,true).includes("larger budget may find a better plan"),at(g,true));
+  /* ---- a solve that settled says nothing at all ---- */
+  // It returns this plan at any budget, so there is no action behind a caveat on it. A wide gap
+  // there is mostly the relaxation splitting lines, which no factory can do — flagging it makes a
+  // correct result look suspect over something the reader cannot change.
+  [0, 0.004, 0.09, 0.38, 0.62].forEach(g=>{
+    check("a settled solve at a "+(g*100).toFixed(1)+"% gap renders no notice whatsoever",
+      at(g,false)==="","rendered "+JSON.stringify(at(g,false)));
   });
-  check("a wide gap that the clock caused escalates to a warning",
-    at(0.38,true).includes("notice warn"),at(0.38,true));
-  check("every quoted gap explains that line-splitting puts part of it out of reach",
-    [0.004,0.38].every(g=>[true,false].every(d=>at(g,d).includes("split its time across several jobs"))),
-    "both bands, both stop reasons");
-  check("a result predating the stop-reason field is not read as having hit the deadline",
-    optimalityNotice({feasible:true,objective:81,bound:100,tol:0,capped:true}).includes("budget to spare"),
-    "deadlineReached absent");
+  check("a settled solve stays silent even with no bound to quote",
+    optimalityNotice({feasible:true,objective:100,bound:null,tol:0,capped:true,deadlineReached:false})==="","");
+  check("a settled solve stays silent while a margin is set",
+    optimalityNotice({feasible:true,objective:100,bound:null,tol:0.05,capped:true,deadlineReached:false})==="","");
+  check("a result predating the stop-reason field is treated as settled, not as a timeout",
+    optimalityNotice({feasible:true,objective:81,bound:100,tol:0,capped:true})==="","deadlineReached absent");
 
-  const noBound=optimalityNotice({feasible:true,objective:100,bound:null,tol:0,capped:true});
-  check("a result with no bound falls back to the unquantified notice",
-    !noBound.includes("%")&&noBound.includes("did not finish an exhaustive proof"),noBound);
-  const margin=optimalityNotice({feasible:true,objective:100,bound:null,tol:0.05,capped:true});
-  check("a margin solve explains why no bound is available rather than going silent",
-    margin.includes("margin is set"),margin);
-  const infeasible=optimalityNotice({feasible:false,objective:0,bound:null,tol:0,capped:true});
-  check("an infeasible result never divides by a ceiling",
+  /* ---- only a solve the clock cut short warns, because only that one can be acted on ---- */
+  const cut=at(0.09,true);
+  check("a solve stopped by the budget says so plainly and names the setting to raise",
+    cut.includes("<b>The solve ran out of time.</b>")&&cut.includes("Raise the max solve time"),cut);
+  check("a solve stopped by the budget is styled as a warning",
+    cut.includes('class="notice warn"'),cut);
+  check("the timed-out notice quotes the remaining headroom when a bound exists",
+    cut.includes("9%")&&cut.includes("theoretical ceiling"),cut);
+  check("the timed-out notice says part of that headroom is unreachable",
+    cut.includes("split its time across several jobs"),cut);
+  check("a near-proven timeout rounds its headroom up to 0.1% rather than down to zero",
+    at(0.0004,true).includes("0.1%")&&!at(0.0004,true).includes("0.0%"),at(0.0004,true));
+
+  const noBound=optimalityNotice({feasible:true,objective:100,bound:null,tol:0,capped:true,deadlineReached:true});
+  check("a timeout with no bound still warns, without inventing a percentage",
+    noBound.includes("ran out of time")&&!noBound.includes("%"),noBound);
+  const infeasible=optimalityNotice({feasible:false,objective:0,bound:null,tol:0,capped:true,deadlineReached:true});
+  check("an infeasible timeout never divides by a ceiling",
     !infeasible.includes("%")&&!infeasible.includes("NaN"),infeasible);
 
   return fail;

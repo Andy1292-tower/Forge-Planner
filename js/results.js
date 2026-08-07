@@ -429,34 +429,23 @@ function renderResults(options){
     if(res)renderSolveResult(res,el,stat,solveKey,metadata);
   });
 }
-// A bounded search reports what separates its plan from the ceiling the LP relaxation proved.
-// Without it every unproven solve reads the same, whether it converged almost immediately or was
-// still climbing when the clock stopped it. `bound` is absent when a margin is set, because the
-// relaxation encodes strict feasibility and cannot bound a may-work optimum.
+// Only a solve the clock cut short has anything to say. Seeds, the ILS stagnation cutoff and the
+// convergence window are all budget-independent by design, so a search that settles returns that
+// same plan however long it is given — there is no action behind a caveat on it, and the distance
+// to the relaxation's ceiling is not one either: the relaxation lets a line divide its time across
+// several jobs, so a plan that cannot be improved still sits well under a ceiling no real factory
+// reaches. Reaching the deadline is the one case the reader can act on, by budget or by hardware.
 function optimalityNotice(res){
+  if(res.deadlineReached!==true)return "";
   const bounded=Number.isFinite(res.bound)&&res.bound>0&&res.feasible&&res.objective>0;
-  if(!bounded){
-    const why=res.tol>0
-      ?"An optimality bound is not available while a margin is set."
-      :"The search did not finish an exhaustive proof.";
-    return `<div class="notice info" style="font-size:11.5px">Large search space — this is the best plan found within the time budget. ${why}</div>`;
+  let headroom="";
+  if(bounded){
+    const gap=Math.max(0,(res.bound-res.objective)/res.bound);
+    // Rounded up, never down: a quoted ceiling has to stay true at the precision it is stated to.
+    const pct=gap<0.001?"0.1%":fmt(gap*100,1)+"%";
+    headroom=` Its theoretical ceiling is ${pct} higher, though that ceiling lets one line split its time across several jobs, so not all of that is reachable.`;
   }
-  const gap=Math.max(0,(res.bound-res.objective)/res.bound);
-  // Rounded up, never down: a quoted ceiling has to stay true at the precision it is stated to.
-  const pct=gap<0.001?"0.1%":fmt(gap*100,1)+"%";
-  // The ceiling comes from a relaxation that lets one line split its time across several jobs. A
-  // real line runs one job, so part of every gap is unreachable by construction, and more outputs
-  // means more of it: on a five-output solve the relaxation splits most lines, on a single-output
-  // one it often splits none and the gap closes to zero. Leading with the shortfall would read as a
-  // fault in a plan the search could not improve on.
-  const ceiling=`Its theoretical ceiling is ${pct} higher, but that ceiling lets one line split its time across several jobs, so some of the gap is not reachable by any real plan.`;
-  // The advice follows why the search stopped, not how wide the gap is. Seeds, the ILS stagnation
-  // cutoff and the convergence window are all budget-independent by design, so a search that
-  // stopped improving returns this same plan at any larger budget.
-  if(res.deadlineReached===true){
-    return `<div class="notice ${gap>0.15?"warn":"info"}" style="font-size:11.5px"><b>Best plan found so far.</b> The time budget ended the search before it settled, so a larger budget may find a better plan. ${ceiling}</div>`;
-  }
-  return `<div class="notice info" style="font-size:11.5px"><b>Best plan found.</b> The search stopped improving with budget to spare, so a larger budget returns this same plan. ${ceiling}</div>`;
+  return `<div class="notice warn" style="font-size:11.5px"><b>The solve ran out of time.</b> This is the best plan found before the budget ended the search, not the plan it would have settled on. Raise the max solve time to give it room.${headroom}</div>`;
 }
 function renderSolveResult(res,el,stat,solveKey,metadata){
   if(res.mode==="project"){
