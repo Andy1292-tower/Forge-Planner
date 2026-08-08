@@ -46,6 +46,10 @@ Two line-plan choices are supported:
 - **Line switching** lets a line change jobs at replayed boundaries within a phase.
 - **Set & forget** gives each busy line one job for the whole timed phase; lines reset only between listed phases. A bounded recovery may try lower compression ceilings, but only a replay-certified schedule can be shown as executable.
 
+No plan in any mode may keep a line on a job it gains nothing from. A line is reported busy only when idling it would break the plan's feasibility or lower its objective; otherwise it is reported idle.
+
+With **one project at a time** and **Set & forget**, a phase's idle lines may be spent banking a later project's direct costs, which cross-phase carry then nets off that project's demand. Banking is free by contract: a filler may consume only what its phase leaves unused after both its own consumption and the rate its own demand must be met at, so the phase it fills keeps its ETA, balance, and feasibility unchanged, and the fill is discarded if the filled phase no longer replays. Only direct project costs are banked — held stock does not remove a Set & forget feeder job, so banking an intermediate would buy nothing — and never a material carrying an external pre-produced Bits obligation. Ordering is settled before any fill, so banking cannot reshuffle the queue it banks for.
+
 The step plan is ordered execution guidance only when replay validation succeeds. An analytical LP breakdown may remain visible for diagnosis when no executable schedule is available; it must not be followed as run instructions.
 
 ### Manual

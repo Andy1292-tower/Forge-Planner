@@ -1052,6 +1052,8 @@ function stepPlanHtml(res){
       h+=`<div class="notice info" style="font-size:11px;margin:4px 0 6px">${supply} before starting. Same-phase production cannot satisfy this prerequisite.</div></div>`;return;
     }
     if(!lines.length){h+=`<div class="proj-mini" style="padding:2px 0">No line activity.</div></div>`;return;}
+    if(ph.lookAhead&&(ph.lookAhead.lines||[]).length)
+      h+=`<div class="notice info" style="font-size:11px;margin:4px 0 6px"><b>Banking ahead.</b> Line${ph.lookAhead.lines.length===1?"":"s"} ${ph.lookAhead.lines.map(line=>"#"+line).join(", ")} ${ph.lookAhead.lines.length===1?"has":"have"} nothing to do for this project, so ${ph.lookAhead.lines.length===1?"it is":"they are"} making ${(ph.lookAhead.items||[]).map(htmlText).join(" and ")} for <b>${htmlText(ph.lookAhead.name||"a later project")}</b>. This phase's duration is unchanged.</div>`;
     const onHandAt=(item,elapsed)=>{const matches=allBoundaries.filter(b=>b.phaseIndex===i&&b.kind==="switch"&&Math.abs((b.phaseTime||0)-elapsed)<1e-7);
       const boundary=matches[matches.length-1];return boundary&&boundary.inventory?boundary.inventory[item]:null;};
     h+=`<ol class="step-list">`;
@@ -1066,7 +1068,11 @@ function stepPlanHtml(res){
         return `${verb} <b>${s.item}</b> @${compressionLabel(s.lvl)}${s.frac>=0.999?" (whole phase)":` for ~${fmtDuration(s.frac*ph.eta)}`}${mined}${tag}${stock}`;
       });
       const segHtml=parts.map((p,idx)=>`<div class="step-seg">${idx===0?'<span class="step-then">→</span>':'<span class="step-then">then</span>'} ${p}</div>`).join('');
-      h+=`<li><span class="mono" style="color:var(--amber)">Line #${L.line}</span> <span class="proj-mini">(${compressionLabel(L.max)} cap)</span>${segHtml}</li>`;
+      // A look-ahead line makes nothing this phase needs — say whose materials it is banking, or it
+      // reads as a stray job (see the "banking ahead" note above the list).
+      const ahead=ph.lookAhead&&(ph.lookAhead.lines||[]).indexOf(L.line)>=0
+        ?` <span class="proj-mini">· banking for <b>${htmlText(ph.lookAhead.name||"a later project")}</b></span>`:"";
+      h+=`<li><span class="mono" style="color:var(--amber)">Line #${L.line}</span> <span class="proj-mini">(${compressionLabel(L.max)} cap)</span>${ahead}${segHtml}</li>`;
     });
     h+=`</ol>${minedUsageNote(ph.minedUsage||[])}</div>`;
   });

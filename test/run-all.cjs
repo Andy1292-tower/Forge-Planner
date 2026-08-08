@@ -17,6 +17,7 @@ const tests = [
   "test/gel-loadout-exact.cjs",
   "test/inventory.cjs",
   "test/legacy-worker-retirement.cjs",
+  "test/lookahead.cjs",
   "test/minedfocus.cjs",
   "test/minedmodes.cjs",
   "test/minedrender.cjs",
