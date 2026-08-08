@@ -259,8 +259,14 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   let lpBound=null;
   // Exogenous supply (per second) of each resource, added to the produced side. Craftable
   // materials use Lil' Forgie; mined resources use their own independent income budgets.
-  const baseArr=Float64Array.from(resources.map(r=>
-    isMinedResource(r)?minedBudgetHr(r)/3600:forgieHr(r)/3600));
+  // opts.supplyHr replaces both when the caller owns a narrower budget than the whole factory: the
+  // look-ahead filler may spend only what a solved phase leaves unused, so it hands in that spare
+  // vector instead of the global incomes.
+  const supplyOverride=opts.supplyHr&&typeof opts.supplyHr==="object"?opts.supplyHr:null;
+  const supplyHr=r=>supplyOverride
+    ?Math.max(0,Number(supplyOverride[r])||0)
+    :(isMinedResource(r)?minedBudgetHr(r):forgieHr(r));
+  const baseArr=Float64Array.from(resources.map(r=>supplyHr(r)/3600));
 
   // data-availability check (cost only — time is computed from compression)
   const issues=[];
@@ -272,7 +278,10 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
 
   // jobs per distinct max; per-line speed factor sp and dup factor dp
   const jobsByMax={};
-  const sorted=sortedLines();
+  // opts.lineSubset restricts the solve to specific physical lines (by original index). The
+  // look-ahead filler solves over the lines its phase left idle and must not move the others.
+  const lineSubset=Array.isArray(opts.lineSubset)?new Set(opts.lineSubset):null;
+  const sorted=lineSubset?sortedLines().filter(line=>lineSubset.has(line.orig)):sortedLines();
   const requestedCeiling=Number(opts.maxCompression),hasCeiling=Number.isFinite(requestedCeiling)&&requestedCeiling>0;
   const jobMax=sorted.map(line=>hasCeiling?Math.min(line.max,requestedCeiling):line.max);
   jobMax.forEach(max=>{if(!jobsByMax[max])jobsByMax[max]=buildJobs(max,resIndex,relRaws,relProds,targets,w);});
@@ -377,8 +386,35 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     }
     return ch;
   }
+  // Idle the line jobs the plan gets nothing from. The objective counts net TARGET output only, so a
+  // line producing something no other job consumes and no target asks for scores exactly the same as
+  // Idle — no move ever prefers Idle, and a job left over from an intermediate repair step rides all
+  // the way into the result ("no crafters set to Ingots, yet the plan makes them"). The test is
+  // exact rather than structural: a line is idled only when idling it holds BOTH feasibility and the
+  // objective, so a real feeder — or a line carrying a target the plan needs — is never removed.
+  // Deliberately uncharged and uninterruptible: it is one evaluation per line, and the plan most
+  // likely to be carrying a job it gained nothing from is the one whose clock ran out mid-search —
+  // so this has to run on the interrupted path too. finishCoreResult calls it on every exit.
+  function dropDeadLines(ch,targetScore){
+    let dropped=false;
+    for(let i=0;i<N;i++){
+      const old=ch[i],idle=idleIdx(i);
+      if(old===idle)continue;
+      ch[i]=idle;evalChoice(ch);
+      if(feasibleNow()&&scoreNow()>=targetScore-EPS){dropped=true;continue;}
+      ch[i]=old;evalChoice(ch);
+    }
+    return dropped;
+  }
+  // Adopt a score-preserving rewrite of the incumbent (balance pass, dead-line pass) as the new best.
+  const adoptChoice=ch=>{evalChoice(ch);best={score:scoreNow(),choice:ch.slice(),produced:produced.slice(),consumed:consumed.slice()};};
   let _rng=0x2545f491>>>0;const rnd=()=>{_rng^=_rng<<13;_rng^=_rng>>>17;_rng^=_rng<<5;_rng>>>=0;return _rng/4294967296;};
   function finishCoreResult(){
+    // Idle whatever this plan turns out not to need, whichever way the search exited.
+    if(N>0&&best.score>EPS){
+      const trimmed=best.choice.slice();
+      if(dropDeadLines(trimmed,best.score))adoptChoice(trimmed);
+    }
     // Distinguish a failed in-work checkpoint from the deadline first being observed while the
     // completed result is serialized. The latter remains valid, but is capped and stops later work.
     const workInterrupted=control.isStopped();
@@ -436,7 +472,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     if(baselineInc&&!interrupted){
       const ch=baselineInc.ch;evalChoice(ch);best={score:scoreNow(),choice:ch.slice(),produced:produced.slice(),consumed:consumed.slice()};
       if(best.score>EPS&&N>0){const balanced=minDeficitAtScore(best.choice.slice(),best.score);
-        if(balanced&&!interrupted){evalChoice(balanced);best={score:scoreNow(),choice:balanced.slice(),produced:produced.slice(),consumed:consumed.slice()};}}
+        if(balanced&&!interrupted)adoptChoice(balanced);}
     }
     if(!interrupted)keepGoing("baseline-product-complete");
     return finishCoreResult();
@@ -614,7 +650,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // balance any free deficit out of the now-optimal plan (keeps the objective, trims the margin use)
   if(!interrupted&&best.score>EPS&&N>0){
     const ch=minDeficitAtScore(best.choice.slice(),best.score);
-    if(ch&&!interrupted){evalChoice(ch);best={score:scoreNow(),choice:ch.slice(),produced:produced.slice(),consumed:consumed.slice()};}
+    if(ch&&!interrupted)adoptChoice(ch);
   }
   if(si===stages.length-1)finalExhaustive=stageExhaustive&&!interrupted;
   carry=best.choice.slice();   // hand this pass's optimum to the next (relaxed) pass as a floor
@@ -1255,11 +1291,11 @@ function projectSchedule(net,targets,avail,opts){
 /* One-job-per-line Project scheduling. The discrete core already models exactly that assignment;
  * this adapter gives it the Project LP result shape so Task 4's replay remains the authority for
  * inventory, prerequisites, warm-ups, mined-rate limits, and cross-phase carry. */
-function staticSchedule(net,targets,control,maxCompression){
+function staticSchedule(net,targets,control,maxCompression,localDeadline){
   const rc=relevantChain(targets),D0=Math.max(1,...targets.map(item=>net[item]||0));
   const weights=targets.map(item=>Math.max(1e-12,(net[item]||0)/D0));
   const budget=boundedPersistedField("solveBudget",S.solveBudget,10000,200,60000,true);
-  const solved=solveCore(targets,weights,rc.prods,rc.raws,budget,{tolOverride:0,control,maxCompression});
+  const solved=solveCore(targets,weights,rc.prods,rc.raws,budget,{tolOverride:0,control,maxCompression,localDeadline});
   const rate={};
   solved.resources.forEach((resource,index)=>{
     rate[resource]=solved.feasible?(solved.best.produced[index]-solved.best.consumed[index])*3600:0;
@@ -1302,7 +1338,7 @@ function solvePhaseFor(net,name,avail,stabilityPolicy,phaseKey,solveOptions){
   if(stabilityPolicy&&typeof stabilityPolicy==="object")scheduleOptions={...stabilityPolicy,phaseKey:(phaseKey!=null?phaseKey:name)};
   else if(stabilityPolicy===true)scheduleOptions={readStability:true,rememberStability:true,stabilityCache:cloneLineStability(_lineStability),phaseKey:(phaseKey!=null?phaseKey:name)};
   const sch=solveOptions&&solveOptions.static===true
-    ?staticSchedule(net,targets,solveOptions.control,solveOptions.maxCompression)
+    ?staticSchedule(net,targets,solveOptions.control,solveOptions.maxCompression,solveOptions.localDeadline)
     :projectSchedule(net,targets,avail,scheduleOptions);
   const rate={};targets.forEach(it=>rate[it]=Math.max(0,sch.rate[it]||0));
   let eta=0,bottleneck=null;const infeasItems=[];
@@ -1394,7 +1430,8 @@ function unlockLayers(perProject){
 function solveProjectBuffer(deficit,_inventory,info,runOptions){
   const signature=Object.keys(deficit).sort().map(it=>it+":"+deficit[it].toPrecision(12)).join("|");
   const warm=solvePhaseFor(deficit,"Warm-up: "+Object.keys(deficit).join(" + "),{},false,"warmup:"+(info&&info.depth||0)+":"+signature,
-    {static:S.projLineMode==="static",control:runOptions&&runOptions.staticControl});
+    {static:S.projLineMode==="static",control:runOptions&&runOptions.staticControl,
+      localDeadline:runOptions&&runOptions.staticPhaseDeadline});
   warm.kind="warmup";warm.demandSub={};return warm;
 }
 function plannedPreProducedDemand(ph){
@@ -1445,7 +1482,8 @@ function solveExecutableProjectPhase(sub,name,inv,stabilityPolicy,phaseKey,runOp
     for(let pass=0;pass<8;pass++){
       const passSolvedWith=Object.assign({},pre);
       const candidate=solvePhaseFor(projNetVec(sub,inv,passSolvedWith),name,projAvailVec(sub,inv,passSolvedWith),policy,phaseKey,
-        {static:isStatic,control:runOptions&&runOptions.staticControl,maxCompression});
+        {static:isStatic,control:runOptions&&runOptions.staticControl,maxCompression,
+          localDeadline:runOptions&&runOptions.staticPhaseDeadline});
       if(candidate.evaluated===false){
         if(!incumbent)return {phase:candidate,solvedWith:passSolvedWith,pre,converged:false,
           incumbent:null,observedMaxCompressions:[...observedMaxCompressions]};
@@ -1523,6 +1561,175 @@ function solveExecutableProjectPhase(sub,name,inv,stabilityPolicy,phaseKey,runOp
     message:"Pre-produced Bits obligation did not converge with the final stabilized Project plan"};
   return ph;
 }
+/* ---------- look-ahead fill: sequenced Set & forget ----------
+ * A solved static phase can leave a line with nothing to do — its demanded items are already
+ * covered, so the dead-line pass idles it. With one project per phase the NEXT project's costs are
+ * known now, and cross-phase carry already nets banked stock off later demand, so that idle line can
+ * spend the phase building the next project's materials instead of standing still.
+ *
+ * "For free" is the whole contract. A filler may spend only what the phase leaves unused after its
+ * own consumption AND the rate its own demand has to be met at, so the phase it fills keeps its ETA,
+ * balance, and feasibility exactly. It never touches a busy line, it runs inside a bounded slice of
+ * the shared solve budget, and it is handed back if the filled phase stops replaying.
+ *
+ * Only DIRECT costs of a later project are worth banking. Set & forget deliberately does not let
+ * held stock remove a feeder job (projAvailVec is dropped for static), so stock only ever shrinks a
+ * project's own net demand — banking an intermediate would buy nothing. Frames and Wire are excluded
+ * on top of that: their Bits are an external pre-produced prerequisite whose fixed point
+ * solveExecutableProjectPhase has already converged, and adding one here would invalidate it.
+ */
+const LOOKAHEAD_ATTEMPT_WORK=150000;   // ceiling on one attempt, so a hopeless one gives up promptly
+const LOOKAHEAD_PHASE_WORK=450000;     // ceiling on a phase's whole fill, however many it attempts
+const LOOKAHEAD_PROJECT_ATTEMPTS=3;    // how far down the remaining queue one phase will look
+// Per-hour supply a solved static phase leaves genuinely spare: exogenous income plus what the busy
+// lines make, less what they consume and less the rate the phase's own demand has to be met at.
+// A feasible phase meets every one of those rates, so each entry is non-negative by construction.
+function phaseSpareSupplyHr(ph){
+  const spare={};
+  ALLITEMS.forEach(it=>spare[it]=forgieHr(it));
+  MINED_RESOURCES.forEach(r=>{if(spare[r]==null)spare[r]=minedBudgetHr(r);});
+  (ph.plan||[]).forEach(row=>(row.entries||[]).forEach(entry=>{
+    spare[entry.item]=(spare[entry.item]||0)+(entry.outHr||0);
+    (entry.cons||[]).forEach(input=>{spare[input.item]=(spare[input.item]||0)-(input.hr||0);});
+  }));
+  if(ph.eta>0)ALLITEMS.forEach(it=>{spare[it]=(spare[it]||0)-((ph.net&&ph.net[it]||0)/ph.eta);});
+  Object.keys(spare).forEach(r=>{if(!(spare[r]>0))spare[r]=0;});
+  return spare;
+}
+// One whole-phase filler entry in the rate shape every scheduler emits, or null when that level has
+// no usable craft time or cost data.
+function fillerEntry(line,item,lvl){
+  const tt=craftTime(item,lvl);if(!(tt>0))return null;
+  const es=effSpeed(line.sp,tt),cons=[];
+  if(PRODUCTS.includes(item)){
+    const ins=RECIPE[item].inputs;
+    if(!ins.every(k=>S.prodCost[item][k][lvl]!=null&&!isNaN(S.prodCost[item][k][lvl])))return null;
+    ins.forEach(k=>cons.push({item:k,hr:(S.prodCost[item][k][lvl]/tt)*es*3600}));
+    const cfg=MINED_CRAFTS[item];
+    if(cfg){const cost=minedCost(item,lvl)[cfg.resource];if(cost==null||isNaN(cost)||cost<0)return null;
+      cons.push({item:cfg.resource,hr:(cost/tt)*es*3600});}
+  }else if(!RAWS.includes(item))return null;
+  return {item,lvl,frac:1,outHr:(craftYield(item,lvl)/tt)*es*line.dp*3600,cons};
+}
+// Bank what the next project still needs and no more: walk each filler down to the smallest
+// compression that still covers what is left, and drop one outright once the others already cover
+// its item. Two things keep this honest. A filler's output can be another filler's INPUT (a Bricks
+// line feeding a Reinforced Concrete line), so every downgrade and every drop is re-checked against
+// the whole set's balance rather than just its own inputs. And what a fill actually banks is its
+// NET contribution, so a line's own output is credited only after the fillers that eat it.
+function trimFillersToDemand(picks,need,eta,spare){
+  const ordered=picks.slice().sort((a,b)=>b.entry.outHr-a.entry.outHr||a.row.line-b.row.line);
+  const chosen=ordered.map(pick=>pick.entry);
+  const balances=()=>{
+    const supply=Object.assign({},spare),demand={};
+    chosen.forEach(entry=>{if(!entry)return;
+      supply[entry.item]=(supply[entry.item]||0)+entry.outHr;
+      entry.cons.forEach(input=>{demand[input.item]=(demand[input.item]||0)+input.hr;});});
+    return Object.keys(demand).every(resource=>{const have=supply[resource]||0,want=demand[resource];
+      return have>=want-1e-9*Math.max(1,have,want);});
+  };
+  const bankedExcept=(index,item)=>{
+    let value=0;
+    chosen.forEach((entry,i)=>{if(!entry||i===index)return;
+      if(entry.item===item)value+=entry.outHr;
+      entry.cons.forEach(input=>{if(input.item===item)value-=input.hr;});});
+    return value*eta;
+  };
+  ordered.forEach((pick,index)=>{
+    const item=pick.entry.item,remaining=(need[item]||0)-bankedExcept(index,item);
+    if(!(remaining>1e-9)){
+      chosen[index]=null;
+      if(balances())return;
+      chosen[index]=pick.entry;   // its output is feeding another filler — keep it
+      return;
+    }
+    for(const level of LEVELS.filter(L=>L<pick.entry.lvl)){
+      const candidate=fillerEntry(pick.line,item,level);
+      if(!candidate||candidate.outHr*eta<remaining)continue;
+      chosen[index]=candidate;
+      if(balances())break;
+      chosen[index]=pick.entry;
+    }
+  });
+  return ordered.map((pick,index)=>chosen[index]?{line:pick.line,row:pick.row,entry:chosen[index]}:null).filter(Boolean);
+}
+// Rebuild the per-item readouts a filler moved. Mined budgets stay out of the craftable balance.
+function refreshPhaseReadouts(ph){
+  const seen=new Set(ph.items||[]);
+  (ph.plan||[]).forEach(row=>(row.entries||[]).forEach(entry=>{
+    seen.add(entry.item);(entry.cons||[]).forEach(input=>seen.add(input.item));}));
+  ph.items=[...seen];
+  const prodHr={},consHr={};
+  (ph.plan||[]).forEach(row=>(row.entries||[]).forEach(entry=>{
+    prodHr[entry.item]=(prodHr[entry.item]||0)+(entry.outHr||0);
+    (entry.cons||[]).forEach(input=>{consHr[input.item]=(consHr[input.item]||0)+(input.hr||0);});}));
+  ph.balance=ph.items.filter(it=>!MINED_RESOURCES.includes(it)).map(it=>{
+    const prod=prodHr[it]||0,cons=consHr[it]||0,forgie=forgieHr(it);
+    return {res:it,prod,forgie,cons,stock:Math.max(0,cons-prod-forgie)};});
+  ph.minedUsage=minedUsageFromProjectPlan(ph.plan);
+}
+// Put a sequenced static phase's idle lines on the next project's direct costs. Mutates ph; a no-op
+// whenever the mode, the phase, the budget, or the remaining demand makes filling unsafe.
+function fillIdleLinesAhead(ph,laterProjects,inventory,context,runOptions){
+  if(S.projLineMode!=="static"||!ph||ph.feasible!==true||!(ph.eta>0))return;
+  if(ph.evaluated===false||ph.interrupted===true)return;
+  const control=runOptions&&runOptions.staticControl;
+  if(control&&(control.isStopped()||control.deadlineReached()))return;
+  const idleRows=(ph.plan||[]).filter(row=>!row.entries||!row.entries.length);
+  if(!idleRows.length||!(laterProjects||[]).length)return;
+  // The stock a later project would actually start from: replay this phase as it stands — pure
+  // arithmetic, no warm-up solving — and net that result off each remaining project's costs in turn.
+  const baseline=replayProjectSchedule([ph],inventory,context);
+  const after=baseline.finalInventory||inventory;
+  const byOrig={};sortedLines().forEach(line=>{byOrig[line.orig]=line;});
+  const subset=idleRows.map(row=>row.line-1).filter(orig=>byOrig[orig]!=null);
+  if(!subset.length)return;
+  const spare=phaseSpareSupplyHr(ph),budget=boundedPersistedField("solveBudget",S.solveBudget,10000,200,60000,true);
+  // The queue's next project isn't always the one these particular lines can help — a leftover
+  // 256-cap line cannot start a Batteries chain. Walk the queue until one yields a usable fill,
+  // bounded so a long shopping list can't turn one phase into an unbounded search.
+  // Work units, not wall-clock: the allowance a fill spends has to be the same on every machine, or
+  // the plan a user is shown would depend on how fast their laptop is.
+  const spentAt=control?control.work():0,allowance=()=>LOOKAHEAD_PHASE_WORK-(control?control.work()-spentAt:0);
+  let target=null,kept=null;
+  for(const project of laterProjects.slice(0,LOOKAHEAD_PROJECT_ATTEMPTS)){
+    if(allowance()<=0)break;
+    const net=projNetVec(project.sub,after);
+    const items=ALLITEMS.filter(it=>net[it]>1e-9&&!PREPROD_BITS[it]);
+    if(!items.length)continue;
+    const chain=relevantChain(items),D0=Math.max(1,...items.map(it=>net[it]||0));
+    const weights=items.map(it=>Math.max(1e-12,(net[it]||0)/D0));
+    const solved=solveCore(items,weights,chain.prods,chain.raws,budget,
+      {tolOverride:0,control,lineSubset:subset,supplyHr:spare,
+        localWorkLimit:Math.min(allowance(),LOOKAHEAD_ATTEMPT_WORK),
+        // Banking is a bonus, so it spends only what its OWN phase left of its slice — never a
+        // tick of what the phases behind it are counting on.
+        localDeadline:runOptions&&runOptions.staticPhaseDeadline});
+    if(!solved.feasible||solved.interrupted)continue;
+    const picks=[];
+    solved.sorted.forEach((line,index)=>{
+      const job=solved.lineJobs[index][solved.best.choice[index]];
+      if(!job||job.kind==="idle"||!job.prod.length)return;
+      const row=idleRows.find(candidate=>candidate.line===line.orig+1);
+      const entry=row?fillerEntry(line,job.res,job.lvl):null;
+      if(entry)picks.push({line,row,entry});
+    });
+    const trimmed=trimFillersToDemand(picks,net,ph.eta,spare);
+    if(trimmed.length){target=project;kept=trimmed;break;}
+  }
+  if(!kept)return;
+  kept.forEach(pick=>{pick.row.entries.push(pick.entry);});
+  ph.lookAhead={name:target.name,id:target.id||"",
+    lines:kept.map(pick=>pick.row.line).sort((a,b)=>a-b),
+    items:[...new Set(kept.map(pick=>pick.entry.item))]};
+  // Additive by construction, but a phase that stopped replaying would take the whole plan down with
+  // it — certify before keeping the fill, and hand the lines back if anything trips.
+  if(baseline.ok===true&&replayProjectSchedule([ph],inventory,context).ok!==true){
+    kept.forEach(pick=>{pick.row.entries.pop();});
+    delete ph.lookAhead;
+  }
+  refreshPhaseReadouts(ph);
+}
 function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
   const layer=unlockLayers(perProject);
   const maxL=perProject.length?Math.max.apply(null,layer):0;
@@ -1531,16 +1738,55 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
   let exactInventory=invStart(),scheduleBlocked=null;
   const solveBudgetFailure=()=>({kind:"solve-budget",time:0,deficit:0,
     message:"Set & forget search reached the Project solve limit before this phase received a usable assignment."});
-  const executePhase=ph=>{
+  // One phase must not be able to spend the whole run's budget. The static search is anytime: it
+  // keeps refining until its clock runs out, so with a single shared deadline the FIRST phase soaks
+  // up everything and every phase behind it comes back with no assignment at all — which is a
+  // blocked plan, not a slower one. The same save then solves or doesn't depending only on how busy
+  // the machine happened to be. Each phase instead gets an equal share of what is LEFT, so a phase
+  // that converges early hands its surplus to the ones behind it, and a phase that would have run
+  // long returns its best incumbent at the cutoff instead of starving its successors.
+  // currentTime(), not readNow(): slicing must not itself sample the clock. The phase that just
+  // finished sampled it moments ago, which is accurate enough to divide the remainder by, and taking
+  // a reading here would spend a tick of the user's budget on bookkeeping.
+  const slicedRunOptions=(index,total)=>{
+    const control=runOptions&&runOptions.staticControl;
+    if(!control||!(total>1)||control.isStopped())return runOptions;
+    const now=control.currentTime(),remaining=control.deadline-now;
+    if(!(remaining>0))return runOptions;
+    return Object.assign({},runOptions,{staticPhaseDeadline:now+remaining/Math.max(1,total-index)});
+  };
+  // Warm-ups are solves too, so they take their own fresh share of what is left rather than the
+  // phase search's leftovers — a phase that used all of its slice can still be made startable.
+  const executePhase=(ph,warmOptions)=>{
     if(scheduleBlocked)return;
     if(ph.evaluated===false){scheduleBlocked=solveBudgetFailure();return;}
     if(ph.preProducedConverged===false){scheduleBlocked=ph.preProducedFailure;return;}
-    const built=buildExecutableProjectSchedule([ph],exactInventory,context,
-      (deficit,inventory,info)=>{const warm=solveProjectBuffer(deficit,inventory,info,runOptions);
-        if(warm.evaluated===false&&!scheduleBlocked)scheduleBlocked=solveBudgetFailure();return warm;});
-    executionPhases.push(...built.phases);
-    if(!scheduleBlocked){if(built.validation.ok)exactInventory=built.validation.finalInventory;
-      else scheduleBlocked=built.validation.firstFailure;}
+    const control=runOptions&&runOptions.staticControl;
+    // The warm-up solver reports budget exhaustion locally, so a retry can clear it. Nothing here
+    // touches exactInventory or ph, which is what makes running it twice safe.
+    const attempt=options=>{
+      let outOfBudget=null;
+      const built=buildExecutableProjectSchedule([ph],exactInventory,context,
+        (deficit,inventory,info)=>{const warm=solveProjectBuffer(deficit,inventory,info,options);
+          if(warm.evaluated===false&&!outOfBudget)outOfBudget=solveBudgetFailure();return warm;});
+      return {built,outOfBudget};
+    };
+    let attempted=attempt(warmOptions||runOptions);
+    // A slice is a fairness device, not a wall. If a phase could not be made startable inside its
+    // share and the run still has time, let it finish on the shared clock — the allowance exists to
+    // protect the phases behind it, not to fail a plan the budget could actually have covered.
+    if(!attempted.built.validation.ok&&warmOptions&&warmOptions!==runOptions&&control&&!control.isStopped())
+      attempted=attempt(runOptions);
+    executionPhases.push(...attempted.built.phases);
+    if(attempted.outOfBudget){scheduleBlocked=attempted.outOfBudget;return;}
+    if(attempted.built.validation.ok)exactInventory=attempted.built.validation.finalInventory;
+    else{
+      // A warm-up the clock cut short is a budget problem, and saying so is actionable. Reporting it
+      // as a warm-up failure reads as a broken recipe chain the user cannot do anything about.
+      const failure=attempted.built.validation.firstFailure;
+      scheduleBlocked=(failure&&failure.kind==="warmup"&&control&&control.isStopped())
+        ?solveBudgetFailure():failure;
+    }
   };
   if(!seq){
     // Single combined phase when nothing is gated, or when the user has turned unlock gating
@@ -1556,16 +1802,16 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
     // unlocks force ordered "waves": combine within a layer, sequence the layers, carrying
     // crafted surplus forward as inventory so later waves only make what's still missing.
     let cum=0;const phases=[];
-    for(let L=0;L<=maxL;L++){
-      const members=perProject.filter((_,i)=>layer[i]===L);
-      if(!members.length)continue;
+    const waves=[];
+    for(let L=0;L<=maxL;L++){const members=perProject.filter((_,i)=>layer[i]===L);if(members.length)waves.push(members);}
+    waves.forEach((members,index)=>{
       const sumSub={};ALLITEMS.forEach(it=>sumSub[it]=members.reduce((s,p)=>s+(p.sub[it]||0),0));
       const inv0=Object.assign({},exactInventory);
-      const ph=solveExecutableProjectPhase(sumSub,members.map(m=>m.name).join(" + "),exactInventory,stabilityPolicy,members.map(m=>m.id).sort().join("+"),runOptions);
+      const ph=solveExecutableProjectPhase(sumSub,members.map(m=>m.name).join(" + "),exactInventory,stabilityPolicy,members.map(m=>m.id).sort().join("+"),slicedRunOptions(index,waves.length));
       ph.semanticIndex=phases.length;ph.members=members.map(m=>m.name);ph.demandSub=sumSub;ph.wave=phases.length+1;ph.invStart=inv0;
-      executePhase(ph);
+      executePhase(ph,slicedRunOptions(index,waves.length));
       cum+=ph.eta;ph.doneAt=cum;phases.push(ph);
-    }
+    });
     return {phases,executionPhases,finalInventory:exactInventory,scheduleBlocked};
   }
   // Sequenced: one project per phase, ordered by unlock layer, manual priority, then an estimated
@@ -1587,11 +1833,14 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
     return ca-cb;                                               // else cheapest makespan
   });
   let cum=0;const phases=[];
-  order.forEach(({p})=>{
-    const inv0=Object.assign({},exactInventory);
-    const ph=solveExecutableProjectPhase(p.sub,p.name,exactInventory,stabilityPolicy,p.id,runOptions);
+  order.forEach(({p},index)=>{
+    const inv0=Object.assign({},exactInventory),sliced=slicedRunOptions(index,order.length);
+    const ph=solveExecutableProjectPhase(p.sub,p.name,exactInventory,stabilityPolicy,p.id,sliced);
     ph.semanticIndex=phases.length;ph.prio=(p.prio!=null?p.prio:null);ph.demandSub=p.sub;ph.invStart=inv0;
-    executePhase(ph);
+    // Ordering above is settled before any of this, so a fill can never reshuffle the queue it is
+    // banking for: it only puts lines this phase left idle to work on what comes next.
+    if(!scheduleBlocked)fillIdleLinesAhead(ph,order.slice(index+1).map(rest=>rest.p),exactInventory,context,sliced);
+    executePhase(ph,slicedRunOptions(index,order.length));
     cum+=ph.eta;ph.doneAt=cum;phases.push(ph);
   });
   return {phases,executionPhases,finalInventory:exactInventory,scheduleBlocked};

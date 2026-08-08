@@ -285,6 +285,53 @@ const runner = `
       " failure=" + (starved.scheduleValidation.firstFailure&&starved.scheduleValidation.firstFailure.kind));
   }
 
+  /* ---- L1c: no phase may spend the budget its successors need -----------------------------
+   * The static search is anytime: it refines until its clock runs out. Sharing one deadline first
+   * come, first served therefore let the FIRST phase soak up the whole allowance, and every phase
+   * behind it came back with no assignment at all — a blocked plan rather than a rougher one. The
+   * same save then solved or didn't purely on how busy the machine was ("solves about half the
+   * time"). Each phase now gets an equal share of what is LEFT, so the run degrades in quality
+   * instead of falling over, and a phase that converges early still hands its surplus forward.
+   *
+   * The clock advances per checkpoint, so the first phase would burn every tick if it could. */
+  {
+    const BUDGET=6000;
+    const projects=[P("a","A",[["Glass",4000]],1),P("b","B",[["Bricks",4000]],2),P("c","C",[["Plates",4000]],3)];
+    // Every clock READING costs 8ms, so an unbounded first phase drains the whole allowance: this
+    // is the same shape as a real run where phase 1 simply out-searches the clock.
+    let clock=0;const spend=[];
+    const realSolve=solveExecutableProjectPhase;
+    solveExecutableProjectPhase=function(sub,name,inv,policy,key,runOptions){
+      const startedAt=clock,phase=realSolve(sub,name,inv,policy,key,runOptions);
+      spend.push({name,startedAt,ms:clock-startedAt,deadline:runOptions&&runOptions.staticPhaseDeadline});
+      return phase;
+    };
+    const paced=run(projects,{projLineMode:"static",solveBudget:BUDGET},{now:()=>clock+=8});
+    solveExecutableProjectPhase=realSolve;
+
+    record("L1c: every sequenced phase gets a usable assignment out of one shared budget",
+      paced.phases.length===3 && paced.allPhasesEvaluated===true &&
+      paced.scheduleValidation.ok===true && paced.eta>0,
+      "phases=" + paced.phases.length + " evaluated=" + paced.allPhasesEvaluated +
+      " replay=" + paced.scheduleValidation.ok + " eta=" + (paced.eta||0).toFixed(3) +
+      " failure=" + JSON.stringify(paced.scheduleValidation.firstFailure||null));
+    // The fix itself: without slicing the first phase spent all 6000ms and the other two started
+    // at the deadline with nothing left, so the whole plan came back blocked.
+    record("L1c: no phase spends the budget its successors need",
+      spend.length===3 && spend.every(s=>Number.isFinite(s.deadline)) &&
+      spend[0].ms<=BUDGET*0.45 && spend.every(s=>s.startedAt<BUDGET),
+      "spend=" + spend.map(s=>s.name+":"+s.ms+"ms from "+s.startedAt+" (slice ends "+Math.round(s.deadline)+")").join(", "));
+    record("L1c: slicing still hands out only the single budget the user set",
+      paced.staticDeadlineReached===true && clock<=BUDGET+8*40,
+      "deadline=" + paced.staticDeadlineReached + " clock=" + clock + " budget=" + BUDGET);
+    // Only the static path reads a phase deadline, so line switching is untouched.
+    let splitClock=0;
+    const split=run(projects,{projLineMode:"split",solveBudget:BUDGET},{now:()=>splitClock+=8});
+    record("L1c: line switching is unaffected by static phase slicing",
+      split.phases.length===3 && split.scheduleValidation.ok===true,
+      "phases=" + split.phases.length + " replay=" + split.scheduleValidation.ok);
+  }
+
   /* ---- L1b: a deadline during fixed-point refinement keeps the executable incumbent --------
    * Four lines are just enough for the Frames chain once its Bits are treated as an external
    * prerequisite. The first fixed-point pass therefore owns a replayable one-job-per-line plan.
