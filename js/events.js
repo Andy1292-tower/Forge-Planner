@@ -110,6 +110,16 @@ function commitProjectInclusion(mutator){
   mutateState(mutator);
   if(S.mode==="project")markStale("projects");else save();
 }
+// The mirror of the above, for the Outputs card. Nothing in it is read by every mode, and the card
+// is not mode-gated, so without a guard a tick would spend the whole solve budget re-deriving a plan
+// that cannot read it. The edit still saves — it just isn't a reason to re-solve.
+//   Checked outputs, weights/shares, mix mode: Max items alone (optimizeInner's items branch).
+//     Credits ranks one dedicated plan per priced item and ignores the checkboxes, Project derives
+//     its demand from the shopping list, and Manual evaluates the lines you set.
+//   May-work margin: Max items and Credits, the two that reach solveCore's tolerance. Project pins
+//     it at zero (tolOverride) and Manual reports concrete balances instead.
+function solveForOutputMix(){if(S.mode==="items")scheduleSolve();}
+function solveForMargin(){if(S.mode==="items"||S.mode==="credits")scheduleSolve();}
 function commitLineStructureEdit(mutator,renderLineControls){
   // Manual has no expensive solver to defer. Repaint it immediately so its editable rows and
   // compression choices cannot lag behind the accepted line list while Manual is already active.
@@ -144,7 +154,7 @@ document.getElementById("btnAddLine").addEventListener("click",()=>{
 
 document.getElementById("margin").addEventListener("input",e=>{
   const result=commitFieldDraft(e.target,FIELD_SCHEMA.margin,S.margin,(st,value)=>{st.margin=value;});
-  if(result.committed){document.getElementById("marginv").textContent=fmt(S.margin,1)+"%";save();scheduleSolve();}
+  if(result.committed){document.getElementById("marginv").textContent=fmt(S.margin,1)+"%";save();solveForMargin();}
 });
 
 document.getElementById("maxTurbo").addEventListener("input",e=>{
@@ -158,15 +168,15 @@ document.getElementById("dupe").addEventListener("input",e=>{
 
 document.getElementById("targets").addEventListener("change",e=>{
   const tg=e.target.dataset.tg;
-  if(tg){mutateState(st=>{st.targets[tg].on=e.target.checked;});renderTargets();scheduleSolve();}
+  if(tg){mutateState(st=>{st.targets[tg].on=e.target.checked;});renderTargets();save();solveForOutputMix();}
 });
 document.getElementById("targets").addEventListener("input",e=>{
   const w=e.target.dataset.w;
-  if(w){const result=commitFieldDraft(e.target,FIELD_SCHEMA.targetWeight,S.targets[w].w,(st,value)=>{st.targets[w].w=value;});if(result.committed){e.target.parentElement.querySelector(".pv").textContent=String(result.value);save();scheduleSolve();}}
+  if(w){const result=commitFieldDraft(e.target,FIELD_SCHEMA.targetWeight,S.targets[w].w,(st,value)=>{st.targets[w].w=value;});if(result.committed){e.target.parentElement.querySelector(".pv").textContent=String(result.value);save();solveForOutputMix();}}
   const share=e.target.dataset.share;
   if(share){
     const result=commitFieldDraft(e.target,FIELD_SCHEMA.targetShare,targetShareOf(S.targets[share]),(st,value)=>{st.targets[share].share=value;});
-    if(result.committed){e.target.parentElement.querySelector(".pv").textContent=result.value+"%";save();scheduleSolve();}
+    if(result.committed){e.target.parentElement.querySelector(".pv").textContent=result.value+"%";save();solveForOutputMix();}
   }
 });
 // Switching mode re-reads a different number off every checked output, so it is a solve input, not
@@ -180,7 +190,7 @@ document.getElementById("targetModeSw").addEventListener("click",e=>{
   renderTargets();
   const replacement=document.querySelector(`#targetModeSw button[data-targetmode="${mode}"]`);
   if(replacement)replacement.focus();
-  scheduleSolve();
+  save();solveForOutputMix();
 });
 
 /* ---------- saved output sets ---------- */
@@ -195,7 +205,7 @@ function commitTargetPresetEdit(mutator,focusId,resolve){
   const replacement=document.getElementById(focusId);
   const focusTarget=replacement&&!replacement.disabled?replacement:document.getElementById("targetPreset");
   if(focusTarget)focusTarget.focus();
-  if(resolve)scheduleSolve();else schedulePersist();
+  if(resolve){save();solveForOutputMix();}else schedulePersist();
 }
 function saveTargetPreset(name){
   commitTargetPresetEdit(st=>{
