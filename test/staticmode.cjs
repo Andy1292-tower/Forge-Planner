@@ -236,6 +236,66 @@ const runner = `
     " deadline="+interruptedFallback.staticDeadlineReached+" stages="+fallbackStages+
     " stops="+fallbackStops.length+" failure="+JSON.stringify(interruptedFallback.scheduleValidation.firstFailure||null));
 
+  /* ---- a spent per-phase slice is a clock, not a verdict --------------------------------------
+   * Every phase gets a share of the run's budget so one cannot starve the rest. That share is
+   * enforced by a LOCAL deadline, and only a ROOT stop sets solveCore's "interrupted" — the local
+   * cutoff is reported on its own channel. A phase whose slice is gone therefore returns exactly
+   * what an exhaustive search of an impossible factory returns: no assignment, every target at
+   * zero rate. Read as a verdict, that publishes buildable items as "can't sustainably produce",
+   * and hands the pre-produced Bits fixed point a timed-out zero to compare its real obligation
+   * against — blocking the schedule over a Bits shortfall that never existed. */
+  {
+    const s=defaults();s.dupe=0;s.margin=0;s.mode="project";s.projLineMode="static";
+    s.lines=Array.from({length:4},(_,i)=>({max:4,spx:5-i*0.2,turbo:0}));
+    normalize(s);syncManual(s);S=s;
+    const net={};ALLITEMS.forEach(it=>net[it]=0);net.Frames=100;
+    const searched=solvePhaseFor(net,"F",{},null,"f",{static:true,control:makeSolveControl(10000)});
+    const expired=solvePhaseFor(net,"F",{},null,"f",{static:true,control:makeSolveControl(10000),localDeadline:0});
+    record("static: these lines really can build the phase (so an empty result is the clock, not the factory)",
+      searched.feasible===true&&searched.evaluated===true&&searched.infeasItems.length===0,
+      "feasible="+searched.feasible+" evaluated="+searched.evaluated+
+      " jobs="+JSON.stringify((searched.plan||[]).flatMap(line=>(line.entries||[]).map(entry=>entry.item+"@"+entry.lvl))));
+    record("static: a phase whose slice is spent reports no assignment, never an infeasible factory",
+      expired.feasible===false&&expired.evaluated===false&&expired.interrupted===true&&
+      expired.searchExhaustive===false&&expired.infeasItems.length===0,
+      "feasible="+expired.feasible+" evaluated="+expired.evaluated+" interrupted="+expired.interrupted+
+      " exhaustive="+expired.searchExhaustive+" infeas="+JSON.stringify(expired.infeasItems));
+  }
+
+  // End to end, on the shape that bites: the fixed point needs a second pass to confirm the Bits its
+  // first plan committed to, and the first pass is entitled to spend the whole slice getting there.
+  // The second pass then returns instantly with nothing. That must retain the certified first pass,
+  // not read the empty result as a disagreeing obligation of zero.
+  {
+    let sliceClock=0,solves=0;
+    const s=defaults();s.dupe=0;s.margin=0;s.mode="project";s.projLineMode="static";s.solveBudget=10000;
+    s.lines=Array.from({length:4},(_,i)=>({max:4,spx:5-i*0.2,turbo:0}));
+    s.projects=[{id:"a",name:"Frames",catId:"",on:true,from:1,to:1,done:0,prio:1,
+        levels:[{costs:[{item:"Frames",qty:100}]}]},
+      {id:"b",name:"Ingots",catId:"",on:true,from:1,to:1,done:0,prio:2,
+        levels:[{costs:[{item:"Ingots",qty:100}]}]}];
+    normalize(s);syncManual(s);S=s;
+    // tolOverride:0 gives every static solve exactly one "margin-stage" checkpoint, so it counts
+    // solves. Jump past the first phase's slice (10000/2) once its second pass has begun, staying
+    // under the root deadline — the whole point is a LOCAL cutoff with the shared budget still live.
+    const spent=optimize({now:()=>sliceClock,onCheckpoint:event=>{
+      if(event.type==="checkpoint"&&event.label==="margin-stage"&&++solves===2)sliceClock=6000;
+    }});
+    const bitsBlocker=(spent.scheduleValidation&&spent.scheduleValidation.firstFailure)||null;
+    record("static: a slice that runs out mid-fixed-point blames the clock, not the chain",
+      solves>=2&&spent.infeasItems.length===0&&
+      spent.phases[0].preProducedConverged!==false&&!spent.phases[0].preProducedFailure&&
+      (bitsBlocker===null||bitsBlocker.kind!=="pre-produced-convergence"),
+      "solves="+solves+" infeas="+JSON.stringify(spent.infeasItems)+
+      " preConverged="+spent.phases[0].preProducedConverged+
+      " blocker="+JSON.stringify(bitsBlocker));
+    record("static: the retained first pass still carries a real plan and replays",
+      spent.feasible===true&&spent.scheduleValidation.ok===true&&spent.phases[0].feasible===true&&
+      (spent.phases[0].plan||[]).some(line=>(line.entries||[]).length>0),
+      "feasible="+spent.feasible+" replay="+(spent.scheduleValidation||{}).ok+
+      " jobs="+JSON.stringify((spent.phases[0].plan||[]).flatMap(line=>(line.entries||[]).map(entry=>entry.item+"@"+entry.lvl))));
+  }
+
   /* ================= the newer catalog: mined Batteries, Reinforced Concrete, 16384x ==========
    * Everything above predates the second mined resource (Hydracite), the two long-chain products,
    * and compression levels 8192/16384. Those are exactly the cases where "one job per line" bites

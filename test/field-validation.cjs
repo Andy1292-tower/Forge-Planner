@@ -148,8 +148,20 @@ test("formats accepted values and derives matching HTML input attributes", () =>
   assert.deepEqual({ ...attrs(api("FIELD_SCHEMA.targetWeight")) }, {
     min: "1", max: "9", step: "1", inputmode: "numeric",
   });
+  // A game-notation field must not ask for a keypad that cannot type what it parses: the decimal
+  // pad on Android has digits and a separator only, so 3e72 and 500t become unenterable.
   assert.deepEqual({ ...attrs(api("FIELD_SCHEMA.sellPrice")) }, {
-    min: "0", max: "1e+100", step: "any", inputmode: "decimal", maxlength: "128",
+    min: "0", max: "1e+100", step: "any", inputmode: "text", maxlength: "128",
+  });
+  ["sellPrice", "forgie", "minedIncome", "inventory", "projectQuantity", "amount"].forEach(name => {
+    const rule = api(`FIELD_SCHEMA.${name}`);
+    assert.equal(rule.notation, "game", `${name} is a game-notation amount field`);
+    assert.equal(attrs(rule).inputmode, "text",
+      `${name} must keep the ordinary keyboard so suffixes and exponents stay typeable`);
+    const parsed = api("parseFieldDraft")(rule, "3e72");
+    assert.equal(parsed.status, "valid", `${name} accepts scientific notation`);
+    assert.equal(parsed.value, 3e72);
+    assert.equal(api("parseFieldDraft")(rule, "500t").status, "valid", `${name} accepts a suffix`);
   });
 });
 

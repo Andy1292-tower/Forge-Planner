@@ -153,6 +153,29 @@ const runner = `
     "raw million-unit deficit is preserved instead of absorbed by relative tolerance");
   assert.ok(gameScale.finalInventory.A<0,"validation preserves the raw negative inventory");
 
+  /* A balanced feeder pair is the everyday case, and at game scale its two sides cannot land on the
+   * same double. Issue #126: a line making 5,675,127.551592686 Rods fed one eating
+   * 5,675,127.551592744 — an equality the LP solved — and the replay blocked the whole schedule
+   * because Rods came up 0.00000006 short. The allowance has to be measured against the arithmetic
+   * that built the balance, not against whatever the balance holds at that instant. */
+  const ulpCtx=ctx({ordinaryResources:["A","B"],recipeDependencies:{A:[],B:["A"]},recipeDepth:{A:0,B:1}});
+  const balancedPair=consumption=>replayProjectSchedule([{kind:"warmup",eta:0.662456178810853,plan:[
+    {line:1,entries:[{item:"A",lvl:1,frac:1,outHr:8566796.918974878,cons:[]}]},
+    {line:2,entries:[{item:"B",lvl:1,frac:1,outHr:1,cons:[{item:"A",hr:consumption}]}]}
+  ]}],{},ulpCtx);
+  const residue=balancedPair(8566796.918974966);
+  assert.equal(residue.ok,true,
+    "a feeder pair balanced to the last ulp must replay, not block on its own rounding residue");
+  assert.ok(residue.finalInventory.A<0&&residue.finalInventory.A>-1e-6,
+    "the residue is still carried honestly as a signed balance, just not treated as a shortfall");
+  // The same shape with a shortfall a player could act on stays blocked: one Rod per hour over
+  // seven orders of magnitude of throughput is still seven orders above the rounding allowance.
+  const realShortfall=balancedPair(8566797.918974966);
+  assert.equal(realShortfall.ok,false,"a one-unit-per-hour shortfall at the same scale still blocks");
+  assert.equal(realShortfall.firstFailure.resource,"A");
+  assert.ok(realShortfall.firstFailure.deficit>0.5&&realShortfall.firstFailure.deficit<1,
+    "the reported deficit is the real one, undistorted by the allowance");
+
   const carry=replayProjectSchedule([
     {kind:"warmup",eta:1,plan:[{line:1,entries:[{item:"A",lvl:1,frac:1,outHr:10,cons:[]}]}]},
     {kind:"project",eta:1,demandSub:{B:5},plan:[{line:1,entries:[{item:"B",lvl:1,frac:1,outHr:6,cons:[{item:"A",hr:6}]}]}]}
