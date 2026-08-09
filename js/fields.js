@@ -24,7 +24,12 @@ const STATE_LIMITS=Object.freeze({
 const _FIELD_DEFAULTS=defaults();
 const DISPLAY_TEXT_MAX_LENGTH=128;
 const _field=(type,defaultValue,extra)=>Object.freeze({type,defaultValue,...extra});
-const _amountField=(label,persistsDisplayText=false)=>_field("number",null,{min:0,max:1e100,allowBlank:true,notation:"game",inputMode:"decimal",label,
+/* inputMode "text", not "decimal": these are the fields that accept game notation, and a phone's
+ * decimal keypad offers digits and a separator only. No "e" and no suffix letters means 3e72 and
+ * 500t — the documented way to enter a value this size, and the only practical one — cannot be
+ * typed at all on Android. The keypad has to match what the parser accepts, so it stays the
+ * ordinary keyboard here and the numeric pad is kept for the digits-only fields. */
+const _amountField=(label,persistsDisplayText=false)=>_field("number",null,{min:0,max:1e100,allowBlank:true,notation:"game",inputMode:"text",label,
   ...(persistsDisplayText?{maxDraftLength:DISPLAY_TEXT_MAX_LENGTH}:{})});
 const FIELD_SCHEMA=Object.freeze({
   schemaVersion:_field("integer",CURRENT_SCHEMA_VERSION,{min:CURRENT_SCHEMA_VERSION,max:CURRENT_SCHEMA_VERSION,allowBlank:false,label:"save version"}),

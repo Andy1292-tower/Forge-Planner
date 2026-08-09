@@ -147,21 +147,36 @@
   function replayProjectSchedule(phases,initialInventory,context){
     const c=copyContext(context),canon=canonicalizePhases(phases,c);
     const inv=inventoryCopy(initialInventory,c),requiredBuffers={},boundaries=[];
+    /* A resource's balance is a running sum, so its rounding error grows with the arithmetic that
+     * built it, not with whatever it happens to hold right now. A line making 5,675,127.551592686
+     * Rods feeding one eating 5,675,127.551592744 is a balanced assignment the LP solved to equality;
+     * the 5.8e-8 gap is ~46 ulps at that magnitude. Judging it against the current slice alone made
+     * the tolerance smaller than the residue it had to absorb, and the replay blocked the schedule
+     * over a shortfall of 0.00000006 Rods. `flow` accumulates every magnitude that has passed
+     * through the balance, which is the standard bound for a floating-point running sum, so the
+     * allowance tracks the error actually on the books. A real shortfall is orders above it. */
+    const flow={},charge=(resource,amount)=>{
+      const magnitude=Math.abs(Number(amount)||0);
+      flow[resource]=(flow[resource]||0)+(finite(magnitude)?magnitude:0);
+      return flow[resource];
+    };
+    Object.entries(inv).forEach(([resource,held])=>charge(resource,held));
     let firstFailure=canon.error||null,globalTime=0;
     if(canon.error)return {ok:false,phases:canon.phases,boundaries,requiredBuffers,firstFailure,finalInventory:inv,eta:0};
     boundaries.push({time:0,phaseTime:0,phaseIndex:0,kind:"start",inventory:copyMap(inv),minedRates:{}});
     canon.phases.forEach((phase,phaseIndex)=>{
       const phaseStart=globalTime,reserved={};
       for(const [resource,rawSupply] of Object.entries(phase.externalSupply||{})){
-        const supply=Math.max(0,Number(rawSupply)||0);if(supply>0)inv[resource]=(inv[resource]||0)+supply;
+        const supply=Math.max(0,Number(rawSupply)||0);if(supply>0){inv[resource]=(inv[resource]||0)+supply;charge(resource,supply);}
       }
       for(const [resource,rawNeed] of Object.entries(phase.preProducedDemand||{})){
         const need=Math.max(0,Number(rawNeed)||0);if(!(need>0))continue;
-        const before=inv[resource]||0;reserved[resource]=need;inv[resource]=before-need;
+        const before=inv[resource]||0;reserved[resource]=need;inv[resource]=before-need;charge(resource,need);
         if(inv[resource]<0){
           const deficit=-inv[resource];requiredBuffers[resource]=Math.max(requiredBuffers[resource]||0,deficit);
-          firstFailure=failureEarlier(firstFailure,{kind:"prerequisite",phaseIndex,resource,time:phaseStart,boundaryTime:phaseStart,deficit,
-            message:`Need ${deficit} more ${resource} before this phase can start`});
+          if(inv[resource]<-stockTol(c,before,inv[resource],need,flow[resource]))
+            firstFailure=failureEarlier(firstFailure,{kind:"prerequisite",phaseIndex,resource,time:phaseStart,boundaryTime:phaseStart,deficit,
+              message:`Need ${deficit} more ${resource} before this phase can start`});
         }
       }
       boundaries.push({time:phaseStart,phaseTime:0,phaseIndex,kind:Object.keys(reserved).length?"prerequisite":"phase-start",
@@ -176,17 +191,24 @@
         const timeTol=Number.EPSILON*32*Math.max(1,Math.abs(phase.eta),Math.abs(from),Math.abs(to));
         if(!(dt>timeTol))continue;
         const ordinaryRates={},minedRates={},active=[];
-        c.ordinaryResources.forEach(r=>ordinaryRates[r]=Number(c.forgieRates[r])||0);
+        // `ordinaryGross` sums the same terms unsigned. A feeder and its consumer cancel to a net of
+        // nearly nothing, so the net is no measure of the arithmetic done — the two gross rates are.
+        const ordinaryGross={};
+        const addRate=(resource,amount)=>{
+          ordinaryRates[resource]=(ordinaryRates[resource]||0)+amount;
+          ordinaryGross[resource]=(ordinaryGross[resource]||0)+Math.abs(amount);
+        };
+        c.ordinaryResources.forEach(r=>addRate(r,Number(c.forgieRates[r])||0));
         phase.plan.forEach(line=>{
           const entry=line.entries.find(e=>e.start<=from+timeTol&&e.end>from+timeTol);
           if(!entry)return;
           active.push({line:line.line,item:entry.item,lvl:entry.lvl,start:entry.start,end:entry.end});
           const outRate=entry.outHr/entry.frac;
-          if(c.ordinaryResources.includes(entry.item))ordinaryRates[entry.item]=(ordinaryRates[entry.item]||0)+outRate;
+          if(c.ordinaryResources.includes(entry.item))addRate(entry.item,outRate);
           for(const cons of entry.cons){
             const rate=cons.hr/entry.frac;
             if(c.minedResources.includes(cons.item))minedRates[cons.item]=(minedRates[cons.item]||0)+rate;
-            else if(!c.informationalResources.includes(cons.item))ordinaryRates[cons.item]=(ordinaryRates[cons.item]||0)-rate;
+            else if(!c.informationalResources.includes(cons.item))addRate(cons.item,-rate);
           }
         });
         for(const resource of c.minedResources){
@@ -196,10 +218,10 @@
         }
         for(const resource of c.ordinaryResources){
           const before=inv[resource]||0,rate=ordinaryRates[resource]||0,after=before+rate*dt;
-          inv[resource]=after;
+          inv[resource]=after;charge(resource,(ordinaryGross[resource]||0)*dt);
           if(after<0){
             const deficit=-after;requiredBuffers[resource]=Math.max(requiredBuffers[resource]||0,deficit);
-            if(after<-stockTol(c,before,after,rate*dt)){
+            if(after<-stockTol(c,before,after,rate*dt,flow[resource])){
               const crossing=rate<0&&before>0?from+before/(-rate):from;
               firstFailure=failureEarlier(firstFailure,{kind:"stock",phaseIndex,resource,time:phaseStart+crossing,
                 boundaryTime:phaseStart+to,deficit,deficitAtBoundary:deficit,requiredBuffer:requiredBuffers[resource],rate,message:`${resource} is short by ${deficit}`});
@@ -214,10 +236,10 @@
         for(const [resource,rawNeed] of Object.entries(phase.demandSub||{})){
           const need=Math.max(0,Number(rawNeed)||0);if(!(need>0))continue;
           demandDebit[resource]=need;
-          inv[resource]=(inv[resource]||0)-need;
+          inv[resource]=(inv[resource]||0)-need;charge(resource,need);
           if(inv[resource]<0){
             const deficit=-inv[resource];requiredBuffers[resource]=Math.max(requiredBuffers[resource]||0,deficit);
-            if(inv[resource]<-stockTol(c,need,inv[resource]))firstFailure=failureEarlier(firstFailure,{kind:"demand",phaseIndex,
+            if(inv[resource]<-stockTol(c,need,inv[resource],flow[resource]))firstFailure=failureEarlier(firstFailure,{kind:"demand",phaseIndex,
               resource,time:phaseStart+phase.eta,boundaryTime:phaseStart+phase.eta,deficit,message:`${resource} project demand is short by ${deficit}`});
           }
         }

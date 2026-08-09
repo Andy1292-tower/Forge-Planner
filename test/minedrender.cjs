@@ -51,7 +51,7 @@ const runner=`
   renderMinedResources();
   const minedInput=document.getElementById("minedVespiumRig");
   check("mined inputs receive descriptor-derived range and draft limits",
-    minedInput.attributes.min==="0"&&minedInput.attributes.max==="1e+100"&&minedInput.attributes.maxlength==="128"&&minedInput.attributes.inputmode==="decimal",
+    minedInput.attributes.min==="0"&&minedInput.attributes.max==="1e+100"&&minedInput.attributes.maxlength==="128"&&minedInput.attributes.inputmode==="text",
     JSON.stringify(minedInput.attributes));
   let capacity=document.getElementById("minedVespiumSummary").textContent;
   let loadout=document.getElementById("minedGelLoadout").innerHTML;

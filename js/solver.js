@@ -1310,12 +1310,18 @@ function staticSchedule(net,targets,control,maxCompression,localDeadline){
     }
     return row;
   }).sort((a,b)=>a.line-b.line);
+  // A search stopped by this phase's own deadline stopped because it ran out of time, exactly as a
+  // shared-budget interruption does — it never proved the assignment does not exist. solveCore reports
+  // the two separately (only a ROOT stop sets `interrupted`; a local cutoff sets localLimitReached),
+  // so the local one has to be folded in here. Left out, an empty result off a spent slice is
+  // indistinguishable from an exhaustive search and gets published as "can't sustainably produce".
+  const cutShort=!!solved.interrupted||!!solved.localLimitReached;
   return {rate,plan,items:solved.resources,z:solved.feasible?solved.best.score:0,
     stabilized:false,zFree:null,zPin:null,stabilityKey:null,stabilityUpdate:null,
     compressionCeiling:maxCompression!=null&&Number.isFinite(Number(maxCompression))&&Number(maxCompression)>0
       ?Number(maxCompression):null,
-    evaluated:!solved.interrupted||!!solved.feasible,capped:!!solved.capped,
-    interrupted:!!solved.interrupted,searchExhaustive:!solved.capped&&!solved.interrupted};
+    evaluated:!cutShort||!!solved.feasible,capped:!!solved.capped,
+    interrupted:cutShort,searchExhaustive:!solved.capped&&!cutShort};
 }
 // Solve one batch of demand (a single project, or all of them combined) into a pipelined phase.
 // `avail` (optional) is the stock the LP may draw down in place of producing an item (issue #73).
@@ -1341,8 +1347,13 @@ function solvePhaseFor(net,name,avail,stabilityPolicy,phaseKey,solveOptions){
     ?staticSchedule(net,targets,solveOptions.control,solveOptions.maxCompression,solveOptions.localDeadline)
     :projectSchedule(net,targets,avail,scheduleOptions);
   const rate={};targets.forEach(it=>rate[it]=Math.max(0,sch.rate[it]||0));
+  // "This factory can't sustainably produce X" is a claim about the LINES, and only a search that
+  // actually finished can make it. A search cut short before it owned any assignment leaves every
+  // target at zero rate, which looks identical — so it reports no verdict at all and the caller
+  // surfaces the budget as the blocker (matching the stopped-before-starting return above).
+  const evaluated=sch.evaluated!==false;
   let eta=0,bottleneck=null;const infeasItems=[];
-  targets.forEach(it=>{if(rate[it]<=1e-9)infeasItems.push(it);else{const t=net[it]/rate[it];if(t>eta){eta=t;bottleneck=it;}}});
+  targets.forEach(it=>{if(rate[it]<=1e-9){if(evaluated)infeasItems.push(it);}else{const t=net[it]/rate[it];if(t>eta){eta=t;bottleneck=it;}}});
   const hasThroughput=sch.z>1e-15;
   const feasible=unsat.length===0&&infeasItems.length===0&&hasThroughput;
   const prodHr={},consHr={};sch.items.forEach(it=>{prodHr[it]=0;consHr[it]=0;});
@@ -1366,7 +1377,7 @@ function solvePhaseFor(net,name,avail,stabilityPolicy,phaseKey,solveOptions){
   }).map(b=>b.res);
   return {name,phaseKey:(phaseKey!=null?phaseKey:name),plan:sch.plan,balance,minedUsage,demandItems,net,rate,eta,bottleneck,infeasItems,unsat,blockedMined,atRisk,items:sch.items,z:sch.z,partial:!feasible&&hasThroughput,feasible,stabilized:!!sch.stabilized,zFree:sch.zFree,zPin:sch.zPin,stabilityKey:sch.stabilityKey,stabilityUpdate:sch.stabilityUpdate,
     compressionCeiling:sch.compressionCeiling==null?null:sch.compressionCeiling,
-    evaluated:sch.evaluated!==false,capped:!!sch.capped,interrupted:!!sch.interrupted,searchExhaustive:sch.searchExhaustive!==false};
+    evaluated,capped:!!sch.capped,interrupted:!!sch.interrupted,searchExhaustive:sch.searchExhaustive!==false};
 }
 // Frames/Wire Bits are an external, pre-produced prerequisite. Reserve them before ordinary direct
 // Bits demand; they never become a Project LP target and never earn a synthetic Bits line.
