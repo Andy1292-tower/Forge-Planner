@@ -20,14 +20,23 @@
  * SCREEN-READ ENTRIES. the-tower-of-chad and biochemical-laboratory carry the
  * beta rebalance and were read off the in-game project screen, not a save
  * export. The screen shows the next level's cost while its counter shows the
- * levels already owned. Biochemical Laboratory Lv 2 Wire and Frames come from a
- * two-decimal display and are exact only to ±5.
+ * levels already owned.
+ *
+ * BIOCHEMICAL LABORATORY CURVE — every item is a ×1.5 backbone off its own Lv 1
+ * cost plus a surcharge the four items share in absolute terms:
+ *
+ *   cost(item,n) = base(item) · 1.5^(n-1) + e(n)
+ *   base = RC 400, Batteries 100, Wire 400000, Frames 100000
+ *   e(1..3) = 0, 150, 490, read at every item and exact at RC and Batteries
+ *
+ * Lv 4–5 keep the backbone and continue the surcharge as e(n) = A · (r^(n-1) −
+ * 1), the form through all three read e: r = 34/15, A = 2250/19.
  *
  * ESTIMATED LEVELS. A few levels are too expensive to have been reached in game
  * yet, so their costs were extrapolated instead of read (see docs/CATALOG.md).
  * Every such entry says so in its `description`, which the catalog list shows:
  *
- *   biochemical-laboratory        Lv 3–5   each item's own Lv1→Lv2 step
+ *   biochemical-laboratory        Lv 4–5   its own curve, continued (see above)
  *   gym-and-relaxation-center-mk2 Lv 4     geometric mean of the read Lv 3 and Lv 5
  *   improved-silicate-scanner-mk2 Lv 5     ×5 per level, the project's own pattern
  *   the six backbone projects     Lv 36–40 the shared backbone curve, continued
@@ -6773,7 +6782,7 @@ const PROJECT_CATALOG=[
   {
     "catId": "biochemical-laboratory",
     "name": "Biochemical Laboratory",
-    "description": "Lv 3–5 costs estimated",
+    "description": "Lv 4–5 costs estimated",
     "levels": [
       {
         "costs": [
@@ -6819,19 +6828,19 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Reinforced Concrete",
-            "qty": 1406
+            "qty": 1390
           },
           {
             "item": "Batteries",
-            "qty": 900
+            "qty": 715
           },
           {
             "item": "Wire",
-            "qty": 900500
+            "qty": 900490
           },
           {
             "item": "Frames",
-            "qty": 225500
+            "qty": 225490
           }
         ]
       },
@@ -6839,11 +6848,11 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Reinforced Concrete",
-            "qty": 2637
+            "qty": 2611
           },
           {
             "item": "Batteries",
-            "qty": 2700
+            "qty": 1598
           },
           {
             "item": "Wire",
@@ -6851,7 +6860,7 @@ const PROJECT_CATALOG=[
           },
           {
             "item": "Frames",
-            "qty": 338500
+            "qty": 338800
           }
         ]
       },
@@ -6859,19 +6868,19 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Reinforced Concrete",
-            "qty": 4944
+            "qty": 5033
           },
           {
             "item": "Batteries",
-            "qty": 8100
+            "qty": 3514
           },
           {
             "item": "Wire",
-            "qty": 2027000
+            "qty": 2028000
           },
           {
             "item": "Frames",
-            "qty": 508300
+            "qty": 509300
           }
         ]
       }
