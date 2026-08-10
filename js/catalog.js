@@ -17,11 +17,16 @@
  * ...then paste the result as the PROJECT_CATALOG value below. Add new projects
  * by appending entries to the array.
  *
+ * SCREEN-READ ENTRIES. the-tower-of-chad and biochemical-laboratory carry the
+ * beta rebalance and were read off the in-game project screen, not a save
+ * export. The screen shows the next level's cost while its counter shows the
+ * levels already owned. Biochemical Laboratory Lv 2 Wire and Frames come from a
+ * two-decimal display and are exact only to ±5.
+ *
  * ESTIMATED LEVELS. A few levels are too expensive to have been reached in game
  * yet, so their costs were extrapolated instead of read (see docs/CATALOG.md).
  * Every such entry says so in its `description`, which the catalog list shows:
  *
- *   the-tower-of-chad             Lv 3–5   each item's own Lv1→Lv2 step
  *   biochemical-laboratory        Lv 3–5   each item's own Lv1→Lv2 step
  *   gym-and-relaxation-center-mk2 Lv 4     geometric mean of the read Lv 3 and Lv 5
  *   improved-silicate-scanner-mk2 Lv 5     ×5 per level, the project's own pattern
@@ -6661,7 +6666,7 @@ const PROJECT_CATALOG=[
   {
     "catId": "the-tower-of-chad",
     "name": "The Tower of Chad",
-    "description": "Lv 3–5 costs estimated",
+    "description": "",
     "levels": [
       {
         "costs": [
@@ -6679,7 +6684,7 @@ const PROJECT_CATALOG=[
           },
           {
             "item": "Reinforced Concrete",
-            "qty": 800
+            "qty": 200
           }
         ]
       },
@@ -6687,19 +6692,19 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bits",
-            "qty": 150000000
+            "qty": 75000000
           },
           {
             "item": "Concrete",
-            "qty": 150000000
+            "qty": 75000000
           },
           {
             "item": "Bricks",
-            "qty": 3000000
+            "qty": 1500000
           },
           {
             "item": "Reinforced Concrete",
-            "qty": 3000
+            "qty": 390
           }
         ]
       },
@@ -6707,19 +6712,19 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bits",
-            "qty": 450000000
+            "qty": 112500000
           },
           {
             "item": "Concrete",
-            "qty": 450000000
+            "qty": 112500000
           },
           {
             "item": "Bricks",
-            "qty": 9000000
+            "qty": 2250000
           },
           {
             "item": "Reinforced Concrete",
-            "qty": 11250
+            "qty": 780
           }
         ]
       },
@@ -6727,19 +6732,19 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bits",
-            "qty": 1350000000
+            "qty": 168750000
           },
           {
             "item": "Concrete",
-            "qty": 1350000000
+            "qty": 168750000
           },
           {
             "item": "Bricks",
-            "qty": 27000000
+            "qty": 3375000
           },
           {
             "item": "Reinforced Concrete",
-            "qty": 42190
+            "qty": 1463
           }
         ]
       },
@@ -6747,19 +6752,19 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Bits",
-            "qty": 4050000000
+            "qty": 253125000
           },
           {
             "item": "Concrete",
-            "qty": 4050000000
+            "qty": 253125000
           },
           {
             "item": "Bricks",
-            "qty": 81000000
+            "qty": 5062500
           },
           {
             "item": "Reinforced Concrete",
-            "qty": 158200
+            "qty": 2588
           }
         ]
       }
@@ -6778,7 +6783,7 @@ const PROJECT_CATALOG=[
           },
           {
             "item": "Batteries",
-            "qty": 200
+            "qty": 100
           },
           {
             "item": "Wire",
@@ -6794,19 +6799,19 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Reinforced Concrete",
-            "qty": 1800
+            "qty": 750
           },
           {
             "item": "Batteries",
-            "qty": 1200
+            "qty": 300
           },
           {
             "item": "Wire",
-            "qty": 1200000
+            "qty": 600150
           },
           {
             "item": "Frames",
-            "qty": 300600
+            "qty": 150150
           }
         ]
       },
@@ -6814,59 +6819,59 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Reinforced Concrete",
+            "qty": 1406
+          },
+          {
+            "item": "Batteries",
+            "qty": 900
+          },
+          {
+            "item": "Wire",
+            "qty": 900500
+          },
+          {
+            "item": "Frames",
+            "qty": 225500
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Reinforced Concrete",
+            "qty": 2637
+          },
+          {
+            "item": "Batteries",
+            "qty": 2700
+          },
+          {
+            "item": "Wire",
+            "qty": 1351000
+          },
+          {
+            "item": "Frames",
+            "qty": 338500
+          }
+        ]
+      },
+      {
+        "costs": [
+          {
+            "item": "Reinforced Concrete",
+            "qty": 4944
+          },
+          {
+            "item": "Batteries",
             "qty": 8100
           },
           {
-            "item": "Batteries",
-            "qty": 7200
-          },
-          {
             "item": "Wire",
-            "qty": 3600000
+            "qty": 2027000
           },
           {
             "item": "Frames",
-            "qty": 903600
-          }
-        ]
-      },
-      {
-        "costs": [
-          {
-            "item": "Reinforced Concrete",
-            "qty": 36450
-          },
-          {
-            "item": "Batteries",
-            "qty": 43200
-          },
-          {
-            "item": "Wire",
-            "qty": 10800000
-          },
-          {
-            "item": "Frames",
-            "qty": 2716000
-          }
-        ]
-      },
-      {
-        "costs": [
-          {
-            "item": "Reinforced Concrete",
-            "qty": 164025
-          },
-          {
-            "item": "Batteries",
-            "qty": 259200
-          },
-          {
-            "item": "Wire",
-            "qty": 32400000
-          },
-          {
-            "item": "Frames",
-            "qty": 8165000
+            "qty": 508300
           }
         ]
       }

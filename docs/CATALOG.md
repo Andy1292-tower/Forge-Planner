@@ -47,13 +47,22 @@ Some late project levels cost more than any player has been able to pay, so thei
 - The entry's `description` says which levels are estimated, so the catalog list shows the caveat wherever the project appears.
 - The rule used for each such entry is listed in the `js/catalog.js` header comment.
 
-An estimate is a placeholder, not data. Replace it with the read value as soon as the level is visible in game, and drop the description note in the same change. Everything else in the catalog is read from a save export.
+An estimate is a placeholder, not data. Replace it with the read value as soon as the level is visible in game, and drop the description note in the same change. Everything else in the catalog is read from a save export or from the in-game project screen under Screen readings below.
 
 ### Level counts
 
 An entry's level count is a separate claim from its costs. `addCatalogProject` defaults a newly added project to `to = levels.length`.
 
 The `completed / n` counter on the in-game project screen reports how far that player has unlocked, not how many levels the project has. It is not evidence about an entry's level count.
+
+## Screen readings
+
+A level whose cost was read off the in-game project screen rather than a save export is data, not an estimate, but it carries two limits the export does not:
+
+- The screen shows the cost of the *next* level while its counter shows the levels already owned, so a panel reading `2 / 5` is the Lv 3 cost. Confirm the offset by checking that the held amount drops by exactly the listed cost after the purchase.
+- Quantities render at two decimal places once they pass a magnitude suffix, so a cost shown as `600.15k` is exact only to ±5. Values below the suffix threshold render exactly.
+
+Name the affected entries in the `js/catalog.js` header comment, including which quantities are display-limited. Replace them from an export when one is available for that build.
 
 ## Updating the catalog
 
