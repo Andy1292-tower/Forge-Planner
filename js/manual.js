@@ -3,6 +3,74 @@
 // No solver: every line's job is set by hand. Compute the resulting production,
 // consumption and balance directly, so the user can try setups that aren't optimal
 // but suit their purposes — and see at a glance whether each input keeps up.
+
+/* ---- sustained rates when an input can't keep up ---- */
+// A line only crafts while it is holding materials, so an input that runs short doesn't leave the
+// factory permanently in the red — it idles the lines that input feeds. Every line therefore has a
+// duty cycle: the fraction of the hour it actually runs. manualDutyCycles finds the largest set of
+// duty cycles under which no resource is consumed faster than it is supplied, which turns a short
+// input into a real per-hour output figure for everything downstream of it.
+//
+// A resource is supplied by Lil' Forgie's passive drip plus whatever the (already throttled) lines
+// producing it make; a mined resource supplies its fixed hourly income budget instead. Where
+// several lines draw on one short pool the split is max-min fair — every line's duty cycle rises
+// together until it either has enough or is capped by a different input, and a line capped
+// elsewhere hands the rest of its share back instead of hoarding it.
+//
+// RECIPE is acyclic, so re-solving from "everything runs flat out" only ever lowers supply and the
+// duty cycles descend to the largest feasible set within a few passes.
+const DUTY_PASSES=64,DUTY_TOL=1e-12,DUTY_SNAP=1e-9;
+function manualDutyCycles(entries,supplyFor){
+  let duty=entries.map(()=>1);
+  for(let pass=0;pass<DUTY_PASSES;pass++){
+    const next=fairShareDuties(entries,supplyFor(duty));
+    let stable=true;
+    next.forEach((v,i)=>{
+      if(v>duty[i])next[i]=duty[i];   // supply only falls as duty falls; hold off float jitter
+      if(Math.abs(next[i]-duty[i])>DUTY_TOL)stable=false;
+    });
+    duty=next;
+    if(stable)break;
+  }
+  // A setup whose inputs balance exactly lands a hair under 1 on the last ulp of the ratio that
+  // produced it. Snap that back so an exactly-fed line reads as running flat out.
+  return duty.map(v=>v>1-DUTY_SNAP?1:v);
+}
+// Max-min fair shares by progressive filling: raise every unfrozen line's duty cycle together
+// until some resource's supply runs out, freeze the lines that resource feeds, and carry on with
+// what is left. At most one round per line.
+function fairShareDuties(entries,supply){
+  const duty=entries.map(()=>1);
+  let active=entries.map((e,i)=>Object.keys(e.needs).length?i:-1).filter(i=>i>=0),level=0;
+  for(let round=0;round<=entries.length&&active.length;round++){
+    const open=new Set(active),fixed={},pending={};
+    entries.forEach((e,i)=>Object.entries(e.needs).forEach(([r,hr])=>{
+      if(open.has(i))pending[r]=(pending[r]||0)+hr;
+      else fixed[r]=(fixed[r]||0)+duty[i]*hr;
+    }));
+    const ratio={};let t=1;
+    Object.entries(pending).forEach(([r,need])=>{
+      const room=supply(r)-(fixed[r]||0);
+      ratio[r]=room>0?room/need:0;
+      if(ratio[r]<t)t=ratio[r];
+    });
+    if(t<level)t=level;   // the level already reached is feasible whatever the new ratios say
+    active.forEach(i=>duty[i]=t);
+    if(t>=1)break;
+    const binds=r=>r in ratio&&!(ratio[r]>t*(1+DUTY_TOL)+Number.MIN_VALUE);
+    const held=active.filter(i=>!Object.keys(entries[i].needs).some(binds));
+    if(held.length===active.length)break;   // nothing binds: the whole set sits at t
+    active=held;level=t;
+  }
+  return duty;
+}
+// "40% of the time" — how much of the hour a starved line actually spends crafting.
+function dutyLabel(duty){
+  const pct=Math.max(0,duty)*100;
+  if(pct<=0)return "0% of the time";
+  if(pct<0.1)return "under 0.1% of the time";
+  return fmt(pct,pct<10?1:0)+"% of the time";
+}
 function manualResult(){
   const resources=[...RAWS,...PRODUCTS];
   const resIndex={};resources.forEach((r,i)=>resIndex[r]=i);
@@ -10,9 +78,12 @@ function manualResult(){
   const forgie={};resources.forEach(r=>{forgie[r]=forgieHr(r);produced[resIndex[r]]+=forgie[r];});
   const plan=[]; const issueSet=new Set();
   const minedCons={};
+  const entries=[];   // per-line flat-out output and input draw, for the duty-cycle solve below
   S.lines.forEach((ln,i)=>{
     const m=S.manual[i]||{job:"Idle",lvl:ln.max};
     const sp=lineSpeed(ln), dp=dupeMult();
+    const entry={res:null,outHr:0,needs:{}};
+    const draw=(r,hr)=>{if(hr>0)entry.needs[r]=(entry.needs[r]||0)+hr;};
     let job;
     if(m.job==="Idle"||!ALLITEMS.includes(m.job)){
       job={kind:"idle",res:null,lvl:null,ct:0,prod:[],cons:[]};
@@ -22,33 +93,67 @@ function manualResult(){
       if(!RAWS.includes(item)){
         RECIPE[item].inputs.forEach(k=>{const c=S.prodCost[item][k][L];
           if(c==null||isNaN(c)){issueSet.add("No material cost entered for "+item+" @"+compressionLabel(L)+".");}
-          else{cons.push([resIndex[k],c/ct]);consumed[resIndex[k]]+=(c/ct)*eff*3600;}});
+          else{const hr=(c/ct)*eff*3600;cons.push([resIndex[k],c/ct]);consumed[resIndex[k]]+=hr;draw(k,hr);}});
         const cfg=MINED_CRAFTS[item];
         if(cfg){const c=minedCost(item,L)[cfg.resource];
           if(c==null||isNaN(c)){issueSet.add("No mined cost entered for "+item+" @"+compressionLabel(L)+".");}
-          else minedCons[cfg.resource]=(minedCons[cfg.resource]||0)+(c/ct)*eff*3600;}
+          else{const hr=(c/ct)*eff*3600;minedCons[cfg.resource]=(minedCons[cfg.resource]||0)+hr;draw(cfg.resource,hr);}}
       }
-      produced[resIndex[item]]+=rate*eff*dp*3600;
+      const outHr=rate*eff*dp*3600;
+      produced[resIndex[item]]+=outHr;
+      entry.res=item;entry.outHr=outHr;
       job={kind:(RAWS.includes(item)||item===GEL)?"produce":"craft",res:item,lvl:L,ct,prod:[[resIndex[item],rate]],cons};
     }
+    entries.push(entry);
     plan.push({line:i+1,max:ln.max,spx:sp,dup:dupeChance(),sp,dp,job});
   });
-  const balance=resources.map(r=>{const i=resIndex[r];return {res:r,prod:Math.max(0,produced[i]-forgie[r]),forgie:forgie[r],cons:consumed[i]};});
+  // Everything above is the flat-out plan — every line crafting nonstop, which is what the balance
+  // table reports so it can say what the setup would take to run at 100%. `duty` scales it to what
+  // the setup actually holds up at once anything it can't feed starts idling.
+  const producersOf={};entries.forEach((e,i)=>{if(e.res&&e.outHr>0)(producersOf[e.res]=producersOf[e.res]||[]).push(i);});
+  const supplyFor=d=>r=>isMinedResource(r)?minedBudgetHr(r)
+    :(forgie[r]||0)+(producersOf[r]||[]).reduce((sum,i)=>sum+d[i]*entries[i].outHr,0);
+  const duty=manualDutyCycles(entries,supplyFor);
+  plan.forEach((p,i)=>{p.duty=p.job.kind==="idle"?1:duty[i];});
+  const sustained={produced:{},lineProd:{},cons:{},out:{},minedCons:{}};
+  resources.forEach(r=>{sustained.lineProd[r]=0;sustained.cons[r]=0;});
+  entries.forEach((e,i)=>{
+    if(e.res)sustained.lineProd[e.res]+=duty[i]*e.outHr;
+    Object.entries(e.needs).forEach(([r,hr])=>{
+      const used=duty[i]*hr;
+      if(isMinedResource(r))sustained.minedCons[r]=(sustained.minedCons[r]||0)+used;
+      else sustained.cons[r]+=used;
+    });
+  });
+  resources.forEach(r=>{
+    sustained.produced[r]=sustained.lineProd[r]+forgie[r];
+    // A resource the duty cycles are solved against comes out consumed exactly as fast as it is
+    // supplied, so its sustained surplus is zero up to the solve's own rounding. Keep that reading
+    // at zero rather than a stray last-ulp trickle.
+    const net=sustained.produced[r]-sustained.cons[r],scale=Math.max(sustained.produced[r],sustained.cons[r]);
+    sustained.out[r]=Math.abs(net)<=DUTY_TOL*scale?0:net;
+  });
+  const throttled=plan.some(p=>p.job.kind!=="idle"&&p.duty<1);
+  const balance=resources.map(r=>{const i=resIndex[r];return {res:r,prod:Math.max(0,produced[i]-forgie[r]),forgie:forgie[r],cons:consumed[i],
+    prodActual:sustained.lineProd[r],consActual:sustained.cons[r]};});
   const out={};resources.forEach(r=>{const i=resIndex[r];out[r]=produced[i]-consumed[i];});
   // line production per resource (excludes Lil' Forgie's passive supply)
   const lineProd={};resources.forEach(r=>{const i=resIndex[r];lineProd[r]=Math.max(0,produced[i]-forgie[r]);});
   // selling: an item is sold if any non-idle line producing it is flagged. Credits come off
-  // its NET surplus (you can't sell what the chain consumes), valued at its sell price.
+  // its NET surplus (you can't sell what the chain consumes), valued at its sell price. The
+  // surplus is the sustained one — a starved line can't sell what it never gets to craft.
   const sold=new Set();
   plan.forEach((p,i)=>{const m=S.manual[i];if(m&&m.sell&&p.job.kind!=="idle"&&p.job.res)sold.add(p.job.res);});
   const creditRows=[];let totalCredits=0,missingPrice=false;
-  [...sold].forEach(it=>{const surplus=Math.max(0,out[it]),price=num(S.sellPrice&&S.sellPrice[it])||0,credits=surplus*price;
-    if(price<=0&&surplus>1e-6)missingPrice=true;totalCredits+=credits;creditRows.push({item:it,surplus,price,credits});});
+  [...sold].forEach(it=>{const surplus=Math.max(0,sustained.out[it]),surplusFull=Math.max(0,out[it]),
+    price=num(S.sellPrice&&S.sellPrice[it])||0,credits=surplus*price;
+    if(price<=0&&surplus>1e-6)missingPrice=true;totalCredits+=credits;creditRows.push({item:it,surplus,surplusFull,price,credits});});
   creditRows.sort((a,b)=>b.credits-a.credits);
   const minedBalances=MINED_RESOURCES.map(resource=>({
-    resource,incomeHr:minedBudgetHr(resource),consHr:minedCons[resource]||0
+    resource,incomeHr:minedBudgetHr(resource),consHr:minedCons[resource]||0,consActualHr:sustained.minedCons[resource]||0
   })).filter(row=>row.incomeHr>0||row.consHr>0);
-  return {plan,balance,minedBalances,out,resIndex,issues:[...issueSet],lineProd,soldItems:[...sold],creditRows,totalCredits,missingPrice};
+  return {plan,balance,minedBalances,out,resIndex,issues:[...issueSet],lineProd,soldItems:[...sold],creditRows,totalCredits,missingPrice,
+    duty,sustained,throttled};
 }
 // Copy a solved Max item/hr or Max credits/hr plan into Manual mode as an editable starting
 // point (issue #85), instead of recreating it by hand. In credits mode the item the solver
@@ -131,17 +236,20 @@ function renderManual(el,stat){
   const active=saved.find(p=>p.id===S.manualActiveId);
   html+=`<div id="manualPresetBar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px"></div>`;
   if(res.issues.length)html+=`<div class="notice warn"><b>Missing data:</b><br>${res.issues.join("<br>")}</div>`;
+  if(res.throttled)html+=`<div class="notice warn"><b>Running short.</b> An input can't keep up, so the lines it feeds only craft part of the time. Every output figure below is the <b>sustained</b> rate — what the setup settles at once whatever stock you're sitting on runs out. The balance table stays the flat-out picture: what you'd have to supply for every line to run at 100%.</div>`;
   // headline cards: credits from sold surplus first, then net surplus of items actually
   // crafted/produced on a line (Lil' Forgie's passive-only items are excluded)
-  const nets=[...PRODUCTS,...RAWS].filter(it=>res.lineProd[it]>1e-6&&res.out[it]>1e-6);
+  const nets=[...PRODUCTS,...RAWS].filter(it=>res.lineProd[it]>1e-6&&res.sustained.out[it]>1e-6);
   let cards="";
   if(res.totalCredits>1e-6)cards+=`<div class="metric"><div class="l">Credits</div><div class="v">${disp(res.totalCredits)}</div><div class="u">per hour — sold surplus</div></div>`;
-  nets.forEach(t=>{cards+=`<div class="metric"><div class="l">${t}</div><div class="v">${disp(res.out[t])}</div><div class="u">net surplus /hr</div></div>`;});
+  nets.forEach(t=>{
+    const unit=res.out[t]>res.sustained.out[t]?`sustained net /hr — ${disp(res.out[t])} at full speed`:"net surplus /hr";
+    cards+=`<div class="metric"><div class="l">${t}</div><div class="v">${disp(res.sustained.out[t])}</div><div class="u">${unit}</div></div>`;});
   if(cards)html+=`<div class="metrics">${cards}</div>`;
   // editable per-line setup
   html+=`<div class="subhead">Manual line setup</div>
     <table><thead><tr><th>Line</th><th>Cap</th><th>Resource</th><th>Compression</th>
-      <th class="num">Output /hr</th><th>Consumes /hr</th><th>Sell</th></tr></thead><tbody>`;
+      <th class="num">Output /hr</th><th>Consumes /hr${res.throttled?" (flat out)":""}</th><th>Sell</th></tr></thead><tbody>`;
   res.plan.forEach((p,i)=>{
     const ln=S.lines[i], m=S.manual[i], j=p.job;
     const resOpts=`<option value="Idle"${m.job==="Idle"?" selected":""}>— idle —</option>`+
@@ -150,7 +258,12 @@ function renderManual(el,stat){
     const lvlOpts=LEVELS.filter(L=>L<=ln.max).map(L=>`<option value="${L}"${L===m.lvl?" selected":""}>${compressionLabel(L)}</option>`).join("");
     let outv="—",cons="";
     if(j.kind!=="idle"){const eff=effSpeed(p.sp,j.ct);
-      outv=disp(j.prod[0][1]*eff*p.dp*3600);
+      const full=j.prod[0][1]*eff*p.dp*3600;
+      // A starved line's headline number is what it sustains; keep the flat-out rate beside it so
+      // the gap — and how much of the hour the line is standing idle — is legible.
+      outv=p.duty<1
+        ?`${disp(full*p.duty)}<div style="color:var(--ink3);font-size:10.5px">of ${disp(full)} — runs ${dutyLabel(p.duty)}</div>`
+        :disp(full);
       const parts=j.cons.map(c=>disp(c[1]*eff*3600)+" "+invName(res.resIndex,c[0]));
       const cfg=MINED_CRAFTS[j.res];
       if(cfg)Object.entries(minedCost(j.res,j.lvl)).forEach(([resource,cost])=>{
@@ -174,7 +287,9 @@ function renderManual(el,stat){
     if(res.missingPrice)html+=`<div class="notice info" style="font-size:11.5px">Some flagged items have no sell price yet — open <b>Sell prices</b> at the top of the page to set them. Credits use each item's <b>net surplus</b>, so anything the chain consumes isn't counted.</div>`;
     html+=`<table><thead><tr><th>Item</th><th class="num">Net surplus /hr</th><th class="num">Sell price</th><th class="num">Credits /hr</th></tr></thead><tbody>`;
     res.creditRows.forEach(c=>{
-      html+=`<tr><td>${c.item}</td><td class="num">${disp(c.surplus)}</td>
+      const starved=c.surplusFull>c.surplus
+        ?`<div style="color:var(--ink3);font-size:10.5px">of ${disp(c.surplusFull)} at full speed</div>`:"";
+      html+=`<tr><td>${c.item}</td><td class="num">${disp(c.surplus)}${starved}</td>
         <td class="num mono" style="color:var(--ink2)">${c.price>0?disp(c.price):'<span style="color:var(--ink3)">— no price</span>'}</td>
         <td class="num" style="color:${c.credits>1e-6?'var(--amber)':'var(--ink3)'};font-weight:${c.credits>1e-6?'600':'400'}">${c.credits>1e-6?disp(c.credits):"—"}</td></tr>`;
     });
@@ -196,7 +311,7 @@ function renderManual(el,stat){
     html+=`<div class="notice info" style="font-size:11.5px">All lines are idle — pick a resource for at least one line above to see a balance.</div>`;
   }else{
     const showForgie=bal.some(b=>(b.forgie||0)>1e-6),showMined=bal.some(b=>b.mined);
-    html+=`<div class="subhead">Resource balance (per hour)</div>
+    html+=`<div class="subhead">Resource balance (per hour${res.throttled?", every line flat out":""})</div>
       <table><thead><tr><th>Resource</th><th class="num">Lines</th>${showForgie?'<th class="num">Passive</th>':''}${showMined?'<th class="num">Mined income</th>':''}<th class="num">Consumed</th>
         <th class="num">Surplus</th><th>Status</th></tr></thead><tbody>`;
     bal.forEach(b=>{
