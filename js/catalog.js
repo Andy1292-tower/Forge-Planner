@@ -27,16 +27,16 @@
  *
  *   cost(item,n) = base(item) · 1.5^(n-1) + e(n)
  *   base = RC 400, Batteries 100, Wire 400000, Frames 100000
- *   e(1..3) = 0, 150, 490, read at every item and exact at RC and Batteries
+ *   e(1..4) = 0, 150, 490, 1132.5, read at every item and exact at Batteries
  *
- * Lv 4–5 keep the backbone and continue the surcharge as e(n) = A · (r^(n-1) −
- * 1), the form through all three read e: r = 34/15, A = 2250/19.
+ * e(n)/1.5^(n-1) is linear across the read Lv 2–4, rising 1060/9 a level. Lv 5
+ * keeps the backbone and continues that line: e(5) = 2295.
  *
  * ESTIMATED LEVELS. A few levels are too expensive to have been reached in game
  * yet, so their costs were extrapolated instead of read (see docs/CATALOG.md).
  * Every such entry says so in its `description`, which the catalog list shows:
  *
- *   biochemical-laboratory        Lv 4–5   its own curve, continued (see above)
+ *   biochemical-laboratory        Lv 5     its own curve, continued (see above)
  *   gym-and-relaxation-center-mk2 Lv 4     geometric mean of the read Lv 3 and Lv 5
  *   improved-silicate-scanner-mk2 Lv 5     ×5 per level, the project's own pattern
  *   the six backbone projects     Lv 36–40 the shared backbone curve, continued
@@ -6782,7 +6782,7 @@ const PROJECT_CATALOG=[
   {
     "catId": "biochemical-laboratory",
     "name": "Biochemical Laboratory",
-    "description": "Lv 4–5 costs estimated",
+    "description": "Lv 5 cost estimated",
     "levels": [
       {
         "costs": [
@@ -6848,19 +6848,19 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Reinforced Concrete",
-            "qty": 2611
+            "qty": 2483
           },
           {
             "item": "Batteries",
-            "qty": 1598
+            "qty": 1470
           },
           {
             "item": "Wire",
-            "qty": 1351000
+            "qty": 1351133
           },
           {
             "item": "Frames",
-            "qty": 338800
+            "qty": 338633
           }
         ]
       },
@@ -6868,19 +6868,19 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Reinforced Concrete",
-            "qty": 5033
+            "qty": 4320
           },
           {
             "item": "Batteries",
-            "qty": 3514
+            "qty": 2801
           },
           {
             "item": "Wire",
-            "qty": 2028000
+            "qty": 2027000
           },
           {
             "item": "Frames",
-            "qty": 509300
+            "qty": 508500
           }
         ]
       }
