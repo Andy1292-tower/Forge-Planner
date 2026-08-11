@@ -33,6 +33,8 @@ The search itself is unchanged by the mix mode: both modes produce a ratio weigh
 
 The result names which output is setting the floor and how much room each other output has above it. Slider positions do not map one-to-one onto plans: an output's achievable rate is quantized by whole line assignments, so a range of positions can legitimately produce the same plan.
 
+Checking an output's own feeder as a second output is not a way to get more of the first one. Every constraint is the same whichever outputs are checked — a feeder is produced and consumed inside the plan either way — so any plan reachable with the feeder checked is reachable without it, at the same rate for the first output. What checking the feeder does change is where the search spends its effort, and the two runs are randomized anytime searches over the same feasible set, so a fraction of a percent either way is which run got luckier and not a real difference. A systematic gap is a search defect rather than a property of the factory; one such defect is fixed in `solveCore`'s second pass, which reaches plans that put a feeder on an otherwise idle line and move the output onto the line that freed up (issue #134).
+
 ### Credits
 
 Credits mode ignores output checkboxes and priorities. It evaluates one dedicated whole-factory plan for each item with a sell price and ranks those candidates by credits per hour. It does not optimize a mixed sell portfolio. Winner-specific feasibility, capping, and May-work flags belong to the winning candidate; comparison completeness is reported separately.

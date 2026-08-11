@@ -307,9 +307,9 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // The budget is a ceiling, not a target: stop once the incumbent has gone this long without
   // improving, so a converged solve takes the same wall-time whether the budget is 1s or 15s
   // (the user's complaint). The window is fixed, not budget-scaled — it only needs to exceed the
-  // largest gap between real improvements. Multi-target search has wider gaps (~0.6s seen) than a
-  // single-target solve (each credits item), which converges almost immediately. Capped by the
-  // budget so a tiny budget can still cut it short.
+  // largest gap between real improvements. Capped by the budget so a tiny budget can still cut it
+  // short. Multi-target search has wider gaps (~0.6s seen) than a single-target solve (each credits
+  // item), which converges almost immediately.
   const convergeWindow=Math.min(timeBudget,targets.length>1?1000:300);
 
   // Constructive feasible incumbent. The DFS prunes nothing until it owns a feasible
@@ -328,6 +328,28 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   const feasibleNow=()=>{for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac(r)-1e-7)return false;return true;};
   // Shared weighted floor: the smallest output-to-weight ratio across the targets.
   const scoreNow=()=>{let sc=Infinity;for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]];sc=Math.min(sc,net/w[k]);}return sc;};
+  // Chain members the plan has to make but nothing scores — the feeders behind the single target.
+  // Only a one-output solve can plateau on them (see the warm start below); with a second output
+  // checked the search already has a gradient on it, which is why ticking one on works around it.
+  const feederIdx=targets.length===1
+    ?relProds.filter(P=>P!==targets[0]).map(P=>resIndex[P]).filter(r=>r!=null)
+    :[];
+  // Each feeder's surplus is scaled by the most of it the whole factory could make, so no single
+  // feeder's raw magnitude dominates the bonus: Gel moves in hundreds per hour where Batteries move
+  // in fractions. The bonus then MULTIPLIES the real objective rather than adding to it, which is
+  // what keeps the surrogate honest — a plan making no target output scores zero however much feeder
+  // it piles up, so the search cannot wander off into producing feeder for its own sake (an additive
+  // bonus does exactly that, and lands on a plan with no target line at all). Within that, a plan
+  // holding the same target output with more feeder behind it wins, and that is the whole point:
+  // it is the plateau step no strictly-improving move on the real objective will take.
+  const feederScale=feederIdx.map(r=>maxProd[r][0]>1e-12?maxProd[r][0]:1);
+  const FEEDER_WARM_EPS=[0.01,0.05,0.2],SWAP_STAG_LIMIT=1200;
+  const feederSurrogate=eps=>()=>{
+    const sc=scoreNow();if(!(sc>0))return sc;
+    let bonus=0;
+    for(let f=0;f<feederIdx.length;f++){const net=produced[feederIdx[f]]-consumed[feederIdx[f]];if(net>0)bonus+=net/feederScale[f];}
+    return sc*(1+eps*bonus);
+  };
   // repair input shortfall down to a feasible plan: each step makes the single line-switch
   // (toward producing ANY short resource) that cuts total shortfall most. Returns feasibility.
   // Drive total input shortfall to zero. Each step makes the single line-switch (to ANY job
@@ -346,24 +368,82 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     }
     evalChoice(ch);return feasibleNow();
   }
-  // hill-climb the objective with single-line best-improvement moves, staying feasible
-  function climb(ch){
-    let cur=scoreNow();
+  // hill-climb the objective with single-line best-improvement moves, staying feasible.
+  // `score` defaults to the real objective; the feeder-guided warm start below passes a surrogate,
+  // which is why the climb is written against a scoring function rather than scoreNow directly.
+  function climb(ch,score){
+    const value=score||scoreNow;
+    let cur=value();
     for(let pass=0;pass<N+3;pass++){
       if(!keepGoing("climb-pass"))return null;
       let improved=false;
       for(let i=0;i<N;i++){const old=ch[i];let bk=old,bs=cur;
         const js=lineJobs[i];for(let k=0;k<js.length;k++){if(k===old)continue;
           if(!keepGoing("climb-job")){ch[i]=old;evalChoice(ch);return null;}
-          ch[i]=k;evalChoice(ch);if(feasibleNow()){const s=scoreNow();if(s>bs+EPS){bs=s;bk=k;}}}
+          ch[i]=k;evalChoice(ch);if(feasibleNow()){const s=value();if(s>bs+EPS){bs=s;bk=k;}}}
         ch[i]=bk;if(bk!==old){cur=bs;improved=true;}else evalChoice(ch);
       }
       if(!improved)break;
     }
     return cur;
   }
+  // The nearest job on line `li` to one written for another line. Lines cap at different
+  // compressions, so a job cannot be carried across by index: match the craft, then the closest
+  // level the destination can actually run (never above what the source asked for, if it has one).
+  const jobLike=(li,job)=>{
+    if(!job||job.kind==="idle")return idleIdx(li);
+    const js=lineJobs[li];let under=-1,underLvl=-1,any=-1,anyLvl=Infinity;
+    for(let k=0;k<js.length;k++){
+      const j=js[k];if(j.kind!==job.kind||j.res!==job.res)continue;
+      if(j.lvl===job.lvl)return k;
+      if(j.lvl<job.lvl&&j.lvl>underLvl){underLvl=j.lvl;under=k;}
+      if(j.lvl<anyLvl){anyLvl=j.lvl;any=k;}
+    }
+    return under>=0?under:any;
+  };
+  // Exchange the jobs of two lines, for the lines carrying a target. Which line a craft sits on is
+  // worth as much as which craft runs: a target on a slow line with a fast line feeding it is beaten
+  // by the reverse, but getting there means moving both at once. Single-line climbing has to pass
+  // through the half-move — drop the only target line, or double up on it and starve its feeder —
+  // and both score worse, so it never crosses. Restricted to target-carrying lines, which is where
+  // the placement actually decides the objective, and which keeps this O(target lines x N).
+  function swapTargets(ch,score){
+    const value=score||scoreNow;
+    let cur=value();
+    for(let round=0;round<N+3;round++){
+      let improved=false;
+      for(let h=0;h<N;h++){
+        const jh=lineJobs[h][ch[h]];
+        if(!jh||jh.kind==="idle"||targets.indexOf(jh.res)<0)continue;
+        for(let j=0;j<N;j++){
+          if(j===h)continue;
+          if(!keepGoing("target-swap"))return null;
+          const oh=ch[h],oj=ch[j];
+          const a=jobLike(h,lineJobs[j][oj]),b=jobLike(j,lineJobs[h][oh]);
+          if(a<0||b<0||(a===oh&&b===oj))continue;
+          ch[h]=a;ch[j]=b;evalChoice(ch);
+          if(feasibleNow()&&value()>cur+EPS){cur=value();improved=true;break;}
+          ch[h]=oh;ch[j]=oj;
+        }
+      }
+      if(!improved)break;
+    }
+    evalChoice(ch);return cur;
+  }
   // full local optimisation from a starting choice; returns its score or null if infeasible
-  function localOpt(ch){const repaired=repair(ch);if(repaired!==true)return null;const sc=climb(ch);if(sc==null)return null;evalChoice(ch);return feasibleNow()?sc:null;}
+  function localOpt(ch,score){const repaired=repair(ch);if(repaired!==true)return null;const sc=climb(ch,score);if(sc==null)return null;evalChoice(ch);return feasibleNow()?sc:null;}
+  // localOpt run to a fixed point over both neighbourhoods, single-line moves and swaps alternating:
+  // a swap that pays usually opens fresh single-line gains (the level the moved craft should now run
+  // at), and those can make another swap pay. Only the second pass below uses it.
+  function deepOpt(ch,score){
+    let sc=localOpt(ch,score);if(sc==null)return null;
+    for(let r=0;r<3;r++){
+      const swapped=swapTargets(ch,score);if(swapped==null)return null;
+      if(!(swapped>sc+EPS))break;
+      sc=climb(ch,score);if(sc==null)return null;
+    }
+    evalChoice(ch);return feasibleNow()?sc:null;
+  }
   // Tie-break: among plans that match the optimal objective, prefer the one with the least
   // total input shortfall. The objective only counts net TARGET output, so a deficit the
   // targets can't consume (e.g. a feeder running on the 1.5% margin while its raw sits in
@@ -647,6 +727,47 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // LP z bounds the integer optimum; if the incumbent already reaches it, the search is done.
   let stageExhaustive=!!(lp&&lp.complete&&curTol===0&&best.score>=lp.z-1e-6*Math.max(1,lp.z));
   if(!stageExhaustive){dfs(0,0);stageExhaustive=!capped&&!interrupted;}
+  // Second pass, on whatever budget the first one left. Everything above is untouched and runs to
+  // exactly the same plan it always did; this only ever replaces that plan with one that scores
+  // strictly higher on the same objective, so no factory can come out of a release reporting less
+  // than it did before. It exists because the search above cannot reach some plans at all, at any
+  // budget: the objective counts net TARGET output only, so putting a feeder on a spare line scores
+  // the same as leaving it Idle until the target moves onto the line that feeder freed, and moving
+  // the target only pays once the feeder is already there. Neither half improves anything alone, so
+  // climb() (strict improvement, one line at a time) will not take the first step and a k<=3 random
+  // kick will not land both at once. The plan settles with lines idle and the target wherever the
+  // constructive seed put it — the reporter's "2 completely empty lines", and a rate below what the
+  // same factory reports once a feeder is ticked on as a second output (issue #134). Ticking that
+  // feeder on is the workaround they found by hand; this does it internally, hill-climbing a
+  // surrogate that pays a little for feeder surplus and then re-optimising under the real objective,
+  // with a swap neighbourhood so the exchange survives instead of being unwound one line at a time.
+  // Skipped when the first pass already proved its optimum — there is nothing left to find.
+  if(!interrupted&&!stageExhaustive&&N>0&&feederIdx.length&&best.score>EPS){
+    let cur={sc:best.score,ch:best.choice.slice()};
+    for(let e=0;e<FEEDER_WARM_EPS.length&&!interrupted;e++){
+      if(!keepGoing("feeder-warm-start"))break;
+      const ch=cur.ch.slice();
+      if(deepOpt(ch,feederSurrogate(FEEDER_WARM_EPS[e]))==null)continue;
+      const sc=deepOpt(ch);
+      if(sc!=null&&!interrupted&&sc>cur.sc+EPS)cur={sc,ch:ch.slice()};
+    }
+    // The warm starts open the plateau; kicking around inside it is what finds the rest. Same shape
+    // as the ILS above — same kick, same iteration-based stagnation cutoff so the stopping point
+    // stays budget-independent — over the swap neighbourhood rather than single lines alone. A kick
+    // shaped like the thing being looked for (move a target, fill a spare line) was tried here and
+    // came out behind: it costs half the random kicks and the swap neighbourhood already covers the
+    // move it was making by hand.
+    let stag=0;
+    for(let it=0;it<2000000&&!interrupted;it++){
+      if(stag>SWAP_STAG_LIMIT||!keepGoing("swap-ils"))break;
+      const ch=cur.ch.slice(),k=1+((rnd()*2)|0);
+      for(let m=0;m<=k;m++){if(!keepGoing("swap-ils-perturb"))break;const li=(rnd()*N)|0,js=lineJobs[li];ch[li]=(rnd()*js.length)|0;}
+      if(interrupted)break;
+      const sc=deepOpt(ch);
+      if(sc!=null&&!interrupted&&sc>cur.sc+EPS){cur={sc,ch:ch.slice()};stag=0;}else if(!interrupted)stag++;
+    }
+    if(cur.sc>best.score+EPS)adoptChoice(cur.ch);
+  }
   // balance any free deficit out of the now-optimal plan (keeps the objective, trims the margin use)
   if(!interrupted&&best.score>EPS&&N>0){
     const ch=minDeficitAtScore(best.choice.slice(),best.score);
