@@ -7828,11 +7828,11 @@ const PROJECT_CATALOG=[
         "costs": [
           {
             "item": "Reinforced Concrete",
-            "qty": 4320
+            "qty": 4290
           },
           {
             "item": "Batteries",
-            "qty": 2801
+            "qty": 2772
           },
           {
             "item": "Wire",
@@ -7840,7 +7840,7 @@ const PROJECT_CATALOG=[
           },
           {
             "item": "Frames",
-            "qty": 508500
+            "qty": 508520
           }
         ]
       }
