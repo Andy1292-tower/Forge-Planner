@@ -204,8 +204,18 @@ test("the generated page has a closed hashed asset graph and an in-memory Worker
     "a helper emitted after the factory would be swallowed by the factory-boundary slice");
   assert.equal((app.match(/new Worker\(objectUrl\)/g) || []).length, 1,
     "the generated app must retain exactly one Blob Worker constructor");
-  assert.equal((app.match(/new Blob\(\[__FORGE_SOLVER_WORKER_SOURCE__\]/g) || []).length, 1,
-    "the generated app must build the solver payload into exactly one object URL");
+  // The counts the build asserts, restated against a real release so a build check that stopped
+  // measuring anything cannot pass by measuring nothing.
+  assert.equal((app.match(/new\s+Worker\s*\(/g) || []).length, 1,
+    "the generated factory must be the app's only Worker construction site");
+  assert.equal((app.match(/(?:^|[^\w$])workerFactory\s*\(/g) || []).length, 1,
+    "the app must reach that factory from exactly one call site");
+  assert.equal(app.split("__FORGE_SOLVER_WORKER_SOURCE__").length - 1, 2,
+    "the payload constant is declared once and wrapped in one Blob");
+  assert.equal(app.split("__forgeSolverWorkerObjectUrl").length - 1, 2,
+    "the shared payload URL accessor must have exactly one caller");
+  assert.equal(app.split("__forgeSolverWorkerUrl").length - 1, 4,
+    "the shared payload URL must stay confined to its accessor");
   assert.doesNotMatch(app, /__forgeRelease/,
     "a per-Worker release hook would revoke the URL every later Worker is constructed from");
   assert.doesNotMatch(app, /revokeObjectURL\(\s*(?:objectUrl|__forgeSolverWorkerUrl)/,
@@ -586,16 +596,29 @@ test("an untracked CSS asset dependency fails the build instead of shipping a mu
 });
 
 test("solver Worker construction regressions fail the build, each by name", () => {
+  /* Every case is a rewording of one of two edits — add a construction path, or reach the shared
+   * payload URL — spelled the way a plausible regression would spell it rather than the way the
+   * check is written. A rule that only catches its own phrasing is not a rule. */
   const cases = [
     {
-      label: "a second payload object URL",
-      injected: 'const _extraPayloadUrl=URL.createObjectURL(new Blob([__FORGE_SOLVER_WORKER_SOURCE__],{type:"text/javascript"}));',
+      label: "a second payload object URL, whitespace inside the Blob array",
+      injected: 'const _extraPayloadUrl=URL.createObjectURL(new Blob([ __FORGE_SOLVER_WORKER_SOURCE__ ],{type:"text/javascript"}));',
       message: /must build the solver Worker payload into exactly one object URL, found 2/,
     },
     {
-      label: "a revoke of the shared payload URL",
+      label: "a revoke of the shared payload URL by its own name",
       injected: "function _releaseSolverUrl(){URL.revokeObjectURL(__forgeSolverWorkerUrl);}",
-      message: /revokes the shared solver Worker object URL/,
+      message: /must stay confined to its accessor, found 5 references/,
+    },
+    {
+      label: "a revoke reached through the accessor",
+      injected: "function _teardownUrl(){URL.revokeObjectURL(__forgeSolverWorkerObjectUrl());}",
+      message: /must have exactly one caller, found 2/,
+    },
+    {
+      label: "a revoke of the shared payload URL through an alias",
+      injected: "function _release(){const u=__forgeSolverWorkerObjectUrl();URL.revokeObjectURL(u);}",
+      message: /must have exactly one caller, found 2/,
     },
     {
       label: "a revived per-Worker release hook",
@@ -608,9 +631,35 @@ test("solver Worker construction regressions fail the build, each by name", () =
       message: /exactly one workerFactory\(\) call site, found 2/,
     },
     {
+      label: "a second call site written with a space before the parenthesis",
+      injected: "function _spacedWorker(){return workerFactory ();}",
+      message: /exactly one workerFactory\(\) call site, found 2/,
+    },
+    {
+      label: "a second call site reached as a member of an alias object",
+      injected: "const _seam={workerFactory:workerFactory};function _memberWorker(){return _seam.workerFactory();}",
+      message: /exactly one workerFactory\(\) call site, found 2/,
+    },
+    {
+      label: "a direct Worker construction that bypasses the factory seam",
+      injected: "function _spare(){return new Worker(__forgeSolverWorkerObjectUrl());}",
+      message: /must construct Workers at exactly one site, found 2/,
+    },
+    {
+      label: "a shard Worker whose script name contains no 'worker'",
+      injected: 'function _spawnShard(){return new Worker("js/solver.shard.js");}',
+      message: /must construct Workers at exactly one site, found 2/,
+    },
+    {
       label: "a network-fetched pool Worker URL",
       injected: 'const _poolWorkerUrl="js/solver.pool.worker.js";',
       message: /still references a Worker URL/,
+    },
+    {
+      label: "a construction path added to a page script other than solve-service.js",
+      target: "events.js",
+      injected: 'function _warmSolver(){return new Worker("js/shard.js");}',
+      message: /must construct Workers at exactly one site, found 2/,
     },
   ];
 
@@ -618,7 +667,7 @@ test("solver Worker construction regressions fail the build, each by name", () =
     const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "forge-static-worker-regression-"));
     const source = path.join(temporary, "source");
     copyBuildInputs(source);
-    fs.appendFileSync(path.join(source, "js", "solve-service.js"), `\n${entry.injected}\n`);
+    fs.appendFileSync(path.join(source, "js", entry.target || "solve-service.js"), `\n${entry.injected}\n`);
     assert.throws(
       () => buildStaticSite({ sourceRoot: source, outputRoot: path.join(temporary, "output") }),
       entry.message,
