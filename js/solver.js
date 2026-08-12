@@ -879,15 +879,160 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     // is budget-independent, which keeps the result monotonic in budget. The single-target case
     // (each credits item) converges in a handful of iterations, so it gets a much smaller limit.
     const stagLimit=targets.length>1?8000:1200;let stag=0;
+    /* Destroy-and-repair, an alternative to the random kick below — BUILT, MEASURED AND LEFT OFF.
+     * opts.lnsCadence is a direct-source test seam in the same family as opts.onDeltaProbe: never
+     * persisted, never posted through the Worker protocol, never set by the app. At 0 (production)
+     * nothing below runs, no random number is drawn and no work is charged, so the search is the one
+     * that was there before.
+     *
+     * What it does. The kick is blind: it rewrites k random lines and hands the wreck to localOpt,
+     * which walks it back one strictly-improving line at a time. That composition reaches only the
+     * plans a chain of single-line improvements reaches, and the ones it cannot reach are exactly the
+     * coupled ones — a feeder onto a spare line pays nothing until the target moves onto the line the
+     * feeder freed, and moving the target first is a loss, so neither half is ever taken. This
+     * instead FREEZES all but k lines and searches the freed ones exactly: every joint assignment of
+     * those k lines is enumerated against the frozen lines' production and burn, seeded with the
+     * incumbent's own score so the enumeration is an improvement search and a subset that cannot beat
+     * the plan it came from is refuted at its root. A two-line exchange that is uphill in both halves
+     * is one leaf of that enumeration rather than a sequence no improving move takes.
+     *
+     * Why it is off. Measured over the seven checkpointed bench fixtures at a 20 s budget, k=2, with
+     * a ceiling the repairs effectively never reached: ~21,600 repairs produced ONE strictly
+     * improving joint assignment (project-seq-7line), and it did not move the reported objective.
+     * Seven lines give 21 pairs and the leanest fixture still draws ~85 repairs per pair, so that is
+     * not a sampling gap — the plan the ILS converges to is 2-line optimal, and items-7line's 20% gap
+     * to the LP ceiling is not reachable by moving two lines at once. Larger k does not rescue it:
+     * one complete 3-line enumeration costs ~248,000 probes, 2.5% of the entire 20 s search, and 29
+     * of them refuted their subset as well; a 4-line enumeration did not finish inside 5,000,000
+     * probes, i.e. one repair costs more than the whole budget. Meanwhile the operator is not free —
+     * at one repair every second iteration it takes 50-75% of the search budget, and on project-7line
+     * that displacement alone costs 23% of the objective (0.0334 -> 0.0257, its 4000 ms plateau).
+     *
+     * The move it was built for is not in the corpus either: the feeder second pass below, which
+     * exists for exactly this coupled move, is reached 5 times across the whole corpus and improves
+     * the incumbent zero of those 5 times. Re-opening this needs a saved factory that exhibits the
+     * issue #134 shape, not a bigger k. */
+    const lnsCadence=Math.max(0,Math.floor(Number(opts.lnsCadence)||0));
+    const LNS_MAX_FREE=4,LNS_WORK_CAP=4000;
+    // Each line's largest single-job output of every resource — the enumeration's suffix bound. Taken
+    // off the same flat coefficients the probes sum, so the bound is on the same doubles the leaf test
+    // compares, and tighter than the DFS's own maxProd, which scales by the uncapped line speed.
+    const lnsLineMax=new Float64Array(lnsCadence>0?N*R:0);
+    // Which lines are worth freeing. The exchange that pays is between a line the objective reads
+    // directly and a line the relaxation wanted to split, so those carry the weight; every other line
+    // stays eligible at 1, because the spare line a feeder has to land on is usually neither.
+    const lnsSplit=new Uint8Array(lnsCadence>0?N:0);
+    if(lnsCadence>0){
+      for(let i=0;i<N;i++)for(let s=jobBase[i];s<jobBase[i+1];s++)
+        for(let p=prodOff[s],e=prodOff[s+1];p<e;p++){const at=i*R+prodR[p];if(prodC[p]>lnsLineMax[at])lnsLineMax[at]=prodC[p];}
+      if(lp&&lp.frac)for(let i=0;i<N;i++){let n=0;const fr=lp.frac[i]||[];for(let j=0;j<fr.length;j++)if(fr[j]>1e-6)n++;if(n>1)lnsSplit[i]=1;}
+    }
+    const lnsFree=new Int32Array(LNS_MAX_FREE),lnsCur=new Int32Array(LNS_MAX_FREE),lnsPick=new Int32Array(LNS_MAX_FREE);
+    const lnsSuf=new Float64Array(lnsCadence>0?(LNS_MAX_FREE+1)*R:0),lnsWeight=new Float64Array(lnsCadence>0?N:0);
+    /* Backtracking restores SAVED values, never the arithmetic that produced them: a leaf is compared
+     * at 1e-9 against a state reached four moves down, and re-adding what was subtracted does not in
+     * general land back on the same double — the state each later branch starts from would drift under
+     * the branches that failed. The whole row set is small enough (R is 9 on the reference chain) that
+     * saving it wholesale per depth beats tracking which rows a branch touched, and it carries the
+     * cached feasibility verdicts back with it for free. */
+    const lnsSaveP=new Float64Array(lnsCadence>0?LNS_MAX_FREE*R:0),lnsSaveC=new Float64Array(lnsCadence>0?LNS_MAX_FREE*R:0);
+    const lnsSaveB=new Uint8Array(lnsCadence>0?LNS_MAX_FREE*R:0),lnsSaveN=new Int32Array(LNS_MAX_FREE);
+    let lnsN=0,lnsBestSc=0,lnsFound=false,lnsWorkAt=0;
+    // Enumerate the freed lines against the frozen state. Returns false when the repair is out of work
+    // or the whole solve is interrupted — both unwind the same way, and both keep whatever the
+    // enumeration had already proved better than the incumbent.
+    function lnsDfs(p){
+      if(control.work()-lnsWorkAt>=LNS_WORK_CAP)return false;
+      if(!keepGoing("lns-node"))return false;
+      if(p===lnsN){
+        if(infeasCount!==0)return true;
+        const sc=scoreNow();
+        if(sc>lnsBestSc+EPS){lnsBestSc=sc;lnsFound=true;for(let q=0;q<lnsN;q++)lnsPick[q]=lnsCur[q];}
+        return true;
+      }
+      const off=p*R;
+      for(let r=0;r<R;r++)if(produced[r]+lnsSuf[off+r]<consumed[r]*needFrac[r]-1e-7)return true;
+      let ub=Infinity;
+      for(let k=0;k<targets.length;k++){const t=tIdx[k],v=(produced[t]-consumed[t]+lnsSuf[off+t])/w[k];if(v<ub)ub=v;}
+      if(ub<=lnsBestSc+EPS)return true;
+      const i=lnsFree[p],js=lineJobs[i],idle=idleIdx(i);
+      for(let r=0;r<R;r++){lnsSaveP[off+r]=produced[r];lnsSaveC[off+r]=consumed[r];lnsSaveB[off+r]=rowBad[r];}
+      lnsSaveN[p]=infeasCount;
+      let live=true;
+      for(let j=0;j<js.length&&live;j++){
+        // A freed line contributes nothing at entry, so moving it off Idle IS its assignment. The
+        // beginMove is only there to keep the shared move buffer from filling down the recursion:
+        // the unwind above is this frame's own snapshot, so revertMove is never the right undo here.
+        beginMove();applyMove(i,idle,j);lnsCur[p]=j;
+        live=lnsDfs(p+1);
+        for(let r=0;r<R;r++){produced[r]=lnsSaveP[off+r];consumed[r]=lnsSaveC[off+r];rowBad[r]=lnsSaveB[off+r];}
+        infeasCount=lnsSaveN[p];
+      }
+      return live;
+    }
+    // Sample 2..4 distinct lines under those weights, ascending so the enumeration walks them in the
+    // order the plan is written in.
+    const lnsSelect=()=>{
+      const want=Math.min(N,2+((rnd()*3)|0));let pool=0;
+      for(let i=0;i<N;i++){
+        const job=lineJobs[i][inc.ch[i]];
+        lnsWeight[i]=1+(lnsSplit[i]?2:0)+(job&&job.kind!=="idle"&&targets.indexOf(job.res)>=0?3:0);
+        pool+=lnsWeight[i];
+      }
+      lnsN=0;
+      for(let q=0;q<want;q++){
+        let x=rnd()*pool,pick=-1;
+        for(let i=0;i<N;i++){if(!(lnsWeight[i]>0))continue;x-=lnsWeight[i];if(x<=0){pick=i;break;}}
+        if(pick<0)for(let i=N-1;i>=0;i--)if(lnsWeight[i]>0){pick=i;break;}
+        if(pick<0)break;
+        pool-=lnsWeight[pick];lnsWeight[pick]=0;
+        let at=lnsN++;while(at>0&&lnsFree[at-1]>pick){lnsFree[at]=lnsFree[at-1];at--;}
+        lnsFree[at]=pick;
+      }
+      if(lnsN<2)return false;
+      for(let r=0;r<R;r++)lnsSuf[lnsN*R+r]=0;
+      for(let p=lnsN-1;p>=0;p--){const at=p*R,next=at+R,line=lnsFree[p]*R;
+        for(let r=0;r<R;r++)lnsSuf[at+r]=lnsSuf[next+r]+lnsLineMax[line+r];}
+      return true;
+    };
+    // One destroy-and-repair on the incumbent, writing the freed lines' best joint assignment into
+    // `ch`. False when nothing beat the incumbent, including when the bound refuted the subset.
+    const lnsRepair=ch=>{
+      if(!lnsSelect())return false;
+      for(let q=0;q<lnsN;q++)ch[lnsFree[q]]=idleIdx(lnsFree[q]);
+      evalChoice(ch);                     // the frozen lines' production and burn, and nothing else
+      lnsBestSc=inc.sc;lnsFound=false;lnsWorkAt=control.work();
+      lnsDfs(0);
+      if(!lnsFound)return false;
+      for(let q=0;q<lnsN;q++)ch[lnsFree[q]]=lnsPick[q];
+      return true;
+    };
     for(let it=0;it<2000000&&!interrupted;it++){
       if(stag>stagLimit||!keepGoing("ils-iteration"))break;
-      const ch=inc.ch.slice();const k=1+((rnd()*2)|0);
-      for(let m=0;m<=k;m++){if(!keepGoing("ils-perturb"))break;const li=(rnd()*N)|0,js=lineJobs[li];ch[li]=(rnd()*js.length)|0;}
-      // The kick rewrites `ch` wholesale; re-establish the invariant rather than leave the vectors
-      // describing the incumbent this kick moved away from.
-      evalChoice(ch);
+      const ch=inc.ch.slice();
+      let cand=null;
+      // Both moves hand a candidate to localOpt and both are accepted only on strict improvement, so
+      // the stagnation counter counts them alike and the repair's ceiling is a work count rather than
+      // a clock — the iteration the search stops at stays the same at every budget.
+      if(lnsCadence>0&&it%lnsCadence===lnsCadence-1){
+        if(!lnsRepair(ch)){if(!interrupted)stag++;continue;}
+        // The enumeration's leaf was feasible and strictly better, so keep it as a candidate in its
+        // own right: localOpt below leads with repair(), which drives total input shortfall to zero
+        // and will trade objective away to do it.
+        evalChoice(ch);
+        if(feasibleNow()){const raw=scoreNow();if(raw>inc.sc+EPS)cand={sc:raw,ch:ch.slice()};}
+      }else{
+        const k=1+((rnd()*2)|0);
+        for(let m=0;m<=k;m++){if(!keepGoing("ils-perturb"))break;const li=(rnd()*N)|0,js=lineJobs[li];ch[li]=(rnd()*js.length)|0;}
+        // The kick rewrites `ch` wholesale; re-establish the invariant rather than leave the vectors
+        // describing the incumbent this kick moved away from.
+        evalChoice(ch);
+      }
       if(interrupted)break;
-      const sc=localOpt(ch);if(sc!=null&&!interrupted&&sc>inc.sc+EPS){inc={sc,ch:ch.slice()};stag=0;tLastGain=control.readNow();}else if(!interrupted)stag++;
+      const sc=localOpt(ch);
+      if(sc!=null&&!interrupted&&(!cand||sc>cand.sc))cand={sc,ch:ch.slice()};
+      if(cand&&!interrupted&&cand.sc>inc.sc+EPS){inc=cand;stag=0;tLastGain=control.readNow();}
+      else if(!interrupted)stag++;
     }
     evalChoice(inc.ch);best={score:scoreNow(),choice:inc.ch.slice(),produced:produced.slice(),consumed:consumed.slice()};
   }
