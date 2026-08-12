@@ -49,6 +49,7 @@ const tests = [
   "test/stability-ui.cjs",
   "test/stockrisk.cjs",
   "test/target-presets.cjs",
+  "test/unbounded-quantities.cjs",
   "test/update-check.cjs",
   "test/boot-recovery.cjs",
   "test/run-parity.cjs",

@@ -9,6 +9,7 @@ const root = path.resolve(__dirname, "..");
 const context = { console };
 vm.createContext(context);
 vm.runInContext([
+  fs.readFileSync(path.join(root, "js", "decimal.js"), "utf8"),
   fs.readFileSync(path.join(root, "js", "catalog.js"), "utf8"),
   fs.readFileSync(path.join(root, "js", "core.js"), "utf8"),
   `globalThis.__catalogContract = {

@@ -1,4 +1,7 @@
 "use strict";
+// Decimal is a global in the browser (js/decimal.js loads first); a direct eval() inherits
+// this module scope, so binding it here is what makes the evaluated sources resolve it.
+const Decimal = require("../js/decimal.js");
 /* Player-facing mined-resource rendering regressions from the final review. */
 const fs=require("fs"),path=require("path");
 
@@ -16,7 +19,7 @@ globalThis.document={
 };
 globalThis.localStorage={getItem:()=>null,setItem:()=>{}};
 globalThis.performance={now:()=>0};
-const src=["core.js","fields.js","dom.js","project-schedule.js","solver.js","results.js","manual.js","render.js"]
+const src=["decimal.js", "core.js","fields.js","dom.js","project-schedule.js","solver.js","results.js","manual.js","render.js"]
   .map(f=>fs.readFileSync(path.join(__dirname,"..","js",f),"utf8")).join("\n;\n");
 
 const runner=`
@@ -50,8 +53,10 @@ const runner=`
   gelSeedLoadout=function(){renderSeedCalls++;return renderSeed.apply(null,arguments);};
   renderMinedResources();
   const minedInput=document.getElementById("minedVespiumRig");
+  // No max attribute: a quantity field carries no magnitude ceiling (issue #142), so emitting one
+  // would let the browser's own validation reject a value the parser accepts. Length still bounds it.
   check("mined inputs receive descriptor-derived range and draft limits",
-    minedInput.attributes.min==="0"&&minedInput.attributes.max==="1e+100"&&minedInput.attributes.maxlength==="128"&&minedInput.attributes.inputmode==="text",
+    minedInput.attributes.min==="0"&&!("max" in minedInput.attributes)&&minedInput.attributes.maxlength==="128"&&minedInput.attributes.inputmode==="text",
     JSON.stringify(minedInput.attributes));
   let capacity=document.getElementById("minedVespiumSummary").textContent;
   let loadout=document.getElementById("minedGelLoadout").innerHTML;

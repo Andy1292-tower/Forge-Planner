@@ -7,7 +7,7 @@ const vm = require("vm");
 
 const ROOT = path.resolve(__dirname, "..");
 const context = vm.createContext({ console, performance: { now: () => 0 }, setTimeout, clearTimeout });
-for (const file of ["js/catalog.js", "js/core.js", "js/fields.js", "js/state.js", "js/dom.js"]) {
+for (const file of ["js/decimal.js", "js/catalog.js", "js/core.js", "js/fields.js", "js/state.js", "js/dom.js"]) {
   const filename = path.join(ROOT, file);
   vm.runInContext(fs.readFileSync(filename, "utf8"), context, { filename });
 }
@@ -39,16 +39,15 @@ test("creates deterministic collision-free DOM tokens for distinct input strings
 
 test("owns distinct numeric descriptors and the complete persisted ranges", () => {
   const schema = api("FIELD_SCHEMA");
-  assert.equal(schema.schemaVersion.defaultValue, 4);
-  assert.equal(schema.schemaVersion.min, 4);
-  assert.equal(schema.schemaVersion.max, 4);
+  assert.equal(schema.schemaVersion.defaultValue, 5);
+  assert.equal(schema.schemaVersion.min, 5);
+  assert.equal(schema.schemaVersion.max, 5);
+  // Configuration keeps its ranges — every one of these describes machinery with a fixed physical
+  // ceiling that a float64 will always hold.
   const expected = {
     lineSpeed: [1e-6, 1e9, false], turbo: [0, 1e6, false], maxTurbo: [0, 1e6, false],
     dupe: [0, 100, false], margin: [0, 20, false], solveBudget: [200, 60000, false],
     baseTime: [1e-6, 1e15, false], baseTimeRev: [0, 12, false],
-    recipeCost: [0, 1e100, true], sellPrice: [0, 1e100, true],
-    forgie: [0, 1e100, true], minedIncome: [0, 1e100, true],
-    inventory: [0, 1e100, true], projectQuantity: [0, 1e100, true],
     targetWeight: [1, 9, false], projectIndex: [1, 1e6, false],
     projectPriority: [1, 1e6, true], calibrationSpeed: [1e-6, 1e9, false],
     calibrationSeconds: [1e-6, 1e15, false],
@@ -58,6 +57,17 @@ test("owns distinct numeric descriptors and the complete persisted ranges", () =
     assert.equal(schema[name].min, min, `${name}.min`);
     assert.equal(schema[name].max, max, `${name}.max`);
     assert.equal(schema[name].allowBlank, allowBlank, `${name}.allowBlank`);
+  }
+  /* Quantities carry NO magnitude ceiling (issue #142). This is an incremental game: any number
+     chosen as a limit is a future bug report, so what bounds these is the length of what can be
+     typed plus a finiteness check. min:0 still holds — a negative quantity is meaningless. */
+  for (const name of ["recipeCost", "sellPrice", "forgie", "minedIncome", "inventory", "projectQuantity", "amount"]) {
+    assert.ok(schema[name], `missing FIELD_SCHEMA.${name}`);
+    assert.equal(schema[name].type, "decimal", `${name}.type`);
+    assert.equal(schema[name].min, 0, `${name}.min`);
+    assert.equal(schema[name].max, undefined, `${name} must carry no magnitude ceiling`);
+    assert.equal(schema[name].allowBlank, true, `${name}.allowBlank`);
+    assert.equal(schema[name].maxDraftLength, 128, `${name} is bounded by draft length instead`);
   }
   assert.notStrictEqual(schema.sellPrice, schema.forgie);
   assert.notStrictEqual(schema.inventory, schema.projectQuantity);
@@ -96,9 +106,11 @@ test("parses decimal exponents and readable trailing decimals, but preserves par
 
 test("parses game commas, suffix case, and exponents while distinguishing partial suffixes", () => {
   const rule = api("FIELD_SCHEMA.projectQuantity");
-  assert.deepEqual(parse(rule, "1,234.5"), { status: "valid", value: 1234.5 });
-  assert.deepEqual(parse(rule, "2.5QA"), { status: "valid", value: 2.5e15 });
-  assert.deepEqual(parse(rule, "1.3e6"), { status: "valid", value: 1.3e6 });
+  // A quantity parses to a Decimal, so assert on its value rather than deep-equalling the object.
+  const parsedValue = (raw) => { const r = parse(rule, raw); assert.equal(r.status, "valid", raw); return String(r.value); };
+  assert.equal(parsedValue("1,234.5"), "1234.5");
+  assert.equal(parsedValue("2.5QA"), "2500000000000000");
+  assert.equal(parsedValue("1.3e6"), "1300000");
   for (const raw of ["1q", "1s"]) assert.equal(parse(rule, raw).status, "incomplete");
   assert.equal(parse(rule, "1qq").status, "invalid");
   assert.equal(parse(rule, "1wat").status, "invalid");
@@ -117,7 +129,11 @@ test("rejects syntax, negative, fractional integer, range, and overflow failures
   assert.equal(parse(api("FIELD_SCHEMA.targetWeight"), "1.5").status, "invalid");
   assert.equal(parse(api("FIELD_SCHEMA.dupe"), "100.01").status, "invalid");
   assert.equal(parse(api("FIELD_SCHEMA.solveBudget"), "60001").status, "invalid");
-  assert.equal(parse(api("FIELD_SCHEMA.projectQuantity"), "1e309").status, "invalid");
+  // 1e309 overflows a float64 but is an ordinary quantity now — the ceiling it used to hit is gone.
+  assert.equal(parse(api("FIELD_SCHEMA.projectQuantity"), "1e309").status, "valid");
+  assert.equal(String(parse(api("FIELD_SCHEMA.projectQuantity"), "1e309").value), "1e+309");
+  assert.equal(parse(api("FIELD_SCHEMA.projectQuantity"), "1e5000").status, "valid");
+  assert.equal(parse(api("FIELD_SCHEMA.projectQuantity"), "lots").status, "invalid");
 });
 
 test("validates values through the same rule boundary used by parsing and state", () => {
@@ -126,6 +142,8 @@ test("validates values through the same rule boundary used by parsing and state"
   assert.equal(validate(api("FIELD_SCHEMA.dupe"), 101).valid, false);
   assert.equal(validate(api("FIELD_SCHEMA.targetWeight"), 1.25).valid, false);
   assert.deepEqual(validate(api("FIELD_SCHEMA.sellPrice"), null), { valid: true, value: null });
+  assert.equal(String(validate(api("FIELD_SCHEMA.sellPrice"), "2.35e400").value), "2.35e+400",
+    "a persisted quantity string revives through the same rule boundary");
   assert.equal(validate(api("FIELD_SCHEMA.lineSpeed"), null).valid, false);
   const dynamic = api("({...FIELD_SCHEMA.projectIndex,max:3,label:'project ending level'})");
   assert.deepEqual(validate(dynamic, 3), { valid: true, value: 3 });
@@ -151,7 +169,7 @@ test("formats accepted values and derives matching HTML input attributes", () =>
   // A game-notation field must not ask for a keypad that cannot type what it parses: the decimal
   // pad on Android has digits and a separator only, so 3e72 and 500t become unenterable.
   assert.deepEqual({ ...attrs(api("FIELD_SCHEMA.sellPrice")) }, {
-    min: "0", max: "1e+100", step: "any", inputmode: "text", maxlength: "128",
+    min: "0", step: "any", inputmode: "text", maxlength: "128",
   });
   ["sellPrice", "forgie", "minedIncome", "inventory", "projectQuantity", "amount"].forEach(name => {
     const rule = api(`FIELD_SCHEMA.${name}`);
@@ -160,7 +178,10 @@ test("formats accepted values and derives matching HTML input attributes", () =>
       `${name} must keep the ordinary keyboard so suffixes and exponents stay typeable`);
     const parsed = api("parseFieldDraft")(rule, "3e72");
     assert.equal(parsed.status, "valid", `${name} accepts scientific notation`);
-    assert.equal(parsed.value, 3e72);
+    assert.equal(String(parsed.value), "3e+72");
+    const beyondFloat = api("parseFieldDraft")(rule, "2.35e400");
+    assert.equal(beyondFloat.status, "valid", `${name} accepts a value no float64 can hold`);
+    assert.equal(String(beyondFloat.value), "2.35e+400");
     assert.equal(api("parseFieldDraft")(rule, "500t").status, "valid", `${name} accepts a suffix`);
   });
 });
@@ -181,26 +202,32 @@ test("round-trips calibrated boundaries and accepts historical display text inde
   const validate = api("validateFieldValue");
   for (const [name, values] of Object.entries({
     lineSpeed: [1e-6, 49.38, 1e9], baseTime: [1e-6, 6.178, 1e15],
-    solveBudget: [200, 2345, 60000], projectQuantity: [0, 1.234567890123456e99, 1e100],
+    solveBudget: [200, 2345, 60000],
   })) for (const value of values) {
     const checked = validate(api(`FIELD_SCHEMA.${name}`), value);
     assert.deepEqual(checked, { valid: true, value }, `${name} ${value}`);
+  }
+  // A quantity round-trips as a Decimal, at any magnitude, including past the float64 ceiling.
+  for (const value of ["0", "1.234567890123456e+99", "1e+100", "2.35e+400", "1e+5000"]) {
+    const checked = validate(api("FIELD_SCHEMA.projectQuantity"), value);
+    assert.equal(checked.valid, true, `projectQuantity ${value}`);
+    assert.equal(String(checked.value), value, `projectQuantity ${value}`);
   }
 
   const state = api("normalize(defaults())");
   state.schemaVersion = api("CURRENT_SCHEMA_VERSION");
   state.priceText.Frames = "historical text that never matched its numeric pair";
-  state.sellPrice.Frames = 123;
+  state.sellPrice.Frames = api("parseGameNum")("123");
   const result = api("validateAndMigrate")(state);
   assert.equal(result.ok, true, JSON.stringify(result.errors));
   assert.equal(result.state.priceText.Frames, state.priceText.Frames);
-  assert.equal(result.state.sellPrice.Frames, 123);
+  assert.equal(String(result.state.sellPrice.Frames), "123");
 });
 
 test("state value validation rejects every representative numeric boundary transactionally", () => {
   const make = () => {
     const state = api("normalize(defaults())");
-    state.schemaVersion = 4;
+    state.schemaVersion = api("CURRENT_SCHEMA_VERSION");
     state.minedIncome = {
       Vespium: { rigPerMin: null, resourcesTradingPerSec: null },
       Hydracite: { resourcesTradingPerSec: null },
@@ -220,9 +247,9 @@ test("state value validation rejects every representative numeric boundary trans
     state => { state.solveBudget = 60000.5; },
     state => { state.baseTime.Ingots = 0; },
     state => { state.prodCost.Glass.Bits[1] = -1; },
-    state => { state.sellPrice.Frames = 1e101; },
+    state => { state.sellPrice.Frames = "not a number"; },
     state => { state.forgie.Frames = -1; },
-    state => { state.minedIncome.Vespium.rigPerMin = 1e101; },
+    state => { state.minedIncome.Vespium.rigPerMin = {}; },
     state => { state.inventory.Ingots = -1; },
     state => { state.targets.Frames.w = 1.5; },
   ];

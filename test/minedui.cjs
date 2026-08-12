@@ -1,4 +1,7 @@
 "use strict";
+// Decimal is a global in the browser (js/decimal.js loads first); a direct eval() inherits
+// this module scope, so binding it here is what makes the evaluated sources resolve it.
+const Decimal = require("../js/decimal.js");
 const fs=require("fs"),path=require("path");
 const indexHtml=fs.readFileSync(path.join(__dirname,"..","index.html"),"utf8");
 class El{
@@ -15,7 +18,7 @@ globalThis.document={
 };
 globalThis.localStorage={getItem:()=>null,setItem:()=>{}};
 globalThis.performance={now:()=>0};
-const src=["core.js","fields.js","dom.js","solver.js","render.js"].map(f=>fs.readFileSync(path.join(__dirname,"..","js",f),"utf8")).join("\n");
+const src=["decimal.js", "core.js","fields.js","dom.js","solver.js","render.js"].map(f=>fs.readFileSync(path.join(__dirname,"..","js",f),"utf8")).join("\n");
 const runner=`
 (function(){
   let fail=0;const check=(n,ok,d)=>{console.log((ok?"ok   ":"FAIL ")+n+" ["+d+"]");if(!ok)fail++;};

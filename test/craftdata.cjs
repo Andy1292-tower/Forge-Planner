@@ -1,4 +1,7 @@
 "use strict";
+// Decimal is a global in the browser (js/decimal.js loads first); a direct eval() inherits
+// this module scope, so binding it here is what makes the evaluated sources resolve it.
+const Decimal = require("../js/decimal.js");
 const fs=require("fs"),path=require("path");
 globalThis.localStorage={getItem:()=>null,setItem:()=>{}};
 globalThis.document={getElementById:()=>({innerHTML:"",textContent:""})};
@@ -8,7 +11,12 @@ const solver=fs.readFileSync(path.join(__dirname,"..","js","solver.js"),"utf8");
 const runner=`
 (function(){
   let fail=0;
-  const eq=(name,got,want)=>{const ok=Object.is(got,want);console.log((ok?"ok   ":"FAIL ")+name+" ["+got+" vs "+want+"]");if(!ok)fail++;};
+  // Quantities are Decimals now (sell prices, mined incomes, recipe costs, inventory), so equality
+  // has to be by value: Object.is on two Decimal instances compares identities and never matches.
+  const same=(got,want)=>(got instanceof Decimal||want instanceof Decimal)
+    ?(toDec(got)!==null&&toDec(want)!==null&&toDec(got).eq(toDec(want)))
+    :Object.is(got,want);
+  const eq=(name,got,want)=>{const ok=same(got,want);console.log((ok?"ok   ":"FAIL ")+name+" ["+got+" vs "+want+"]");if(!ok)fail++;};
   const near=(name,got,want)=>{const ok=Math.abs(got-want)<=1e-9*Math.max(1,Math.abs(want));console.log((ok?"ok   ":"FAIL ")+name+" ["+got+" vs "+want+"]");if(!ok)fail++;};
   const d=defaults();S=d;
   eq("8192 tier",LEVELS[LEVELS.length-2],8192);
@@ -28,20 +36,22 @@ const runner=`
     Vespium:{rigPerMin:2,resourcesTradingPerSec:3},
     Hydracite:{resourcesTradingPerSec:4}
   }};
-  eq("Vespium sources aggregate to an hourly budget",minedBudgetHr("Vespium",sourceState),10920);
-  eq("Hydracite seconds aggregate to an hourly budget",minedBudgetHr("Hydracite",sourceState),14400);
-  eq("unknown mined resources have no budget",minedBudgetHr("Rocks",sourceState),0);
+  // A mined budget is a Decimal (a late-game Vespium income is ~1e100/hr), so compare its value.
+  const budget=(resource)=>minedBudgetHr(resource,sourceState).toNumber();
+  eq("Vespium sources aggregate to an hourly budget",budget("Vespium"),10920);
+  eq("Hydracite seconds aggregate to an hourly budget",budget("Hydracite"),14400);
+  eq("unknown mined resources have no budget",budget("Rocks"),0);
   eq("battery yield 1x",typeof craftYield==="function"?craftYield("Batteries",1):undefined,5);
   eq("battery yield 2x",typeof craftYield==="function"?craftYield("Batteries",2):undefined,10);
   eq("battery yield 4x",typeof craftYield==="function"?craftYield("Batteries",4):undefined,20);
   eq("ordinary recipe yield remains compression",typeof craftYield==="function"?craftYield("Wire",4):undefined,4);
-  eq("reinforced bricks 1x",d.prodCost["Reinforced Concrete"].Bricks[1],10000);
-  eq("reinforced concrete 1x",d.prodCost["Reinforced Concrete"].Concrete[1],100000);
-  eq("reinforced frames 1x",d.prodCost["Reinforced Concrete"].Frames[1],700);
-  eq("battery wire 1x",d.prodCost.Batteries.Wire[1],500);
-  eq("battery gel 1x",d.prodCost.Batteries.Gel[1],100000);
+  eq("reinforced bricks 1x",d.prodCost["Reinforced Concrete"].Bricks[1].toNumber(),10000);
+  eq("reinforced concrete 1x",d.prodCost["Reinforced Concrete"].Concrete[1].toNumber(),100000);
+  eq("reinforced frames 1x",d.prodCost["Reinforced Concrete"].Frames[1].toNumber(),700);
+  eq("battery wire 1x",d.prodCost.Batteries.Wire[1].toNumber(),500);
+  eq("battery gel 1x",d.prodCost.Batteries.Gel[1].toNumber(),100000);
   eq("battery hydracite 1x",minedCost("Batteries",1).Hydracite,5000000000000);
-  eq("reinforced bricks 8192x",d.prodCost["Reinforced Concrete"].Bricks[8192],15943230000);
+  eq("reinforced bricks 8192x",d.prodCost["Reinforced Concrete"].Bricks[8192].toNumber(),15943230000);
   eq("battery hydracite 16384x",minedCost("Batteries",16384).Hydracite,23914845000000000000);
   near("reinforced base time",d.baseTime["Reinforced Concrete"],355531.88);
   near("battery base time",d.baseTime.Batteries,1034274.56);

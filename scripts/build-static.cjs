@@ -5,6 +5,7 @@ const fs = require("fs");
 const path = require("path");
 
 const PAGE_SCRIPTS = [
+  "decimal.js",
   "catalog.js",
   "core.js",
   "fields.js",
@@ -21,7 +22,7 @@ const PAGE_SCRIPTS = [
   "feedback.js",
   "update-check.js",
 ];
-const WORKER_SCRIPTS = ["core.js", "fields.js", "state.js", "project-schedule.js", "solver.js"];
+const WORKER_SCRIPTS = ["decimal.js", "core.js", "fields.js", "state.js", "project-schedule.js", "solver.js"];
 const IMAGE_FILES = ["favicon.png", "dupe.jpg", "speed.jpg"];
 const HASH_LENGTH = 16;
 const BUILD_STAMP_PLACEHOLDER = "__FORGE_BUILD_ID__";
@@ -100,7 +101,7 @@ function buildWorkerPayload(sourceRoot) {
   let handler = readText(handlerPath);
   handler = replaceExactly(
     handler,
-    'importScripts("core.js", "fields.js", "state.js", "project-schedule.js", "solver.js");',
+    'importScripts("decimal.js", "core.js", "fields.js", "state.js", "project-schedule.js", "solver.js");',
     "",
     1,
     "Worker dependency import"

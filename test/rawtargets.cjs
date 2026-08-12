@@ -1,4 +1,7 @@
 "use strict";
+// Decimal is a global in the browser (js/decimal.js loads first); a direct eval() inherits
+// this module scope, so binding it here is what makes the evaluated sources resolve it.
+const Decimal = require("../js/decimal.js");
 /* Raw-material output targets in items mode (issue #78).
  *
  * Verifies that raws (Ingots / Bits / Concrete) can be selected as "Max items/hr"

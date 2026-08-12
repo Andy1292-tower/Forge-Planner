@@ -81,7 +81,7 @@ function resultMinedUsage(res){
 // Summary of every mined craft in a plan and the exact independent income it consumes.
 function minedUsageNote(usages){
   if(!Array.isArray(usages)||!usages.length)return "";
-  const rows=usages.map(use=>{const inc=minedBudgetHr(use.resource),lines=use.lines||0,budgeted=isMinedResource(use.resource);
+  const rows=usages.map(use=>{const inc=supplyRate(minedBudgetHr(use.resource)),lines=use.lines||0,budgeted=isMinedResource(use.resource);
     return `<b>${lines}</b> line${lines===1?"":"s"} on <b>${use.item}</b> → <b>${disp(use.outHr||0)}</b>/hr, consuming <b>${disp(use.inputHr||0)}</b>${budgeted&&inc>0?" of your <b>"+disp(inc)+"</b>":""} ${use.resource}/hr${budgeted?"":" (informational)"}`;
   });
   return `<div class="notice info" style="font-size:11.5px">${rows.join("<br>")}</div>`;
@@ -143,9 +143,9 @@ function projectForgieNote(res){
     rc.prods.forEach(it=>relevant.add(it));rc.raws.forEach(it=>relevant.add(it));
   }
   if(demanded.has("Frames")||demanded.has("Wire"))relevant.add("Bits");   // pre-produced Bits
-  const made=ALLITEMS.filter(it=>relevant.has(it)&&(num(S.forgie[it])||0)>1e-9);
+  const made=ALLITEMS.filter(it=>relevant.has(it)&&forgieHr(it).gt(1e-9));
   if(!made.length)return "";
-  const parts=made.map(it=>`<b>${disp(num(S.forgie[it])||0)}</b>/hr ${it}`).join(", ");
+  const parts=made.map(it=>`<b>${disp(forgieHr(it))}</b>/hr ${it}`).join(", ");
   return `<div class="notice info" style="font-size:11.5px"><b>Lil' Forgie</b> is passively supplying ${parts} — already credited toward these projects, so it's crafting you don't have to do.</div>`;
 }
 function projOrderMode(res){
@@ -373,7 +373,7 @@ function renderProjectResults(res,el,stat){
     bd+=`<div class="subhead" style="margin-top:0">Combined demand</div>
       <table><thead><tr><th>Item</th><th class="num">Have</th><th class="num">Net needed</th><th class="num">Made /hr</th><th class="num">Done in</th></tr></thead><tbody>`;
     res.demandItems.forEach(it=>{
-      const inv=num(S.inventory&&S.inventory[it])||0;
+      const inv=toDec0(S.inventory&&S.inventory[it]);
       const blockers=res.blockedMined&&res.blockedMined[it],isUnsat=!!(blockers&&blockers.length);
       const r=res.rate[it]||0,done=r>1e-12?res.net[it]/r:Infinity;
       const blockedText=blockers?"needs "+blockers.join(" + "):"";
@@ -474,7 +474,7 @@ function renderSolveResult(res,el,stat,solveKey,metadata){
   // output leaves every other item's ceiling correct, and a line edit raises the stale-results bar.
   if(res.mode==="items"&&res.soloMax){_lastItemsSoloMax=res.soloMax;if(typeof refreshTargetCeilings==="function")refreshTargetCeilings();}
   // flag the rail's Projects+Prices segment when credits mode is selected but no prices exist yet
-  if(typeof setPriceNeeded==="function")setPriceNeeded(res.mode==="credits"&&![...RAWS,...PRODUCTS].some(it=>(num(S.sellPrice[it])||0)>0));
+  if(typeof setPriceNeeded==="function")setPriceNeeded(res.mode==="credits"&&![...RAWS,...PRODUCTS].some(it=>toDec0(S.sellPrice[it]).gt(DEC_ZERO)));
   if(res.empty){el.innerHTML=`<div class="notice info">Select one or more outputs on the left to optimize — or switch to <b>Max credits/hr</b> mode to find the best dedicated sell plan.</div>`;stat.textContent="Plan updated. No outputs selected.";return;}
   let html="";
   if(res.mode==="credits"){
@@ -491,7 +491,7 @@ function renderSolveResult(res,el,stat,solveKey,metadata){
       no compression level any line can reach produces ${res.blocked.length>1?"them":"it"}. Every output shares one floor, so
       leaving ${res.blocked.length>1?"them":"it"} checked holds all the others at zero. Uncheck ${res.blocked.length>1?"them":"it"}, or fix the missing costs.</div>`;
   }
-  const anyOut=res.mode==="credits"?res.credits>1e-6:Object.values(res.out).some(v=>v>1e-6);
+  const anyOut=res.mode==="credits"?toDec0(res.credits).gt(1e-6):Object.values(res.out).some(v=>v>1e-6);
   if(!anyOut&&!res.issues.length&&(res.mode!=="credits"||res.searchExhaustive===true)){
     html+=`<div class="notice warn">No sustainable plan found with the current lines and data. Try raising a line's max compression, adding a line, entering duplication %, or check your input costs${res.mode==="credits"?" and sell prices":""}.</div>`;
   }
@@ -536,7 +536,7 @@ function renderSolveResult(res,el,stat,solveKey,metadata){
     html+=`<div class="subhead">If you dedicate the factory to…</div>
       <table><thead><tr><th>Item</th><th class="num">Output /hr</th><th class="num">Sell price</th><th class="num">Credits /hr</th></tr></thead><tbody>`;
     res.ranking.forEach((c,i)=>{
-      const win=i===0&&c.evaluated!==false&&c.credits>1e-9;
+      const win=i===0&&c.evaluated!==false&&toDec0(c.credits).gt(1e-9);
       const note=c.evaluated===false?'<span style="color:var(--ink3);font-size:10.5px"> — not evaluated</span>':
         (c.feasible?(c.usesMargin?'<span style="color:var(--amber);font-size:10.5px"> — may-work</span>':""):
           `<span style="color:var(--ink3);font-size:10.5px"> — ${c.capped?"no plan found in bounded search":"no sustainable plan"}</span>`);
@@ -591,7 +591,7 @@ function renderSolveResult(res,el,stat,solveKey,metadata){
     if(ppBits>1e-6){   // fold the pre-produced Bits in, or add a row if Bits isn't already in play
       const ex=rows.find(b=>b.res==="Bits");
       if(ex){ex.cons=(ex.cons||0)+ppBits;ex.preProd=true;}
-      else rows.push({res:"Bits",prod:0,forgie:num(S.forgie&&S.forgie.Bits)||0,cons:ppBits,preProd:true});
+      else rows.push({res:"Bits",prod:0,forgie:supplyRate(forgieHr("Bits")),cons:ppBits,preProd:true});
     }
     const showForgie=rows.some(b=>(b.forgie||0)>1e-6);
     html+=`<div class="subhead">Resource balance (per hour)</div>
@@ -616,7 +616,7 @@ function renderSolveResult(res,el,stat,solveKey,metadata){
   }
   // Bits-to-preproduce planner for Frames & Wire (Bits are assumed pre-produced, kept out of the line math)
   if(ppBits>1e-6){
-    const fBits=num(S.forgie&&S.forgie.Bits)||0, net=ppBits-fBits;
+    const fBits=supplyRate(forgieHr("Bits")), net=ppBits-fBits;
     const bd=preprodBitsBreakdown(visiblePlan), who=Object.keys(bd).filter(k=>bd[k]>1e-6);
     const verb=(who.length===1&&!/s$/.test(who[0]))?"consumes":"consume";
     html+=`<div class="subhead">Bits to pre-produce (${who.join(" & ")})</div>
@@ -627,7 +627,7 @@ function renderSolveResult(res,el,stat,solveKey,metadata){
   }
   const minedUses=resultMinedUsage(res);
   if(minedUses.length)html+=minedUsageNote(minedUses);
-  MINED_RESOURCES.forEach(resource=>{if(minedBudgetHr(resource)<=0||minedUses.some(use=>use.resource===resource))return;
+  MINED_RESOURCES.forEach(resource=>{if(!minedBudgetHr(resource).gt(DEC_ZERO)||minedUses.some(use=>use.resource===resource))return;
     const crafts=Object.keys(MINED_CRAFTS).filter(item=>MINED_CRAFTS[item].resource===resource).join(" / ");
     html+=`<div class="notice info" style="font-size:11.5px">${resource} income is set, but this plan puts <b>0</b> lines on <b>${crafts}</b>, so it uses none of that mined income.</div>`;
   });

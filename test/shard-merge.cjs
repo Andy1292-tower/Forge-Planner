@@ -1,4 +1,7 @@
 "use strict";
+// Decimal is a global in the browser (js/decimal.js loads first); a direct eval() inherits
+// this module scope, so binding it here is what makes the evaluated sources resolve it.
+const Decimal = require("../js/decimal.js");
 /* Sharded solves: the descriptor's route into the solver, the Worker-resident share-ceiling cache,
  * and the main-thread merge.
  *
@@ -34,7 +37,7 @@ const ROOT = path.join(__dirname, "..");
 const readSource = file => fs.readFileSync(path.join(ROOT, file), "utf8");
 // solve-service is loaded for its free functions only; the IIFE below it builds no Worker without a
 // request, so the merge layer is exercised exactly as the main thread holds it.
-const src = ["js/core.js", "js/fields.js", "js/state.js", "js/project-schedule.js", "js/solver.js", "js/solve-service.js"]
+const src = ["js/decimal.js", "js/core.js", "js/fields.js", "js/state.js", "js/project-schedule.js", "js/solver.js", "js/solve-service.js"]
   .map(readSource).join("\n;\n");
 
 const SERVICE_SOURCE = readSource("js/solve-service.js");
@@ -155,8 +158,9 @@ const runner = `
       const merged=mergeShardResults("credits",fragmentsFor(count));
       deepEq(merged.ranking.map(c=>c.item),whole.ranking.map(c=>c.item),count+" shards ranked differently from one");
       eq(merged.bestItem,whole.bestItem,"bestItem");
-      eq(merged.credits,whole.credits,"credits");
-      eq(merged.objective,whole.objective,"objective");
+      // Credits are Decimals: compare the value, not the object identity.
+      eq(String(merged.credits),String(whole.credits),"credits");
+      eq(String(merged.objective),String(whole.objective),"objective");
       eq(merged.feasible,whole.feasible,"feasible");
     });
   });

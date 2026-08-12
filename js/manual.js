@@ -75,7 +75,8 @@ function manualResult(){
   const resources=[...RAWS,...PRODUCTS];
   const resIndex={};resources.forEach((r,i)=>resIndex[r]=i);
   const produced=resources.map(()=>0), consumed=resources.map(()=>0);
-  const forgie={};resources.forEach(r=>{forgie[r]=forgieHr(r);produced[resIndex[r]]+=forgie[r];});
+  // supplyRate, not the Decimal: these seed float accumulators, and a Decimal in += concatenates.
+  const forgie={};resources.forEach(r=>{forgie[r]=supplyRate(forgieHr(r));produced[resIndex[r]]+=forgie[r];});
   const plan=[]; const issueSet=new Set();
   const minedCons={};
   const entries=[];   // per-line flat-out output and input draw, for the duty-cycle solve below
@@ -91,13 +92,13 @@ function manualResult(){
       const item=m.job, L=Math.min(LEVELS.includes(m.lvl)?m.lvl:ln.max,ln.max), ct=craftTime(item,L);
       const eff=effSpeed(sp,ct), rate=ct>0?craftYield(item,L)/ct:0, cons=[];
       if(!RAWS.includes(item)){
-        RECIPE[item].inputs.forEach(k=>{const c=S.prodCost[item][k][L];
-          if(c==null||isNaN(c)){issueSet.add("No material cost entered for "+item+" @"+compressionLabel(L)+".");}
-          else{const hr=(c/ct)*eff*3600;cons.push([resIndex[k],c/ct]);consumed[resIndex[k]]+=hr;draw(k,hr);}});
+        RECIPE[item].inputs.forEach(k=>{const perSec=recipeRate(S.prodCost[item][k][L],ct);
+          if(perSec===null){issueSet.add("No material cost entered for "+item+" @"+compressionLabel(L)+".");}
+          else{const hr=perSec*eff*3600;cons.push([resIndex[k],perSec]);consumed[resIndex[k]]+=hr;draw(k,hr);}});
         const cfg=MINED_CRAFTS[item];
-        if(cfg){const c=minedCost(item,L)[cfg.resource];
-          if(c==null||isNaN(c)){issueSet.add("No mined cost entered for "+item+" @"+compressionLabel(L)+".");}
-          else{const hr=(c/ct)*eff*3600;minedCons[cfg.resource]=(minedCons[cfg.resource]||0)+hr;draw(cfg.resource,hr);}}
+        if(cfg){const perSec=recipeRate(minedCost(item,L)[cfg.resource],ct);
+          if(perSec===null){issueSet.add("No mined cost entered for "+item+" @"+compressionLabel(L)+".");}
+          else{const hr=perSec*eff*3600;minedCons[cfg.resource]=(minedCons[cfg.resource]||0)+hr;draw(cfg.resource,hr);}}
       }
       const outHr=rate*eff*dp*3600;
       produced[resIndex[item]]+=outHr;
@@ -111,7 +112,7 @@ function manualResult(){
   // table reports so it can say what the setup would take to run at 100%. `duty` scales it to what
   // the setup actually holds up at once anything it can't feed starts idling.
   const producersOf={};entries.forEach((e,i)=>{if(e.res&&e.outHr>0)(producersOf[e.res]=producersOf[e.res]||[]).push(i);});
-  const supplyFor=d=>r=>isMinedResource(r)?minedBudgetHr(r)
+  const supplyFor=d=>r=>isMinedResource(r)?supplyRate(minedBudgetHr(r))
     :(forgie[r]||0)+(producersOf[r]||[]).reduce((sum,i)=>sum+d[i]*entries[i].outHr,0);
   const duty=manualDutyCycles(entries,supplyFor);
   plan.forEach((p,i)=>{p.duty=p.job.kind==="idle"?1:duty[i];});
@@ -144,14 +145,15 @@ function manualResult(){
   // surplus is the sustained one — a starved line can't sell what it never gets to craft.
   const sold=new Set();
   plan.forEach((p,i)=>{const m=S.manual[i];if(m&&m.sell&&p.job.kind!=="idle"&&p.job.res)sold.add(p.job.res);});
-  const creditRows=[];let totalCredits=0,missingPrice=false;
+  const creditRows=[];let totalCredits=DEC_ZERO,missingPrice=false;
   [...sold].forEach(it=>{const surplus=Math.max(0,sustained.out[it]),surplusFull=Math.max(0,out[it]),
-    price=num(S.sellPrice&&S.sellPrice[it])||0,credits=surplus*price;
-    if(price<=0&&surplus>1e-6)missingPrice=true;totalCredits+=credits;creditRows.push({item:it,surplus,surplusFull,price,credits});});
-  creditRows.sort((a,b)=>b.credits-a.credits);
+    price=toDec0(S.sellPrice&&S.sellPrice[it]),credits=price.times(surplus);
+    if(!price.gt(DEC_ZERO)&&surplus>1e-6)missingPrice=true;
+    totalCredits=totalCredits.add(credits);creditRows.push({item:it,surplus,surplusFull,price,credits});});
+  creditRows.sort((a,b)=>a.credits.eq(b.credits)?0:(a.credits.gt(b.credits)?-1:1));
   const minedBalances=MINED_RESOURCES.map(resource=>({
     resource,incomeHr:minedBudgetHr(resource),consHr:minedCons[resource]||0,consActualHr:sustained.minedCons[resource]||0
-  })).filter(row=>row.incomeHr>0||row.consHr>0);
+  })).filter(row=>row.incomeHr.gt(DEC_ZERO)||row.consHr>0);
   return {plan,balance,minedBalances,out,resIndex,issues:[...issueSet],lineProd,soldItems:[...sold],creditRows,totalCredits,missingPrice,
     duty,sustained,throttled};
 }
@@ -303,7 +305,7 @@ function renderManual(el,stat){
   if(ppBits>1e-6){   // fold the pre-produced Bits in, or add a row if Bits isn't already in play
     const ex=bal.find(b=>b.res==="Bits");
     if(ex){ex.cons=(ex.cons||0)+ppBits;ex.preProd=true;}
-    else bal.push({res:"Bits",prod:0,forgie:num(S.forgie&&S.forgie.Bits)||0,cons:ppBits,preProd:true});
+    else bal.push({res:"Bits",prod:0,forgie:supplyRate(forgieHr("Bits")),cons:ppBits,preProd:true});
   }
   // Mined crafts keep independent income budgets; show each source and its own burn separately.
   (res.minedBalances||[]).forEach(row=>bal.push({res:row.resource,prod:0,forgie:0,minedIncome:row.incomeHr,cons:row.consHr,mined:true}));
@@ -332,7 +334,7 @@ function renderManual(el,stat){
   }
   // Frames & Wire pre-produce Bits (same convention as the solver readout: kept out of the line math)
   if(ppBits>1e-6){
-    const fBits=num(S.forgie&&S.forgie.Bits)||0, net=ppBits-fBits;
+    const fBits=supplyRate(forgieHr("Bits")), net=ppBits-fBits;
     const bd=preprodBitsBreakdown(res.plan), who=Object.keys(bd).filter(k=>bd[k]>1e-6);
     const verb=(who.length===1&&!/s$/.test(who[0]))?"consumes":"consume";
     html+=`<div class="subhead">Bits to pre-produce (${who.join(" & ")})</div>
