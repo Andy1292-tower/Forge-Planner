@@ -636,6 +636,18 @@ test("mode isolation, forceFresh, and malformed daily-cache bytes fail open to a
   assert.equal(malformed.workers.length, 1, "malformed cache bytes must silently dispatch a Worker");
 });
 
+test("the dispatched request message carries exactly the single-Worker protocol keys", () => {
+  // The pool kill switch is only literal if a defaulted page dispatches byte-identical work: any
+  // shard descriptor or pool field leaking into this key set is a behavior change, not a switch.
+  const harness = lifecycleHarness();
+  harness.callRequest(request("items", 1, "A"), () => {});
+  assert.equal(harness.workers.length, 1);
+  assert.deepEqual(
+    Object.keys(harness.workers[0].messages[0]).sort(),
+    ["budget", "generation", "mode", "reqId", "stab", "state", "stateRevision"]
+  );
+});
+
 test("a Credits completion cannot paint after the accepted state enters Manual", () => {
   const harness = lifecycleHarness();
   const painted = [];

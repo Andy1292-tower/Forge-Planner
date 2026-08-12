@@ -220,6 +220,23 @@ function writeDailySolveCache(conditionKey,result,now=Date.now()){
 const solveService=(()=>{
   const MAX_FAILURES=3;
   const RETRY_BASE_MS=250;
+  /* Parallel solving is opt-in per page load and off by default, so a reader who hits a pool bug
+   * restores exact single-Worker behavior by clearing one storage key instead of waiting for a
+   * release. Read once: a switch that flips mid-session would leave live Workers unaccounted for. */
+  const POOL_FLAG_STORAGE_KEY="forgePlannerSolverPool";
+  const POOL_MAX_SIZE=4;
+  let poolEnabled=false;
+  try{if(typeof localStorage!=="undefined")poolEnabled=localStorage.getItem(POOL_FLAG_STORAGE_KEY)==="on";}
+  catch(error){poolEnabled=false;}
+  // navigator is absent from the Node harnesses and from hosts that report no core count; both read
+  // as a single slot rather than as an unbounded pool.
+  function poolCap(){
+    if(!poolEnabled)return 1;
+    let cores=0;
+    try{if(typeof navigator!=="undefined"&&navigator)cores=Math.floor(Number(navigator.hardwareConcurrency))||0;}
+    catch(error){cores=0;}
+    return Math.min(POOL_MAX_SIZE,Math.max(1,cores-1));
+  }
   let generation=0;
   let expectedMode=null;
   let expectedRevision=null;
