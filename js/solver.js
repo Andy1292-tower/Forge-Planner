@@ -806,7 +806,20 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   if(!keepGoing("margin-stage"))break;
   setCurTol(stages[si]);capped=false;tLastGain=control.readNow();
   let inc=null;
-  const trySeed=ch=>{if(!ch||interrupted||!keepGoing("seed-start"))return false;const c=ch.slice();const sc=localOpt(c);
+  /* The generators below independently clamp what they cannot express, and they collide: a line that
+   * can run neither the requested feeder (roleJob finds no such craft) nor a compressed target
+   * (tgtSeed's lvl<=8 rule) falls back to the same job whichever role the enumeration meant it to
+   * take, so whole runs of role assignments — and LP roundings that differ only inside a line's
+   * fractional split — arrive as the identical choice vector. localOpt is deterministic in that
+   * vector, so a repeat can only re-derive the score it already produced; it cannot move `inc`,
+   * which improves on a strict >. Seen vectors are therefore dropped before they are charged.
+   *
+   * Scoped to the margin stage, not the solve: setCurTol changes which plans are feasible, so the
+   * same vector genuinely has to be re-optimised once per stage. */
+  const seenSeeds=new Set();
+  const trySeed=ch=>{if(!ch||interrupted)return false;
+    const key=ch.join(",");if(seenSeeds.has(key))return true;seenSeeds.add(key);
+    if(!keepGoing("seed-start"))return false;const c=ch.slice();const sc=localOpt(c);
     if(sc!=null&&!interrupted&&(!inc||sc>inc.sc)){inc={sc,ch:c.slice()};tLastGain=control.readNow();}return !interrupted;};
   if(carry)trySeed(carry);   // strict optimum seeds the relaxed pass -> never drops below no-margin
   // The seed set is fixed (budget-independent) on purpose: the ilsT/DFS caps are measured from the
