@@ -147,16 +147,14 @@ const FIXTURES = [
     mode: "project",
     title: "Project — Line switching, 10-project list, prefer-current",
     notes: "The default project line mode, and the only one that reaches the stability machinery: " +
-      "measured warm, so the hidden prefer-current comparison — a second complete run, doubling " +
-      "the schedule LPs — is inside the measurement. This is the fixture the design's repeated " +
-      "near-identical-LP claim is about. optimizeProjectTop builds a solve control only in static " +
-      "mode, so nothing on this path is checkpointed and `work` is all zeros with an empty " +
-      "histogram; its LP cost is read off `lp` instead, which the harness meters around lpMaximize " +
-      "itself and which therefore reports pivots here (~2.9k against items-7line's 95). That the " +
-      "run carries no control also means a user's budget cannot cancel it — a WS3 finding, not a " +
-      "harness one. For the same reason it does not respond to a budget, so a sweep runs it once.",
+      "measured warm, so the hidden prefer-current comparison — a second complete run re-deriving " +
+      "the same free tableaux — is inside the measurement. This is the fixture the design's " +
+      "repeated near-identical-LP claim is about, and the one the tableau memo is measured on.\n" +
+      "The whole run is dense work: Line switching schedules every phase through projectSchedule's " +
+      "simplex and never enters the discrete search, so `work` here is pivots and tableau rows and " +
+      "nothing else and `work.probe` is zero. It is charged to the run's own solve control, so the " +
+      "user's solve-time setting bounds it and a budget ladder over it means something.",
     seedRuns: 1,
-    budgetInsensitive: true,
     derive(state) {
       state.mode = "project";
       state.projLineMode = "split";

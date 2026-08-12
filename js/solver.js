@@ -1449,6 +1449,81 @@ function chainMinedBlockers(item,seen){
   });
   return [...new Set(out)];
 }
+/* Exact-tableau memo for the makespan LP.
+ *
+ * The key cannot be built from the arguments the tableau's builders were called with. Both builders
+ * read the global S on top of their arguments: projectSchedule takes line count, speeds, turbo and
+ * duplication from sortedLines(), base craft times from craftTime, and S.prodCost twice per
+ * (item,input,level) — once as a validity gate that DROPS the variable, so a key missing it can
+ * name two tableaux with different column counts — plus mined costs and which mined resources are
+ * active, which decides which ROWS exist; buildScheduleLP takes each row's bound from mined income
+ * or passive supply. Keying on (n,m,c,A,b) is exact by construction and stays exact when either
+ * builder grows another input. The digest only nominates a candidate; an element-wise compare
+ * decides the hit, so a collision costs a comparison rather than a wrong plan.
+ *
+ * Scoped to one optimize() call (optimizeProjectTop hangs it on runOptions), so the selected run
+ * and the hidden prefer-current comparison — which re-derives the same free tableaux — share it,
+ * and nothing outlives the run that built it. */
+const LP_MEMO_MAX_BYTES=4<<20;
+const _lpKeyView=new DataView(new ArrayBuffer(8));
+function lpTableauDigest(c,A,b){
+  let h=0x811c9dc5;
+  const mixByte=byte=>{h=Math.imul(h^(byte&0xff),0x01000193);};
+  const mixWord=word=>{mixByte(word);mixByte(word>>>8);mixByte(word>>>16);mixByte(word>>>24);};
+  // -0 normalized to 0: === treats them as equal, so the verify below cannot tell them apart and the
+  // digest must not either, or one tableau splits into two entries that each miss the other.
+  const mixNumber=value=>{_lpKeyView.setFloat64(0,value===0?0:value,true);
+    mixWord(_lpKeyView.getUint32(0,true));mixWord(_lpKeyView.getUint32(4,true));};
+  mixWord(c.length);mixWord(A.length);
+  for(let j=0;j<c.length;j++)mixNumber(c[j]);
+  for(let i=0;i<A.length;i++){const row=A[i];mixWord(row.length);
+    for(let j=0;j<row.length;j++)mixNumber(row[j]);
+    mixNumber(b[i]);}
+  return (h>>>0).toString(36);
+}
+function sameLpTableau(entry,c,A,b){
+  if(entry.n!==c.length||entry.m!==A.length)return false;
+  for(let j=0;j<entry.n;j++)if(entry.c[j]!==c[j])return false;
+  for(let i=0;i<entry.m;i++){
+    const row=A[i],kept=entry.A[i];
+    if(kept.length!==row.length)return false;
+    for(let j=0;j<kept.length;j++)if(kept[j]!==row[j])return false;
+    if(entry.b[i]!==b[i])return false;
+  }
+  return true;
+}
+function makeLpMemo(){
+  const table=new Map();let bytes=0,hits=0,misses=0,entries=0;
+  return {
+    __forgeLpMemo:true,
+    stats:()=>({hits,misses,entries,bytes}),
+    lookup(c,A,b){
+      const bucket=table.get(lpTableauDigest(c,A,b));
+      if(bucket)for(let k=0;k<bucket.length;k++)if(sameLpTableau(bucket[k],c,A,b)){
+        hits++;
+        // A fresh copy every time. projectSchedule keeps the returned vector and reads it across the
+        // whole stability pass and both plan walks; handing out the stored one lets any caller
+        // rewrite every later hit.
+        const out=bucket[k].out;
+        return {x:out.x?new Float64Array(out.x):null,complete:out.complete,unbounded:out.unbounded};
+      }
+      misses++;return null;
+    },
+    store(c,A,b,sol){
+      const n=c.length,m=A.length;
+      let size=8*(n+m+(sol.x?sol.x.length:0));
+      for(let i=0;i<m;i++)size+=8*A[i].length;
+      // Cap the table rather than evict from it: a run solves a handful of tableaux, and a bounded
+      // table with no eviction policy cannot make the memo's contents depend on call order.
+      if(bytes+size>LP_MEMO_MAX_BYTES)return;
+      const entry={n,m,c:Float64Array.from(c),A:A.map(row=>Float64Array.from(row)),b:Float64Array.from(b),
+        out:{x:sol.x?new Float64Array(sol.x):null,complete:!!sol.complete,unbounded:!!sol.unbounded}};
+      const digest=lpTableauDigest(c,A,b),bucket=table.get(digest);
+      if(bucket)bucket.push(entry);else table.set(digest,[entry]);
+      bytes+=size;entries++;
+    },
+  };
+}
 // Dense single-phase simplex. Maximize c·x s.t. A x <= b (b>=0), x>=0. Bland's rule (no cycling).
 function lpMaximize(c,A,b,control){
   const m=A.length,n=c.length,W=n+m+1;
@@ -1496,6 +1571,16 @@ function buildScheduleLP(vars,lns,items,net,avail,D0){
   const c=new Array(n).fill(0);c[zCol]=1;
   return {A,b,c,zCol,n};
 }
+/* One makespan LP solve. The memo is consulted at this level rather than inside lpMaximize so a hit
+ * costs no call at all — the repeated near-identical solves this exists to remove are visible as
+ * calls, not only as pivots. An interrupted solve is never stored: it reports where the run's clock
+ * ran out, not what the tableau evaluates to. */
+function solveScheduleLP(part,control,memo){
+  if(memo){const hit=memo.lookup(part.c,part.A,part.b);if(hit)return hit;}
+  const sol=lpMaximize(part.c,part.A,part.b,control);
+  if(memo&&!sol.interrupted)memo.store(part.c,part.A,part.b,sol);
+  return sol;
+}
 // Build & solve the makespan LP: each line splits its time-fraction across (item,level) jobs so that
 // net production meets the demand ratio. z = throughput multiplier (1/hr); makespan = 1/z.
 // `avail` (optional) is per-item stock that may be DRAWN DOWN over the project instead of produced —
@@ -1506,6 +1591,10 @@ function buildScheduleLP(vars,lns,items,net,avail,D0){
 // while opts.rememberStability returns a proposed record for the controller to commit only after the
 // complete selected Project run succeeds. This low-level LP never mutates either cache.
 function projectSchedule(net,targets,avail,opts){
+  // The run's solve control and its tableau memo ride in beside the stability policy: both are
+  // per-run, and threading them as extra positional arguments through solvePhaseFor's five callers
+  // would put two more slots on a signature that already has one optional trailing options object.
+  const control=(opts&&opts.control)||null,memo=(opts&&opts.lpMemo)||null;
   const lns=sortedLines();
   const prodT=targets.filter(it=>PRODUCTS.includes(it));
   const rawT=targets.filter(it=>RAWS.includes(it));
@@ -1536,7 +1625,15 @@ function projectSchedule(net,targets,avail,opts){
   // Free (unconstrained) solve — the makespan-optimal assignment, ignoring what ran last time.
   const free=buildScheduleLP(vars,lns,items,net,avail,D0);
   const zCol=free.zCol,n=free.n;
-  let y=lpMaximize(free.c,free.A,free.b).x||new Float64Array(n);
+  const freeSolution=solveScheduleLP(free,control,memo);
+  // A run whose clock ran out inside the simplex holds a half-optimal vertex, not a verdict about
+  // the factory. Reporting it as a schedule would publish "can't sustainably produce X" for items
+  // the LP simply never got to price, so it reports no assignment and says why, exactly as the
+  // Set & forget search does when its own budget stops it.
+  if(freeSolution.interrupted)
+    return {rate:{},plan:[],items:[],z:0,stabilized:false,zFree:null,zPin:null,stabilityKey:null,stabilityUpdate:null,
+      evaluated:false,capped:true,interrupted:true,searchExhaustive:false};
+  let y=freeSolution.x||new Float64Array(n);
   const zFree=y[zCol]||0;
   // Tier-2 hysteresis (issue #87 item 5): keep last solve's per-line jobs unless the free solve beats
   // a pinned re-solve by more than HYST_FRAC of throughput. Only final visible semantic phases opt in;
@@ -1560,7 +1657,11 @@ function projectSchedule(net,targets,avail,opts){
         vars.forEach((v,j)=>{if(allow[j]){idxMap.push(j);rvars.push(v);}});
         if(rvars.length){
           const pin=buildScheduleLP(rvars,lns,items,net,avail,D0);
-          const y2=lpMaximize(pin.c,pin.A,pin.b).x;
+          const pinSolution=solveScheduleLP(pin,control,memo);
+          // A pinned solve the clock cut short holds a feasible but unproven vertex. Adopting it
+          // would pin the plan to whatever the simplex had reached, so an interrupted pin simply
+          // declines to stabilize and the free solve above stands.
+          const y2=pinSolution.interrupted?null:pinSolution.x;
           const z2=y2?(y2[pin.zCol]||0):0;
           zPin=z2/D0;
           if(y2&&z2>1e-15&&z2>=zFree*(1-HYST_FRAC)){
@@ -1631,13 +1732,22 @@ function solvePhaseFor(net,name,avail,stabilityPolicy,phaseKey,solveOptions){
   const targets=demandItems.filter(it=>!blockedMined[it]);
   if(targets.length===0)
     return {name,phaseKey:(phaseKey!=null?phaseKey:name),plan:[],balance:[],minedUsage:[],demandItems,net,rate:{},eta:0,bottleneck:null,infeasItems:[],unsat,blockedMined,atRisk:[],items:[],z:0,partial:false,feasible:demandItems.length===0,stabilized:false,zFree:null,zPin:null,stabilityKey:null,stabilityUpdate:null,evaluated:true,capped:false,interrupted:false,searchExhaustive:true};
-  const staticControl=solveOptions&&solveOptions.static===true&&solveOptions.control;
-  if(staticControl&&staticControl.isStopped())
+  const isStatic=!!(solveOptions&&solveOptions.static===true);
+  // Set & forget spends the run control inside the discrete search; Line switching spends the same
+  // control inside the schedule LP's pivots. Either way a phase that starts after the run is already
+  // stopped returns no assignment rather than opening a search it cannot finish.
+  const runControl=(isStatic?solveOptions&&solveOptions.control:solveOptions&&solveOptions.scheduleControl)||null;
+  if(runControl&&runControl.isStopped())
     return {name,phaseKey:(phaseKey!=null?phaseKey:name),plan:[],balance:[],minedUsage:[],demandItems,net,rate:{},eta:0,bottleneck:null,infeasItems:[],unsat,blockedMined,atRisk:[],items:[],z:0,partial:false,feasible:false,stabilized:false,zFree:null,zPin:null,stabilityKey:null,stabilityUpdate:null,evaluated:false,capped:true,interrupted:true,searchExhaustive:false};
   let scheduleOptions=null;
   if(stabilityPolicy&&typeof stabilityPolicy==="object")scheduleOptions={...stabilityPolicy,phaseKey:(phaseKey!=null?phaseKey:name)};
   else if(stabilityPolicy===true)scheduleOptions={readStability:true,rememberStability:true,stabilityCache:cloneLineStability(_lineStability),phaseKey:(phaseKey!=null?phaseKey:name)};
-  const sch=solveOptions&&solveOptions.static===true
+  // stabilityRequested reads readStability/rememberStability only, so an options object carrying
+  // just these two is inert to the stability pass — including for the ordering estimates and
+  // warm-ups, which pass no policy at all and until now reached projectSchedule with no options.
+  if(!isStatic&&solveOptions&&(solveOptions.scheduleControl||solveOptions.lpMemo))
+    scheduleOptions=Object.assign({},scheduleOptions,{control:solveOptions.scheduleControl||null,lpMemo:solveOptions.lpMemo||null});
+  const sch=isStatic
     ?staticSchedule(net,targets,solveOptions.control,solveOptions.maxCompression,solveOptions.localDeadline)
     :projectSchedule(net,targets,avail,scheduleOptions);
   const rate={};targets.forEach(it=>rate[it]=Math.max(0,sch.rate[it]||0));
@@ -1736,6 +1846,7 @@ function solveProjectBuffer(deficit,_inventory,info,runOptions){
   const signature=Object.keys(deficit).sort().map(it=>it+":"+deficit[it].toPrecision(12)).join("|");
   const warm=solvePhaseFor(deficit,"Warm-up: "+Object.keys(deficit).join(" + "),{},false,"warmup:"+(info&&info.depth||0)+":"+signature,
     {static:S.projLineMode==="static",control:runOptions&&runOptions.staticControl,
+      scheduleControl:runOptions&&runOptions.scheduleControl,lpMemo:runOptions&&runOptions.lpMemo,
       localDeadline:runOptions&&runOptions.staticPhaseDeadline});
   warm.kind="warmup";warm.demandSub={};return warm;
 }
@@ -1788,6 +1899,7 @@ function solveExecutableProjectPhase(sub,name,inv,stabilityPolicy,phaseKey,runOp
       const passSolvedWith=Object.assign({},pre);
       const candidate=solvePhaseFor(projNetVec(sub,inv,passSolvedWith),name,projAvailVec(sub,inv,passSolvedWith),policy,phaseKey,
         {static:isStatic,control:runOptions&&runOptions.staticControl,maxCompression,
+          scheduleControl:runOptions&&runOptions.scheduleControl,lpMemo:runOptions&&runOptions.lpMemo,
           localDeadline:runOptions&&runOptions.staticPhaseDeadline});
       if(candidate.evaluated===false){
         if(!incumbent)return {phase:candidate,solvedWith:passSolvedWith,pre,converged:false,
@@ -2364,8 +2476,12 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
   // will not use. The estimate remains split-mode and cache-neutral; exact static work is budgeted
   // only for the selected executable phases below.
   const invInit=invStart();
+  // The estimates are split-mode LPs in both line modes, so they take the run's tableau memo — and,
+  // in Line switching, the run control that now bounds every other LP in the run. In Set & forget
+  // the control belongs to the discrete search and these estimates stay off it, as they always have.
+  const estimateOptions={scheduleControl:runOptions&&runOptions.scheduleControl,lpMemo:runOptions&&runOptions.lpMemo};
   const cost=perProject.map(p=>{const netDemand=projNetVec(p.sub,invInit),avail=S.projLineMode==="static"?{}:projAvailVec(p.sub,invInit);
-    const ph=solvePhaseFor(netDemand,p.name,avail);return ph.feasible?ph.eta:Infinity;});
+    const ph=solvePhaseFor(netDemand,p.name,avail,false,null,estimateOptions);return ph.feasible?ph.eta:Infinity;});
   const order=perProject.map((p,i)=>({p,i})).sort((a,b)=>{
     if(layer[a.i]!==layer[b.i])return layer[a.i]-layer[b.i];   // unlock precedence (hard)
     const pa=a.p.prio,pb=b.p.prio;
@@ -2525,13 +2641,23 @@ function optimizeProjectTop(testOptions){
   const projectStability=S.projectStability==="reoptimize"?"reoptimize":"prefer-current";
   if(perProject.length===0)return {empty:true,mode:"project",projLineMode:S.projLineMode==="static"?"static":"split",plan:[],phases:[],gross,net,perProject,projectStability,stabilityComparison:null,ms:performance.now()-t0};
   const seq=S.projectSeq!==false&&perProject.length>1,cacheSnapshot=cloneLineStability(_lineStability);
-  const staticBudget=boundedPersistedField("solveBudget",S.solveBudget,10000,200,60000,true);
-  const staticControl=S.projLineMode==="static"?makeSolveControl(staticBudget,testOptions):null;
+  const projectBudget=boundedPersistedField("solveBudget",S.solveBudget,10000,200,60000,true);
+  // One control per Project run, in BOTH line modes. Set & forget always had it; Line switching had
+  // none at all, so its schedule LPs answered to nothing but a 20000-pivot ceiling per solve and a
+  // run could spend unbounded time with no way for the user's solve-time setting to end it. The two
+  // modes spend it in different places — the discrete search versus the LP pivots — so it is handed
+  // down under the name of the path that consumes it, and each mode's other name stays null.
+  const isStatic=S.projLineMode==="static";
+  const projectControl=makeSolveControl(projectBudget,testOptions);
+  const staticControl=isStatic?projectControl:null;
   // The searches spend the user's budget exactly as they always have; the fills spend a clock of
   // their own, started when the first of them runs. One holder, shared by every phase in the run.
-  const runOptions={staticControl,
+  const runOptions={staticControl,scheduleControl:isStatic?null:projectControl,
+    // Scoped to this call so the selected run and the hidden prefer-current comparison share the
+    // tableaux they both derive, and so no plan can be answered out of a previous factory's memo.
+    lpMemo:makeLpMemo(),
     idleWork:staticControl
-      ?{budget:Math.max(staticBudget*STATIC_FILL_TIME_SHARE,STATIC_FILL_TIME_FLOOR),options:testOptions,control:null}
+      ?{budget:Math.max(projectBudget*STATIC_FILL_TIME_SHARE,STATIC_FILL_TIME_FLOOR),options:testOptions,control:null}
       :null};
   const selectedPolicy={readStability:projectStability==="prefer-current",rememberStability:true,stabilityCache:cacheSnapshot};
   const selected=solveProjectRun(seq,net,perProject,selectedPolicy,runOptions);selected.gross=gross;

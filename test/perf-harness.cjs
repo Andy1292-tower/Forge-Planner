@@ -45,9 +45,9 @@ const EXPECTED = {
   "credits-7line": { mode: "credits", lines: 7 },
   "project-7line": { mode: "project", lines: 7 },
   "project-seq-7line": { mode: "project", lines: 7 },
-  // Line switching builds no solve control, so nothing on this path is checkpointed or clocked; its
-  // LP cost is metered around lpMaximize instead and must still show up.
-  "project-split-7line": { mode: "project", lines: 7, uncontrolled: true },
+  // Line switching spends the run control inside the schedule LP's pivots rather than inside a
+  // discrete search, so its whole work total is dense and its histogram holds only the LP labels.
+  "project-split-7line": { mode: "project", lines: 7, denseOnly: true },
 };
 
 let failures = 0;
@@ -115,7 +115,7 @@ const deterministic = run => {
 const maxUnitsByLabel = new Map();
 
 for (const fixture of FIXTURES) {
-  const uncontrolled = EXPECTED[fixture.id] && EXPECTED[fixture.id].uncontrolled;
+  const denseOnly = !!(EXPECTED[fixture.id] && EXPECTED[fixture.id].denseOnly);
   const options = { kind: "virtual", budgetMs: SELF_TEST_BUDGET_MS };
   const first = runFixture(fixture, options);
   const second = runFixture(fixture, options);
@@ -130,10 +130,8 @@ for (const fixture of FIXTURES) {
   check(fixture.id + " reports well-formed metrics",
     first.kind === "virtual" && first.budgetMs === SELF_TEST_BUDGET_MS && first.mode === fixture.mode &&
     typeof first.flags.capped === "boolean" && typeof first.flags.feasible === "boolean" &&
-    (uncontrolled
-      ? first.calls.controls === 0 && first.work.total === 0 && Object.keys(first.work.byLabel).length === 0
-      : first.calls.controls >= 1 && first.work.total > 0 && first.virtualMs > 0 &&
-        Object.keys(first.work.byLabel).length > 0),
+    first.calls.controls >= 1 && first.work.total > 0 && first.virtualMs > 0 &&
+    Object.keys(first.work.byLabel).length > 0,
     "work=" + first.work.total + " virtualMs=" + first.virtualMs + " controls=" + first.calls.controls +
     " labels=" + Object.keys(first.work.byLabel).length);
   check(fixture.id + " splits its work into probe and dense units that add up",
@@ -157,13 +155,15 @@ for (const fixture of FIXTURES) {
       : first.work.total !== second.work.total ? "work " + first.work.total + " vs " + second.work.total
       : "metrics documents differ somewhere outside nonDeterministic");
 
-  // Every dense unit in the solver is charged inside lpMaximize, and the harness meters that call
-  // rather than relying on a control — so the line-switching path, which builds no control at all,
-  // still reports the pivot counts WS2 is measured on.
-  if (uncontrolled) {
-    check(fixture.id + " still reports LP pivots despite carrying no solve control",
-      first.calls.lpMaximize > 0 && first.lp.pivots > 0 && first.lp.work > 0 && first.lp.workOnControl === 0,
-      "LPs=" + first.calls.lpMaximize + " pivots=" + first.lp.pivots + " units=" + first.lp.work);
+  // Every dense unit in the solver is charged inside lpMaximize. On the line-switching path that is
+  // the ONLY thing charged, so a run whose LP work is not on a control is a run the user's solve-time
+  // setting cannot bound — which is what this asserts, not merely that pivots were counted.
+  if (denseOnly) {
+    check(fixture.id + " charges every pivot it runs to a real solve control",
+      first.calls.lpMaximize > 0 && first.lp.pivots > 0 && first.lp.work > 0 &&
+      first.lp.workOnControl === first.lp.work && first.work.probe === 0,
+      "LPs=" + first.calls.lpMaximize + " pivots=" + first.lp.pivots + " units=" + first.lp.work +
+      " onControl=" + first.lp.workOnControl + " probe=" + first.work.probe);
   }
 
   // The fixture that exists for the hidden prefer-current comparison has to actually produce one,
@@ -179,7 +179,7 @@ for (const fixture of FIXTURES) {
   // The idle-line fills are a documented guarantee with no other footprint: stubbing them out leaves
   // eta, every phase field and every contract flag byte-identical. Recording what each pass did is
   // the only way losing one shows up as a metric change, so the recording itself is gated.
-  if (fixture.mode === "project" && !uncontrolled) {
+  if (fixture.mode === "project" && !denseOnly) {
     check(fixture.id + " records what each idle-line fill pass did, per phase",
       (first.result.phases || []).every(phase => phase.idleFill !== undefined && phase.lookAhead !== undefined) &&
       Number.isInteger(first.result.idleFillPhases) && Number.isInteger(first.result.lookAheadPhases),
@@ -244,11 +244,17 @@ for (const fixture of FIXTURES) {
       : DENSE_LABELS.join(", "));
 }
 
-/* Second net, over every source the harness loads rather than solver.js alone: count the charge
- * sites that pass a cost at all. A pure relay — a control wrapper forwarding its own (label, cost)
+/* Second net, over every source the harness loads rather than solver.js alone: find the charge sites
+ * that pass a cost at all. A pure relay — a control wrapper forwarding its own (label, cost)
  * parameters verbatim — is not an independent site and is excluded by name; anything else that
  * charges is. This catches a new multi-unit site that the corpus above never happens to execute,
- * without depending on the label being a literal. */
+ * without depending on the label being executed.
+ *
+ * The test is on the LABELS, not on the number of sites: one dense label may legitimately be charged
+ * from more than one place (the pivot loop and the certificate that closes it both cost a dense row
+ * sweep and both bill `lp-pivot`), and counting sites would report that as a mispricing. What may
+ * never happen is a multi-unit site under a label the clock prices at the probe rate, or a dense
+ * label with no site behind it at all. */
 function chargeSitesWithCost(source) {
   const sites = [], call = /\bcheckpoint(?:Within)?\s*\(/g;
   for (let match = call.exec(source); match; match = call.exec(source)) {
@@ -271,15 +277,19 @@ function chargeSitesWithCost(source) {
   return sites;
 }
 {
-  const found = [];
+  const found = [], priced = new Set(DENSE_LABELS.map(label => JSON.stringify(label)));
   for (const file of SOURCES) {
     for (const site of chargeSitesWithCost(fs.readFileSync(path.join(ROOT, file), "utf8"))) {
-      found.push(file + " " + site.label + " charges " + site.cost);
+      found.push({ where: file + " " + site.label + " charges " + site.cost, label: site.label });
     }
   }
-  check("the solver sources hold exactly as many multi-unit charge sites as the clock prices as dense",
-    found.length === DENSE_LABELS.length,
-    found.join(" | ") + " — vs " + DENSE_LABELS.length + " dense label(s): " + DENSE_LABELS.join(", "));
+  const unpriced = found.filter(site => !priced.has(site.label));
+  const unbacked = [...priced].filter(label => !found.some(site => site.label === label));
+  check("every multi-unit charge site in the solver sources bills a label the clock prices as dense",
+    unpriced.length === 0 && unbacked.length === 0,
+    (unpriced.length ? "unpriced: " + unpriced.map(site => site.where).join(" | ") + ". " : "") +
+    (unbacked.length ? "no site charges: " + unbacked.join(", ") + ". " : "") +
+    found.length + " site(s) over " + DENSE_LABELS.length + " dense label(s): " + DENSE_LABELS.join(", "));
 }
 
 const workerSource = fs.readFileSync(path.join(ROOT, "js", "solver.worker.v2.js"), "utf8");
