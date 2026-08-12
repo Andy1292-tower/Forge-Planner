@@ -13,6 +13,50 @@
       "lp": { "pivots": 95 },
       "calls": { "controls": 1, "solveCore": 1, "lpMaximize": 1, "projectSchedule": 0, "staticSchedule": 0, "projectPhase": 0 },
       "byLabel": "climb-job=98018/98018,climb-pass=206/206,gel-prefix=7/7,gel-seed-line=1936/1936,gel-seed-step=395/395,ils-iteration=68/68,ils-perturb=172/172,lp-job-coefficient=4347/4347,lp-line-row=7/7,lp-offset=7/7,lp-pivot=95/809115,lp-random-line=112/112,lp-random-seed=16/16,lp-resource-row=9/9,lp-tableau-row=16/7744,margin-stage=1/1,repair-job=15446/15446,repair-pass=158/158,seed-start=20/20,target-seed=5/5"
+    },
+    {
+      "fixture": "project-split-7line",
+      "kind": "virtual",
+      "budgetMs": 20000,
+      "reason": "Structural, and the largest declared drift in the file: Line switching now runs on a solve control. Phase-0 built one only in static mode, so this path was never checkpointed and the baseline records controls 0 and work.total 0 with an empty histogram — not a cheap run, an unmetered one, whose 50.4M units of LP cost sat outside any budget and outside the user's cancel. Charging it to a control makes that cost visible (work.total 0 -> 9454141, all of it dense) and bounding and deduplicating the phase LPs then cuts the work itself: lpMaximize 10 -> 4, pivots 2895 -> 681, tableau rows 176 -> 62, lp.work 50425171 -> 9454141. projectSchedule and projectPhase call counts are unchanged, so the schedule this measures is the same schedule. The objective is unchanged to the last bit.",
+      "objectiveUnchanged": true,
+      "work": { "total": 9454141, "probe": 0, "dense": 9454141 },
+      "lp": { "pivots": 681 },
+      "calls": { "controls": 1, "solveCore": 0, "lpMaximize": 4, "projectSchedule": 8, "staticSchedule": 0, "projectPhase": 2 },
+      "byLabel": "lp-pivot=681/9426604,lp-tableau-row=62/27537"
+    },
+    {
+      "fixture": "project-split-7line",
+      "kind": "virtual",
+      "budgetMs": 250,
+      "reason": "The same structural change this fixture declares at 20000 ms. The run costs 94.541 virtual ms, so it still finishes long before any rung of the ladder and measures identically at all four; the baseline row here is the copy of the 20000 ms row that says the same.",
+      "objectiveUnchanged": true,
+      "work": { "total": 9454141, "probe": 0, "dense": 9454141 },
+      "lp": { "pivots": 681 },
+      "calls": { "controls": 1, "solveCore": 0, "lpMaximize": 4, "projectSchedule": 8, "staticSchedule": 0, "projectPhase": 2 },
+      "byLabel": "lp-pivot=681/9426604,lp-tableau-row=62/27537"
+    },
+    {
+      "fixture": "project-split-7line",
+      "kind": "virtual",
+      "budgetMs": 1000,
+      "reason": "The same structural change this fixture declares at 20000 ms. The run costs 94.541 virtual ms, so it still finishes long before any rung of the ladder and measures identically at all four; the baseline row here is the copy of the 20000 ms row that says the same.",
+      "objectiveUnchanged": true,
+      "work": { "total": 9454141, "probe": 0, "dense": 9454141 },
+      "lp": { "pivots": 681 },
+      "calls": { "controls": 1, "solveCore": 0, "lpMaximize": 4, "projectSchedule": 8, "staticSchedule": 0, "projectPhase": 2 },
+      "byLabel": "lp-pivot=681/9426604,lp-tableau-row=62/27537"
+    },
+    {
+      "fixture": "project-split-7line",
+      "kind": "virtual",
+      "budgetMs": 4000,
+      "reason": "The same structural change this fixture declares at 20000 ms. The run costs 94.541 virtual ms, so it still finishes long before any rung of the ladder and measures identically at all four; the baseline row here is the copy of the 20000 ms row that says the same.",
+      "objectiveUnchanged": true,
+      "work": { "total": 9454141, "probe": 0, "dense": 9454141 },
+      "lp": { "pivots": 681 },
+      "calls": { "controls": 1, "solveCore": 0, "lpMaximize": 4, "projectSchedule": 8, "staticSchedule": 0, "projectPhase": 2 },
+      "byLabel": "lp-pivot=681/9426604,lp-tableau-row=62/27537"
     }
   ]
 }
