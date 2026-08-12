@@ -51,6 +51,19 @@ function lineStabilityWithUpdates(cache,updates){
 function commitLineStabilityUpdates(updates,base){
   const next=lineStabilityWithUpdates(base===undefined?_lineStability:base,updates);setLineStability(next);return next;
 }
+/* The DFS's dual-priced bound (WS4.3), off by default and measured that way.
+ *
+ * It is a real bound and it dominates the standing one, but on this game's shape it prunes a tree
+ * the search hardly enters: across every bench fixture and every budget the DFS is reached with at
+ * most a few hundred nodes left in the clock, because the iterated local search consumes the budget
+ * first and the convergence window closes what is left. Pricing those nodes cannot pay for building
+ * the prices. It ships behind this switch so the measurement can be repeated rather than argued
+ * about, and so a factory shape that does reach the DFS — far fewer job choices per line, or a
+ * budget the local search converges well inside — can turn it on without a code change.
+ * opts.dfsDualBound overrides it per solve. */
+let _dfsDualBound=false;
+function getDfsDualBound(){return _dfsDualBound;}
+function setDfsDualBound(on){_dfsDualBound=!!on;}
 function relevantChain(targets){
   // A raw can now be a target itself (issue #78); only products have a recipe chain to expand,
   // so seed the product set from product targets and add any raw target straight into relR.
@@ -309,7 +322,17 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // Ceiling on the objective from the LP relaxation, in the same per-second units as best.score.
   // Declared here rather than read off `lp` because finishCoreResult runs before `lp` is
   // initialized on the baselineOnly path. Null until lpRelax returns a completed solve.
-  let lpBound=null;
+  //
+  // Two of them, because a margin solve optimizes a different problem and the strict relaxation does
+  // not bound it: a may-work plan need only cover (1-tol) of what it consumes, which is a wider
+  // feasible set and a higher optimum. marginBound comes from the same relaxation rebuilt over
+  // needFrac (see lpRelax) and is the only ceiling a margin result may quote.
+  let lpBound=null,marginBound=null;
+  /* Dual prices for the DFS bound (see buildDualPrices). dualN is 0 whenever the bound is off or has
+   * no prices to work with, which is also the node test's own guard. Declared up here because the
+   * bound-probe seam below runs before the staged search builds them. */
+  const dualEnabled=opts.dfsDualBound!==undefined?!!opts.dfsDualBound:_dfsDualBound;
+  let dualN=0,dualIdx=null,dualProdPrice=null,dualConsPrice=null,dualSuffix=null;
   // Exogenous supply (per second) of each resource, added to the produced side. Craftable
   // materials use Lil' Forgie; mined resources use their own independent income budgets.
   // opts.supplyHr replaces both when the caller owns a narrower budget than the whole factory: the
@@ -677,12 +700,13 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     const deadlineReached=control.deadlineReached();if(deadlineReached)capped=true;
     let usesMargin=false;for(let r=0;r<R;r++)if(best.produced[r]<best.consumed[r]-1e-6)usesMargin=true;
     const forgie={};resources.forEach((r,i)=>forgie[r]=baseArr[i]*3600);
-    // The LP ceiling only bounds a strictly feasible optimum: lpRelax's resource rows use baseArr
-    // with no tolerance applied. This gates on the requested tolerance rather than the pass that
-    // happened to run last, because a budget that expires before the margin pass leaves a strict
-    // incumbent while the optimum the user asked for is still the relaxed one — which sits above
-    // the ceiling and would turn the reported gap into a claim the search cannot make.
-    const bound=(lpBound!=null&&tol===0)?lpBound:null;
+    // Each ceiling bounds its own problem, so which one is reported follows the tolerance the caller
+    // ASKED for rather than the pass that happened to run last: a budget that expires before the
+    // margin pass leaves a strict incumbent while the optimum the user asked for is still the
+    // relaxed one, which sits above the strict ceiling. The margin ceiling covers a strict incumbent
+    // too — every strictly feasible plan is feasible at any margin — so quoting it is honest
+    // whichever pass the clock stopped in. Null until the relaxation for that tolerance completes.
+    const bound=tol===0?lpBound:marginBound;
     return {best,sorted,lineJobs,resources,resIndex,R,N,tIdx,tol,capped,usesMargin,issues,forgie,bound,deadlineReached,
       feasible:best.score>1e-9,interrupted:workInterrupted,localLimitReached,ms:Math.max(0,control.elapsed()-(solveStarted-control.startedAt))};
   }
@@ -719,6 +743,24 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       infeasibleCountNow:()=>{let n=0;for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac[r]-1e-7)n++;return n;}});
   }
 
+  /* Same family of seam, for the DFS's two upper bounds. A bound is only ever read at a node the
+   * search is standing on, so the only way to check the claim it makes is to put the search on a
+   * chosen prefix and ask. prefixBound(ch,i) rebuilds produced/consumed from the first i lines of ch
+   * and returns both ceilings for that node; test/solver-bounds.cjs then completes ch and asserts
+   * neither ceiling sits below what the completed plan achieves. */
+  if(typeof opts.onBoundProbe==="function"){
+    buildDualPrices();
+    const prefixBound=(ch,i)=>{
+      produced.set(baseArr);consumed.fill(0);
+      for(let k=0;k<i;k++){const slot=jobBase[k]+ch[k];
+        for(let p=prodOff[slot],e=prodOff[slot+1];p<e;p++)produced[prodR[p]]+=prodC[p];
+        for(let c=consOff[slot],e=consOff[slot+1];c<e;c++)consumed[consR[c]]+=consC[c];}
+      return {suffix:suffixUB(i),dual:dualN>0?dualUB(i):null};
+    };
+    opts.onBoundProbe({N,R,resources,lineJobs,targets,evalChoice,feasibleNow,scoreNow,setCurTol,
+      prefixBound,dualReady:()=>dualN>0,rebuildPrices:buildDualPrices});
+  }
+
   // The Credits comparison first gives every priced product the same finite constructive baseline:
   // a zero-output idle lower bound plus one target-dedicated seed (and one bounded Gel loadout seed
   // for Gel), under a deterministic per-product work cap. It deliberately skips LP, randomized
@@ -751,6 +793,126 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     return finishCoreResult();
   }
 
+  // max-min upper bound: best achievable min-over-targets if remaining lines max-produce each target
+  // at zero input cost. Exact, and free — SP is a suffix sum built once — but it charges nothing for
+  // the feeders those lines would have to burn, so it stays far above anything reachable.
+  function suffixUB(i){
+    let ub=Infinity;
+    for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]]+SP[k][i];ub=Math.min(ub,net/w[k]);}
+    return ub;
+  }
+  /* Lagrangian bound on the same node, priced so that a line making a target pays for what it eats.
+   *
+   * Weak duality is the whole argument. Take any prices y>=0 on the relaxation's rows whose target
+   * rows' weights sum to at least 1, charge each line the best score any of its jobs earns at those
+   * prices (never below zero — a line may idle), and the total over the remaining lines plus the
+   * priced value of what the prefix has already banked bounds the LP over every completion of that
+   * prefix, hence every integer completion. The prices only have to be FEASIBLE, so the search for
+   * them below cannot make the bound wrong, only loose — which is why it is a cheap coordinate
+   * search rather than a second simplex.
+   *
+   * Two price vectors per resource because a target's row does double duty (see lpRelax): lam prices
+   * the relaxed balance, and mu the strict objective link that carries z. They collapse into one
+   * multiplier on production and one on consumption, so a node costs one dot product over the
+   * resources a price actually touches.
+   *
+   * dualSuffix carries the priced size of the leaf test's own 1e-7 slack. The search will return a
+   * plan whose rows are short by up to that much, which the LP would call infeasible; without the
+   * allowance the bound would be right about the relaxation and wrong about the search. */
+  function buildDualPrices(){
+    dualN=0;dualIdx=null;dualProdPrice=null;dualConsPrice=null;dualSuffix=null;
+    const T=targets.length;
+    if(N===0||T===0||slots===0)return;
+    const p=new Float64Array(slots),g=new Float64Array(slots);
+    const prodPrice=new Float64Array(R),consPrice=new Float64Array(R);
+    const lam=new Float64Array(R),mu=new Float64Array(T);
+    const setPrices=()=>{
+      for(let r=0;r<R;r++){prodPrice[r]=lam[r];consPrice[r]=lam[r]*needFrac[r];}
+      for(let k=0;k<T;k++){prodPrice[tIdx[k]]+=mu[k];consPrice[tIdx[k]]+=mu[k];}
+    };
+    const fillP=()=>{
+      for(let s=0;s<slots;s++){let v=0;
+        for(let q=prodOff[s],e=prodOff[s+1];q<e;q++)v+=prodPrice[prodR[q]]*prodC[q];
+        for(let q=consOff[s],e=consOff[s+1];q<e;q++)v-=consPrice[consR[q]]*consC[q];
+        p[s]=v;}
+    };
+    // The dual objective, offset by t along the coordinate whose per-slot relaxed net is g. A line's
+    // charge is the best its jobs earn, floored at zero because sum_j x_ij <= 1 lets a line sit out.
+    const objAt=t=>{
+      let sum=0;
+      for(let i=0;i<N;i++){let m=0;
+        for(let s=jobBase[i],e=jobBase[i+1];s<e;s++){const v=p[s]+t*g[s];if(v>m)m=v;}
+        sum+=m;}
+      return sum;
+    };
+    let baseTerm=0;
+    const evalD=()=>{setPrices();fillP();baseTerm=0;
+      for(let r=0;r<R;r++)baseTerm+=prodPrice[r]*baseArr[r];
+      return objAt(0)+baseTerm;};
+    /* Start from the trivial feasible prices — all the weight on one target, nothing on any balance
+     * row — which is what the standing bound already is, one target at a time. Descending from the
+     * best of them can only improve on it. */
+    let bestK=0,bestD=Infinity;
+    for(let k=0;k<T;k++){
+      if(!keepGoing("dual-price-start"))return;
+      mu.fill(0);mu[k]=1/w[k];lam.fill(0);
+      const d=evalD();
+      if(d<bestD){bestD=d;bestK=k;}
+    }
+    mu.fill(0);mu[bestK]=1/w[bestK];lam.fill(0);
+    let cur=evalD();
+    for(let pass=0;pass<2;pass++){
+      let moved=false;
+      for(let r=0;r<R;r++){
+        if(!keepGoing("dual-price-coordinate"))return;
+        let maxG=0,maxP=0;
+        const nf=needFrac[r];
+        for(let s=0;s<slots;s++){
+          let v=0;
+          for(let q=prodOff[s],e=prodOff[s+1];q<e;q++)if(prodR[q]===r)v+=prodC[q];
+          for(let q=consOff[s],e=consOff[s+1];q<e;q++)if(consR[q]===r)v-=nf*consC[q];
+          g[s]=v;
+          const a=v<0?-v:v;if(a>maxG)maxG=a;
+          const b=p[s]<0?-p[s]:p[s];if(b>maxP)maxP=b;
+        }
+        if(!(maxG>0))continue;
+        // A price on this row is measured in score per unit of it, so the size of the p values it
+        // has to move against, divided by the size of the row's own coefficients, is the scale a
+        // step is worth trying at. Geometric from there, both directions, never below zero.
+        const scale=(maxP>0?maxP:1)/maxG;
+        let step=0,low=cur;
+        for(let k=0;k<6;k++){
+          const t=scale/(1<<k);
+          for(let sign=0;sign<2;sign++){
+            const move=sign?-t:t;
+            if(lam[r]+move<0)continue;
+            const v=objAt(move)+baseTerm+baseArr[r]*move;
+            if(v<low-1e-12*Math.max(1,Math.abs(low))){low=v;step=move;}
+          }
+        }
+        if(step!==0){lam[r]+=step;cur=evalD();moved=true;}
+      }
+      if(!moved)break;
+    }
+    setPrices();fillP();
+    const suffix=new Float64Array(N+1);
+    // 1e-7 per row is what the leaf test forgives; priced, that is what the bound has to give back.
+    let slack=0;for(let r=0;r<R;r++)slack+=Math.abs(lam[r]);
+    suffix[N]=1e-7*slack;
+    for(let i=N-1;i>=0;i--){let m=0;
+      for(let s=jobBase[i],e=jobBase[i+1];s<e;s++)if(p[s]>m)m=p[s];
+      suffix[i]=suffix[i+1]+m;}
+    const idx=[];for(let r=0;r<R;r++)if(prodPrice[r]!==0||consPrice[r]!==0)idx.push(r);
+    if(!idx.length)return;
+    dualIdx=Int32Array.from(idx);dualN=idx.length;dualSuffix=suffix;
+    dualProdPrice=new Float64Array(dualN);dualConsPrice=new Float64Array(dualN);
+    for(let q=0;q<dualN;q++){dualProdPrice[q]=prodPrice[idx[q]];dualConsPrice[q]=consPrice[idx[q]];}
+  }
+  function dualUB(i){
+    let db=dualSuffix[i];
+    for(let q=0;q<dualN;q++){const r=dualIdx[q];db+=dualProdPrice[q]*produced[r]-dualConsPrice[q]*consumed[r];}
+    return db;
+  }
   function dfs(i,prevIdx){
     nodes++;
     if(!keepGoing("dfs-node")){capped=true;return;}
@@ -767,10 +929,8 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     }
     // feasibility prune: any resource whose current shortfall can't be covered by remaining lines kills this branch
     for(let r=0;r<R;r++)if(produced[r]+maxProd[r][i]<consumed[r]*needFrac[r]-1e-7)return;
-    // max-min upper bound: best achievable min-over-targets if remaining lines max-produce each target
-    let ub=Infinity;
-    for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]]+SP[k][i];ub=Math.min(ub,net/w[k]);}
-    if(ub<=best.score+EPS)return;
+    if(suffixUB(i)<=best.score+EPS)return;
+    if(dualN>0&&dualUB(i)<=best.score+EPS)return;
     const js=lineJobs[i];const dp=sorted[i].dp,spE=spEff[i];
     const start=sameAsPrev[i]?prevIdx:0;
     for(let j=start;j<js.length;j++){
@@ -784,12 +944,28 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       for(const[r,a]of job.cons)consumed[r]-=a*sp;
     }
   }
-  // LP relaxation: let each line split its time fractionally across its jobs and maximize the
-  // min target ratio z. It yields (a) an upper bound on the integer optimum and (b) a rounded
-  // incumbent for the discrete search to refine. This is what lets the search FIND feasible plans
-  // when Gel (a vespium-bounded intermediate) is in the chain — the pure combinatorial DFS can
-  // miss them at scale, which the old line-reservation sweep used to paper over by decomposing.
-  function lpRelax(){
+  /* LP relaxation: let each line split its time fractionally across its jobs and maximize the
+   * min target ratio z. It yields (a) an upper bound on the integer optimum and (b) a rounded
+   * incumbent for the discrete search to refine. This is what lets the search FIND feasible plans
+   * when Gel (a vespium-bounded intermediate) is in the chain — the pure combinatorial DFS can
+   * miss them at scale, which the old line-reservation sweep used to paper over by decomposing.
+   *
+   * `need` is the per-resource fraction of its consumption a plan actually has to cover — the
+   * solver's own needFrac. Passing it scales each row's consumption exactly as the feasibility test
+   * scales it, so the relaxation becomes a relaxation of the MARGIN problem rather than of the
+   * strict one, and a may-work optimum gets a ceiling for the first time. Every integer plan the
+   * margin search may return satisfies these rows, so its z bounds that search.
+   *
+   * Two details the scaling has to respect. Mined rows carry 1 in needFrac and are therefore
+   * untouched: a mined budget is a hard burn rate, not a paper shortfall. And a target's row does
+   * double duty — it is that resource's balance AND the link that holds z under the plan's net
+   * output — so discounting it would let z rise on consumption the plan never has to make good.
+   * Each target therefore gets a second, strict row carrying the z coefficient while its relaxed row
+   * keeps only the feasibility half.
+   *
+   * Called with no argument every coefficient is the double it always was (`a*sp*1` is `a*sp`, and
+   * no strict row is emitted), so the strict relaxation is unchanged. */
+  function lpRelax(need){
     const offs=[];let nv=0;
     for(let i=0;i<N;i++){if(!keepGoing("lp-offset"))return {interrupted:true};offs.push(nv);nv+=lineJobs[i].length;}
     const zc=nv,n=nv+1,A=[],b=[];
@@ -797,14 +973,17 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     const tw={};targets.forEach((t,k)=>tw[tIdx[k]]=w[k]);
     for(let r=0;r<R;r++){
       if(!keepGoing("lp-resource-row"))return {interrupted:true};
-      const row=new Float64Array(n);
+      const nf=need?need[r]:1,tgt=tw[r];
+      const row=new Float64Array(n),strict=(nf!==1&&tgt!==undefined)?new Float64Array(n):null;
       for(let i=0;i<N;i++)for(let j=0;j<lineJobs[i].length;j++){
         if(!keepGoing("lp-job-coefficient"))return {interrupted:true};
-        const job=lineJobs[i][j],sp=spEff[i][j],dp=sorted[i].dp;let net=0;
-        for(const[rr,a]of job.prod)if(rr===r)net+=a*sp*dp;
-        for(const[rr,a]of job.cons)if(rr===r)net-=a*sp;
-        if(net)row[offs[i]+j]=-net;}
-      if(tw[r]!==undefined)row[zc]=tw[r];
+        const job=lineJobs[i][j],sp=spEff[i][j],dp=sorted[i].dp;let net=0,sn=0;
+        for(const[rr,a]of job.prod)if(rr===r){net+=a*sp*dp;if(strict)sn+=a*sp*dp;}
+        for(const[rr,a]of job.cons)if(rr===r){net-=a*sp*nf;if(strict)sn-=a*sp;}
+        if(net)row[offs[i]+j]=-net;
+        if(strict&&sn)strict[offs[i]+j]=-sn;}
+      if(strict){strict[zc]=tgt;A.push(strict);b.push(baseArr[r]);}
+      else if(tgt!==undefined)row[zc]=tgt;
       A.push(row);b.push(baseArr[r]);
     }
     const c=new Float64Array(n);c[zc]=1;
@@ -823,6 +1002,19 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // An incomplete simplex leaves z short of a proven ceiling, so only a completed solve is kept.
   if(lp&&lp.complete&&Number.isFinite(lp.z))lpBound=lp.z;
   if(interrupted){capped=true;return finishCoreResult();}
+  /* The margin problem's ceiling, from the same relaxation over this solve's needFrac — which still
+   * holds the requested tolerance here, since the staged search below has not moved it yet.
+   *
+   * Solved at the root rather than lazily inside the margin stage because of WHEN a ceiling is worth
+   * quoting. The interface raises the gap notice only on a solve the clock cut short, and a solve
+   * the clock cut short is exactly the one that never reaches its margin stage: on the reference
+   * factory the strict pass consumes the whole budget and the relaxed pass never starts. A ceiling
+   * computed inside that pass would therefore exist only on the runs that had no use for it. */
+  if(tol>0&&N>0){
+    const mlp=lpRelax(needFrac);
+    if(mlp&&mlp.complete&&Number.isFinite(mlp.z))marginBound=mlp.z;
+    if(interrupted){capped=true;return finishCoreResult();}
+  }
   // Two-pass margin search for monotonicity (issue #60). A plan feasible with NO margin is feasible
   // at ANY margin with the same objective, so we solve strict (tol=0) first, then seed the relaxed
   // pass with that strict optimum — the margin result can only match or beat the no-margin result,
@@ -1083,9 +1275,18 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // feasibility cache — it tests the rows inline. Re-derive the cache from the empty plan it starts
   // and ends on, so the next caller of feasibleNow is not reading a verdict about another plan.
   produced.set(baseArr);consumed.fill(0);rescanFeasibility();
-  // LP z bounds the integer optimum; if the incumbent already reaches it, the search is done.
-  let stageExhaustive=!!(lp&&lp.complete&&curTol===0&&best.score>=lp.z-1e-6*Math.max(1,lp.z));
-  if(!stageExhaustive){dfs(0,0);stageExhaustive=!capped&&!interrupted;}
+  // LP z bounds this stage's integer optimum; if the incumbent already reaches it, the search is
+  // done and neither the DFS nor the second pass can add anything.
+  const ceiling=curTol===0?lpBound:marginBound;
+  let stageExhaustive=ceiling!=null&&best.score>=ceiling-1e-6*Math.max(1,ceiling);
+  if(!stageExhaustive){
+    // Priced per stage, because the prices are built over needFrac and the stages do not share it,
+    // and only when a DFS is actually going to run. Cleared otherwise so the node test cannot read
+    // prices belonging to another tolerance.
+    dualN=0;
+    if(dualEnabled)buildDualPrices();
+    dfs(0,0);stageExhaustive=!capped&&!interrupted;
+  }
   // Second pass, on whatever budget the first one left. Everything above is untouched and runs to
   // exactly the same plan it always did; this only ever replaces that plan with one that scores
   // strictly higher on the same objective, so no factory can come out of a release reporting less

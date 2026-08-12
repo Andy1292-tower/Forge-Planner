@@ -39,6 +39,7 @@ const tests = [
   "test/seqgate.cjs",
   "test/sharemode.cjs",
   "test/solve-lifecycle.cjs",
+  "test/solver-bounds.cjs",
   "test/static-asset-build.cjs",
   "test/state-schema.cjs",
   "test/staticmode.cjs",
