@@ -11,6 +11,7 @@ const tests = [
   "test/check-classifier.cjs",
   "test/craftdata.cjs",
   "test/credits-contract.cjs",
+  "test/delta-eval.cjs",
   "test/feeder-plateau.cjs",
   "test/field-validation.cjs",
   "test/forgieproject.cjs",

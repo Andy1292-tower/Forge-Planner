@@ -141,6 +141,16 @@ function lineRows(){return S.lines.map((ln,i)=>({__i:i,max:ln.max,spx:ln.spx,tur
 const sortedLines=()=>lineRows().map(ln=>({orig:ln.__i,max:ln.max,sp:lineSpeed(ln),dp:dupeMult()})).sort((a,b)=>a.max-b.max||a.sp-b.sp||a.dp-b.dp);
 const forgieHr=r=>num(S.forgie&&S.forgie[r])||0;
 
+/* One clock read per this many checkpoints. A search probe is a few hundred nanoseconds of typed-
+ * array arithmetic and performance.now() is tens of nanoseconds of it, so sampling the clock on
+ * every probe spends a real share of the budget deciding whether the budget is spent. The stride
+ * bounds the cost of that decision without loosening any guarantee by more than itself: a deadline
+ * — root or local — is observed at most this many probes late, never later, because the deadline
+ * test is skipped rather than weakened. That overshoot is counted in probes, not milliseconds, so
+ * it does not grow on a slow machine; and result finalization reads the clock unconditionally, so
+ * an expiry can be deferred past a few probes but never past the result. */
+const CLOCK_SAMPLE_EVERY=16;
+
 // One solve control owns one absolute deadline. Credits shares the same instance across every
 // candidate, so starting a new candidate can never restart the user's clock. The optional hooks are
 // direct-source test seams: they are never persisted or posted through the Worker protocol.
@@ -148,11 +158,16 @@ function makeSolveControl(timeBudget,options){
   const opts=options||{},clock=typeof opts.now==="function"?opts.now:()=>performance.now();
   const observer=typeof opts.onCheckpoint==="function"?opts.onCheckpoint:null;
   const budget=Math.max(0,Number(timeBudget)||0),workLimit=Number.isFinite(opts.workLimit)?Math.max(0,Math.floor(opts.workLimit)):Infinity;
+  // A test that prices time per clock READ rather than per checkpoint passes clockSampleEvery:1.
+  const sampleEvery=Number.isFinite(opts.clockSampleEvery)?Math.max(1,Math.floor(opts.clockSampleEvery)):CLOCK_SAMPLE_EVERY;
   let lastNow=Number(clock());if(!Number.isFinite(lastNow))lastNow=0;
   const startedAt=lastNow,deadline=startedAt+budget;
-  let work=0,stopped=false,deadlineReached=false,reason=null;
+  let work=0,stopped=false,deadlineReached=false,reason=null,sampleSkips=0;
   const emit=event=>{if(observer)observer(event);};
   const readNow=()=>{let value=Number(clock());if(!Number.isFinite(value))value=lastNow;if(value<lastNow)value=lastNow;lastNow=value;return value;};
+  // True on the first checkpoint and every sampleEvery-th one after it. Shared by both checkpoint
+  // entry points so a solve that mixes them still reads the clock at the same average rate.
+  const dueForSample=()=>{if(sampleSkips>0){sampleSkips--;return false;}sampleSkips=sampleEvery-1;return true;};
   const reserveWork=(label,cost)=>{
     if(stopped)return false;
     const units=Math.max(1,Math.floor(Number(cost)||1));
@@ -163,23 +178,29 @@ function makeSolveControl(timeBudget,options){
     if(now>=deadline){stopped=true;deadlineReached=true;reason="deadline";emit({type:"stopped",label,reason,work,elapsed:now-startedAt});return false;}
     return true;
   };
+  // Work is charged first and on every call, so the work limit stays exact; only the clock is
+  // amortized. emit still fires per checkpoint, carrying the newest reading the control holds.
   const checkpoint=(label,cost)=>{
     if(!reserveWork(label,cost))return false;
-    const now=readNow();
-    if(!stopAtDeadline(label,now))return false;
-    emit({type:"checkpoint",label,work,elapsed:now-startedAt});return true;
+    if(dueForSample()&&!stopAtDeadline(label,readNow()))return false;
+    emit({type:"checkpoint",label,work,elapsed:lastNow-startedAt});return true;
   };
   // Charge global work first, then use one clock sample to arbitrate local and root time limits.
   // When the earlier local cutoff and the root deadline are both crossed by that sample, returning
   // the candidate's last safe incumbent takes temporary precedence; finalization observes the same
   // monotonic time and marks the root expired before any further shared work can begin.
+  // The stride covers the local cutoff too, or every solve carrying an opts.localDeadline — share
+  // calibration, the Credits refinement slices, the static phase slices, the idle-line fill — would
+  // keep paying for a clock read per probe.
   const checkpointWithin=(label,cost,localDeadline,onLocalLimit)=>{
     if(!reserveWork(label,cost))return false;
-    const now=readNow(),local=Number(localDeadline),hasLocal=Number.isFinite(local);
-    if(hasLocal&&local<deadline&&now>=local){if(onLocalLimit)onLocalLimit(label,now);return false;}
-    if(!stopAtDeadline(label,now))return false;
-    if(hasLocal&&now>=local){if(onLocalLimit)onLocalLimit(label,now);return false;}
-    emit({type:"checkpoint",label,work,elapsed:now-startedAt});return true;
+    if(dueForSample()){
+      const now=readNow(),local=Number(localDeadline),hasLocal=Number.isFinite(local);
+      if(hasLocal&&local<deadline&&now>=local){if(onLocalLimit)onLocalLimit(label,now);return false;}
+      if(!stopAtDeadline(label,now))return false;
+      if(hasLocal&&now>=local){if(onLocalLimit)onLocalLimit(label,now);return false;}
+    }
+    emit({type:"checkpoint",label,work,elapsed:lastNow-startedAt});return true;
   };
   const event=(type,data)=>emit(Object.assign({type,work,elapsed:lastNow-startedAt},data||{}));
   const refreshDeadline=()=>{
@@ -246,6 +267,9 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   const resIndex={};resources.forEach((r,i)=>resIndex[r]=i);
   const R=resources.length;
   const tIdx=targets.map(t=>resIndex[t]);
+  // Declared here rather than beside the search state below because the feasibility cache reads
+  // them, and that cache has to exist before the first setCurTol call.
+  const produced=new Float64Array(R), consumed=new Float64Array(R);
   const tol=opts.tolOverride!=null
     ?Math.max(0,Math.min(0.5,Number(opts.tolOverride)||0))
     :boundedPersistedField("margin",S.margin,0,0,20)/100;
@@ -253,6 +277,35 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // (strict tol=0, then the user's margin) so its result is monotone in margin — see the staged
   // search at the bottom of solveCore (issue #60).
   let curTol=tol;
+  // needFrac per resource, materialized instead of recomputed: it is read once per resource inside
+  // three of the hottest loops in the solver (the feasibility test, the DFS leaf test and the DFS
+  // suffix prune), and its only inputs are the resource's mined-ness — fixed for the solve — and
+  // curTol, which changes exactly three times. Mined rows never get the margin: their budget is a
+  // hard burn rate, not a paper shortfall. Written only through setCurTol so the two can never
+  // disagree.
+  const needFrac=new Float64Array(R),minedRow=resources.map(isMinedResource);
+  /* Feasibility, cached per resource. The search asks "is this plan feasible" once per probe and
+   * the answer is a scan over every resource, but a probe changes one line, which changes a handful
+   * of rows. rowBad holds each row's verdict and infeasCount the number set, so the question itself
+   * becomes an integer test and only the rows a move touches are re-decided.
+   *
+   * Deliberately NOT extended to the total deficit. A deficit maintained the same way accumulates
+   * the mined rows' cancellation error — ~1e-3 on a 5.31e12/s budget — into a quantity that repair
+   * compares against a 1e-12 improvement threshold, which would turn rounding into a move the
+   * search believes in. The feasibility verdict is a comparison, not a sum, so it carries none of
+   * that: each row is re-decided from its current values, exactly as the full scan decides it.
+   *
+   * syncRow is idempotent, so a row reached twice in one move costs a compare and changes nothing. */
+  const rowBad=new Uint8Array(R);let infeasCount=0;
+  const rowIsBad=r=>produced[r]<consumed[r]*needFrac[r]-1e-7?1:0;
+  const syncRow=r=>{const bad=rowIsBad(r);if(bad!==rowBad[r]){rowBad[r]=bad;infeasCount+=bad?1:-1;}};
+  const rescanFeasibility=()=>{infeasCount=0;for(let r=0;r<R;r++){const bad=rowIsBad(r);rowBad[r]=bad;if(bad)infeasCount++;}};
+  const setCurTol=value=>{
+    curTol=value;const relaxed=1-curTol;
+    for(let r=0;r<R;r++)needFrac[r]=minedRow[r]?1:relaxed;
+    rescanFeasibility();                 // every row's verdict moves when the tolerance does
+  };
+  setCurTol(tol);
   // Ceiling on the objective from the LP relaxation, in the same per-second units as best.score.
   // Declared here rather than read off `lp` because finishCoreResult runs before `lp` is
   // initialized on the baselineOnly path. Null until lpRelax returns a completed solve.
@@ -298,7 +351,97 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   const maxProd=Array.from({length:R},()=>new Float64Array(N+1));
   for(let r=0;r<R;r++)for(let i=N-1;i>=0;i--){let m=0;lineJobs[i].forEach(j=>{for(const[rr,a]of j.prod)if(rr===r)m=Math.max(m,a*sorted[i].sp*sorted[i].dp);});maxProd[r][i]=maxProd[r][i+1]+m;}
 
-  const produced=new Float64Array(R), consumed=new Float64Array(R);
+  /* Every (line, job) pair's production and consumption, flattened into typed arrays and pre-scaled
+   * by that line's speed and duplication. The coefficients are the same doubles the per-job loops
+   * computed — a*sp*dp and a*sp, in the same association — so nothing downstream shifts by an ulp;
+   * what goes away is the megabyte of array-of-array destructuring the search did per evaluation.
+   * A pair's entries live at [prodOff[slot], prodOff[slot+1]) for slot = jobBase[i]+k.
+   *
+   * A cons entry whose resource is outside the chain is dropped rather than folded into row 0: it
+   * carries an undefined index, so the loops this replaces charged it to a property hanging off the
+   * typed array that no r<R read ever saw. Int32Array would coerce that to 0 and charge the burn to
+   * a real resource. */
+  const jobBase=new Int32Array(N+1);
+  for(let i=0;i<N;i++)jobBase[i+1]=jobBase[i]+lineJobs[i].length;
+  const slots=jobBase[N];
+  const prodOff=new Int32Array(slots+1),consOff=new Int32Array(slots+1);
+  const okIdx=r=>Number.isInteger(r)&&r>=0&&r<R;
+  for(let i=0;i<N;i++)for(let k=0;k<lineJobs[i].length;k++){
+    const job=lineJobs[i][k],slot=jobBase[i]+k;let np=0,nc=0;
+    for(const[r]of job.prod)if(okIdx(r))np++;
+    for(const[r]of job.cons)if(okIdx(r))nc++;
+    prodOff[slot+1]=np;consOff[slot+1]=nc;
+  }
+  for(let s=0;s<slots;s++){prodOff[s+1]+=prodOff[s];consOff[s+1]+=consOff[s];}
+  const prodR=new Int32Array(prodOff[slots]),prodC=new Float64Array(prodOff[slots]);
+  const consR=new Int32Array(consOff[slots]),consC=new Float64Array(consOff[slots]);
+  for(let i=0;i<N;i++){
+    const dp=sorted[i].dp;
+    for(let k=0;k<lineJobs[i].length;k++){
+      const job=lineJobs[i][k],sp=spEff[i][k],slot=jobBase[i]+k;
+      let p=prodOff[slot],c=consOff[slot];
+      for(const[r,a]of job.prod)if(okIdx(r)){prodR[p]=r;prodC[p]=a*sp*dp;p++;}
+      for(const[r,a]of job.cons)if(okIdx(r)){consR[c]=r;consC[c]=a*sp;c++;}
+    }
+  }
+  /* The reverse of prodR: every slot that produces a resource, grouped by resource and in ascending
+   * slot order. repair asks "what could close THIS shortfall" of a handful of short rows rather than
+   * pricing every job on every line, and this is the half of that question it cannot read off the
+   * plan it holds. Built once — the coefficients change, the incidence never does. */
+  const resProdOff=new Int32Array(R+1),resProdSlot=new Int32Array(prodOff[slots]);
+  for(let p=0;p<prodOff[slots];p++)resProdOff[prodR[p]+1]++;
+  for(let r=0;r<R;r++)resProdOff[r+1]+=resProdOff[r];
+  {const cursor=resProdOff.slice(0,R);
+    for(let s=0;s<slots;s++)for(let p=prodOff[s],e=prodOff[s+1];p<e;p++)resProdSlot[cursor[prodR[p]]++]=s;}
+  /* Delta evaluation. Every probe in the local search changes ONE line's job (the target swap
+   * changes two), so re-summing all N lines from baseArr to measure it is the single largest
+   * avoidable cost in the solver: the flat arrays above make one line's contribution addressable,
+   * and these apply it in place.
+   *
+   * A reject must cost nothing at all, so revertMove restores SAVED doubles instead of undoing the
+   * arithmetic. Re-adding what was subtracted does not in general land back on the same double, so
+   * an inverse undo would leave the incumbent every later probe is measured against drifting under
+   * the probes that were rejected — the exact bug that is invisible until an objective moves.
+   * Every touched slot is saved BEFORE anything is written, and restored in reverse, so a resource
+   * a staged pair of moves touches twice still ends on the value it started with.
+   *
+   * INVARIANT: produced/consumed describe `ch` at every point outside a begin/revert bracket. The
+   * accept paths below (climb, repair, target swap, dead-line drop) and the two ILS kicks maintain
+   * it explicitly; before this they left the vectors describing whichever candidate was probed
+   * last and relied on the next full evalChoice to repair them. */
+  let maxProdLen=0,maxConsLen=0;
+  for(let s=0;s<slots;s++){
+    if(prodOff[s+1]-prodOff[s]>maxProdLen)maxProdLen=prodOff[s+1]-prodOff[s];
+    if(consOff[s+1]-consOff[s]>maxConsLen)maxConsLen=consOff[s+1]-consOff[s];
+  }
+  // Two staged moves (the target swap), each replacing one job with another: four job slots.
+  const mvProdR=new Int32Array(4*maxProdLen),mvProdV=new Float64Array(4*maxProdLen),mvProdB=new Uint8Array(4*maxProdLen);
+  const mvConsR=new Int32Array(4*maxConsLen),mvConsV=new Float64Array(4*maxConsLen),mvConsB=new Uint8Array(4*maxConsLen);
+  let mvProdN=0,mvConsN=0,mvCount=0;
+  const beginMove=()=>{mvProdN=0;mvConsN=0;mvCount=infeasCount;};
+  const applyMove=(i,oldK,newK)=>{
+    const oldSlot=jobBase[i]+oldK,newSlot=jobBase[i]+newK;
+    for(let p=prodOff[oldSlot],e=prodOff[oldSlot+1];p<e;p++){const r=prodR[p];mvProdR[mvProdN]=r;mvProdB[mvProdN]=rowBad[r];mvProdV[mvProdN++]=produced[r];}
+    for(let p=prodOff[newSlot],e=prodOff[newSlot+1];p<e;p++){const r=prodR[p];mvProdR[mvProdN]=r;mvProdB[mvProdN]=rowBad[r];mvProdV[mvProdN++]=produced[r];}
+    for(let c=consOff[oldSlot],e=consOff[oldSlot+1];c<e;c++){const r=consR[c];mvConsR[mvConsN]=r;mvConsB[mvConsN]=rowBad[r];mvConsV[mvConsN++]=consumed[r];}
+    for(let c=consOff[newSlot],e=consOff[newSlot+1];c<e;c++){const r=consR[c];mvConsR[mvConsN]=r;mvConsB[mvConsN]=rowBad[r];mvConsV[mvConsN++]=consumed[r];}
+    for(let p=prodOff[oldSlot],e=prodOff[oldSlot+1];p<e;p++)produced[prodR[p]]-=prodC[p];
+    for(let c=consOff[oldSlot],e=consOff[oldSlot+1];c<e;c++)consumed[consR[c]]-=consC[c];
+    for(let p=prodOff[newSlot],e=prodOff[newSlot+1];p<e;p++)produced[prodR[p]]+=prodC[p];
+    for(let c=consOff[newSlot],e=consOff[newSlot+1];c<e;c++)consumed[consR[c]]+=consC[c];
+    // A row's verdict depends on both sides, so every row either side touched is re-decided.
+    for(let p=prodOff[oldSlot],e=prodOff[oldSlot+1];p<e;p++)syncRow(prodR[p]);
+    for(let p=prodOff[newSlot],e=prodOff[newSlot+1];p<e;p++)syncRow(prodR[p]);
+    for(let c=consOff[oldSlot],e=consOff[oldSlot+1];c<e;c++)syncRow(consR[c]);
+    for(let c=consOff[newSlot],e=consOff[newSlot+1];c<e;c++)syncRow(consR[c]);
+  };
+  // The verdicts are restored from the same saved bytes as the values rather than re-decided: the
+  // restored state is the pre-move state exactly, so its cached answer is the pre-move answer.
+  const revertMove=()=>{
+    for(let s=mvProdN-1;s>=0;s--){produced[mvProdR[s]]=mvProdV[s];rowBad[mvProdR[s]]=mvProdB[s];}
+    for(let s=mvConsN-1;s>=0;s--){consumed[mvConsR[s]]=mvConsV[s];rowBad[mvConsR[s]]=mvConsB[s];}
+    infeasCount=mvCount;mvProdN=0;mvConsN=0;
+  };
   const choice=new Array(N).fill(0);
   let best={score:0,choice:new Array(N).fill(0),produced:new Float64Array(R),consumed:new Float64Array(R)};
   const EPS=1e-9;
@@ -319,13 +462,15 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // shortfall until the plan balances. Seeds `best`, so the DFS prunes from the start.
   function evalChoice(ch){
     produced.set(baseArr);consumed.fill(0);
-    for(let i=0;i<N;i++){const job=lineJobs[i][ch[i]],sp=spEff[i][ch[i]],dp=sorted[i].dp;for(const[r,a]of job.prod)produced[r]+=a*sp*dp;for(const[r,a]of job.cons)consumed[r]+=a*sp;}
+    for(let i=0;i<N;i++){const slot=jobBase[i]+ch[i];
+      for(let p=prodOff[slot],e=prodOff[slot+1];p<e;p++)produced[prodR[p]]+=prodC[p];
+      for(let c=consOff[slot],e=consOff[slot+1];c<e;c++)consumed[consR[c]]+=consC[c];}
+    rescanFeasibility();
   }
   const totalDeficit=()=>{let D=0;for(let r=0;r<R;r++){const d=consumed[r]-produced[r];if(d>0)D+=d;}return D;};
   const idleIdx=i=>{const k=lineJobs[i].findIndex(j=>j.kind==="idle");return k<0?0:k;};
   function bestJobFor(i,res){let bj=-1,bg=0;lineJobs[i].forEach((job,k)=>{for(const[r,a]of job.prod)if(r===res){const g=a*sorted[i].sp*sorted[i].dp;if(g>bg){bg=g;bj=k;}}});return bj;}
-  const needFrac=r=>isMinedResource(resources[r])?1:(1-curTol);
-  const feasibleNow=()=>{for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac(r)-1e-7)return false;return true;};
+  const feasibleNow=()=>infeasCount===0;
   // Shared weighted floor: the smallest output-to-weight ratio across the targets.
   const scoreNow=()=>{let sc=Infinity;for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]];sc=Math.min(sc,net/w[k]);}return sc;};
   // Chain members the plan has to make but nothing scores — the feeders behind the single target.
@@ -350,21 +495,42 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     for(let f=0;f<feederIdx.length;f++){const net=produced[feederIdx[f]]-consumed[feederIdx[f]];if(net>0)bonus+=net/feederScale[f];}
     return sc*(1+eps*bonus);
   };
-  // repair input shortfall down to a feasible plan: each step makes the single line-switch
-  // (toward producing ANY short resource) that cuts total shortfall most. Returns feasibility.
-  // Drive total input shortfall to zero. Each step makes the single line-switch (to ANY job
-  // — produce an input, OR drop a craft to a cheaper/lower level) that cuts the shortfall most.
+  /* Drive total input shortfall to zero. Each step makes the single line-switch (to ANY job
+   * — produce an input, OR drop a craft to a cheaper/lower level) that cuts the shortfall most.
+   *
+   * Only the moves that could possibly cut it are priced. The shortfall sums max(0, cons-prod) over
+   * the rows: a row at or above balance contributes nothing and a move can only leave it there or
+   * push it up, and a SHORT row falls only if the incoming job produces it or the outgoing job was
+   * burning it. Every other move leaves every row's term where it was or higher, and the sum is the
+   * same additions of non-negative terms in the same order — addition is monotone in each argument,
+   * so the total is too, and `red` comes out at zero or below. It cannot clear bRed, so skipping it
+   * costs the search nothing: the scan still runs line-ascending, job-ascending and still adopts the
+   * first move holding the largest reduction, which is the same move on the same plan.
+   *
+   * Candidates are marked with a pass stamp rather than cleared between passes; the wrap guard keeps
+   * a long ILS run from stamping past what an Int32Array can hold and matching nothing. */
+  const repairCand=new Int32Array(slots);let repairStamp=0;
   function repair(ch){
     for(let guard=0;guard<6*N+40;guard++){
       if(!keepGoing("repair-pass"))return null;
       evalChoice(ch);const D=totalDeficit();if(D<=1e-7)break;
+      if(repairStamp===0x7fffffff){repairCand.fill(0);repairStamp=0;}
+      const stamp=++repairStamp;
+      for(let r=0;r<R;r++)if(consumed[r]-produced[r]>0)
+        for(let q=resProdOff[r],e=resProdOff[r+1];q<e;q++)repairCand[resProdSlot[q]]=stamp;
       let bI=-1,bJ=-1,bRed=1e-12;
-      for(let i=0;i<N;i++){const old=ch[i],js=lineJobs[i];
+      for(let i=0;i<N;i++){const old=ch[i],js=lineJobs[i],base=jobBase[i],slot=base+old;
+        // A line already burning a short resource can cut that burn by moving to any other job, so
+        // this one is priced whole rather than by what the incoming job makes.
+        let wholeLine=false;
+        for(let c=consOff[slot],e=consOff[slot+1];c<e;c++)if(consumed[consR[c]]-produced[consR[c]]>0){wholeLine=true;break;}
         for(let k=0;k<js.length;k++){if(k===old)continue;
-          if(!keepGoing("repair-job")){ch[i]=old;evalChoice(ch);return null;}
-          ch[i]=k;evalChoice(ch);const red=D-totalDeficit();if(red>bRed){bRed=red;bI=i;bJ=k;}}
-        ch[i]=old;evalChoice(ch);}
-      if(bI<0)break;ch[bI]=bJ;
+          if(!wholeLine&&repairCand[base+k]!==stamp)continue;
+          if(!keepGoing("repair-job"))return null;
+          beginMove();applyMove(i,old,k);const red=D-totalDeficit();revertMove();
+          if(red>bRed){bRed=red;bI=i;bJ=k;}}}
+      if(bI<0)break;
+      const prev=ch[bI];ch[bI]=bJ;beginMove();applyMove(bI,prev,bJ);
     }
     evalChoice(ch);return feasibleNow();
   }
@@ -379,9 +545,13 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       let improved=false;
       for(let i=0;i<N;i++){const old=ch[i];let bk=old,bs=cur;
         const js=lineJobs[i];for(let k=0;k<js.length;k++){if(k===old)continue;
-          if(!keepGoing("climb-job")){ch[i]=old;evalChoice(ch);return null;}
-          ch[i]=k;evalChoice(ch);if(feasibleNow()){const s=value();if(s>bs+EPS){bs=s;bk=k;}}}
-        ch[i]=bk;if(bk!==old){cur=bs;improved=true;}else evalChoice(ch);
+          if(!keepGoing("climb-job"))return null;
+          beginMove();applyMove(i,old,k);
+          if(feasibleNow()){const s=value();if(s>bs+EPS){bs=s;bk=k;}}
+          revertMove();}
+        // The accepted move is re-applied rather than left to the next full evaluation, so `cur`
+        // and the vectors describe the same plan: bs was measured on exactly this state.
+        if(bk!==old){ch[i]=bk;beginMove();applyMove(i,old,bk);cur=bs;improved=true;}
       }
       if(!improved)break;
     }
@@ -421,9 +591,11 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
           const oh=ch[h],oj=ch[j];
           const a=jobLike(h,lineJobs[j][oj]),b=jobLike(j,lineJobs[h][oh]);
           if(a<0||b<0||(a===oh&&b===oj))continue;
-          ch[h]=a;ch[j]=b;evalChoice(ch);
-          if(feasibleNow()&&value()>cur+EPS){cur=value();improved=true;break;}
-          ch[h]=oh;ch[j]=oj;
+          // Two moves staged under one bracket: revert unwinds them in reverse, so a resource both
+          // lines touch lands back on the value it held before either was applied.
+          beginMove();applyMove(h,oh,a);applyMove(j,oj,b);
+          if(feasibleNow()&&value()>cur+EPS){ch[h]=a;ch[j]=b;cur=value();improved=true;break;}
+          revertMove();
         }
       }
       if(!improved)break;
@@ -458,10 +630,11 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       let improved=false;
       for(let i=0;i<N;i++){const old=ch[i],js=lineJobs[i];let bk=old,bD=curD;
         for(let k=0;k<js.length;k++){if(k===old)continue;
-          if(!keepGoing("deficit-job")){ch[i]=old;evalChoice(ch);return null;}
-          ch[i]=k;evalChoice(ch);
-          if(feasibleNow()&&scoreNow()>=targetScore-EPS){const d=totalDeficit();if(d<bD-1e-9){bD=d;bk=k;}}}
-        ch[i]=bk;evalChoice(ch);if(bk!==old){curD=bD;improved=true;}}
+          if(!keepGoing("deficit-job"))return null;
+          beginMove();applyMove(i,old,k);
+          if(feasibleNow()&&scoreNow()>=targetScore-EPS){const d=totalDeficit();if(d<bD-1e-9){bD=d;bk=k;}}
+          revertMove();}
+        if(bk!==old){ch[i]=bk;beginMove();applyMove(i,old,bk);curD=bD;improved=true;}}
       if(!improved)break;
     }
     return ch;
@@ -477,12 +650,15 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // so this has to run on the interrupted path too. finishCoreResult calls it on every exit.
   function dropDeadLines(ch,targetScore){
     let dropped=false;
+    // Called on a copy of the incumbent, not on whatever the search evaluated last, so this one
+    // establishes the invariant the delta probes below rely on.
+    evalChoice(ch);
     for(let i=0;i<N;i++){
       const old=ch[i],idle=idleIdx(i);
       if(old===idle)continue;
-      ch[i]=idle;evalChoice(ch);
-      if(feasibleNow()&&scoreNow()>=targetScore-EPS){dropped=true;continue;}
-      ch[i]=old;evalChoice(ch);
+      beginMove();applyMove(i,old,idle);
+      if(feasibleNow()&&scoreNow()>=targetScore-EPS){ch[i]=idle;dropped=true;continue;}
+      revertMove();
     }
     return dropped;
   }
@@ -526,13 +702,30 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     return ch;
   }
 
+  /* Direct-source test seam, in the same family as opts.now / opts.onCheckpoint: never persisted,
+   * never posted through the Worker protocol, never set by the app. It hands the delta-evaluation
+   * machinery to a checker before the search starts, so test/delta-eval.cjs can assert apply and
+   * revert against a full re-evaluation on the solver's own arrays for a real factory — the
+   * fixtures where one resource carries 5.31e12/s and another 1e99/min, and where the mismatch
+   * this guards against would be a rounding artefact rather than an obvious wrong answer. */
+  if(typeof opts.onDeltaProbe==="function"){
+    opts.onDeltaProbe({N,R,resources,lineJobs,targets,produced,consumed,idleIdx,
+      evalChoice,beginMove,applyMove,revertMove,feasibleNow,totalDeficit,scoreNow,setCurTol,
+      // The flat coefficient tables, so the checker can size its tolerance by the magnitude of the
+      // terms a row actually sums rather than by the magnitude of what they sum TO. A delta on a row
+      // whose terms span twelve orders is accurate to the largest term, not to the result.
+      flat:{jobBase,prodOff,prodR,prodC,consOff,consR,consC,baseArr},
+      maintainedInfeasibleCount:()=>infeasCount,
+      infeasibleCountNow:()=>{let n=0;for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac[r]-1e-7)n++;return n;}});
+  }
+
   // The Credits comparison first gives every priced product the same finite constructive baseline:
   // a zero-output idle lower bound plus one target-dedicated seed (and one bounded Gel loadout seed
   // for Gel), under a deterministic per-product work cap. It deliberately skips LP, randomized
   // seeds, ILS and DFS. Reaching the local cap keeps the valid idle/best-completed lower bound;
   // only the shared absolute deadline discards the partial candidate and leaves later rows unevaluated.
   if(opts.baselineOnly){
-    curTol=tol;capped=true;
+    setCurTol(tol);capped=true;
     if(!keepGoing("baseline-product-start"))return finishCoreResult();
     const idleChoice=new Array(N);for(let i=0;i<N;i++)idleChoice[i]=idleIdx(i);
     evalChoice(idleChoice);const idleScore=feasibleNow()?scoreNow():0;
@@ -561,17 +754,19 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   function dfs(i,prevIdx){
     nodes++;
     if(!keepGoing("dfs-node")){capped=true;return;}
-    const _n=control.readNow();if(_n-tLastGain>convergeWindow)capped=true;
+    // keepGoing above already arbitrated the deadline on this node; the convergence window only
+    // needs the reading that produced, not a second syscall per DFS node.
+    const _n=control.currentTime();if(_n-tLastGain>convergeWindow)capped=true;
     if(capped)return;
     if(i===N){
-      for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac(r)-1e-7)return;
+      for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac[r]-1e-7)return;
       let sc=Infinity;
       for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]];sc=Math.min(sc,net/w[k]);}
       if(sc>best.score+EPS){best={score:sc,choice:choice.slice(),produced:produced.slice(),consumed:consumed.slice()};tLastGain=control.readNow();}
       return;
     }
     // feasibility prune: any resource whose current shortfall can't be covered by remaining lines kills this branch
-    for(let r=0;r<R;r++)if(produced[r]+maxProd[r][i]<consumed[r]*needFrac(r)-1e-7)return;
+    for(let r=0;r<R;r++)if(produced[r]+maxProd[r][i]<consumed[r]*needFrac[r]-1e-7)return;
     // max-min upper bound: best achievable min-over-targets if remaining lines max-produce each target
     let ub=Infinity;
     for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]]+SP[k][i];ub=Math.min(ub,net/w[k]);}
@@ -638,9 +833,22 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   let carry=choiceFromPlan(opts.initialPlan),finalExhaustive=false;
   for(let si=0;si<stages.length;si++){
   if(!keepGoing("margin-stage"))break;
-  curTol=stages[si];capped=false;tLastGain=control.readNow();
+  setCurTol(stages[si]);capped=false;tLastGain=control.readNow();
   let inc=null;
-  const trySeed=ch=>{if(!ch||interrupted||!keepGoing("seed-start"))return false;const c=ch.slice();const sc=localOpt(c);
+  /* The generators below independently clamp what they cannot express, and they collide: a line that
+   * can run neither the requested feeder (roleJob finds no such craft) nor a compressed target
+   * (tgtSeed's lvl<=8 rule) falls back to the same job whichever role the enumeration meant it to
+   * take, so whole runs of role assignments — and LP roundings that differ only inside a line's
+   * fractional split — arrive as the identical choice vector. localOpt is deterministic in that
+   * vector, so a repeat can only re-derive the score it already produced; it cannot move `inc`,
+   * which improves on a strict >. Seen vectors are therefore dropped before they are charged.
+   *
+   * Scoped to the margin stage, not the solve: setCurTol changes which plans are feasible, so the
+   * same vector genuinely has to be re-optimised once per stage. */
+  const seenSeeds=new Set();
+  const trySeed=ch=>{if(!ch||interrupted)return false;
+    const key=ch.join(",");if(seenSeeds.has(key))return true;seenSeeds.add(key);
+    if(!keepGoing("seed-start"))return false;const c=ch.slice();const sc=localOpt(c);
     if(sc!=null&&!interrupted&&(!inc||sc>inc.sc)){inc={sc,ch:c.slice()};tLastGain=control.readNow();}return !interrupted;};
   if(carry)trySeed(carry);   // strict optimum seeds the relaxed pass -> never drops below no-margin
   // The seed set is fixed (budget-independent) on purpose: the ilsT/DFS caps are measured from the
@@ -717,13 +925,19 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       if(stag>stagLimit||!keepGoing("ils-iteration"))break;
       const ch=inc.ch.slice();const k=1+((rnd()*2)|0);
       for(let m=0;m<=k;m++){if(!keepGoing("ils-perturb"))break;const li=(rnd()*N)|0,js=lineJobs[li];ch[li]=(rnd()*js.length)|0;}
+      // The kick rewrites `ch` wholesale; re-establish the invariant rather than leave the vectors
+      // describing the incumbent this kick moved away from.
+      evalChoice(ch);
       if(interrupted)break;
       const sc=localOpt(ch);if(sc!=null&&!interrupted&&sc>inc.sc+EPS){inc={sc,ch:ch.slice()};stag=0;tLastGain=control.readNow();}else if(!interrupted)stag++;
     }
     evalChoice(inc.ch);best={score:scoreNow(),choice:inc.ch.slice(),produced:produced.slice(),consumed:consumed.slice()};
   }
   if(interrupted){capped=true;break;}
-  produced.set(baseArr);consumed.fill(0);
+  // The DFS drives produced/consumed through its own incremental loops and does not touch the
+  // feasibility cache — it tests the rows inline. Re-derive the cache from the empty plan it starts
+  // and ends on, so the next caller of feasibleNow is not reading a verdict about another plan.
+  produced.set(baseArr);consumed.fill(0);rescanFeasibility();
   // LP z bounds the integer optimum; if the incumbent already reaches it, the search is done.
   let stageExhaustive=!!(lp&&lp.complete&&curTol===0&&best.score>=lp.z-1e-6*Math.max(1,lp.z));
   if(!stageExhaustive){dfs(0,0);stageExhaustive=!capped&&!interrupted;}
@@ -762,6 +976,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       if(stag>SWAP_STAG_LIMIT||!keepGoing("swap-ils"))break;
       const ch=cur.ch.slice(),k=1+((rnd()*2)|0);
       for(let m=0;m<=k;m++){if(!keepGoing("swap-ils-perturb"))break;const li=(rnd()*N)|0,js=lineJobs[li];ch[li]=(rnd()*js.length)|0;}
+      evalChoice(ch);
       if(interrupted)break;
       const sc=deepOpt(ch);
       if(sc!=null&&!interrupted&&sc>cur.sc+EPS){cur={sc,ch:ch.slice()};stag=0;}else if(!interrupted)stag++;
