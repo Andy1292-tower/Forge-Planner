@@ -12,8 +12,9 @@ margin-solve bound) lands only together with its contract edit and is called out
 
 ## Goals
 
-- Reduce time-to-quality on large factories (30–64 lines) by an order of magnitude for the
-  Items/Credits discrete search, and materially (≥40%) for multi-project Set & forget runs.
+- Cut time-to-quality several-fold (target ≥3×) for the Items/Credits discrete search at real
+  game scale (7 lines today, an 8th planned, ~10 as the hard planning ceiling), and materially
+  (≥40%) for multi-project Set & forget runs.
 - Use multi-core hardware: a small persistent Worker pool for independent solve work.
 - Improve plan quality per second: more search iterations in the same budget, plus one
   structurally better neighborhood (LNS) and tighter pruning bounds.
@@ -32,22 +33,29 @@ margin-solve bound) lands only together with its contract edit and is called out
 
 ## Background: where solve time goes
 
-Problem size bounds: up to 64 lines (`fields.js` `maxLines`), 15 compression levels, 9 products +
-3 raws (+2 mined resources). A line's job list is up to ~140 entries (idle + raws + 9 products ×
-eligible levels).
+Real problem size: the game exposes 7 crafting lines today, an 8th is planned, and ~10 is the
+realistic ceiling. (`fields.js` `maxLines: 64` is a state-validation bound, not a design point;
+nothing below is sized against it.) The dimensions that actually grow are elsewhere: 15
+compression levels and 9 products + 3 raws (+2 mined resources) put a line's job list at up to
+~140 entries, and the number of component solves behind one user action multiplies with features:
+share-of-max calibration runs one solve per checked output, a margin runs every stage twice,
+Credits runs a baseline plus refinements per priced item, and a Project run stacks fixed-point
+passes, ordering estimates, warm-ups, idle-line fills, and a full hidden comparison run. Solve
+times grew with that multiplicity and with chain size — not with line count.
 
 **Items/Credits discrete search (`solveCore`).** Every local-search probe calls `evalChoice`,
-which recomputes the produced/consumed vectors from scratch over all N lines. `repair`, `climb`,
-`minDeficitAtScore`, and `swapTargets` each try O(N·J) candidate moves per pass, so one pass costs
-O(N²·J) probe work — quadratic in line count — and the ILS plus the feeder second pass run
-thousands of passes. This is the dominant cost and matches the observed scaling: solve times grew
-as factories grew. Secondary costs in the same loops: `performance.now()` is sampled on **every**
+which recomputes the produced/consumed vectors from scratch over all N lines even though a move
+changes one line's few coefficients. `repair`, `climb`, `minDeficitAtScore`, and `swapTargets`
+try O(N·J) candidate moves per pass (~1,000 probes at 7 lines), and the ILS stagnation limits
+(1200/8000 iterations) plus the feeder second pass multiply that into millions of probes per
+stage. At real scale the per-probe waste factor is the line count itself (~7–10×), and totals are
+driven by J (chain size) and iteration counts. Secondary costs in the same loops: `performance.now()` is sampled on **every**
 checkpoint (every candidate job trial, and every coefficient while building the LP), and
 `feasibleNow` calls `isMinedResource` (an array scan) per resource per check.
 
 **Project mode (`projectSchedule` / `solveExecutableProjectPhase` / `optimizeProjectTop`).** The
-makespan LP (up to ~11.5k columns at 64 lines) is rebuilt and solved from scratch many times per
-run: free + pinned solves per phase, up to 8 pre-produced-Bits fixed-point passes where only the
+makespan LP (~1.3k columns at 8 lines: lines × items × levels) is rebuilt and solved from scratch
+many times per run: free + pinned solves per phase, up to 8 pre-produced-Bits fixed-point passes where only the
 Bits terms move, compression-fallback retries, one ordering-estimate LP per project in sequenced
 mode, warm-up solves, and a complete hidden alternative run whenever prefer-current stabilized any
 phase. `lpMaximize` uses Bland's rule from the first pivot — the slowest anti-cycling rule — and
@@ -126,10 +134,12 @@ These are requirements, not suggestions. WS3 implements them; every later change
 
 Build the evidence base before touching the solver.
 
-- Fixture corpus under `test/perf/`: small (8-line), mid (30-line), and max (64-line) Items
-  factories; a Credits state with many priced items; a 3+ project Set & forget run exercising
-  fixed points, fills, and the hidden comparison. Fixtures are saved states, loadable by the
-  existing Node test bootstrap.
+- Fixture corpus under `test/perf/`: the reference late-game save committed at
+  `test/perf/fixtures/lategame-7line.json` (7 heterogeneous lines from 16384× down to 512×,
+  every item priced, a 10-project list, Set & forget with gating off, 20 s budget) drives the
+  Items, Credits, and Project fixtures from one state; variants add share mode + margin, and 8-
+  and 10-line expansions for headroom. Fixtures are saved states, loadable by the existing Node
+  test bootstrap.
 - Harness: runs `optimize()` per fixture with `makeSolveControl`'s existing `onCheckpoint` seam,
   emitting per-label work/elapsed histograms, LP pivot counts, ILS iteration counts, final
   objectives, and `capped`/`deadlineReached` flags as JSON into `test-results/`.
@@ -167,9 +177,10 @@ Invariants: identical search *semantics* for 1–4 (same probe order, same accep
 drift; property test runs delta-path and full-recompute paths side by side over randomized move
 sequences on every fixture and asserts vectors agree within 1e-12 before drift resync.
 
-Expected effect: probe cost drops from O(N) to O(1); at 30–64 lines the dominant loops get an
-order of magnitude cheaper, which also means far more ILS/second-pass iterations inside the same
-iteration-based stagnation limits (a quality gain at unchanged budgets).
+Expected effect: probe cost drops from O(N) to O(1) — roughly the line count (7–10×) off the
+dominant loops, with the clock and `needFrac` wins on top — which also means more ILS/second-pass
+iterations inside the same iteration-based stagnation limits (a quality gain at unchanged
+budgets).
 
 ### WS2 — LP engine (`lpMaximize` + Project-mode call sites)
 
@@ -197,9 +208,11 @@ free-solve time.
 #### Pool lifecycle
 
 - `solve-service` grows from one owned Worker to a pool honoring N1–N7. The pool fills lazily on
-  the first request that can use it; small solves (below an engagement threshold, e.g. <12 lines
-  and <4 priced Credits items and non-project modes) keep the single-Worker path — parallelism has
-  spawn/merge overhead that tiny solves should not pay.
+  the first request that can use it. Engagement is by work shape, never line count (the game is
+  7–10 lines across the board): a plain Items solve stays on one Worker; the pool engages where
+  one user action fans out into many component solves — Credits comparisons (the reference save
+  prices all 12 items), share-of-max calibration (one solve per checked output), and Project runs
+  with a hidden prefer-current comparison.
 - Supersede: terminate **only** Workers busy with the obsolete generation; idle Workers are
   reused. Replacement construction is lazy and reuses the shared Blob URL (N2/N4).
 - Per-Worker failure/backoff mirrors today's `workerFailed` logic; total pool failure falls back
@@ -259,7 +272,10 @@ fixture; kill switch verified to restore exact single-Worker behavior.
 3. **Dual-priced DFS bound.** The current DFS upper bound assumes remaining lines can max-produce
    every target with zero input cost. Price jobs with the root LP's duals for a Lagrangian bound —
    one dot product per node, dramatically tighter on feeder-heavy chains, meaning more
-   `capped:false` proofs inside the budget. Gated by an equivalence harness: on every corpus
+   `capped:false` proofs inside the budget. The assignment space at 7 lines is still ~10^15, and
+   the reference save's lines are all distinct profiles (the DFS's identical-line symmetry skip
+   almost never fires), so proofs do not come free at real scale; whether this item pays is
+   decided by Phase-0 `capped` rates on the corpus. Gated by an equivalence harness: on every corpus
    fixture the DFS with the new bound must return the same optimum as without it, and the bound
    must never sit below an achieved objective.
 
@@ -305,9 +321,10 @@ any PR touching the build or worker lifecycle.
 
 ## Acceptance criteria (project-level)
 
-- **A1 — Speed.** On the 64-line Items fixture, time-to-baseline-objective drops ≥5×; the
-  multi-project Set & forget fixture total solve time drops ≥40%; Credits at the default budget
-  refines every capped candidate at least once where the baseline could not.
+- **A1 — Speed.** On the reference-save Items fixture, time-to-baseline-objective drops ≥3×
+  (≥5× on the 10-line expansion variant); the reference Set & forget run (gating off, fills,
+  hidden comparison) drops ≥40% in total solve time; Credits refines all 12 priced candidates
+  within the reference 20 s budget where the baseline cannot.
 - **A2 — Quality parity or better.** On every corpus fixture, final objective ≥ baseline − 0.1%
   (near-tie tolerance for float-trajectory drift); regressions beyond that block the PR.
 - **A3 — Network safety.** Release-smoke scripted session: zero solver-source requests after page
@@ -326,7 +343,7 @@ any PR touching the build or worker lifecycle.
   single-Worker path as the literal fallback (kill switch = today's code path) and by the
   construction-count tripwire (N7).
 - **Memory/thermal.** K Workers each hold solver state (~250 KB source + working set); cap 4 and
-  the engagement threshold keep small devices and small solves on one Worker.
+  shape-based engagement keep small devices and simple solves on one Worker.
 - **Warm-start correctness (WS2.3).** Explicitly a stretch goal; the memo + pivot-rule wins do not
   depend on it.
 - **Bound validity (WS4).** Both new bounds are gated by never-below-achieved assertions across
@@ -334,8 +351,8 @@ any PR touching the build or worker lifecycle.
 
 ## Open questions
 
-- Pool engagement threshold values (line count / priced-item count) — settle empirically in WS3
-  from Phase-0 baselines.
+- Pool engagement rules — which work shapes beyond Credits, calibration, and the hidden
+  comparison benefit — settle empirically in WS3 from Phase-0 baselines.
 - Whether Items-mode sharding is worth more than 2 Workers once WS1 lands (the hot loop may become
   cheap enough that calibration and Credits are the only pool beneficiaries that matter).
 - Final wording of the margin-bound contract paragraph (WS4.2) — needs maintainer sign-off before
