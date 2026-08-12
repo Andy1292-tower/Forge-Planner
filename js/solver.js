@@ -384,6 +384,15 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       for(const[r,a]of job.cons)if(okIdx(r)){consR[c]=r;consC[c]=a*sp;c++;}
     }
   }
+  /* The reverse of prodR: every slot that produces a resource, grouped by resource and in ascending
+   * slot order. repair asks "what could close THIS shortfall" of a handful of short rows rather than
+   * pricing every job on every line, and this is the half of that question it cannot read off the
+   * plan it holds. Built once — the coefficients change, the incidence never does. */
+  const resProdOff=new Int32Array(R+1),resProdSlot=new Int32Array(prodOff[slots]);
+  for(let p=0;p<prodOff[slots];p++)resProdOff[prodR[p]+1]++;
+  for(let r=0;r<R;r++)resProdOff[r+1]+=resProdOff[r];
+  {const cursor=resProdOff.slice(0,R);
+    for(let s=0;s<slots;s++)for(let p=prodOff[s],e=prodOff[s+1];p<e;p++)resProdSlot[cursor[prodR[p]]++]=s;}
   /* Delta evaluation. Every probe in the local search changes ONE line's job (the target swap
    * changes two), so re-summing all N lines from baseArr to measure it is the single largest
    * avoidable cost in the solver: the flat arrays above make one line's contribution addressable,
@@ -486,17 +495,37 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     for(let f=0;f<feederIdx.length;f++){const net=produced[feederIdx[f]]-consumed[feederIdx[f]];if(net>0)bonus+=net/feederScale[f];}
     return sc*(1+eps*bonus);
   };
-  // repair input shortfall down to a feasible plan: each step makes the single line-switch
-  // (toward producing ANY short resource) that cuts total shortfall most. Returns feasibility.
-  // Drive total input shortfall to zero. Each step makes the single line-switch (to ANY job
-  // — produce an input, OR drop a craft to a cheaper/lower level) that cuts the shortfall most.
+  /* Drive total input shortfall to zero. Each step makes the single line-switch (to ANY job
+   * — produce an input, OR drop a craft to a cheaper/lower level) that cuts the shortfall most.
+   *
+   * Only the moves that could possibly cut it are priced. The shortfall sums max(0, cons-prod) over
+   * the rows: a row at or above balance contributes nothing and a move can only leave it there or
+   * push it up, and a SHORT row falls only if the incoming job produces it or the outgoing job was
+   * burning it. Every other move leaves every row's term where it was or higher, and the sum is the
+   * same additions of non-negative terms in the same order — addition is monotone in each argument,
+   * so the total is too, and `red` comes out at zero or below. It cannot clear bRed, so skipping it
+   * costs the search nothing: the scan still runs line-ascending, job-ascending and still adopts the
+   * first move holding the largest reduction, which is the same move on the same plan.
+   *
+   * Candidates are marked with a pass stamp rather than cleared between passes; the wrap guard keeps
+   * a long ILS run from stamping past what an Int32Array can hold and matching nothing. */
+  const repairCand=new Int32Array(slots);let repairStamp=0;
   function repair(ch){
     for(let guard=0;guard<6*N+40;guard++){
       if(!keepGoing("repair-pass"))return null;
       evalChoice(ch);const D=totalDeficit();if(D<=1e-7)break;
+      if(repairStamp===0x7fffffff){repairCand.fill(0);repairStamp=0;}
+      const stamp=++repairStamp;
+      for(let r=0;r<R;r++)if(consumed[r]-produced[r]>0)
+        for(let q=resProdOff[r],e=resProdOff[r+1];q<e;q++)repairCand[resProdSlot[q]]=stamp;
       let bI=-1,bJ=-1,bRed=1e-12;
-      for(let i=0;i<N;i++){const old=ch[i],js=lineJobs[i];
+      for(let i=0;i<N;i++){const old=ch[i],js=lineJobs[i],base=jobBase[i],slot=base+old;
+        // A line already burning a short resource can cut that burn by moving to any other job, so
+        // this one is priced whole rather than by what the incoming job makes.
+        let wholeLine=false;
+        for(let c=consOff[slot],e=consOff[slot+1];c<e;c++)if(consumed[consR[c]]-produced[consR[c]]>0){wholeLine=true;break;}
         for(let k=0;k<js.length;k++){if(k===old)continue;
+          if(!wholeLine&&repairCand[base+k]!==stamp)continue;
           if(!keepGoing("repair-job"))return null;
           beginMove();applyMove(i,old,k);const red=D-totalDeficit();revertMove();
           if(red>bRed){bRed=red;bI=i;bJ=k;}}}
