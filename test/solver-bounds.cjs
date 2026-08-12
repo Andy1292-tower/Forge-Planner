@@ -1,6 +1,5 @@
 "use strict";
-/* The solver's upper bounds, checked against what it actually achieves (WS4.2/WS4.3 of
- * docs/SOLVER_PERF_DESIGN.md).
+/* The solver's upper bounds, checked against what it actually achieves.
  *
  * A bound is the one number in a solve result that is a CLAIM rather than a measurement: the plan is
  * whatever the search found, but `bound` asserts that nothing better exists. A bound that sits below

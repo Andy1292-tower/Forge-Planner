@@ -33,7 +33,7 @@
  * keeps the backbone and continues that line: e(5) = 2295.
  *
  * ESTIMATED LEVELS. A few levels are too expensive to have been reached in game
- * yet, so their costs were extrapolated instead of read (see docs/CATALOG.md).
+ * yet, so their costs were extrapolated instead of read.
  * Every such entry says so in its `description`, which the catalog list shows:
  *
  *   biochemical-laboratory        Lv 5     its own curve, continued (see above)

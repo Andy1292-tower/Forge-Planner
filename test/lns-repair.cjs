@@ -1,5 +1,5 @@
 "use strict";
-/* Contract test for solveCore's destroy-and-repair operator (WS4.1 of docs/SOLVER_PERF_DESIGN.md).
+/* Contract test for solveCore's destroy-and-repair operator.
  *
  * The operator freezes all but k lines, folds the frozen lines' production and burn into the supply
  * the freed ones see, and enumerates the freed subset exactly against the incumbent's own score. It

@@ -1,5 +1,5 @@
 "use strict";
-/* Property test for solveCore's delta evaluation (WS1.3 of docs/SOLVER_PERF_DESIGN.md).
+/* Property test for solveCore's delta evaluation.
  *
  * The local search used to measure every candidate by rebuilding produced/consumed from the base
  * supply over all N lines. It now applies one line's job change in place and undoes it, which is the
