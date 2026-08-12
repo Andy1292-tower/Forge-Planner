@@ -1524,8 +1524,52 @@ function makeLpMemo(){
     },
   };
 }
-// Dense single-phase simplex. Maximize c·x s.t. A x <= b (b>=0), x>=0. Bland's rule (no cycling).
-function lpMaximize(c,A,b,control){
+const LP_MAX_PIVOTS=20000;
+/* Certify a finished speculative solve against the caller's UNTOUCHED (c,A,b), which is the only
+ * data a bent tableau cannot have bent. x is the primal vertex and y the objective row's slack-
+ * column entries — the duals of the <= rows — so primal feasibility, dual feasibility and equal
+ * objectives together prove optimality outright, whatever the pivot arithmetic did on the way.
+ *
+ * Every tolerance is the residual's own summed magnitude, never a constant. A pivot-element
+ * magnitude test was measured here first and dropped: over the real corpus the chosen element runs
+ * as low as 2.5e-30 of its column on solves whose objective still agrees with Bland's to 1e-16, so
+ * no threshold separates a bad pivot from a good one. This checks the answer instead of the
+ * arithmetic, and costs about two pivots. */
+function lpCertifyOptimal(c,A,b,x,y){
+  const m=A.length,n=c.length;
+  let primalObj=0,dualObj=0,primalScale=0,dualScale=0;
+  for(let j=0;j<n;j++){
+    if(!(x[j]>=-1e-12))return false;
+    primalObj+=c[j]*x[j];primalScale+=Math.abs(c[j]*x[j]);
+  }
+  for(let i=0;i<m;i++){
+    if(!(y[i]>=-1e-12))return false;
+    dualObj+=b[i]*y[i];dualScale+=Math.abs(b[i]*y[i]);
+    const row=A[i];let used=0,scale=Math.abs(b[i]);
+    for(let j=0;j<n;j++){const term=row[j]*x[j];used+=term;scale+=Math.abs(term);}
+    if(!(used<=b[i]+1e-9*Math.max(1,scale)))return false;
+  }
+  for(let j=0;j<n;j++){
+    let covered=0,scale=Math.abs(c[j]);
+    for(let i=0;i<m;i++){const term=A[i][j]*y[i];covered+=term;scale+=Math.abs(term);}
+    if(!(covered>=c[j]-1e-9*Math.max(1,scale)))return false;
+  }
+  if(!Number.isFinite(primalObj)||!Number.isFinite(dualObj))return false;
+  return Math.abs(primalObj-dualObj)<=1e-9*Math.max(1,primalScale,dualScale);
+}
+/* Dense single-phase simplex. Maximize c·x s.t. A x <= b (b>=0), x>=0.
+ *
+ * `dantzig` selects the most-negative-reduced-cost entering column instead of Bland's lowest index.
+ * It reaches the same optimum in far fewer pivots and has neither an anti-cycling guarantee nor, on
+ * these tableaux, a numerical one: every tolerance below is absolute and unscaled while b spans 1.0
+ * to 1e100 (a Vespium rig income), so the ratio tie-break degrades to "first eligible row wins" and
+ * the loop can walk itself into a tableau that no longer represents the problem. The rule therefore
+ * runs as a speculative attempt under a pivot budget, with abort triggers on a falling objective
+ * row, a basic variable that went negative, an exhausted budget, an unboundedness claim, and a
+ * finished solve that fails to certify; it reports `aborted` instead of an answer and the caller
+ * re-solves the untouched (c,A,b) under Bland. Failure costs one wasted attempt, never a wrong
+ * vertex. */
+function lpSimplexSolve(c,A,b,control,dantzig){
   const m=A.length,n=c.length,W=n+m+1;
   const T=[];
   for(let i=0;i<m;i++){
@@ -1534,26 +1578,78 @@ function lpMaximize(c,A,b,control){
   }
   const obj=new Float64Array(W);for(let j=0;j<n;j++)obj[j]=-c[j];T.push(obj);
   const basis=[];for(let i=0;i<m;i++)basis.push(n+i);
-  let complete=false;
-  for(let it=0;it<20000;it++){
+  // The attempt gets a budget proportional to the tableau. Bland keeps the historical hard cap: it
+  // is the loop that has to terminate on its own.
+  const budget=dantzig?Math.min(LP_MAX_PIVOTS,4*(n+m)+64):LP_MAX_PIVOTS;
+  let rhsScale=1;
+  if(dantzig)for(let i=0;i<m;i++){const magnitude=Math.abs(b[i]);if(magnitude>rhsScale)rhsScale=magnitude;}
+  let objRhs=0,complete=false;
+  for(let it=0;it<budget;it++){
     // A simplex pivot is atomic: check before mutating its row/tableau so cancellation can never
     // expose a half-pivoted solution. The work charge reflects the dense row update.
     if(control&&!control.checkpoint("lp-pivot",Math.max(1,W*(m+1)))){
       const x=new Float64Array(n);for(let i=0;i<m;i++)if(basis[i]<n)x[basis[i]]=T[i][W-1];
       return {x,interrupted:true,complete:false};
     }
-    let piv=-1;for(let j=0;j<n+m;j++){if(T[m][j]<-1e-9){piv=j;break;}}   // entering (Bland)
+    let piv=-1;
+    // Same entering threshold under both rules, so "no entering column" means the same optimum test.
+    if(dantzig){let low=-1e-9;for(let j=0;j<n+m;j++){const rc=T[m][j];if(rc<low){low=rc;piv=j;}}}
+    else{for(let j=0;j<n+m;j++){if(T[m][j]<-1e-9){piv=j;break;}}}
     if(piv<0){complete=true;break;}
     let leave=-1,best=Infinity;
-    for(let i=0;i<m;i++){const a=T[i][piv];if(a>1e-9){const r=T[i][W-1]/a;if(r<best-1e-12||(Math.abs(r-best)<1e-12&&(leave<0||basis[i]<basis[leave]))){best=r;leave=i;}}}
-    if(leave<0)return {x:null,unbounded:true,complete:true};
+    for(let i=0;i<m;i++){const a=T[i][piv];
+      if(a>1e-9){const r=T[i][W-1]/a;if(r<best-1e-12||(Math.abs(r-best)<1e-12&&(leave<0||basis[i]<basis[leave]))){best=r;leave=i;}}}
+    // Unboundedness is a claim about the feasible region, so only the exact loop is allowed to make
+    // it; the attempt hands the question back rather than certify it off a tableau it may have bent.
+    if(leave<0)return dantzig?{aborted:true}:{x:null,unbounded:true,complete:true};
     const prow=T[leave],pv=prow[piv];
     for(let j=0;j<W;j++)prow[j]/=pv;
     for(let i=0;i<=m;i++){if(i===leave)continue;const f=T[i][piv];if(Math.abs(f)>1e-12){const ri=T[i];for(let j=0;j<W;j++)ri[j]-=f*prow[j];}}
     basis[leave]=piv;
+    if(dantzig){
+      // The objective row's RHS is the current objective value, and an entering column with negative
+      // reduced cost can only raise it. A fall, or a value that has stopped being a number, is the
+      // tableau coming apart rather than the rule being slow.
+      const now=T[m][W-1];
+      if(!Number.isFinite(now)||now<objRhs-1e-9*Math.max(1,Math.abs(objRhs)))return {aborted:true};
+      objRhs=now;
+    }
   }
   const x=new Float64Array(n);for(let i=0;i<m;i++)if(basis[i]<n)x[basis[i]]=T[i][W-1];
+  if(dantzig){
+    if(!complete)return {aborted:true};
+    // The ratio test keeps every basic variable non-negative. One that went negative got there by
+    // cancellation, and the vertex it names is not a point of the feasible region.
+    for(let i=0;i<m;i++)if(T[i][W-1]<-1e-9*rhsScale)return {aborted:true};
+    // The certificate is dense arithmetic of a pivot's order, so it is charged like one — a memoized
+    // or speculative path that spends work off the books makes the run's own accounting a lie.
+    if(control&&!control.checkpoint("lp-pivot",Math.max(1,2*n*(m+1))))return {x,interrupted:true,complete:false};
+    const y=new Float64Array(m);for(let i=0;i<m;i++)y[i]=T[m][n+i];
+    if(!lpCertifyOptimal(c,A,b,x,y))return {aborted:true};
+  }
   return {x,complete};
+}
+/* Solve one LP. `opts.pivotRule:"dantzig"` runs the speculative attempt first and falls back to the
+ * exact loop when it aborts; anything else goes straight to Bland, which is what every call site
+ * asks for today.
+ *
+ * The rule is opt-in rather than the default because BOTH families of caller read the vertex, not
+ * just the optimum. These LPs have alternate optima: z is unique, the vertex is not. The makespan LP
+ * hands its vertex to the line assignment, the warm-ups it implies and the reported project ETA;
+ * the relaxation inside solveCore hands its vertex to the roundings that seed the whole local
+ * search, so a different-but-equally-optimal vertex reseeds a bounded anytime search and moves the
+ * plan it settles on. test/lp-pivot.cjs measures both halves of that on real captured tableaux: the
+ * same optimum to 1e-16 for well under half the pivots, at a vertex Bland does not return. Switching
+ * the relaxation over to it moves test/credits-contract.cjs's pinned exact-Wire reproduction by 1%
+ * and flips its adversarial deep-winner to a candidate 2.5% worse. Cheaper pivots are not worth a
+ * worse plan; making the vertex canonical is what would let this be switched on, and that is a
+ * change to the LP rather than to the pivot rule. */
+function lpMaximize(c,A,b,control,opts){
+  if(opts&&opts.pivotRule==="dantzig"){
+    const attempt=lpSimplexSolve(c,A,b,control,true);
+    if(!attempt.aborted)return attempt;
+  }
+  return lpSimplexSolve(c,A,b,control,false);
 }
 // Assemble the makespan LP (A x <= b, maximize c·x) from a job-variable list. Split out of
 // projectSchedule so the stability pass (issue #87 item 5) can rebuild it over a pinned subset of the

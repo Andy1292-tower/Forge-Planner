@@ -21,6 +21,7 @@ const tests = [
   "test/legacy-worker-retirement.cjs",
   "test/lookahead.cjs",
   "test/lp-memo.cjs",
+  "test/lp-pivot.cjs",
   "test/manual-throttle.cjs",
   "test/minedfocus.cjs",
   "test/minedmodes.cjs",
