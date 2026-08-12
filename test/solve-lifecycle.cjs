@@ -31,6 +31,7 @@ function lifecycleHarness(options = {}) {
   let nextTimer = 1;
   let now = options.now === undefined ? 1_000 : options.now;
   let stability = { remembered: ["line-1"] };
+  const stabilityWrites = [];
 
   class FakeWorker {
     constructor(url) {
@@ -67,7 +68,9 @@ function lifecycleHarness(options = {}) {
     },
     domElement(_tag, _className, text) { const el = new FakeElement(); el.textContent = text || ""; return el; },
     getLineStability() { return stability; },
-    setLineStability() {},
+    // Recorded, not ignored: the snapshot a fan-out adopts is shard 0's, so which shard wrote it is
+    // the observable difference between placing a fragment and guessing where it came from.
+    setLineStability(next) { stabilityWrites.push(JSON.parse(JSON.stringify(next))); },
     // Absent unless a test asks for it: the pool cap is derived from the core count, and a page that
     // reports none is a page of one slot.
     navigator: options.hardwareConcurrency === undefined
@@ -148,6 +151,7 @@ function lifecycleHarness(options = {}) {
     advance(ms) { now += ms; },
     storage,
     setStability(next) { stability = next; },
+    stabilityWrites() { return stabilityWrites.slice(); },
     cancel(reason) {
       context.__reason = reason;
       const value = vm.runInContext("solveService.cancel(globalThis.__reason)", context);
@@ -305,6 +309,9 @@ function workerResponse(worker, body, messageIndex = 0) {
     generation: sent.generation === undefined ? sent.reqId : sent.generation,
     mode: sent.mode,
     stateRevision: sent.stateRevision,
+    // Echoed the way js/solver.worker.v2.js echoes it: the descriptor it was handed, or null when
+    // it was handed none. A reply that names no shard is a reply the merge cannot place.
+    shard: sent.shard ? { index: sent.shard.index, count: sent.shard.count } : null,
     ...body,
   };
 }
@@ -867,6 +874,56 @@ test("a pooled fan-out cannot construct past what the ledger accounts for", () =
   assert.equal(status.poolTripped, true, "a Worker that cannot survive its own delivery trips the pool");
   assert.equal(status.workerFailures, 0, "refusing to build rates no Worker and arms no cooldown");
   assert.equal(delivered.length, 20, "every request is answered exactly once, by a shard or the fallback");
+});
+
+test("a double-posting shard cannot complete a fan-out with a shard still missing", () => {
+  // The merge's precondition is that each shard replied at most once. Nothing enforced it, so a
+  // repeat filled the last entry and the merge delivered a comparison one slice short.
+  const harness = pooledHarness({ hardwareConcurrency: 5 });
+  const delivered = [];
+  harness.callRequest(creditsRequest(1), (result, error) => delivered.push({ result, error }));
+  assert.equal(harness.workers.length, 4);
+  const fragment = index => creditsFragment(index, 4, { issues: ["shard " + index] });
+
+  harness.workers[0].emitMessage(workerResponse(harness.workers[0], { res: fragment(0) }));
+  harness.workers[1].emitMessage(workerResponse(harness.workers[1], { res: fragment(1) }));
+  harness.workers[1].emitMessage(workerResponse(harness.workers[1],
+    { res: creditsFragment(1, 4, { issues: ["shard 1 again"], ms: 99 }) }));
+  harness.workers[3].emitMessage(workerResponse(harness.workers[3], { res: fragment(3) }));
+  assert.equal(delivered.length, 0, "four fragments from three shards is not a complete comparison");
+
+  harness.workers[2].emitMessage(workerResponse(harness.workers[2], { res: fragment(2) }));
+  assert.equal(delivered.length, 1, "the shard that had not answered completes it");
+  assert.deepEqual(delivered[0].result.issues, ["shard 0", "shard 1", "shard 2", "shard 3"]);
+  assert.equal(delivered[0].result.ms, 10, "a dropped repeat contributes nothing to the merged result");
+});
+
+test("a shard whose echoed descriptor is unreadable is dropped, not read as shard 0", () => {
+  /* Coercing an unusable echo to 0 takes a slice the merge already holds and hands it shard 0's
+   * privileges — the line stability snapshot the whole page then remembers. */
+  const harness = pooledHarness({ hardwareConcurrency: 5 });
+  const delivered = [];
+  harness.callRequest(creditsRequest(1), (result, error) => delivered.push({ result, error }));
+  const fragment = index => creditsFragment(index, 4, { issues: ["shard " + index] });
+
+  harness.workers[0].emitMessage(workerResponse(harness.workers[0],
+    { res: creditsFragment(0, 4, { issues: ["shard 0"], __stab: { remembered: ["line-1"] } }) }));
+  assert.deepEqual(harness.stabilityWrites(), [{ remembered: ["line-1"] }], "shard 0 owns the stability snapshot");
+
+  harness.workers[1].emitMessage(workerResponse(harness.workers[1], {
+    shard: { index: "1", count: 4 },
+    res: creditsFragment(1, 4, { issues: ["garbled"], __stab: { remembered: ["line-9"] } }),
+  }));
+  assert.deepEqual(harness.stabilityWrites(), [{ remembered: ["line-1"] }],
+    "a fragment the service cannot place must not rewrite line stability");
+  assert.equal(delivered.length, 0);
+
+  harness.workers[1].emitMessage(workerResponse(harness.workers[1], { res: fragment(1) }));
+  harness.workers[2].emitMessage(workerResponse(harness.workers[2], { res: fragment(2) }));
+  harness.workers[3].emitMessage(workerResponse(harness.workers[3], { res: fragment(3) }));
+  assert.equal(delivered.length, 1);
+  assert.deepEqual(delivered[0].result.issues, ["shard 0", "shard 1", "shard 2", "shard 3"],
+    "the merge is the four fragments, and the unreadable echo is not one of them");
 });
 
 // A factory that builds two Workers and then throws, so a four-way fan-out dies halfway through

@@ -558,7 +558,20 @@ const solveService=(()=>{
        * synchronous fallback exactly as an unsharded one does. Slower than a reassignment, never
        * wrong, and the fan-out is bounded work rather than a retry loop. */
       if(data.error){pendingShards=null;deliver(data.generation,null,data.error);return;}
-      const shardIndex=data.shard&&Number.isInteger(data.shard.index)?data.shard.index:0;
+      const pending=pendingShards&&pendingShards.generation===data.generation?pendingShards:null;
+      const echoed=data.shard&&Number.isInteger(data.shard.index)?data.shard.index:null;
+      /* A fragment is placed before anything reads it, because everything below is a claim about
+       * which slice it is. An echo the service cannot place is dropped rather than read as shard 0,
+       * where it would take a slice the merge already holds and carry shard 0's stability snapshot
+       * with it; a repeat is dropped for the same reason, since entries reaching count with a shard
+       * still silent delivers a fragment of the catalog as the whole comparison. The request waits
+       * for the shard that has not answered, exactly as it waits for one that is merely slow. */
+      if(pending){
+        if(echoed===null||echoed<0||echoed>=pending.count||pending.seen.has(echoed))return;
+        pending.seen.add(echoed);
+      }
+      // Absent is the unsharded solve, which is shard 0's whole-request answer under another name.
+      const shardIndex=echoed===null?0:echoed;
       // Shard 0's cache is the one kept. Applying every arrival would make a Worker-resident cache a
       // function of which Worker answered first; the share ceilings below are unioned instead, which
       // is order-free because mergeSoloCaches reads the fragments in shard order.
@@ -570,10 +583,10 @@ const solveService=(()=>{
        * resident cache left on the result is persisted and replayed for a day as part of the plan. */
       const solo=data.res&&typeof data.res==="object"?data.res.__solo:null;
       if(data.res&&typeof data.res==="object")delete data.res.__solo;
-      if(pendingShards&&pendingShards.generation===data.generation){
-        pendingShards.entries.push({shard:{index:shardIndex,count:pendingShards.count},res:data.res,solo});
-        if(pendingShards.entries.length<pendingShards.count)return;
-        const entries=pendingShards.entries;pendingShards=null;
+      if(pending){
+        pending.entries.push({shard:{index:shardIndex,count:pending.count},res:data.res,solo});
+        if(pending.entries.length<pending.count)return;
+        const entries=pending.entries;pendingShards=null;
         applySoloCache(mergeSoloCaches(entries.map(entry=>({shard:entry.shard,res:{__solo:entry.solo}}))));
         deliver(data.generation,mergeShardResults(expectedMode,entries),null);
         return;
@@ -659,7 +672,9 @@ const solveService=(()=>{
      * and a fan-out of one is the byte-identical single-Worker message: no shard field, no pending
      * record, nothing to merge. */
     const shardCount=shard!==null?1:shardCountFor(mode,dispatchedState);
-    pendingShards=shardCount>1?{generation:requestGeneration,count:shardCount,entries:[]}:null;
+    // seen is what makes "each shard replied at most once" — the merge's stated precondition — a
+    // property the service enforces rather than one it hopes the Workers honor.
+    pendingShards=shardCount>1?{generation:requestGeneration,count:shardCount,entries:[],seen:new Set()}:null;
 
     let slot=null;
     try{
