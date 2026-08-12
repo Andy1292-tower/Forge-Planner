@@ -649,7 +649,10 @@ if(initialState.recovery)showStateRecovery(initialState.recovery.raw,initialStat
 function costRow(pi,li,ci,c){
   const projectName=(S.projects[pi]&&S.projects[pi].name)||`Project ${pi+1}`;
   const opts=ALLITEMS.map(it=>`<option value="${it}" ${it===c.item?"selected":""}>${it}</option>`).join("");
-  const txt=(c.qty!=null&&isFinite(c.qty))?formatGameNum(c.qty,4):"";
+  // toDec, not isFinite: isFinite coerces a Decimal through Number(), so a project cost past the
+  // float64 ceiling read as "not finite" and rendered the field blank — and committing that blank
+  // would have erased the value the state still held.
+  const txt=toDec(c.qty)!==null?formatGameNum(c.qty,4):"";
   const errorId=`field-project-${fieldDomToken(S.projects[pi]&&S.projects[pi].id||pi)}-quantity-${li}-${ci}-error`;
   return `<div class="cost-row">
     <select data-citem="${pi}_${li}_${ci}" aria-label="${htmlAttribute(projectName)} level ${li+1} item ${ci+1}">${opts}</select>

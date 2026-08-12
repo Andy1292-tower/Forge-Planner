@@ -284,6 +284,80 @@ function nonFinite(value, at, found, depth) {
     atCap.out === wayOver.out ? "identical" : atCap.out + " vs " + wayOver.out);
 }
 
+/* ---- 7. the ways an unbounded quantity can still corrupt a float path ------------------------ */
+
+{
+  /* Each of these was a real defect found reviewing this change. They share one shape: a quantity
+   * too large for a float64 slipping into a float expression that has no way to say so. */
+
+  // (a) A recipe cost no float can hold makes recipeRate return null, and null * speed * 3600 is 0 —
+  //     which would schedule the craft as consuming nothing and hand out free output.
+  const rate = api("recipeRate");
+  check("an uncountable recipe cost yields null, never a zero rate",
+    rate("1e309", 1) === null && rate("1e5000", 1) === null && rate(new Dec("1e400"), 1) === null,
+    "1e309 -> " + rate("1e309", 1));
+  check("...and a real cost still divides exactly as a float",
+    rate(new Dec("478296900000"), 2) === 478296900000 / 2, String(rate(new Dec("478296900000"), 2)));
+
+  vm.runInContext(`
+    S = normalize(defaults());
+    S.mode = "project";
+    S.lines = [{max:64,spx:20,turbo:0},{max:64,spx:18,turbo:0}];
+    LEVELS.forEach(L => { S.prodCost.Glass.Bits[L] = parseGameNum("1e400"); });
+    S.projects = [{id:"g",name:"Glass job",catId:"",on:true,from:1,to:1,done:0,prio:null,
+      levels:[{costs:[{item:"Glass",qty:parseGameNum("5000")}]}]}];
+    normalize(S); syncManual(S);
+  `, context);
+  const freeCraft = api("optimize")();
+  const glassEntries = ((freeCraft.phases || [])[0] || {}).plan || [];
+  const craftsGlass = glassEntries.some(line => (line.entries || []).some(e => e.item === "Glass"));
+  check("a craft whose input cost cannot be counted is not scheduled as free",
+    !craftsGlass && !freeCraft.feasible,
+    "craftsGlass=" + craftsGlass + " feasible=" + freeCraft.feasible);
+
+  // (b) Drawable stock past the float ceiling must not become an infinite LP coefficient.
+  const coefficient = api("finiteCoefficient");
+  check("an LP coefficient saturates instead of overflowing to Infinity",
+    Number.isFinite(coefficient(new Dec("1e400"))) &&
+    Number.isFinite(coefficient(new Dec("-1e400"))) &&
+    coefficient(new Dec("-1e400")) < 0 && coefficient(new Dec("12.5")) === 12.5,
+    coefficient(new Dec("1e400")) + " / " + coefficient(new Dec("-1e400")));
+
+  // (c) A passive-output candidate with a colossal Forgie rate must still rank, not print an em-dash.
+  vm.runInContext(`
+    S = normalize(defaults());
+    S.mode = "credits";
+    S.forgie.Glass = parseGameNum("1e400");
+    RECIPE.Glass.inputs.forEach(input => LEVELS.forEach(L => { S.prodCost.Glass[input][L] = null; }));
+    S.sellPrice.Glass = parseGameNum("1e400");
+  `, context);
+  const passive = api("optimize")();
+  const glass = (passive.ranking || []).find(entry => entry.item === "Glass");
+  check("a colossal passive supply still produces finite, displayable credits",
+    glass && glass.credits instanceof Dec && glass.credits.isFinite() && glass.credits.gt(0) &&
+    api("disp")(glass.credits) !== "—",
+    glass ? api("disp")(glass.credits) : "(no Glass candidate)");
+
+  // (d) The supply cap is only sound for a resource nothing produces and nothing can target.
+  //     Capping an ordinary item's supply would under-report it as an output.
+  const targetOut = supply => {
+    context.__SUPPLY = supply;
+    vm.runInContext(`
+      S = normalize(defaults());
+      S.mode = "items";
+      S.solveBudget = 400;
+      ALLITEMS.forEach(item => { S.targets[item].on = (item === "Rods"); });
+      S.forgie.Rods = parseGameNum(__SUPPLY);
+    `, context);
+    return api("optimize")().out.Rods;
+  };
+  const modest = targetOut("1000");
+  const colossal = targetOut("1e9");
+  check("a passive supply of a TARGET is reported in full, not capped at what the factory consumes",
+    colossal > modest && colossal >= 1e9,
+    "forgie 1e3 -> " + modest + " | forgie 1e9 -> " + colossal);
+}
+
 console.log("");
 console.log(failures ? failures + " unbounded-quantity test(s) failed" : "all unbounded-quantity tests passed");
 process.exit(failures ? 1 : 0);

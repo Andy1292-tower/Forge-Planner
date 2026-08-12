@@ -5,6 +5,10 @@
 const VESP="Vespium";
 // One correctness threshold for reconstructing project rates and executable LP plan entries.
 const LP_ASSIGN_EPS=1e-9;
+/* "More than anything in this problem can use", as a per-second float the search can carry. Kept a
+ * factor of 3600 below the float ceiling because every rate here is reported per hour, and an
+ * hourly figure of Infinity is exactly the em-dash issue #142 was about. */
+const UNBOUNDED_PER_SEC=Number.MAX_VALUE/3600;
 // A project-plan phase may credit an intermediate's leftover stock as free supply instead of
 // crafting it (issue #73). Left uncapped, that credit scales with the phase's own throughput
 // multiplier (z) exactly like an indefinitely-sustained production rate would, so a chronic (if
@@ -470,16 +474,20 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   const baseArr=new Float64Array(R);
   for(let r=0;r<R;r++){
     const supply=supplyPerSec[r];
-    /* A resource nothing consumes has a ceiling of 0; cap to 0 only when the supply really is 0,
-     * and otherwise keep a positive floor so a pure surplus still reads as a surplus rather than
-     * being flattened to "no supply". */
-    const ceiling=consCeiling[r]>0?consCeiling[r]:0;
+    /* The cap applies to MINED resources only, and that restriction is the whole of its soundness.
+     * A mined resource is pure input — nothing produces it, and it can never be a target — so a
+     * supply above the most every line could burn cannot bind, and neither can the cap standing in
+     * for it. An ordinary item's supply is NOT safe to cap: its surplus is the answer. Capping
+     * Rods at what the factory consumes would report a Rods target as producing the consumption
+     * ceiling rather than the passive supply plus everything the lines make on top of it. */
+    const ceiling=isMinedResource(resources[r])?consCeiling[r]:0;
     if(ceiling>0&&supply.gt(ceiling)){baseArr[r]=ceiling;supplyUnbounded[r]=true;continue;}
     const flat=supply.toNumber();
-    if(Number.isFinite(flat)){baseArr[r]=flat;continue;}
-    // Nothing consumes it and it still overflows a float: unbounded by definition, and the largest
-    // finite float is as true a statement of "more than anything here can use" as the Decimal was.
-    baseArr[r]=Number.MAX_VALUE;supplyUnbounded[r]=true;
+    if(Number.isFinite(flat)&&Number.isFinite(flat*3600)){baseArr[r]=flat;continue;}
+    /* Past what a float64 can carry once converted back to an hourly figure. Saturate below the
+     * ceiling by the 3600 that conversion multiplies by, so the reported per-hour rate stays finite
+     * instead of becoming the Infinity that reads as an em-dash. */
+    baseArr[r]=UNBOUNDED_PER_SEC;supplyUnbounded[r]=true;
   }
 
   /* The reverse of prodR: every slot that produces a resource, grouped by resource and in ascending
@@ -1713,7 +1721,7 @@ function optimizeInner(timeBudget,testOptions,shard){
       const hasCost=LEVELS.some(L=>hasRecipeCost(item,ins,L));
       if(!hasCost){
         issues.push("No material cost entered for "+item+" — only passive output can be priced.");
-        if(control.checkpoint("credits-baseline-complete")){const out=forgieHr(item).toNumber(),resIndex={[item]:0};candidate={item,kind:"product",out,price,credits:price.times(out),
+        if(control.checkpoint("credits-baseline-complete")){const out=supplyRate(forgieHr(item)),resIndex={[item]:0};candidate={item,kind:"product",out,price,credits:price.times(out),
           plan:idlePlan(),balance:[{res:item,prod:0,forgie:out,cons:0}],minedUsage:[],gelReserved:null,resIndex,feasible:out>1e-9,
           usesMargin:false,capped:false,evaluated:true,ms:Math.max(0,control.readNow()-start)};}
       }else{
@@ -2088,6 +2096,15 @@ const LP_MAX_PIVOTS=20000;
  * The magnitude problem this leaves — a supply legitimately dwarfing its own row — is handled where
  * it actually matters, by the consCeiling cap in solveCore, which bounds a free supply by what the
  * factory could physically consume before it ever reaches an array. */
+/* A Decimal reduced to a tableau coefficient. Saturates at the largest finite double rather than
+ * overflowing to +/-Infinity: an infinite entry poisons the first pivot that touches its row
+ * (0 * Infinity is NaN), while a saturated one still says what the quantity meant — larger than
+ * anything else in the problem. */
+function finiteCoefficient(value){
+  const flat=value.toNumber();
+  if(Number.isFinite(flat))return flat;
+  return value.lt(DEC_ZERO)?-Number.MAX_VALUE:Number.MAX_VALUE;
+}
 function lpFiniteRhs(b){
   for(let i=0;i<b.length;i++){
     const supply=toDec0(b[i]).toNumber();
@@ -2232,7 +2249,11 @@ function buildScheduleLP(vars,lns,items,net,avail,D0){
     vars.forEach((v,vi)=>{if(v.item===it)row[vi]-=v.rate;v.cons.forEach(c=>{if(c.item===it)row[vi]+=c.perHr;});});
     // Demand net of drawable stock, normalized by D0 (the largest demand) so the z-column sits
     // beside the rate coefficients rather than dwarfing them — the reason D0 exists.
-    row[zCol]=toDec0(net[it]).sub(toDec0(avail&&avail[it]).times(STOCK_SAFETY_FRAC)).div(D0).toNumber();
+    /* toNumber() can overflow when the stock being drawn down is itself past the float ceiling, and
+     * an infinite coefficient turns the first pivot that touches this row into NaN. Saturating keeps
+     * the row's meaning — stock this far beyond the demand covers it outright — in a number the
+     * tableau can carry. lpFiniteRhs does the same for b; this is the matching guard for A. */
+    row[zCol]=finiteCoefficient(toDec0(net[it]).sub(toDec0(avail&&avail[it]).times(STOCK_SAFETY_FRAC)).div(D0));
     A.push(row);b.push(isMinedResource(it)?minedBudgetHr(it):forgieHr(it));
   });
   const c=new Array(n).fill(0);c[zCol]=1;
@@ -2283,8 +2304,12 @@ function projectSchedule(net,targets,avail,opts){
         else if(PRODUCTS.includes(it)){const ins=RECIPE[it].inputs;const tt=craftTime(it,L);if(!(tt>0))return;
           if(!hasRecipeCost(it,ins,L))return;
           const es=effSpeed(ln.sp,tt);
-          const cons=ins.map(k=>({item:k,perHr:recipeRate(S.prodCost[it][k][L],tt)*es*3600}));
-          if(cons.some(entry=>!Number.isFinite(entry.perHr)))return;
+          /* recipeRate returns null for a cost no float64 can hold, and null*es*3600 is 0 — which
+           * would schedule the craft as consuming nothing at all. Drop the level instead, exactly as
+           * a missing cost is dropped: a craft whose inputs cannot be counted cannot be planned. */
+          const perHr=ins.map(k=>recipeRate(S.prodCost[it][k][L],tt));
+          if(perHr.some(rate=>rate===null||!Number.isFinite(rate*es*3600)))return;
+          const cons=ins.map((k,ki)=>({item:k,perHr:perHr[ki]*es*3600}));
           const cfg=MINED_CRAFTS[it];
           if(cfg){if(!items.includes(cfg.resource))return;const c=minedCost(it,L)[cfg.resource];if(c==null||isNaN(c)||c<0)return;cons.push({item:cfg.resource,perHr:(c/tt)*es*3600});}
           vars.push({li,item:it,lvl:L,rate:(craftYield(it,L)/tt)*es*ln.dp*3600,cons});}
@@ -2743,7 +2768,12 @@ function fillerEntry(line,item,lvl){
   if(PRODUCTS.includes(item)){
     const ins=RECIPE[item].inputs;
     if(!hasRecipeCost(item,ins,lvl))return null;
-    ins.forEach(k=>cons.push({item:k,hr:recipeRate(S.prodCost[item][k][lvl],tt)*es*3600}));
+    // Same null-is-not-zero rule as the schedule LP above: an uncountable cost is an unmakeable job.
+    for(const k of ins){
+      const perSec=recipeRate(S.prodCost[item][k][lvl],tt);
+      if(perSec===null||!Number.isFinite(perSec*es*3600))return null;
+      cons.push({item:k,hr:perSec*es*3600});
+    }
     const cfg=MINED_CRAFTS[item];
     if(cfg){const cost=minedCost(item,lvl)[cfg.resource];if(cost==null||isNaN(cost)||cost<0)return null;
       cons.push({item:cfg.resource,hr:(cost/tt)*es*3600});}
