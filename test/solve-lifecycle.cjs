@@ -42,6 +42,9 @@ function lifecycleHarness(options = {}) {
     }
     postMessage(message) { this.messages.push(message); }
     terminate() { this.terminated = true; }
+    // Kept as a tripwire, not a contract: the payload URL is shared for the page's lifetime, so
+    // every releaseCalls assertion below expects zero. A build that revives a per-Worker release
+    // would revoke the URL every later Worker is constructed from.
     __forgeRelease() { this.releaseCalls += 1; }
     emitMessage(data) { if (this.onmessage) this.onmessage({ data }); }
     emitError(message = "worker failed") {
@@ -668,7 +671,7 @@ test("a superseded Worker's late error cannot take over the newer request", () =
   const workerA = harness.workers[0];
   harness.callRequest(request("items", 2, "B"), result => painted.push(result.marker || result.mode));
   const workerB = harness.workers[1];
-  assert.equal(workerA.releaseCalls, 1);
+  assert.equal(workerA.releaseCalls, 0);
 
   workerA.emitError("late A failure");
   harness.flushTimers();
@@ -691,7 +694,7 @@ test("cancel invalidates the callback, clears fallback work, and terminates only
   harness.flushTimers();
 
   assert.equal(worker.terminated, true);
-  assert.equal(worker.releaseCalls, 1);
+  assert.equal(worker.releaseCalls, 0);
   assert.deepEqual(painted, []);
   assert.equal(cancelled.generation, 2);
   assert.equal(cancelled.active, false);
@@ -726,7 +729,7 @@ test("an owned Worker failure preserves the generation and callback through sync
 
   worker.emitError("load failed");
   const failed = harness.status();
-  assert.equal(worker.releaseCalls, 1);
+  assert.equal(worker.releaseCalls, 0);
   assert.equal(failed.generation, generation);
   assert.equal(failed.active, true);
   assert.equal(failed.fallbackActive, true);
@@ -850,7 +853,7 @@ test("a completed idle Worker's late error disposes it silently before the next 
   assert.equal(afterError.fallbackActive, false);
   assert.equal(afterError.active, false);
   assert.equal(worker.terminated, true);
-  assert.equal(worker.releaseCalls, 1);
+  assert.equal(worker.releaseCalls, 0);
   assert.equal(harness.elements.solveFallback.hidden, true);
   assert.equal(harness.elements.solveOverlay.hidden, true);
 
@@ -1023,7 +1026,7 @@ test("changing the Worker factory releases the owned Worker before a controlled 
   };
   harness.setWorkerFactory(() => controlled);
   assert.equal(owned.terminated, true);
-  assert.equal(owned.releaseCalls, 1);
+  assert.equal(owned.releaseCalls, 0);
 
   harness.callRequest(request("items", 2, "controlled"), result => painted.push(result.marker));
   assert.equal(controlled.messages.length, 1);

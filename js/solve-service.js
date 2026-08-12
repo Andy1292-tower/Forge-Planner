@@ -264,12 +264,11 @@ const solveService=(()=>{
     el.hidden=!show;
     el.textContent=show?"Background solver unavailable; using slower fallback.":"";
   }
+  // Terminating a Worker never releases the payload URL: it is shared for the page's lifetime, so
+  // revoking it here would break every Worker constructed after the first supersede.
   function terminateOwned(){
     const owned=worker;worker=null;workerBusy=false;
-    if(owned){
-      try{owned.terminate();}catch(error){}
-      try{if(typeof owned.__forgeRelease==="function")owned.__forgeRelease();}catch(error){}
-    }
+    if(owned)try{owned.terminate();}catch(error){}
   }
   function clearFallbackTimer(){
     if(fallbackTimer!==null){clearTimeout(fallbackTimer);fallbackTimer=null;}

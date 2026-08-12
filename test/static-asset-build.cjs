@@ -11,34 +11,16 @@ const root = path.resolve(__dirname, "..");
 const { buildStaticSite, buildWorkerPayload } = require("../scripts/build-static.cjs");
 const ANALYTICS_SIGNATURE = /(?:\/_vercel\/(?:insights|speed-insights)|va\.vercel-scripts\.com|vercelAnalytics)/i;
 const ROOT_RELATIVE_OWNED_URL = /["'`(=]\/(?:static|assets|js|css)\//;
-const EXPECTED_WORKER_FACTORY = `function __forgeCreateSolverWorker(){
-  const objectUrl=URL.createObjectURL(new Blob([__FORGE_SOLVER_WORKER_SOURCE__],{type:"text/javascript"}));
-  let created=null;
-  let release=null;
-  try{
-    created=new Worker(objectUrl);
-    let released=false;
-    let releaseTimer=null;
-    release=()=>{
-      if(released)return;
-      released=true;
-      if(releaseTimer!==null){clearTimeout(releaseTimer);releaseTimer=null;}
-      URL.revokeObjectURL(objectUrl);
-    };
-    created.__forgeRelease=release;
-    if(typeof created.addEventListener==="function"){
-      created.addEventListener("message",release,{once:true});
-      created.addEventListener("error",release,{once:true});
-      releaseTimer=setTimeout(release,60000);
-    }else releaseTimer=setTimeout(release,0);
-    return created;
-  }catch(error){
-    if(created)try{created.terminate();}catch(cleanupError){}
-    if(release){
-      try{release();}catch(cleanupError){try{URL.revokeObjectURL(objectUrl);}catch(revokeError){}}
-    }else try{URL.revokeObjectURL(objectUrl);}catch(cleanupError){}
-    throw error;
+const EXPECTED_WORKER_MEMO = `let __forgeSolverWorkerUrl=null;
+function __forgeSolverWorkerObjectUrl(){
+  if(__forgeSolverWorkerUrl===null){
+    __forgeSolverWorkerUrl=URL.createObjectURL(new Blob([__FORGE_SOLVER_WORKER_SOURCE__],{type:"text/javascript"}));
   }
+  return __forgeSolverWorkerUrl;
+}`;
+const EXPECTED_WORKER_FACTORY = `function __forgeCreateSolverWorker(){
+  const objectUrl=__forgeSolverWorkerObjectUrl();
+  return new Worker(objectUrl);
 }`;
 
 const tests = [];
@@ -216,10 +198,18 @@ test("the generated page has a closed hashed asset graph and an in-memory Worker
   assert.match(app, /__forgeCreateSolverWorker\(\)/);
   assert.equal(generatedWorkerFactory(app), EXPECTED_WORKER_FACTORY,
     "the base-path repair must not alter the current Worker factory or its cleanup contract");
+  assert.ok(app.includes(EXPECTED_WORKER_MEMO),
+    "the generated app must retain the page-lifetime payload URL memo ahead of its factory");
+  assert.ok(app.indexOf(EXPECTED_WORKER_MEMO) < app.indexOf(EXPECTED_WORKER_FACTORY),
+    "a helper emitted after the factory would be swallowed by the factory-boundary slice");
   assert.equal((app.match(/new Worker\(objectUrl\)/g) || []).length, 1,
     "the generated app must retain exactly one Blob Worker constructor");
-  assert.equal((app.match(/created\.__forgeRelease=release/g) || []).length, 1,
-    "the generated app must retain exactly one release hook");
+  assert.equal((app.match(/new Blob\(\[__FORGE_SOLVER_WORKER_SOURCE__\]/g) || []).length, 1,
+    "the generated app must build the solver payload into exactly one object URL");
+  assert.doesNotMatch(app, /__forgeRelease/,
+    "a per-Worker release hook would revoke the URL every later Worker is constructed from");
+  assert.doesNotMatch(app, /revokeObjectURL\(\s*(?:objectUrl|__forgeSolverWorkerUrl)/,
+    "the shared solver payload URL must survive for the page's lifetime");
   assert.doesNotMatch(app, /new Worker\(["'][^"']+\.js/);
   assert.doesNotMatch(app, /importScripts\s*\(/);
   assert.doesNotMatch(app, /(?:js\/solver\.worker|\/assets\/speed\.jpg)/);
@@ -379,21 +369,21 @@ test("the current Worker returns a structured schema-rejection envelope", () => 
   assert.equal(typeof posted[0].error.stack, "string");
 });
 
-test("early generated Blob Worker termination releases its URL and backstop immediately", () => {
-  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "forge-static-worker-release-"));
-  buildStaticSite({ sourceRoot: root, outputRoot: temporary });
-  const app = generatedApp(temporary);
-  const workers = [];
+function generatedWorkerContext(app, overrides = {}) {
+  const created = [];
   const revoked = [];
+  const urls = [];
   const timers = new Map();
   let nextTimer = 1;
+  let urlAttempts = 0;
 
   class GeneratedWorker {
     constructor(url) {
       this.url = String(url);
       this.listeners = { message: [], error: [] };
       this.terminated = false;
-      workers.push(this);
+      created.push(this);
+      if (overrides.constructThrows) throw new Error("Worker construction failed");
     }
     addEventListener(type, listener) { this.listeners[type].push(listener); }
     postMessage() {}
@@ -405,7 +395,13 @@ test("early generated Blob Worker termination releases its URL and backstop imme
     console,
     Blob: class GeneratedBlob {},
     URL: {
-      createObjectURL() { return `blob:forge-worker-${workers.length + 1}`; },
+      createObjectURL() {
+        urlAttempts += 1;
+        if (overrides.createUrlThrows && urlAttempts === 1) throw new Error("object URL creation failed");
+        const url = `blob:forge-solver-${urls.length + 1}`;
+        urls.push(url);
+        return url;
+      },
       revokeObjectURL(url) { revoked.push(String(url)); },
     },
     Worker: GeneratedWorker,
@@ -419,99 +415,75 @@ test("early generated Blob Worker termination releases its URL and backstop imme
   };
   vm.createContext(context);
   vm.runInContext(generatedWorkerLifecycleSource(app), context, { filename: "generated-app-worker-lifecycle.js" });
-  context.request = {
-    mode: "items",
-    stateRevision: 7,
-    budget: 200,
-    stateSnapshot: { mode: "items" },
-  };
-  context.done = () => {};
-  vm.runInContext("solveService.request(request, done)", context);
+  return { context, created, revoked, urls, timers, run: expression => vm.runInContext(expression, context) };
+}
 
-  assert.equal(workers.length, 1);
-  assert.deepEqual(revoked, []);
-  assert.equal(timers.size, 1);
-  vm.runInContext('solveService.cancel("page teardown")', context);
+test("the generated Blob Worker's payload URL survives termination for the page's lifetime", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "forge-static-worker-release-"));
+  buildStaticSite({ sourceRoot: root, outputRoot: temporary });
+  const harness = generatedWorkerContext(generatedApp(temporary));
+  harness.context.request = { mode: "items", stateRevision: 7, budget: 200, stateSnapshot: { mode: "items" } };
+  harness.context.done = () => {};
+  harness.run("solveService.request(request, done)");
 
-  assert.equal(workers[0].terminated, true);
-  assert.deepEqual(revoked, ["blob:forge-worker-1"]);
-  assert.equal(timers.size, 0, "release must not retain the Blob URL through its backstop timer");
-  workers[0].emit("error");
-  assert.deepEqual(revoked, ["blob:forge-worker-1"], "release must be idempotent after a late event");
+  assert.equal(harness.created.length, 1);
+  assert.deepEqual(harness.urls, ["blob:forge-solver-1"]);
+  assert.deepEqual(harness.revoked, []);
+  assert.equal(harness.timers.size, 0, "the payload URL must not be held by a release backstop");
+
+  harness.run('solveService.cancel("page teardown")');
+  assert.equal(harness.created[0].terminated, true);
+  assert.deepEqual(harness.revoked, [], "terminating a Worker must not revoke the shared payload URL");
+
+  harness.created[0].emit("message");
+  harness.created[0].emit("error");
+  assert.deepEqual(harness.revoked, [], "no Worker event may revoke the shared payload URL");
+
+  harness.run("__forgeCreateSolverWorker()");
+  assert.deepEqual(harness.urls, ["blob:forge-solver-1"],
+    "a Worker constructed after a termination must reuse the page's one payload URL");
+  assert.equal(harness.created[1].url, "blob:forge-solver-1");
 });
 
-test("generated Blob Worker setup failures terminate before one idempotent URL release", () => {
+test("every generated Blob Worker on a page is constructed from one shared payload URL", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "forge-static-worker-shared-url-"));
+  buildStaticSite({ sourceRoot: root, outputRoot: temporary });
+  const harness = generatedWorkerContext(generatedApp(temporary));
+
+  const size = 4;
+  for (let index = 0; index < size; index += 1) harness.run("__forgeCreateSolverWorker()");
+
+  assert.equal(harness.created.length, size);
+  assert.deepEqual(harness.urls, ["blob:forge-solver-1"],
+    "a pool must allocate the payload once, not once per Worker");
+  assert.deepEqual(new Set(harness.created.map(worker => worker.url)), new Set(["blob:forge-solver-1"]));
+  assert.deepEqual(harness.revoked, []);
+});
+
+test("generated Blob Worker construction failures stay retryable without leaking a second payload", () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "forge-static-worker-setup-failure-"));
   buildStaticSite({ sourceRoot: root, outputRoot: temporary });
   const app = generatedApp(temporary);
-  const scenarios = [
-    { stage: "property", terminateThrows: false },
-    { stage: "listener", terminateThrows: false },
-    { stage: "timer", terminateThrows: false },
-    { stage: "listener", terminateThrows: true },
-  ];
 
-  for (const scenario of scenarios) {
-    const workers = [];
-    const revoked = [];
-    class SetupFailingWorker {
-      constructor(url) {
-        this.url = String(url);
-        this.listeners = { message: [], error: [] };
-        this.terminateCalls = 0;
-        if (scenario.stage === "property") {
-          Object.defineProperty(this, "__forgeRelease", {
-            set() { throw new Error("property setup failed"); },
-          });
-        }
-        workers.push(this);
-      }
-      addEventListener(type, listener) {
-        if (scenario.stage === "listener" && type === "error") {
-          throw new Error("listener setup failed");
-        }
-        this.listeners[type].push(listener);
-      }
-      terminate() {
-        this.terminateCalls += 1;
-        if (scenario.terminateThrows) throw new Error("termination cleanup failed");
-      }
-      emit(type) { this.listeners[type].forEach(listener => listener({ type })); }
-    }
+  // A Worker that cannot be constructed leaves the memo in place: the URL is still valid, and
+  // revoking it here would turn one transient failure into a permanently Worker-less page.
+  const failing = generatedWorkerContext(app, { constructThrows: true });
+  assert.throws(() => failing.run("__forgeCreateSolverWorker()"), /Worker construction failed/);
+  assert.deepEqual(failing.urls, ["blob:forge-solver-1"]);
+  assert.deepEqual(failing.revoked, [], "a failed construction must not revoke the shared payload URL");
+  assert.throws(() => failing.run("__forgeCreateSolverWorker()"), /Worker construction failed/);
+  assert.deepEqual(failing.urls, ["blob:forge-solver-1"], "retries must not allocate a second payload");
 
-    const context = {
-      console,
-      Blob: class GeneratedBlob {},
-      URL: {
-        createObjectURL() { return `blob:setup-${scenario.stage}-${scenario.terminateThrows}`; },
-        revokeObjectURL(url) { revoked.push(String(url)); },
-      },
-      Worker: SetupFailingWorker,
-      document: { getElementById() { return null; } },
-      S: { mode: "items" },
-      stateRevision: 0,
-      setTimeout() {
-        if (scenario.stage === "timer") throw new Error("timer setup failed");
-        return 1;
-      },
-      clearTimeout() {},
-    };
-    vm.createContext(context);
-    vm.runInContext(generatedWorkerLifecycleSource(app), context, {
-      filename: `generated-app-worker-${scenario.stage}-failure.js`,
-    });
-
-    assert.throws(
-      () => vm.runInContext("__forgeCreateSolverWorker()", context),
-      new RegExp(`${scenario.stage} setup failed`)
-    );
-    assert.equal(workers.length, 1);
-    assert.equal(workers[0].terminateCalls, 1,
-      `${scenario.stage} setup failure must terminate its already-created Worker`);
-    assert.deepEqual(revoked, [`blob:setup-${scenario.stage}-${scenario.terminateThrows}`]);
-    workers[0].emit("message");
-    assert.equal(revoked.length, 1, `${scenario.stage} cleanup must remain idempotent after a late event`);
-  }
+  // A failed allocation memoizes nothing, so the next attempt is free to allocate exactly once.
+  const unallocated = generatedWorkerContext(app, { createUrlThrows: true });
+  assert.throws(() => unallocated.run("__forgeCreateSolverWorker()"), /object URL creation failed/);
+  assert.deepEqual(unallocated.created, []);
+  assert.deepEqual(unallocated.urls, []);
+  unallocated.run("__forgeCreateSolverWorker()");
+  unallocated.run("__forgeCreateSolverWorker()");
+  assert.deepEqual(unallocated.urls, ["blob:forge-solver-1"]);
+  assert.deepEqual(unallocated.created.map(worker => worker.url), ["blob:forge-solver-1", "blob:forge-solver-1"]);
+  assert.deepEqual(unallocated.revoked, []);
 });
 
 test("a js/solver.js change rotates the app while permanent Worker endpoints stay frozen", () => {

@@ -96,37 +96,29 @@ function buildWorkerPayload(sourceRoot) {
   return payload;
 }
 
+/* One payload, one object URL, page lifetime. Every solver Worker — the first, a respawn after
+ * termination, and every member of a pool — is constructed from this one memo, so construction
+ * costs no allocation and no request after the first. Nothing revokes it: a revoked URL cannot be
+ * constructed from again, so a per-Worker release would poison every later Worker on the page.
+ * The memo is also never cleared on failure, because a construction that throws must stay
+ * retryable rather than permanently disabling Worker solving.
+ *
+ * The memo accessor is emitted BEFORE the factory on purpose: test/static-asset-build.cjs finds
+ * the factory's closing brace by scanning forward from its declaration, and a helper after it
+ * would be swallowed into that slice. */
 function workerBootstrap(workerPayload) {
   return `"use strict";
 const __FORGE_SOLVER_WORKER_SOURCE__=${JSON.stringify(workerPayload)};
-function __forgeCreateSolverWorker(){
-  const objectUrl=URL.createObjectURL(new Blob([__FORGE_SOLVER_WORKER_SOURCE__],{type:"text/javascript"}));
-  let created=null;
-  let release=null;
-  try{
-    created=new Worker(objectUrl);
-    let released=false;
-    let releaseTimer=null;
-    release=()=>{
-      if(released)return;
-      released=true;
-      if(releaseTimer!==null){clearTimeout(releaseTimer);releaseTimer=null;}
-      URL.revokeObjectURL(objectUrl);
-    };
-    created.__forgeRelease=release;
-    if(typeof created.addEventListener==="function"){
-      created.addEventListener("message",release,{once:true});
-      created.addEventListener("error",release,{once:true});
-      releaseTimer=setTimeout(release,60000);
-    }else releaseTimer=setTimeout(release,0);
-    return created;
-  }catch(error){
-    if(created)try{created.terminate();}catch(cleanupError){}
-    if(release){
-      try{release();}catch(cleanupError){try{URL.revokeObjectURL(objectUrl);}catch(revokeError){}}
-    }else try{URL.revokeObjectURL(objectUrl);}catch(cleanupError){}
-    throw error;
+let __forgeSolverWorkerUrl=null;
+function __forgeSolverWorkerObjectUrl(){
+  if(__forgeSolverWorkerUrl===null){
+    __forgeSolverWorkerUrl=URL.createObjectURL(new Blob([__FORGE_SOLVER_WORKER_SOURCE__],{type:"text/javascript"}));
   }
+  return __forgeSolverWorkerUrl;
+}
+function __forgeCreateSolverWorker(){
+  const objectUrl=__forgeSolverWorkerObjectUrl();
+  return new Worker(objectUrl);
 }
 `;
 }
