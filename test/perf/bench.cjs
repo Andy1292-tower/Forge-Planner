@@ -246,11 +246,11 @@ function qualityVerdict(prior, run) {
 function compare(runs, baseline, opts) {
   const byKey = new Map((baseline.runs || []).map(run => [runKey(run), run]));
   const comparable = sameMachine(baseline.machine, machine());
-  const rows = [], regressions = [];
+  const rows = [], regressions = [], unmatched = [];
   let matched = 0, qualityGated = 0, workGated = 0;
   for (const run of runs) {
     const prior = byKey.get(runKey(run));
-    if (!prior) { rows.push({ run, prior: null }); continue; }
+    if (!prior) { rows.push({ run, prior: null }); unmatched.push(run); continue; }
     matched++;
     const virtual = run.kind === "virtual";
     const quality = virtual ? qualityVerdict(prior, run) : { gated: false, note: "wall run" };
@@ -298,7 +298,7 @@ function compare(runs, baseline, opts) {
   }
   const missing = (baseline.runs || []).filter(run => !runs.some(current => runKey(current) === runKey(run)));
   if (missing.length) console.log("(" + missing.length + " baseline run(s) not re-run in this invocation)");
-  return { regressions, matched, qualityGated, workGated };
+  return { regressions, matched, unmatched, qualityGated, workGated };
 }
 
 function main(argv) {
@@ -392,9 +392,16 @@ function main(argv) {
   }
   const outcome = compare(runs, baseline, opts);
   console.log("");
-  if (!outcome.matched) {
-    console.error("no run in this invocation matched a baseline entry — nothing was compared " +
-      "(a --fixture typo or a corpus rename reads exactly like this)");
+  // Every run this invocation produced has to be gated by one, or the invocation gated less than it
+  // appears to: a --fixture typo, a corpus rename and a ladder rung the baseline never captured all
+  // print "(no baseline entry)" and would otherwise read as green.
+  if (outcome.unmatched.length) {
+    console.error(outcome.unmatched.length + " of " + runs.length + " run(s) matched no baseline entry, " +
+      "so nothing gated them:");
+    for (const run of outcome.unmatched) {
+      console.error("  " + run.fixture + " " + run.kind + " @" + run.budgetMs + "ms");
+    }
+    console.error("give the baseline a row for each, or narrow the invocation to the runs it covers");
     return 2;
   }
   if (outcome.regressions.length) {
