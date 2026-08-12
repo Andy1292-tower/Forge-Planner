@@ -7194,6 +7194,249 @@
       "fixture": "project-split-7line",
       "mode": "project",
       "kind": "virtual",
+      "copiedFromBudgetMs": 20000,
+      "copiedNote": "Not a fresh capture: a verbatim copy of this fixture's virtual 20000 ms row. Phase-0 Line switching built no solve control at all (optimizeProjectTop created one only in static mode), so the budget never reached this path and every rung of the ladder measured exactly this. The row exists so a sweep gates the fixture at every rung it runs instead of one.",
+      "budgetMs": 250,
+      "seedRuns": 1,
+      "lines": 7,
+      "objective": 0.040046317950307816,
+      "result": {
+        "eta": 24.971084763419892,
+        "workEta": 20.48697372650746,
+        "warmupEta": 4.484111036912431,
+        "lpFeasible": true,
+        "partial": false,
+        "phases": [
+          {
+            "phaseKey": "pmsihuucetuq+pmsj15karizj+pmsnojkg3bdp+pmsodgpefnag+pmspfqzknws8",
+            "name": "All projects",
+            "eta": 20.48697372650746,
+            "z": 0.04881150400003385,
+            "capped": false,
+            "stabilized": true,
+            "idleFill": null,
+            "lookAhead": null
+          }
+        ],
+        "idleFillPhases": 0,
+        "lookAheadPhases": 0,
+        "executionPhases": 2,
+        "hiddenComparisonRan": true,
+        "stabilityComparison": {
+          "comparable": true,
+          "orderChanged": false,
+          "selectedTotalEta": 24.971084763419892,
+          "alternativeTotalEta": 24.97108476343007,
+          "alternativeIsShorter": false
+        }
+      },
+      "flags": {
+        "feasible": true,
+        "capped": false,
+        "deadlineReached": null,
+        "staticDeadlineReached": false,
+        "allPhasesEvaluated": true,
+        "searchExhaustive": true
+      },
+      "work": {
+        "total": 0,
+        "probe": 0,
+        "dense": 0,
+        "byLabel": {}
+      },
+      "lp": {
+        "pivots": 2895,
+        "tableauRows": 176,
+        "work": 50425171,
+        "workOnControl": 0,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 0,
+        "solveCore": 0,
+        "lpMaximize": 10,
+        "projectSchedule": 8,
+        "staticSchedule": 0,
+        "projectPhase": 2
+      },
+      "events": {},
+      "stopReasons": {},
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 0,
+      "nonDeterministic": {
+        "wallMs": 63.2,
+        "lpMs": 46.825,
+        "reportedMs": 63.188
+      }
+    },
+    {
+      "fixture": "project-split-7line",
+      "mode": "project",
+      "kind": "virtual",
+      "copiedFromBudgetMs": 20000,
+      "copiedNote": "Not a fresh capture: a verbatim copy of this fixture's virtual 20000 ms row. Phase-0 Line switching built no solve control at all (optimizeProjectTop created one only in static mode), so the budget never reached this path and every rung of the ladder measured exactly this. The row exists so a sweep gates the fixture at every rung it runs instead of one.",
+      "budgetMs": 1000,
+      "seedRuns": 1,
+      "lines": 7,
+      "objective": 0.040046317950307816,
+      "result": {
+        "eta": 24.971084763419892,
+        "workEta": 20.48697372650746,
+        "warmupEta": 4.484111036912431,
+        "lpFeasible": true,
+        "partial": false,
+        "phases": [
+          {
+            "phaseKey": "pmsihuucetuq+pmsj15karizj+pmsnojkg3bdp+pmsodgpefnag+pmspfqzknws8",
+            "name": "All projects",
+            "eta": 20.48697372650746,
+            "z": 0.04881150400003385,
+            "capped": false,
+            "stabilized": true,
+            "idleFill": null,
+            "lookAhead": null
+          }
+        ],
+        "idleFillPhases": 0,
+        "lookAheadPhases": 0,
+        "executionPhases": 2,
+        "hiddenComparisonRan": true,
+        "stabilityComparison": {
+          "comparable": true,
+          "orderChanged": false,
+          "selectedTotalEta": 24.971084763419892,
+          "alternativeTotalEta": 24.97108476343007,
+          "alternativeIsShorter": false
+        }
+      },
+      "flags": {
+        "feasible": true,
+        "capped": false,
+        "deadlineReached": null,
+        "staticDeadlineReached": false,
+        "allPhasesEvaluated": true,
+        "searchExhaustive": true
+      },
+      "work": {
+        "total": 0,
+        "probe": 0,
+        "dense": 0,
+        "byLabel": {}
+      },
+      "lp": {
+        "pivots": 2895,
+        "tableauRows": 176,
+        "work": 50425171,
+        "workOnControl": 0,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 0,
+        "solveCore": 0,
+        "lpMaximize": 10,
+        "projectSchedule": 8,
+        "staticSchedule": 0,
+        "projectPhase": 2
+      },
+      "events": {},
+      "stopReasons": {},
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 0,
+      "nonDeterministic": {
+        "wallMs": 63.2,
+        "lpMs": 46.825,
+        "reportedMs": 63.188
+      }
+    },
+    {
+      "fixture": "project-split-7line",
+      "mode": "project",
+      "kind": "virtual",
+      "copiedFromBudgetMs": 20000,
+      "copiedNote": "Not a fresh capture: a verbatim copy of this fixture's virtual 20000 ms row. Phase-0 Line switching built no solve control at all (optimizeProjectTop created one only in static mode), so the budget never reached this path and every rung of the ladder measured exactly this. The row exists so a sweep gates the fixture at every rung it runs instead of one.",
+      "budgetMs": 4000,
+      "seedRuns": 1,
+      "lines": 7,
+      "objective": 0.040046317950307816,
+      "result": {
+        "eta": 24.971084763419892,
+        "workEta": 20.48697372650746,
+        "warmupEta": 4.484111036912431,
+        "lpFeasible": true,
+        "partial": false,
+        "phases": [
+          {
+            "phaseKey": "pmsihuucetuq+pmsj15karizj+pmsnojkg3bdp+pmsodgpefnag+pmspfqzknws8",
+            "name": "All projects",
+            "eta": 20.48697372650746,
+            "z": 0.04881150400003385,
+            "capped": false,
+            "stabilized": true,
+            "idleFill": null,
+            "lookAhead": null
+          }
+        ],
+        "idleFillPhases": 0,
+        "lookAheadPhases": 0,
+        "executionPhases": 2,
+        "hiddenComparisonRan": true,
+        "stabilityComparison": {
+          "comparable": true,
+          "orderChanged": false,
+          "selectedTotalEta": 24.971084763419892,
+          "alternativeTotalEta": 24.97108476343007,
+          "alternativeIsShorter": false
+        }
+      },
+      "flags": {
+        "feasible": true,
+        "capped": false,
+        "deadlineReached": null,
+        "staticDeadlineReached": false,
+        "allPhasesEvaluated": true,
+        "searchExhaustive": true
+      },
+      "work": {
+        "total": 0,
+        "probe": 0,
+        "dense": 0,
+        "byLabel": {}
+      },
+      "lp": {
+        "pivots": 2895,
+        "tableauRows": 176,
+        "work": 50425171,
+        "workOnControl": 0,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 0,
+        "solveCore": 0,
+        "lpMaximize": 10,
+        "projectSchedule": 8,
+        "staticSchedule": 0,
+        "projectPhase": 2
+      },
+      "events": {},
+      "stopReasons": {},
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 0,
+      "nonDeterministic": {
+        "wallMs": 63.2,
+        "lpMs": 46.825,
+        "reportedMs": 63.188
+      }
+    },
+    {
+      "fixture": "project-split-7line",
+      "mode": "project",
+      "kind": "virtual",
       "budgetMs": 20000,
       "seedRuns": 1,
       "lines": 7,
