@@ -1,0 +1,18 @@
+{
+  "schema": "forge-solver-work-drift/1",
+  "baseline": "test/perf/baseline.json",
+  "note": "Declared differences between the solver as it is now and the Phase-0 baseline's recorded work counts. The baseline is the project's before-picture and is not re-recorded; a change that legitimately moves a checkpoint count is written down here instead, with the reason, so the tripwire in test/perf-harness.cjs keeps failing on a change nobody declared. Objectives are never declared here: a virtual run's objective must reproduce the baseline exactly, and any change to it is a quality regression rather than drift.",
+  "runs": [
+    {
+      "fixture": "items-7line",
+      "kind": "virtual",
+      "budgetMs": 250,
+      "reason": "WS1.2's clock-sampling stride moves the probe at which the run observes its deadline, WS1.4 drops the seeds the margin stage has already optimised (seed-start 24 -> 20), and WS1.5 prices only the repair moves that could close a shortfall (repair-job 31416 -> 15446, freeing the budget the climb then spends: climb-job 82139 -> 98018). The run is deadline-bound, so the total is the budget either way; what moved is where it went. The objective is unchanged to the last bit.",
+      "objectiveUnchanged": true,
+      "work": { "total": 937789, "probe": 120930, "dense": 816859 },
+      "lp": { "pivots": 95 },
+      "calls": { "controls": 1, "solveCore": 1, "lpMaximize": 1, "projectSchedule": 0, "staticSchedule": 0, "projectPhase": 0 },
+      "byLabel": "climb-job=98018/98018,climb-pass=206/206,gel-prefix=7/7,gel-seed-line=1936/1936,gel-seed-step=395/395,ils-iteration=68/68,ils-perturb=172/172,lp-job-coefficient=4347/4347,lp-line-row=7/7,lp-offset=7/7,lp-pivot=95/809115,lp-random-line=112/112,lp-random-seed=16/16,lp-resource-row=9/9,lp-tableau-row=16/7744,margin-stage=1/1,repair-job=15446/15446,repair-pass=158/158,seed-start=20/20,target-seed=5/5"
+    }
+  ]
+}

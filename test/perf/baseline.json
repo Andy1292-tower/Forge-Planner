@@ -1,6 +1,6 @@
 {
   "schema": "forge-solver-bench/3",
-  "generatedAt": "2026-08-12T10:07:30.158Z",
+  "generatedAt": "2026-08-12T07:44:09.281Z",
   "corpus": [
     {
       "id": "items-7line",
@@ -63,7 +63,7 @@
     20000
   ],
   "wallRepeat": 5,
-  "elapsedMs": 825369,
+  "elapsedMs": 1180221,
   "runs": [
     {
       "fixture": "items-7line",
@@ -120,44 +120,44 @@
       },
       "events": {},
       "stopReasons": {},
-      "reportedMs": 10339.258,
+      "reportedMs": 19754.937,
       "wall": {
         "samples": 5,
         "ms": {
-          "median": 10339.3,
-          "min": 9934.2,
-          "max": 11288.9,
-          "cvPct": 5.89
+          "median": 19755,
+          "min": 19490.7,
+          "max": 20001.3,
+          "cvPct": 0.92
         },
         "probeMs": {
-          "median": 10335.5,
-          "min": 9927.8,
-          "max": 11282.4,
-          "cvPct": 5.9
+          "median": 19748.2,
+          "min": 19480.8,
+          "max": 19990.6,
+          "cvPct": 0.92
         },
         "denseMs": {
-          "median": 6.5,
-          "min": 3.8,
-          "max": 9.9,
-          "cvPct": 32.08
+          "median": 8.3,
+          "min": 6.1,
+          "max": 10.7,
+          "cvPct": 23.46
         },
         "probeWorkPerSec": {
-          "median": 1020823,
-          "min": 935143,
-          "max": 1062743,
-          "cvPct": 5.82
+          "median": 534263,
+          "min": 496852,
+          "max": 541596,
+          "cvPct": 3.36
         },
         "denseWorkPerSec": {
-          "median": 126170444,
-          "min": 82531159,
-          "max": 213158564,
-          "cvPct": 36.91
+          "median": 98032389,
+          "min": 76204865,
+          "max": 134882376,
+          "cvPct": 24.23
         },
         "totalWorkPerSec": {
-          "median": 1099450,
-          "min": 1006967,
-          "max": 1144279,
-          "cvPct": 5.81
+          "median": 575427,
+          "min": 537426,
+          "max": 583231,
+          "cvPct": 3.18
         }
       },
       "objectiveRange": [
@@ -197,129 +197,129 @@
         "deadlineReached": true
       },
       "work": {
-        "total": 937789,
-        "probe": 120930,
+        "total": 937776,
+        "probe": 120917,
         "dense": 816859,
         "byLabel": {
           "lp-pivot": {
             "count": 95,
             "work": 809115,
             "maxUnits": 8517,
-            "ms": 8.016
+            "ms": 8.011
           },
           "climb-job": {
-            "count": 82152,
-            "work": 82152,
+            "count": 82139,
+            "work": 82139,
             "maxUnits": 1,
-            "ms": 164.224
+            "ms": 164.278
           },
           "repair-job": {
             "count": 31416,
             "work": 31416,
             "maxUnits": 1,
-            "ms": 62.78
+            "ms": 62.832
           },
           "lp-tableau-row": {
             "count": 16,
             "work": 7744,
             "maxUnits": 484,
-            "ms": 0.072
+            "ms": 0.075
           },
           "lp-job-coefficient": {
             "count": 4347,
             "work": 4347,
             "maxUnits": 1,
-            "ms": 8.736
+            "ms": 8.694
           },
           "gel-seed-line": {
             "count": 1936,
             "work": 1936,
             "maxUnits": 1,
-            "ms": 3.968
+            "ms": 3.872
           },
           "gel-seed-step": {
             "count": 395,
             "work": 395,
             "maxUnits": 1,
-            "ms": 0.672
+            "ms": 0.79
           },
           "climb-pass": {
             "count": 173,
             "work": 173,
             "maxUnits": 1,
-            "ms": 0.384
+            "ms": 0.346
           },
           "repair-pass": {
             "count": 145,
             "work": 145,
             "maxUnits": 1,
-            "ms": 0.32
+            "ms": 0.29
           },
           "ils-perturb": {
             "count": 128,
             "work": 128,
             "maxUnits": 1,
-            "ms": 0.32
+            "ms": 0.256
           },
           "lp-random-line": {
             "count": 112,
             "work": 112,
             "maxUnits": 1,
-            "ms": 0.16
+            "ms": 0.224
           },
           "ils-iteration": {
             "count": 50,
             "work": 50,
             "maxUnits": 1,
-            "ms": 0.128
+            "ms": 0.1
           },
           "seed-start": {
             "count": 24,
             "work": 24,
             "maxUnits": 1,
-            "ms": 0.167
+            "ms": 0.048
           },
           "lp-random-seed": {
             "count": 16,
             "work": 16,
             "maxUnits": 1,
-            "ms": 0.048
+            "ms": 0.032
           },
           "lp-resource-row": {
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.018
           },
           "gel-prefix": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.014
           },
           "lp-line-row": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.014
           },
           "lp-offset": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.012
           },
           "target-seed": {
             "count": 5,
             "work": 5,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.01
           },
           "margin-stage": {
             "count": 1,
             "work": 1,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.085
           }
         }
       },
@@ -347,11 +347,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 250.029,
-      "reportedMs": 250.029,
+      "virtualMs": 250.003,
+      "reportedMs": 250.003,
       "nonDeterministic": {
-        "wallMs": 140,
-        "lpMs": 5.877
+        "wallMs": 236,
+        "lpMs": 4.389
       }
     },
     {
@@ -386,129 +386,129 @@
         "deadlineReached": true
       },
       "work": {
-        "total": 1312781,
-        "probe": 495922,
+        "total": 1312776,
+        "probe": 495917,
         "dense": 816859,
         "byLabel": {
           "lp-pivot": {
             "count": 95,
             "work": 809115,
             "maxUnits": 8517,
-            "ms": 8.016
+            "ms": 8.011
           },
           "climb-job": {
-            "count": 401709,
-            "work": 401709,
+            "count": 401704,
+            "work": 401704,
             "maxUnits": 1,
-            "ms": 803.456
+            "ms": 803.408
           },
           "repair-job": {
             "count": 84728,
             "work": 84728,
             "maxUnits": 1,
-            "ms": 169.404
+            "ms": 169.456
           },
           "lp-tableau-row": {
             "count": 16,
             "work": 7744,
             "maxUnits": 484,
-            "ms": 0.072
+            "ms": 0.075
           },
           "lp-job-coefficient": {
             "count": 4347,
             "work": 4347,
             "maxUnits": 1,
-            "ms": 8.736
+            "ms": 8.694
           },
           "gel-seed-line": {
             "count": 1936,
             "work": 1936,
             "maxUnits": 1,
-            "ms": 3.968
+            "ms": 3.872
           },
           "ils-perturb": {
             "count": 882,
             "work": 882,
             "maxUnits": 1,
-            "ms": 1.824
+            "ms": 1.764
           },
           "climb-pass": {
             "count": 844,
             "work": 844,
             "maxUnits": 1,
-            "ms": 1.632
+            "ms": 1.688
           },
           "repair-pass": {
             "count": 550,
             "work": 550,
             "maxUnits": 1,
-            "ms": 1.216
+            "ms": 1.1
           },
           "gel-seed-step": {
             "count": 395,
             "work": 395,
             "maxUnits": 1,
-            "ms": 0.672
+            "ms": 0.79
           },
           "ils-iteration": {
             "count": 343,
             "work": 343,
             "maxUnits": 1,
-            "ms": 0.608
+            "ms": 0.686
           },
           "lp-random-line": {
             "count": 112,
             "work": 112,
             "maxUnits": 1,
-            "ms": 0.16
+            "ms": 0.224
           },
           "seed-start": {
             "count": 24,
             "work": 24,
             "maxUnits": 1,
-            "ms": 0.167
+            "ms": 0.048
           },
           "lp-random-seed": {
             "count": 16,
             "work": 16,
             "maxUnits": 1,
-            "ms": 0.048
+            "ms": 0.032
           },
           "lp-resource-row": {
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.018
           },
           "gel-prefix": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.014
           },
           "lp-line-row": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.014
           },
           "lp-offset": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.012
           },
           "target-seed": {
             "count": 5,
             "work": 5,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.01
           },
           "margin-stage": {
             "count": 1,
             "work": 1,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.085
           }
         }
       },
@@ -536,11 +536,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 1000.013,
-      "reportedMs": 1000.013,
+      "virtualMs": 1000.003,
+      "reportedMs": 1000.003,
       "nonDeterministic": {
-        "wallMs": 472.2,
-        "lpMs": 3.746
+        "wallMs": 933.1,
+        "lpMs": 7.15
       }
     },
     {
@@ -575,129 +575,129 @@
         "deadlineReached": true
       },
       "work": {
-        "total": 2812781,
-        "probe": 1995922,
+        "total": 2812776,
+        "probe": 1995917,
         "dense": 816859,
         "byLabel": {
           "climb-job": {
-            "count": 1668347,
-            "work": 1668347,
+            "count": 1668342,
+            "work": 1668342,
             "maxUnits": 1,
-            "ms": 3336.896
+            "ms": 3336.684
           },
           "lp-pivot": {
             "count": 95,
             "work": 809115,
             "maxUnits": 8517,
-            "ms": 8.016
+            "ms": 8.011
           },
           "repair-job": {
             "count": 309876,
             "work": 309876,
             "maxUnits": 1,
-            "ms": 619.804
+            "ms": 619.752
           },
           "lp-tableau-row": {
             "count": 16,
             "work": 7744,
             "maxUnits": 484,
-            "ms": 0.072
+            "ms": 0.075
           },
           "lp-job-coefficient": {
             "count": 4347,
             "work": 4347,
             "maxUnits": 1,
-            "ms": 8.736
+            "ms": 8.694
           },
           "ils-perturb": {
             "count": 3698,
             "work": 3698,
             "maxUnits": 1,
-            "ms": 7.072
+            "ms": 7.396
           },
           "climb-pass": {
             "count": 3505,
             "work": 3505,
             "maxUnits": 1,
-            "ms": 6.848
+            "ms": 7.01
           },
           "repair-pass": {
             "count": 2155,
             "work": 2155,
             "maxUnits": 1,
-            "ms": 4.448
+            "ms": 4.31
           },
           "gel-seed-line": {
             "count": 1936,
             "work": 1936,
             "maxUnits": 1,
-            "ms": 3.968
+            "ms": 3.872
           },
           "ils-iteration": {
             "count": 1475,
             "work": 1475,
             "maxUnits": 1,
-            "ms": 3.072
+            "ms": 2.95
           },
           "gel-seed-step": {
             "count": 395,
             "work": 395,
             "maxUnits": 1,
-            "ms": 0.672
+            "ms": 0.79
           },
           "lp-random-line": {
             "count": 112,
             "work": 112,
             "maxUnits": 1,
-            "ms": 0.16
+            "ms": 0.224
           },
           "seed-start": {
             "count": 24,
             "work": 24,
             "maxUnits": 1,
-            "ms": 0.167
+            "ms": 0.048
           },
           "lp-random-seed": {
             "count": 16,
             "work": 16,
             "maxUnits": 1,
-            "ms": 0.048
+            "ms": 0.032
           },
           "lp-resource-row": {
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.018
           },
           "gel-prefix": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.014
           },
           "lp-line-row": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.014
           },
           "lp-offset": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.012
           },
           "target-seed": {
             "count": 5,
             "work": 5,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.01
           },
           "margin-stage": {
             "count": 1,
             "work": 1,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.085
           }
         }
       },
@@ -725,11 +725,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 4000.013,
-      "reportedMs": 4000.013,
+      "virtualMs": 4000.003,
+      "reportedMs": 4000.003,
       "nonDeterministic": {
-        "wallMs": 1850.5,
-        "lpMs": 5.887
+        "wallMs": 3572.5,
+        "lpMs": 7.28
       }
     },
     {
@@ -764,129 +764,129 @@
         "deadlineReached": true
       },
       "work": {
-        "total": 10812781,
-        "probe": 9995922,
+        "total": 10812776,
+        "probe": 9995917,
         "dense": 816859,
         "byLabel": {
           "climb-job": {
-            "count": 8416574,
-            "work": 8416574,
+            "count": 8416569,
+            "work": 8416569,
             "maxUnits": 1,
-            "ms": 16833.056
+            "ms": 16833.138
           },
           "repair-job": {
             "count": 1517488,
             "work": 1517488,
             "maxUnits": 1,
-            "ms": 3035.196
+            "ms": 3034.976
           },
           "lp-pivot": {
             "count": 95,
             "work": 809115,
             "maxUnits": 8517,
-            "ms": 8.016
+            "ms": 8.011
           },
           "ils-perturb": {
             "count": 18925,
             "work": 18925,
             "maxUnits": 1,
-            "ms": 37.408
+            "ms": 37.85
           },
           "climb-pass": {
             "count": 17682,
             "work": 17682,
             "maxUnits": 1,
-            "ms": 35.552
+            "ms": 35.364
           },
           "repair-pass": {
             "count": 10802,
             "work": 10802,
             "maxUnits": 1,
-            "ms": 21.024
+            "ms": 21.604
           },
           "lp-tableau-row": {
             "count": 16,
             "work": 7744,
             "maxUnits": 484,
-            "ms": 0.072
+            "ms": 0.075
           },
           "ils-iteration": {
             "count": 7585,
             "work": 7585,
             "maxUnits": 1,
-            "ms": 15.904
+            "ms": 15.17
           },
           "lp-job-coefficient": {
             "count": 4347,
             "work": 4347,
             "maxUnits": 1,
-            "ms": 8.736
+            "ms": 8.694
           },
           "gel-seed-line": {
             "count": 1936,
             "work": 1936,
             "maxUnits": 1,
-            "ms": 3.968
+            "ms": 3.872
           },
           "gel-seed-step": {
             "count": 395,
             "work": 395,
             "maxUnits": 1,
-            "ms": 0.672
+            "ms": 0.79
           },
           "lp-random-line": {
             "count": 112,
             "work": 112,
             "maxUnits": 1,
-            "ms": 0.16
+            "ms": 0.224
           },
           "seed-start": {
             "count": 24,
             "work": 24,
             "maxUnits": 1,
-            "ms": 0.167
+            "ms": 0.048
           },
           "lp-random-seed": {
             "count": 16,
             "work": 16,
             "maxUnits": 1,
-            "ms": 0.048
+            "ms": 0.032
           },
           "lp-resource-row": {
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.018
           },
           "gel-prefix": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.014
           },
           "lp-line-row": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.014
           },
           "lp-offset": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.012
           },
           "target-seed": {
             "count": 5,
             "work": 5,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.01
           },
           "margin-stage": {
             "count": 1,
             "work": 1,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.085
           }
         }
       },
@@ -914,11 +914,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 20000.013,
-      "reportedMs": 20000.013,
+      "virtualMs": 20000.003,
+      "reportedMs": 20000.003,
       "nonDeterministic": {
-        "wallMs": 9097.8,
-        "lpMs": 6.138
+        "wallMs": 18081,
+        "lpMs": 7.46
       }
     },
     {
@@ -965,8 +965,8 @@
         "deadlineReached": true
       },
       "work": {
-        "total": 23277426,
-        "probe": 21982410,
+        "total": 13330628,
+        "probe": 12035612,
         "dense": 1295016,
         "byLabel": {}
       },
@@ -988,44 +988,44 @@
       },
       "events": {},
       "stopReasons": {},
-      "reportedMs": 20000.286,
+      "reportedMs": 20000.627,
       "wall": {
         "samples": 5,
         "ms": {
-          "median": 20000.3,
+          "median": 20000.6,
           "min": 20000.3,
-          "max": 20000.7,
+          "max": 20000.8,
           "cvPct": 0
         },
         "probeMs": {
-          "median": 19997.1,
-          "min": 19996.8,
-          "max": 19997.3,
+          "median": 19997,
+          "min": 19995.7,
+          "max": 19997.4,
           "cvPct": 0
         },
         "denseMs": {
-          "median": 3.3,
-          "min": 3.1,
-          "max": 3.6,
-          "cvPct": 6.21
+          "median": 3.8,
+          "min": 3.2,
+          "max": 4.9,
+          "cvPct": 17.82
         },
         "probeWorkPerSec": {
-          "median": 1099285,
-          "min": 1072074,
-          "max": 1226778,
-          "cvPct": 5.7
+          "median": 601872,
+          "min": 592729,
+          "max": 605061,
+          "cvPct": 0.79
         },
         "denseWorkPerSec": {
-          "median": 388349188,
-          "min": 357480103,
-          "max": 415296579,
-          "cvPct": 6.2
+          "median": 343372775,
+          "min": 263764089,
+          "max": 405384060,
+          "cvPct": 16.64
         },
         "totalWorkPerSec": {
-          "median": 1163851,
-          "min": 1136653,
-          "max": 1291337,
-          "cvPct": 5.39
+          "median": 666507,
+          "min": 657355,
+          "max": 669710,
+          "cvPct": 0.71
         }
       },
       "objectiveRange": [
@@ -1065,117 +1065,117 @@
         "deadlineReached": true
       },
       "work": {
-        "total": 152499,
-        "probe": 124865,
+        "total": 152497,
+        "probe": 124863,
         "dense": 27634,
         "byLabel": {
           "climb-job": {
-            "count": 93180,
-            "work": 93180,
+            "count": 93178,
+            "work": 93178,
             "maxUnits": 1,
-            "ms": 186.522
+            "ms": 186.356
           },
           "repair-job": {
             "count": 27832,
             "work": 27832,
             "maxUnits": 1,
-            "ms": 55.712
+            "ms": 55.664
           },
           "lp-pivot": {
             "count": 23,
             "work": 26680,
             "maxUnits": 1160,
-            "ms": 0.257
+            "ms": 0.256
           },
           "ils-perturb": {
             "count": 1235,
             "work": 1235,
             "maxUnits": 1,
-            "ms": 2.208
+            "ms": 2.47
           },
           "lp-tableau-row": {
             "count": 9,
             "work": 954,
             "maxUnits": 106,
-            "ms": 0
+            "ms": 0.01
           },
           "climb-pass": {
             "count": 951,
             "work": 951,
             "maxUnits": 1,
-            "ms": 1.664
+            "ms": 1.902
           },
           "repair-pass": {
             "count": 794,
             "work": 794,
             "maxUnits": 1,
-            "ms": 1.76
+            "ms": 1.588
           },
           "ils-iteration": {
             "count": 485,
             "work": 485,
             "maxUnits": 1,
-            "ms": 0.992
+            "ms": 0.97
           },
           "lp-job-coefficient": {
             "count": 210,
             "work": 210,
             "maxUnits": 1,
-            "ms": 0.448
+            "ms": 0.42
           },
           "lp-random-line": {
             "count": 112,
             "work": 112,
             "maxUnits": 1,
-            "ms": 0.288
+            "ms": 0.224
           },
           "seed-start": {
             "count": 24,
             "work": 24,
             "maxUnits": 1,
-            "ms": 0.105
+            "ms": 0.048
           },
           "lp-random-seed": {
             "count": 16,
             "work": 16,
             "maxUnits": 1,
-            "ms": 0.016
+            "ms": 0.032
           },
           "role-enumeration": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.016
           },
           "lp-line-row": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.014
           },
           "lp-offset": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.012
           },
           "lp-resource-row": {
             "count": 2,
             "work": 2,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.004
           },
           "margin-stage": {
             "count": 1,
             "work": 1,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.012
           },
           "target-seed": {
             "count": 1,
             "work": 1,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.002
           }
         }
       },
@@ -1203,11 +1203,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 250.006,
-      "reportedMs": 250.006,
+      "virtualMs": 250.002,
+      "reportedMs": 250.002,
       "nonDeterministic": {
-        "wallMs": 101.8,
-        "lpMs": 0.506
+        "wallMs": 164.1,
+        "lpMs": 0.562
       }
     },
     {
@@ -1250,117 +1250,117 @@
         "deadlineReached": true
       },
       "work": {
-        "total": 626155,
-        "probe": 499379,
+        "total": 626144,
+        "probe": 499368,
         "dense": 126776,
         "byLabel": {
           "climb-job": {
-            "count": 366567,
-            "work": 366567,
+            "count": 366568,
+            "work": 366568,
             "maxUnits": 1,
-            "ms": 733.154
+            "ms": 733.136
           },
           "lp-pivot": {
             "count": 106,
             "work": 122960,
             "maxUnits": 1160,
-            "ms": 1
+            "ms": 1.187
           },
           "repair-job": {
-            "count": 117469,
-            "work": 117469,
+            "count": 117457,
+            "work": 117457,
             "maxUnits": 1,
-            "ms": 234.88
+            "ms": 234.914
           },
           "ils-perturb": {
             "count": 4894,
             "work": 4894,
             "maxUnits": 1,
-            "ms": 10.24
+            "ms": 9.788
           },
           "lp-tableau-row": {
             "count": 36,
             "work": 3816,
             "maxUnits": 106,
-            "ms": 0
+            "ms": 0.042
           },
           "climb-pass": {
             "count": 3742,
             "work": 3742,
             "maxUnits": 1,
-            "ms": 6.784
+            "ms": 7.484
           },
           "repair-pass": {
             "count": 3225,
             "work": 3225,
             "maxUnits": 1,
-            "ms": 6.144
+            "ms": 6.45
           },
           "ils-iteration": {
             "count": 1927,
             "work": 1927,
             "maxUnits": 1,
-            "ms": 4.068
+            "ms": 3.854
           },
           "lp-job-coefficient": {
             "count": 840,
             "work": 840,
             "maxUnits": 1,
-            "ms": 1.786
+            "ms": 1.68
           },
           "lp-random-line": {
             "count": 448,
             "work": 448,
             "maxUnits": 1,
-            "ms": 1.042
+            "ms": 0.896
           },
           "seed-start": {
             "count": 96,
             "work": 96,
             "maxUnits": 1,
-            "ms": 0.602
+            "ms": 0.192
           },
           "lp-random-seed": {
             "count": 64,
             "work": 64,
             "maxUnits": 1,
-            "ms": 0.19
+            "ms": 0.128
           },
           "role-enumeration": {
             "count": 32,
             "work": 32,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.064
           },
           "lp-line-row": {
             "count": 28,
             "work": 28,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.056
           },
           "lp-offset": {
             "count": 28,
             "work": 28,
             "maxUnits": 1,
-            "ms": 0.006
+            "ms": 0.054
           },
           "lp-resource-row": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.016
           },
           "margin-stage": {
             "count": 4,
             "work": 4,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.046
           },
           "target-seed": {
             "count": 4,
             "work": 4,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.008
           }
         }
       },
@@ -1389,11 +1389,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 1000.026,
-      "reportedMs": 1000.026,
+      "virtualMs": 1000.004,
+      "reportedMs": 1000.004,
       "nonDeterministic": {
-        "wallMs": 378.2,
-        "lpMs": 1.243
+        "wallMs": 692.3,
+        "lpMs": 1.914
       }
     },
     {
@@ -1440,135 +1440,135 @@
         "deadlineReached": true
       },
       "work": {
-        "total": 3297030,
-        "probe": 1993497,
+        "total": 3297017,
+        "probe": 1993484,
         "dense": 1303533,
         "byLabel": {
           "climb-job": {
-            "count": 1525097,
-            "work": 1525097,
+            "count": 1525105,
+            "work": 1525105,
             "maxUnits": 1,
-            "ms": 3050.162
+            "ms": 3050.21
           },
           "lp-pivot": {
             "count": 251,
             "work": 1291082,
             "maxUnits": 8517,
-            "ms": 11.701
+            "ms": 12.778
           },
           "repair-job": {
-            "count": 423046,
-            "work": 423046,
+            "count": 423029,
+            "work": 423029,
             "maxUnits": 1,
-            "ms": 845.918
+            "ms": 846.058
           },
           "lp-tableau-row": {
             "count": 61,
             "work": 12451,
             "maxUnits": 484,
-            "ms": 0.069
+            "ms": 0.126
           },
           "ils-perturb": {
-            "count": 12272,
-            "work": 12272,
+            "count": 12270,
+            "work": 12270,
             "maxUnits": 1,
-            "ms": 24.832
+            "ms": 24.54
           },
           "climb-pass": {
             "count": 9611,
             "work": 9611,
             "maxUnits": 1,
-            "ms": 18.964
+            "ms": 19.222
           },
           "repair-pass": {
-            "count": 7479,
-            "work": 7479,
+            "count": 7478,
+            "work": 7478,
             "maxUnits": 1,
-            "ms": 14.208
+            "ms": 14.956
           },
           "lp-job-coefficient": {
             "count": 5383,
             "work": 5383,
             "maxUnits": 1,
-            "ms": 10.934
+            "ms": 10.766
           },
           "ils-iteration": {
-            "count": 4865,
-            "work": 4865,
+            "count": 4864,
+            "work": 4864,
             "maxUnits": 1,
-            "ms": 10.244
+            "ms": 9.728
           },
           "gel-seed-line": {
             "count": 3872,
             "work": 3872,
             "maxUnits": 1,
-            "ms": 8.224
+            "ms": 7.744
           },
           "gel-seed-step": {
             "count": 790,
             "work": 790,
             "maxUnits": 1,
-            "ms": 0.992
+            "ms": 1.58
           },
           "lp-random-line": {
             "count": 672,
             "work": 672,
             "maxUnits": 1,
-            "ms": 1.49
+            "ms": 1.344
           },
           "seed-start": {
             "count": 144,
             "work": 144,
             "maxUnits": 1,
-            "ms": 1.747
+            "ms": 0.288
           },
           "lp-random-seed": {
             "count": 96,
             "work": 96,
             "maxUnits": 1,
-            "ms": 0.308
+            "ms": 0.192
           },
           "lp-line-row": {
             "count": 42,
             "work": 42,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.084
           },
           "lp-offset": {
             "count": 42,
             "work": 42,
             "maxUnits": 1,
-            "ms": 0.01
+            "ms": 0.082
           },
           "role-enumeration": {
             "count": 32,
             "work": 32,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.064
           },
           "lp-resource-row": {
             "count": 19,
             "work": 19,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.038
           },
           "gel-prefix": {
             "count": 14,
             "work": 14,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.028
           },
           "target-seed": {
             "count": 10,
             "work": 10,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.02
           },
           "margin-stage": {
             "count": 6,
             "work": 6,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.142
           }
         }
       },
@@ -1597,11 +1597,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 4000.029,
-      "reportedMs": 4000.029,
+      "virtualMs": 4000.003,
+      "reportedMs": 4000.003,
       "nonDeterministic": {
-        "wallMs": 1807.7,
-        "lpMs": 4.402
+        "wallMs": 3134.5,
+        "lpMs": 3.234
       }
     },
     {
@@ -1648,153 +1648,153 @@
         "deadlineReached": true
       },
       "work": {
-        "total": 11288546,
-        "probe": 9993530,
+        "total": 11288542,
+        "probe": 9993526,
         "dense": 1295016,
         "byLabel": {
           "climb-job": {
-            "count": 7643662,
-            "work": 7643662,
+            "count": 7643658,
+            "work": 7643658,
             "maxUnits": 1,
-            "ms": 15285.874
+            "ms": 15287.316
           },
           "repair-job": {
             "count": 2212098,
             "work": 2212098,
             "maxUnits": 1,
-            "ms": 4426.168
+            "ms": 4424.196
           },
           "lp-pivot": {
             "count": 250,
             "work": 1282565,
             "maxUnits": 8517,
-            "ms": 11.754
+            "ms": 12.693
           },
           "ils-perturb": {
             "count": 43590,
             "work": 43590,
             "maxUnits": 1,
-            "ms": 86.592
+            "ms": 87.18
           },
           "climb-pass": {
             "count": 34800,
             "work": 34800,
             "maxUnits": 1,
-            "ms": 68.68
+            "ms": 69.6
           },
           "repair-pass": {
             "count": 27488,
             "work": 27488,
             "maxUnits": 1,
-            "ms": 54.88
+            "ms": 54.976
           },
           "ils-iteration": {
             "count": 17418,
             "work": 17418,
             "maxUnits": 1,
-            "ms": 35.708
+            "ms": 34.836
           },
           "lp-tableau-row": {
             "count": 61,
             "work": 12451,
             "maxUnits": 484,
-            "ms": 0.16
+            "ms": 0.126
           },
           "gel-seed-line": {
             "count": 5808,
             "work": 5808,
             "maxUnits": 1,
-            "ms": 10.816
+            "ms": 11.616
           },
           "lp-job-coefficient": {
             "count": 5383,
             "work": 5383,
             "maxUnits": 1,
-            "ms": 10.816
+            "ms": 10.766
           },
           "lp-random-line": {
             "count": 1232,
             "work": 1232,
             "maxUnits": 1,
-            "ms": 2.38
+            "ms": 2.464
           },
           "gel-seed-step": {
             "count": 1185,
             "work": 1185,
             "maxUnits": 1,
-            "ms": 3.168
+            "ms": 2.37
           },
           "seed-start": {
             "count": 269,
             "work": 269,
             "maxUnits": 1,
-            "ms": 1.71
+            "ms": 0.538
           },
           "deficit-job": {
             "count": 196,
             "work": 196,
             "maxUnits": 1,
-            "ms": 0.384
+            "ms": 0.392
           },
           "lp-random-seed": {
             "count": 176,
             "work": 176,
             "maxUnits": 1,
-            "ms": 0.47
+            "ms": 0.352
           },
           "role-enumeration": {
             "count": 64,
             "work": 64,
             "maxUnits": 1,
-            "ms": 0.16
+            "ms": 0.128
           },
           "lp-line-row": {
             "count": 42,
             "work": 42,
             "maxUnits": 1,
-            "ms": 0.042
+            "ms": 0.084
           },
           "lp-offset": {
             "count": 42,
             "work": 42,
             "maxUnits": 1,
-            "ms": 0.118
+            "ms": 0.082
           },
           "gel-prefix": {
             "count": 21,
             "work": 21,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.042
           },
           "lp-resource-row": {
             "count": 19,
             "work": 19,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.038
           },
           "target-seed": {
             "count": 15,
             "work": 15,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.03
           },
           "margin-stage": {
             "count": 11,
             "work": 11,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.152
           },
           "dfs-node": {
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.018
           },
           "deficit-pass": {
             "count": 2,
             "work": 2,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.004
           }
         }
       },
@@ -1822,11 +1822,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 20000.01,
-      "reportedMs": 20000.01,
+      "virtualMs": 20000.002,
+      "reportedMs": 20000.002,
       "nonDeterministic": {
-        "wallMs": 9323,
-        "lpMs": 3.07
+        "wallMs": 15862.2,
+        "lpMs": 3.26
       }
     },
     {
@@ -1858,11 +1858,11 @@
       "flags": {
         "feasible": true,
         "capped": true,
-        "deadlineReached": false
+        "deadlineReached": true
       },
       "work": {
-        "total": 13004004,
-        "probe": 11543698,
+        "total": 12152701,
+        "probe": 10692395,
         "dense": 1460306,
         "byLabel": {}
       },
@@ -1884,44 +1884,44 @@
       },
       "events": {},
       "stopReasons": {},
-      "reportedMs": 11666.301,
+      "reportedMs": 20001.697,
       "wall": {
         "samples": 5,
         "ms": {
-          "median": 11666.4,
-          "min": 11290.1,
-          "max": 12157.7,
-          "cvPct": 3.08
+          "median": 20000.6,
+          "min": 20000.4,
+          "max": 20001.8,
+          "cvPct": 0
         },
         "probeMs": {
-          "median": 11661.3,
-          "min": 11278.6,
-          "max": 12147.5,
-          "cvPct": 3.1
+          "median": 19992.7,
+          "min": 19990.1,
+          "max": 19994.5,
+          "cvPct": 0.01
         },
         "denseMs": {
-          "median": 10.2,
-          "min": 5.1,
-          "max": 14.3,
-          "cvPct": 40.81
+          "median": 9.1,
+          "min": 6.1,
+          "max": 10.8,
+          "cvPct": 24.38
         },
         "probeWorkPerSec": {
-          "median": 989915,
-          "min": 950292,
-          "max": 1023502,
-          "cvPct": 3.07
+          "median": 534815,
+          "min": 533930,
+          "max": 539896,
+          "cvPct": 0.48
         },
         "denseWorkPerSec": {
-          "median": 142885910,
-          "min": 101834158,
-          "max": 284623032,
-          "cvPct": 44.14
+          "median": 160995094,
+          "min": 135044201,
+          "max": 239603942,
+          "cvPct": 25.97
         },
         "totalWorkPerSec": {
-          "median": 1114651,
-          "min": 1069607,
-          "max": 1151805,
-          "cvPct": 3.05
+          "median": 607581,
+          "min": 606707,
+          "max": 612634,
+          "cvPct": 0.42
         }
       },
       "objectiveRange": [
@@ -1961,129 +1961,129 @@
         "deadlineReached": true
       },
       "work": {
-        "total": 1578017,
-        "probe": 117711,
+        "total": 1578006,
+        "probe": 117700,
         "dense": 1460306,
         "byLabel": {
           "lp-pivot": {
             "count": 145,
             "work": 1451160,
             "maxUnits": 10008,
-            "ms": 13.37
+            "ms": 14.417
           },
           "climb-job": {
-            "count": 76766,
-            "work": 76766,
+            "count": 76755,
+            "work": 76755,
             "maxUnits": 1,
-            "ms": 153.472
+            "ms": 153.51
           },
           "repair-job": {
             "count": 32269,
             "work": 32269,
             "maxUnits": 1,
-            "ms": 64.55
+            "ms": 64.538
           },
           "lp-tableau-row": {
             "count": 17,
             "work": 9146,
             "maxUnits": 538,
-            "ms": 0.052
+            "ms": 0.088
           },
           "lp-job-coefficient": {
             "count": 4833,
             "work": 4833,
             "maxUnits": 1,
-            "ms": 9.632
+            "ms": 9.666
           },
           "gel-seed-line": {
             "count": 2752,
             "work": 2752,
             "maxUnits": 1,
-            "ms": 5.888
+            "ms": 5.504
           },
           "gel-seed-step": {
             "count": 497,
             "work": 497,
             "maxUnits": 1,
-            "ms": 0.576
+            "ms": 0.994
           },
           "climb-pass": {
             "count": 146,
             "work": 146,
             "maxUnits": 1,
-            "ms": 0.288
+            "ms": 0.292
           },
           "lp-random-line": {
             "count": 128,
             "work": 128,
             "maxUnits": 1,
-            "ms": 0.208
+            "ms": 0.256
           },
           "repair-pass": {
             "count": 124,
             "work": 124,
             "maxUnits": 1,
-            "ms": 0.288
+            "ms": 0.248
           },
           "ils-perturb": {
             "count": 83,
             "work": 83,
             "maxUnits": 1,
-            "ms": 0.128
+            "ms": 0.166
           },
           "ils-iteration": {
             "count": 33,
             "work": 33,
             "maxUnits": 1,
-            "ms": 0.064
+            "ms": 0.066
           },
           "seed-start": {
             "count": 25,
             "work": 25,
             "maxUnits": 1,
-            "ms": 1.317
+            "ms": 0.05
           },
           "lp-random-seed": {
             "count": 16,
             "work": 16,
             "maxUnits": 1,
-            "ms": 0.094
+            "ms": 0.032
           },
           "lp-resource-row": {
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0.064
+            "ms": 0.018
           },
           "gel-prefix": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.016
           },
           "lp-line-row": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.016
           },
           "lp-offset": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.014
           },
           "target-seed": {
             "count": 5,
             "work": 5,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.01
           },
           "margin-stage": {
             "count": 1,
             "work": 1,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.1
           }
         }
       },
@@ -2111,11 +2111,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 250.025,
-      "reportedMs": 250.025,
+      "virtualMs": 250.003,
+      "reportedMs": 250.003,
       "nonDeterministic": {
-        "wallMs": 168.7,
-        "lpMs": 6.377
+        "wallMs": 241.9,
+        "lpMs": 8.996
       }
     },
     {
@@ -2150,129 +2150,129 @@
         "deadlineReached": true
       },
       "work": {
-        "total": 1953009,
-        "probe": 492703,
+        "total": 1953006,
+        "probe": 492700,
         "dense": 1460306,
         "byLabel": {
           "lp-pivot": {
             "count": 145,
             "work": 1451160,
             "maxUnits": 10008,
-            "ms": 13.37
+            "ms": 14.417
           },
           "climb-job": {
-            "count": 393752,
-            "work": 393752,
+            "count": 393749,
+            "work": 393749,
             "maxUnits": 1,
-            "ms": 787.232
+            "ms": 787.498
           },
           "repair-job": {
             "count": 88343,
             "work": 88343,
             "maxUnits": 1,
-            "ms": 176.55
+            "ms": 176.686
           },
           "lp-tableau-row": {
             "count": 17,
             "work": 9146,
             "maxUnits": 538,
-            "ms": 0.052
+            "ms": 0.088
           },
           "lp-job-coefficient": {
             "count": 4833,
             "work": 4833,
             "maxUnits": 1,
-            "ms": 9.632
+            "ms": 9.666
           },
           "gel-seed-line": {
             "count": 2752,
             "work": 2752,
             "maxUnits": 1,
-            "ms": 5.888
+            "ms": 5.504
           },
           "ils-perturb": {
             "count": 772,
             "work": 772,
             "maxUnits": 1,
-            "ms": 1.632
+            "ms": 1.544
           },
           "climb-pass": {
             "count": 745,
             "work": 745,
             "maxUnits": 1,
-            "ms": 1.76
+            "ms": 1.49
           },
           "repair-pass": {
             "count": 499,
             "work": 499,
             "maxUnits": 1,
-            "ms": 1.152
+            "ms": 0.998
           },
           "gel-seed-step": {
             "count": 497,
             "work": 497,
             "maxUnits": 1,
-            "ms": 0.576
+            "ms": 0.994
           },
           "ils-iteration": {
             "count": 302,
             "work": 302,
             "maxUnits": 1,
-            "ms": 0.448
+            "ms": 0.604
           },
           "lp-random-line": {
             "count": 128,
             "work": 128,
             "maxUnits": 1,
-            "ms": 0.208
+            "ms": 0.256
           },
           "seed-start": {
             "count": 25,
             "work": 25,
             "maxUnits": 1,
-            "ms": 1.317
+            "ms": 0.05
           },
           "lp-random-seed": {
             "count": 16,
             "work": 16,
             "maxUnits": 1,
-            "ms": 0.094
+            "ms": 0.032
           },
           "lp-resource-row": {
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0.064
+            "ms": 0.018
           },
           "gel-prefix": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.016
           },
           "lp-line-row": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.016
           },
           "lp-offset": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.014
           },
           "target-seed": {
             "count": 5,
             "work": 5,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.01
           },
           "margin-stage": {
             "count": 1,
             "work": 1,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.1
           }
         }
       },
@@ -2300,11 +2300,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 1000.009,
-      "reportedMs": 1000.009,
+      "virtualMs": 1000.003,
+      "reportedMs": 1000.003,
       "nonDeterministic": {
-        "wallMs": 564.8,
-        "lpMs": 5.506
+        "wallMs": 897.8,
+        "lpMs": 6.7
       }
     },
     {
@@ -2339,129 +2339,129 @@
         "deadlineReached": true
       },
       "work": {
-        "total": 3453009,
-        "probe": 1992703,
+        "total": 3453006,
+        "probe": 1992700,
         "dense": 1460306,
         "byLabel": {
           "climb-job": {
-            "count": 1652500,
-            "work": 1652500,
+            "count": 1652497,
+            "work": 1652497,
             "maxUnits": 1,
-            "ms": 3305.024
+            "ms": 3304.994
           },
           "lp-pivot": {
             "count": 145,
             "work": 1451160,
             "maxUnits": 10008,
-            "ms": 13.37
+            "ms": 14.417
           },
           "repair-job": {
             "count": 322161,
             "work": 322161,
             "maxUnits": 1,
-            "ms": 644.102
+            "ms": 644.322
           },
           "lp-tableau-row": {
             "count": 17,
             "work": 9146,
             "maxUnits": 538,
-            "ms": 0.052
+            "ms": 0.088
           },
           "lp-job-coefficient": {
             "count": 4833,
             "work": 4833,
             "maxUnits": 1,
-            "ms": 9.632
+            "ms": 9.666
           },
           "ils-perturb": {
             "count": 3329,
             "work": 3329,
             "maxUnits": 1,
-            "ms": 6.976
+            "ms": 6.658
           },
           "climb-pass": {
             "count": 3124,
             "work": 3124,
             "maxUnits": 1,
-            "ms": 6.048
+            "ms": 6.248
           },
           "gel-seed-line": {
             "count": 2752,
             "work": 2752,
             "maxUnits": 1,
-            "ms": 5.888
+            "ms": 5.504
           },
           "repair-pass": {
             "count": 1969,
             "work": 1969,
             "maxUnits": 1,
-            "ms": 4.224
+            "ms": 3.938
           },
           "ils-iteration": {
             "count": 1330,
             "work": 1330,
             "maxUnits": 1,
-            "ms": 2.4
+            "ms": 2.66
           },
           "gel-seed-step": {
             "count": 497,
             "work": 497,
             "maxUnits": 1,
-            "ms": 0.576
+            "ms": 0.994
           },
           "lp-random-line": {
             "count": 128,
             "work": 128,
             "maxUnits": 1,
-            "ms": 0.208
+            "ms": 0.256
           },
           "seed-start": {
             "count": 25,
             "work": 25,
             "maxUnits": 1,
-            "ms": 1.317
+            "ms": 0.05
           },
           "lp-random-seed": {
             "count": 16,
             "work": 16,
             "maxUnits": 1,
-            "ms": 0.094
+            "ms": 0.032
           },
           "lp-resource-row": {
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0.064
+            "ms": 0.018
           },
           "gel-prefix": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.016
           },
           "lp-line-row": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.016
           },
           "lp-offset": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.014
           },
           "target-seed": {
             "count": 5,
             "work": 5,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.01
           },
           "margin-stage": {
             "count": 1,
             "work": 1,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.1
           }
         }
       },
@@ -2489,11 +2489,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 4000.009,
-      "reportedMs": 4000.009,
+      "virtualMs": 4000.003,
+      "reportedMs": 4000.003,
       "nonDeterministic": {
-        "wallMs": 2126.9,
-        "lpMs": 8.1
+        "wallMs": 3546.2,
+        "lpMs": 11.085
       }
     },
     {
@@ -2528,129 +2528,129 @@
         "deadlineReached": true
       },
       "work": {
-        "total": 11453009,
-        "probe": 9992703,
+        "total": 11453006,
+        "probe": 9992700,
         "dense": 1460306,
         "byLabel": {
           "climb-job": {
-            "count": 8381388,
-            "work": 8381388,
+            "count": 8381385,
+            "work": 8381385,
             "maxUnits": 1,
-            "ms": 16762.656
+            "ms": 16762.77
           },
           "repair-job": {
             "count": 1553144,
             "work": 1553144,
             "maxUnits": 1,
-            "ms": 3106.31
+            "ms": 3106.288
           },
           "lp-pivot": {
             "count": 145,
             "work": 1451160,
             "maxUnits": 10008,
-            "ms": 13.37
+            "ms": 14.417
           },
           "ils-perturb": {
             "count": 17245,
             "work": 17245,
             "maxUnits": 1,
-            "ms": 34.4
+            "ms": 34.49
           },
           "climb-pass": {
             "count": 15844,
             "work": 15844,
             "maxUnits": 1,
-            "ms": 31.104
+            "ms": 31.688
           },
           "repair-pass": {
             "count": 9879,
             "work": 9879,
             "maxUnits": 1,
-            "ms": 20.064
+            "ms": 19.758
           },
           "lp-tableau-row": {
             "count": 17,
             "work": 9146,
             "maxUnits": 538,
-            "ms": 0.052
+            "ms": 0.088
           },
           "ils-iteration": {
             "count": 6913,
             "work": 6913,
             "maxUnits": 1,
-            "ms": 14.24
+            "ms": 13.826
           },
           "lp-job-coefficient": {
             "count": 4833,
             "work": 4833,
             "maxUnits": 1,
-            "ms": 9.632
+            "ms": 9.666
           },
           "gel-seed-line": {
             "count": 2752,
             "work": 2752,
             "maxUnits": 1,
-            "ms": 5.888
+            "ms": 5.504
           },
           "gel-seed-step": {
             "count": 497,
             "work": 497,
             "maxUnits": 1,
-            "ms": 0.576
+            "ms": 0.994
           },
           "lp-random-line": {
             "count": 128,
             "work": 128,
             "maxUnits": 1,
-            "ms": 0.208
+            "ms": 0.256
           },
           "seed-start": {
             "count": 25,
             "work": 25,
             "maxUnits": 1,
-            "ms": 1.317
+            "ms": 0.05
           },
           "lp-random-seed": {
             "count": 16,
             "work": 16,
             "maxUnits": 1,
-            "ms": 0.094
+            "ms": 0.032
           },
           "lp-resource-row": {
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0.064
+            "ms": 0.018
           },
           "gel-prefix": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.016
           },
           "lp-line-row": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.016
           },
           "lp-offset": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.014
           },
           "target-seed": {
             "count": 5,
             "work": 5,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.01
           },
           "margin-stage": {
             "count": 1,
             "work": 1,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.1
           }
         }
       },
@@ -2678,11 +2678,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 20000.009,
-      "reportedMs": 20000.009,
+      "virtualMs": 20000.003,
+      "reportedMs": 20000.003,
       "nonDeterministic": {
-        "wallMs": 10248.6,
-        "lpMs": 5.191
+        "wallMs": 18175.2,
+        "lpMs": 5.98
       }
     },
     {
@@ -2714,11 +2714,11 @@
       "flags": {
         "feasible": true,
         "capped": true,
-        "deadlineReached": false
+        "deadlineReached": true
       },
       "work": {
-        "total": 16086423,
-        "probe": 13889669,
+        "total": 12847066,
+        "probe": 10650312,
         "dense": 2196754,
         "byLabel": {}
       },
@@ -2740,44 +2740,44 @@
       },
       "events": {},
       "stopReasons": {},
-      "reportedMs": 14635.409,
+      "reportedMs": 20000.669,
       "wall": {
         "samples": 5,
         "ms": {
-          "median": 14635.5,
-          "min": 13956.7,
-          "max": 17998.8,
-          "cvPct": 10.71
+          "median": 20000.6,
+          "min": 20000.4,
+          "max": 20072.3,
+          "cvPct": 0.16
         },
         "probeMs": {
-          "median": 14612.3,
-          "min": 13943.8,
-          "max": 17984.8,
-          "cvPct": 10.73
+          "median": 19990.8,
+          "min": 19979,
+          "max": 20051.1,
+          "cvPct": 0.14
         },
         "denseMs": {
-          "median": 14.4,
-          "min": 12.9,
-          "max": 23.2,
-          "cvPct": 25.79
+          "median": 12.3,
+          "min": 7.5,
+          "max": 21.7,
+          "cvPct": 45.31
         },
         "probeWorkPerSec": {
-          "median": 950545,
-          "min": 772299,
-          "max": 996117,
-          "cvPct": 9.56
+          "median": 533075,
+          "min": 521151,
+          "max": 538878,
+          "cvPct": 1.45
         },
         "denseWorkPerSec": {
-          "median": 152981740,
-          "min": 94822038,
-          "max": 170662536,
-          "cvPct": 20.45
+          "median": 177891627,
+          "min": 101084035,
+          "max": 294858037,
+          "cvPct": 45.7
         },
         "totalWorkPerSec": {
-          "median": 1099138,
-          "min": 893752,
-          "max": 1152596,
-          "cvPct": 9.55
+          "median": 642330,
+          "min": 630730,
+          "max": 648512,
+          "cvPct": 1.22
         }
       },
       "objectiveRange": [
@@ -2817,129 +2817,129 @@
         "deadlineReached": true
       },
       "work": {
-        "total": 2310780,
-        "probe": 114026,
+        "total": 2310772,
+        "probe": 114018,
         "dense": 2196754,
         "byLabel": {
           "lp-pivot": {
             "count": 164,
             "work": 2184480,
             "maxUnits": 13320,
-            "ms": 21.796
+            "ms": 21.718
           },
           "climb-job": {
             "count": 66675,
             "work": 66675,
             "maxUnits": 1,
-            "ms": 133.248
+            "ms": 133.35
           },
           "repair-job": {
-            "count": 35333,
-            "work": 35333,
+            "count": 35325,
+            "work": 35325,
             "maxUnits": 1,
-            "ms": 70.492
+            "ms": 70.65
           },
           "lp-tableau-row": {
             "count": 19,
             "work": 12274,
             "maxUnits": 646,
-            "ms": 0.059
+            "ms": 0.118
           },
           "lp-job-coefficient": {
             "count": 5805,
             "work": 5805,
             "maxUnits": 1,
-            "ms": 11.584
+            "ms": 11.61
           },
           "gel-seed-line": {
             "count": 4980,
             "work": 4980,
             "maxUnits": 1,
-            "ms": 9.536
+            "ms": 9.96
           },
           "gel-seed-step": {
             "count": 731,
             "work": 731,
             "maxUnits": 1,
-            "ms": 1.882
+            "ms": 1.462
           },
           "lp-random-line": {
             "count": 160,
             "work": 160,
             "maxUnits": 1,
-            "ms": 0.368
+            "ms": 0.32
           },
           "climb-pass": {
             "count": 105,
             "work": 105,
             "maxUnits": 1,
-            "ms": 0.32
+            "ms": 0.21
           },
           "repair-pass": {
             "count": 100,
             "work": 100,
             "maxUnits": 1,
-            "ms": 0.32
+            "ms": 0.2
           },
           "ils-perturb": {
             "count": 36,
             "work": 36,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.072
           },
           "seed-start": {
             "count": 27,
             "work": 27,
             "maxUnits": 1,
-            "ms": 0.231
+            "ms": 0.054
           },
           "lp-random-seed": {
             "count": 16,
             "work": 16,
             "maxUnits": 1,
-            "ms": 0.016
+            "ms": 0.032
           },
           "ils-iteration": {
             "count": 13,
             "work": 13,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.026
           },
           "gel-prefix": {
             "count": 10,
             "work": 10,
             "maxUnits": 1,
-            "ms": 0.038
+            "ms": 0.02
           },
           "lp-line-row": {
             "count": 10,
             "work": 10,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.02
           },
           "lp-offset": {
             "count": 10,
             "work": 10,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.018
           },
           "lp-resource-row": {
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.018
           },
           "target-seed": {
             "count": 5,
             "work": 5,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.01
           },
           "margin-stage": {
             "count": 1,
             "work": 1,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.133
           }
         }
       },
@@ -2967,11 +2967,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 250.02,
-      "reportedMs": 250.02,
+      "virtualMs": 250.004,
+      "reportedMs": 250.004,
       "nonDeterministic": {
-        "wallMs": 176.6,
-        "lpMs": 13.238
+        "wallMs": 259.7,
+        "lpMs": 12.474
       }
     },
     {
@@ -3014,121 +3014,121 @@
             "count": 164,
             "work": 2184480,
             "maxUnits": 13320,
-            "ms": 21.796
+            "ms": 21.718
           },
           "climb-job": {
             "count": 387985,
             "work": 387985,
             "maxUnits": 1,
-            "ms": 775.712
+            "ms": 775.97
           },
           "repair-job": {
             "count": 87415,
             "work": 87415,
             "maxUnits": 1,
-            "ms": 174.908
+            "ms": 174.83
           },
           "lp-tableau-row": {
             "count": 19,
             "work": 12274,
             "maxUnits": 646,
-            "ms": 0.059
+            "ms": 0.118
           },
           "lp-job-coefficient": {
             "count": 5805,
             "work": 5805,
             "maxUnits": 1,
-            "ms": 11.584
+            "ms": 11.61
           },
           "gel-seed-line": {
             "count": 4980,
             "work": 4980,
             "maxUnits": 1,
-            "ms": 9.536
+            "ms": 9.96
           },
           "gel-seed-step": {
             "count": 731,
             "work": 731,
             "maxUnits": 1,
-            "ms": 1.882
+            "ms": 1.462
           },
           "climb-pass": {
             "count": 611,
             "work": 611,
             "maxUnits": 1,
-            "ms": 1.344
+            "ms": 1.222
           },
           "ils-perturb": {
             "count": 604,
             "work": 604,
             "maxUnits": 1,
-            "ms": 1.248
+            "ms": 1.208
           },
           "repair-pass": {
             "count": 404,
             "work": 404,
             "maxUnits": 1,
-            "ms": 0.736
+            "ms": 0.808
           },
           "ils-iteration": {
             "count": 235,
             "work": 235,
             "maxUnits": 1,
-            "ms": 0.48
+            "ms": 0.47
           },
           "lp-random-line": {
             "count": 160,
             "work": 160,
             "maxUnits": 1,
-            "ms": 0.368
+            "ms": 0.32
           },
           "seed-start": {
             "count": 27,
             "work": 27,
             "maxUnits": 1,
-            "ms": 0.231
+            "ms": 0.054
           },
           "lp-random-seed": {
             "count": 16,
             "work": 16,
             "maxUnits": 1,
-            "ms": 0.016
+            "ms": 0.032
           },
           "gel-prefix": {
             "count": 10,
             "work": 10,
             "maxUnits": 1,
-            "ms": 0.038
+            "ms": 0.02
           },
           "lp-line-row": {
             "count": 10,
             "work": 10,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.02
           },
           "lp-offset": {
             "count": 10,
             "work": 10,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.018
           },
           "lp-resource-row": {
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.018
           },
           "target-seed": {
             "count": 5,
             "work": 5,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.01
           },
           "margin-stage": {
             "count": 1,
             "work": 1,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.133
           }
         }
       },
@@ -3159,8 +3159,8 @@
       "virtualMs": 1000.004,
       "reportedMs": 1000.004,
       "nonDeterministic": {
-        "wallMs": 559.1,
-        "lpMs": 12.418
+        "wallMs": 942.9,
+        "lpMs": 7.424
       }
     },
     {
@@ -3203,121 +3203,121 @@
             "count": 164,
             "work": 2184480,
             "maxUnits": 13320,
-            "ms": 21.796
+            "ms": 21.718
           },
           "climb-job": {
             "count": 1654830,
             "work": 1654830,
             "maxUnits": 1,
-            "ms": 3308.992
+            "ms": 3309.66
           },
           "repair-job": {
             "count": 314325,
             "work": 314325,
             "maxUnits": 1,
-            "ms": 628.892
+            "ms": 628.65
           },
           "lp-tableau-row": {
             "count": 19,
             "work": 12274,
             "maxUnits": 646,
-            "ms": 0.059
+            "ms": 0.118
           },
           "lp-job-coefficient": {
             "count": 5805,
             "work": 5805,
             "maxUnits": 1,
-            "ms": 11.584
+            "ms": 11.61
           },
           "gel-seed-line": {
             "count": 4980,
             "work": 4980,
             "maxUnits": 1,
-            "ms": 9.536
+            "ms": 9.96
           },
           "ils-perturb": {
             "count": 2763,
             "work": 2763,
             "maxUnits": 1,
-            "ms": 5.28
+            "ms": 5.526
           },
           "climb-pass": {
             "count": 2607,
             "work": 2607,
             "maxUnits": 1,
-            "ms": 5.376
+            "ms": 5.214
           },
           "repair-pass": {
             "count": 1628,
             "work": 1628,
             "maxUnits": 1,
-            "ms": 3.584
+            "ms": 3.256
           },
           "ils-iteration": {
             "count": 1101,
             "work": 1101,
             "maxUnits": 1,
-            "ms": 2.304
+            "ms": 2.202
           },
           "gel-seed-step": {
             "count": 731,
             "work": 731,
             "maxUnits": 1,
-            "ms": 1.882
+            "ms": 1.462
           },
           "lp-random-line": {
             "count": 160,
             "work": 160,
             "maxUnits": 1,
-            "ms": 0.368
+            "ms": 0.32
           },
           "seed-start": {
             "count": 27,
             "work": 27,
             "maxUnits": 1,
-            "ms": 0.231
+            "ms": 0.054
           },
           "lp-random-seed": {
             "count": 16,
             "work": 16,
             "maxUnits": 1,
-            "ms": 0.016
+            "ms": 0.032
           },
           "gel-prefix": {
             "count": 10,
             "work": 10,
             "maxUnits": 1,
-            "ms": 0.038
+            "ms": 0.02
           },
           "lp-line-row": {
             "count": 10,
             "work": 10,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.02
           },
           "lp-offset": {
             "count": 10,
             "work": 10,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.018
           },
           "lp-resource-row": {
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.018
           },
           "target-seed": {
             "count": 5,
             "work": 5,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.01
           },
           "margin-stage": {
             "count": 1,
             "work": 1,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.133
           }
         }
       },
@@ -3348,8 +3348,8 @@
       "virtualMs": 4000.004,
       "reportedMs": 4000.004,
       "nonDeterministic": {
-        "wallMs": 2080.4,
-        "lpMs": 17.831
+        "wallMs": 3702.6,
+        "lpMs": 11.548
       }
     },
     {
@@ -3392,121 +3392,121 @@
             "count": 8388913,
             "work": 8388913,
             "maxUnits": 1,
-            "ms": 16775.456
+            "ms": 16777.826
           },
           "lp-pivot": {
             "count": 164,
             "work": 2184480,
             "maxUnits": 13320,
-            "ms": 21.796
+            "ms": 21.718
           },
           "repair-job": {
             "count": 1546860,
             "work": 1546860,
             "maxUnits": 1,
-            "ms": 3094.748
+            "ms": 3093.72
           },
           "ils-perturb": {
             "count": 14322,
             "work": 14322,
             "maxUnits": 1,
-            "ms": 27.296
+            "ms": 28.644
           },
           "climb-pass": {
             "count": 13211,
             "work": 13211,
             "maxUnits": 1,
-            "ms": 27.552
+            "ms": 26.422
           },
           "lp-tableau-row": {
             "count": 19,
             "work": 12274,
             "maxUnits": 646,
-            "ms": 0.059
+            "ms": 0.118
           },
           "repair-pass": {
             "count": 8208,
             "work": 8208,
             "maxUnits": 1,
-            "ms": 17.472
+            "ms": 16.416
           },
           "lp-job-coefficient": {
             "count": 5805,
             "work": 5805,
             "maxUnits": 1,
-            "ms": 11.584
+            "ms": 11.61
           },
           "ils-iteration": {
             "count": 5740,
             "work": 5740,
             "maxUnits": 1,
-            "ms": 11.904
+            "ms": 11.48
           },
           "gel-seed-line": {
             "count": 4980,
             "work": 4980,
             "maxUnits": 1,
-            "ms": 9.536
+            "ms": 9.96
           },
           "gel-seed-step": {
             "count": 731,
             "work": 731,
             "maxUnits": 1,
-            "ms": 1.882
+            "ms": 1.462
           },
           "lp-random-line": {
             "count": 160,
             "work": 160,
             "maxUnits": 1,
-            "ms": 0.368
+            "ms": 0.32
           },
           "seed-start": {
             "count": 27,
             "work": 27,
             "maxUnits": 1,
-            "ms": 0.231
+            "ms": 0.054
           },
           "lp-random-seed": {
             "count": 16,
             "work": 16,
             "maxUnits": 1,
-            "ms": 0.016
+            "ms": 0.032
           },
           "gel-prefix": {
             "count": 10,
             "work": 10,
             "maxUnits": 1,
-            "ms": 0.038
+            "ms": 0.02
           },
           "lp-line-row": {
             "count": 10,
             "work": 10,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.02
           },
           "lp-offset": {
             "count": 10,
             "work": 10,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.018
           },
           "lp-resource-row": {
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.018
           },
           "target-seed": {
             "count": 5,
             "work": 5,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.01
           },
           "margin-stage": {
             "count": 1,
             "work": 1,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.133
           }
         }
       },
@@ -3537,8 +3537,8 @@
       "virtualMs": 20000.004,
       "reportedMs": 20000.004,
       "nonDeterministic": {
-        "wallMs": 11184.8,
-        "lpMs": 10.764
+        "wallMs": 18084.5,
+        "lpMs": 10.357
       }
     },
     {
@@ -3638,67 +3638,67 @@
         "searchExhaustive": false
       },
       "work": {
-        "total": 28714602,
-        "probe": 23462389,
-        "dense": 5252213,
+        "total": 18388621,
+        "probe": 13485952,
+        "dense": 4902669,
         "byLabel": {}
       },
       "lp": {
-        "pivots": 1093,
-        "tableauRows": 183,
-        "work": 5252213,
-        "workOnControl": 5252213,
+        "pivots": 926,
+        "tableauRows": 136,
+        "work": 4902669,
+        "workOnControl": 4902669,
         "refused": 0,
         "interrupted": 0
       },
       "calls": {
         "controls": 1,
-        "solveCore": 26,
-        "lpMaximize": 17,
+        "solveCore": 21,
+        "lpMaximize": 12,
         "projectSchedule": 0,
         "staticSchedule": 0,
         "projectPhase": 0
       },
       "events": {},
       "stopReasons": {},
-      "reportedMs": 15706.157,
+      "reportedMs": 19975.651,
       "wall": {
         "samples": 5,
         "ms": {
-          "median": 15758.6,
-          "min": 15224,
-          "max": 16098.5,
-          "cvPct": 2.01
+          "median": 19975.2,
+          "min": 19975.2,
+          "max": 19975.8,
+          "cvPct": 0
         },
         "probeMs": {
-          "median": 15745.9,
-          "min": 15207.7,
-          "max": 16084.9,
-          "cvPct": 2.02
+          "median": 19962,
+          "min": 19958,
+          "max": 19966.1,
+          "cvPct": 0.02
         },
         "denseMs": {
-          "median": 12.9,
-          "min": 12.4,
-          "max": 16.4,
-          "cvPct": 12.08
+          "median": 13.2,
+          "min": 9.1,
+          "max": 17.2,
+          "cvPct": 23.31
         },
         "probeWorkPerSec": {
-          "median": 1495003,
-          "min": 1468067,
-          "max": 1560513,
-          "cvPct": 2.35
+          "median": 675499,
+          "min": 671281,
+          "max": 684798,
+          "cvPct": 0.82
         },
         "denseWorkPerSec": {
-          "median": 407772534,
-          "min": 321109455,
-          "max": 424008756,
-          "cvPct": 10.62
+          "median": 370530043,
+          "min": 285404678,
+          "max": 538151219,
+          "cvPct": 23.46
         },
         "totalWorkPerSec": {
-          "median": 1828226,
-          "min": 1793078,
-          "max": 1903832,
-          "cvPct": 2.27
+          "median": 920547,
+          "min": 916273,
+          "max": 929782,
+          "cvPct": 0.59
         }
       },
       "objectiveRange": [
@@ -3803,129 +3803,129 @@
         "searchExhaustive": false
       },
       "work": {
-        "total": 2742683,
-        "probe": 111226,
+        "total": 2742676,
+        "probe": 111219,
         "dense": 2631457,
         "byLabel": {
           "lp-pivot": {
             "count": 551,
             "work": 2608142,
             "maxUnits": 7380,
-            "ms": 23.969
+            "ms": 25.836
           },
           "climb-job": {
-            "count": 61185,
-            "work": 61185,
+            "count": 61187,
+            "work": 61187,
             "maxUnits": 1,
-            "ms": 121.802
+            "ms": 122.374
           },
           "repair-job": {
-            "count": 34067,
-            "work": 34067,
+            "count": 34059,
+            "work": 34059,
             "maxUnits": 1,
-            "ms": 68.006
+            "ms": 68.118
           },
           "lp-tableau-row": {
             "count": 96,
             "work": 23315,
             "maxUnits": 477,
-            "ms": 0.162
+            "ms": 0.232
           },
           "lp-job-coefficient": {
             "count": 9597,
             "work": 9597,
             "maxUnits": 1,
-            "ms": 18.912
+            "ms": 19.194
           },
           "gel-seed-line": {
             "count": 2580,
             "work": 2580,
             "maxUnits": 1,
-            "ms": 5.664
+            "ms": 5.16
           },
           "lp-random-line": {
             "count": 868,
             "work": 868,
             "maxUnits": 1,
-            "ms": 1.64
+            "ms": 1.736
           },
           "repair-pass": {
             "count": 539,
             "work": 539,
             "maxUnits": 1,
-            "ms": 1
+            "ms": 1.078
           },
           "climb-pass": {
-            "count": 513,
-            "work": 513,
+            "count": 512,
+            "work": 512,
             "maxUnits": 1,
-            "ms": 1.016
+            "ms": 1.024
           },
           "gel-seed-step": {
             "count": 487,
             "work": 487,
             "maxUnits": 1,
-            "ms": 0.416
+            "ms": 0.974
           },
           "ils-perturb": {
             "count": 382,
             "work": 382,
             "maxUnits": 1,
-            "ms": 0.864
+            "ms": 0.764
           },
           "raw-level": {
             "count": 273,
             "work": 273,
             "maxUnits": 1,
-            "ms": 0.492
+            "ms": 0.546
           },
           "seed-start": {
             "count": 178,
             "work": 178,
             "maxUnits": 1,
-            "ms": 2.204
+            "ms": 0.356
           },
           "ils-iteration": {
             "count": 147,
             "work": 147,
             "maxUnits": 1,
-            "ms": 0.224
+            "ms": 0.294
           },
           "lp-random-seed": {
             "count": 124,
             "work": 124,
             "maxUnits": 1,
-            "ms": 0.62
+            "ms": 0.248
           },
           "lp-line-row": {
             "count": 63,
             "work": 63,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.126
           },
           "lp-offset": {
             "count": 63,
             "work": 63,
             "maxUnits": 1,
-            "ms": 0.03
+            "ms": 0.126
           },
           "role-enumeration": {
             "count": 34,
             "work": 34,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.068
           },
           "lp-resource-row": {
             "count": 33,
             "work": 33,
             "maxUnits": 1,
-            "ms": 0.448
+            "ms": 0.066
           },
           "raw-line": {
             "count": 21,
             "work": 21,
             "maxUnits": 1,
-            "ms": 0.06
+            "ms": 0.042
           },
           "credits-baseline-candidate": {
             "count": 12,
@@ -3937,7 +3937,7 @@
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.018
           },
           "baseline-product-start": {
             "count": 9,
@@ -3955,25 +3955,25 @@
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0.626
+            "ms": 0.265
           },
           "gel-prefix": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.014
           },
           "target-seed": {
             "count": 5,
             "work": 5,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.01
           },
           "credits-baseline-complete": {
             "count": 3,
             "work": 3,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.006
           }
         }
       },
@@ -4003,11 +4003,11 @@
       "stopReasons": {},
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 248.767,
-      "reportedMs": 248.767,
+      "virtualMs": 248.753,
+      "reportedMs": 248.753,
       "nonDeterministic": {
-        "wallMs": 141.2,
-        "lpMs": 8.66
+        "wallMs": 200.7,
+        "lpMs": 9.521
       }
     },
     {
@@ -4107,135 +4107,135 @@
         "searchExhaustive": false
       },
       "work": {
-        "total": 3115803,
-        "probe": 484346,
+        "total": 3115801,
+        "probe": 484344,
         "dense": 2631457,
         "byLabel": {
           "lp-pivot": {
             "count": 551,
             "work": 2608142,
             "maxUnits": 7380,
-            "ms": 23.969
+            "ms": 25.836
           },
           "climb-job": {
-            "count": 304285,
-            "work": 304285,
+            "count": 304281,
+            "work": 304281,
             "maxUnits": 1,
-            "ms": 608.138
+            "ms": 608.562
           },
           "repair-job": {
-            "count": 152022,
-            "work": 152022,
+            "count": 152024,
+            "work": 152024,
             "maxUnits": 1,
-            "ms": 303.622
+            "ms": 304.048
           },
           "lp-tableau-row": {
             "count": 96,
             "work": 23315,
             "maxUnits": 477,
-            "ms": 0.162
+            "ms": 0.232
           },
           "lp-job-coefficient": {
             "count": 9597,
             "work": 9597,
             "maxUnits": 1,
-            "ms": 18.912
+            "ms": 19.194
           },
           "gel-seed-line": {
             "count": 6452,
             "work": 6452,
             "maxUnits": 1,
-            "ms": 11.936
+            "ms": 12.904
           },
           "ils-perturb": {
             "count": 2908,
             "work": 2908,
             "maxUnits": 1,
-            "ms": 6.368
+            "ms": 5.816
           },
           "climb-pass": {
             "count": 2451,
             "work": 2451,
             "maxUnits": 1,
-            "ms": 5.272
+            "ms": 4.902
           },
           "repair-pass": {
             "count": 2215,
             "work": 2215,
             "maxUnits": 1,
-            "ms": 3.912
+            "ms": 4.43
           },
           "gel-seed-step": {
             "count": 1277,
             "work": 1277,
             "maxUnits": 1,
-            "ms": 3.52
+            "ms": 2.554
           },
           "ils-iteration": {
             "count": 1138,
             "work": 1138,
             "maxUnits": 1,
-            "ms": 1.952
+            "ms": 2.276
           },
           "lp-random-line": {
             "count": 1008,
             "work": 1008,
             "maxUnits": 1,
-            "ms": 1.864
+            "ms": 2.016
           },
           "raw-level": {
             "count": 273,
             "work": 273,
             "maxUnits": 1,
-            "ms": 0.492
+            "ms": 0.546
           },
           "seed-start": {
             "count": 240,
             "work": 240,
             "maxUnits": 1,
-            "ms": 2.268
+            "ms": 0.48
           },
           "lp-random-seed": {
             "count": 144,
             "work": 144,
             "maxUnits": 1,
-            "ms": 0.652
+            "ms": 0.288
           },
           "role-enumeration": {
             "count": 67,
             "work": 67,
             "maxUnits": 1,
-            "ms": 0.16
+            "ms": 0.134
           },
           "lp-line-row": {
             "count": 63,
             "work": 63,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.126
           },
           "lp-offset": {
             "count": 63,
             "work": 63,
             "maxUnits": 1,
-            "ms": 0.03
+            "ms": 0.126
           },
           "lp-resource-row": {
             "count": 33,
             "work": 33,
             "maxUnits": 1,
-            "ms": 0.448
+            "ms": 0.066
           },
           "gel-prefix": {
             "count": 21,
             "work": 21,
             "maxUnits": 1,
-            "ms": 0.096
+            "ms": 0.042
           },
           "raw-line": {
             "count": 21,
             "work": 21,
             "maxUnits": 1,
-            "ms": 0.06
+            "ms": 0.042
           },
           "credits-baseline-candidate": {
             "count": 12,
@@ -4247,7 +4247,7 @@
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.018
           },
           "baseline-product-start": {
             "count": 9,
@@ -4265,19 +4265,19 @@
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0.626
+            "ms": 0.265
           },
           "target-seed": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.016
           },
           "credits-baseline-complete": {
             "count": 3,
             "work": 3,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.006
           }
         }
       },
@@ -4307,11 +4307,11 @@
       "stopReasons": {},
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 995.007,
-      "reportedMs": 995.007,
+      "virtualMs": 995.003,
+      "reportedMs": 995.003,
       "nonDeterministic": {
-        "wallMs": 430.2,
-        "lpMs": 8.561
+        "wallMs": 737,
+        "lpMs": 7.799
       }
     },
     {
@@ -4411,135 +4411,135 @@
         "searchExhaustive": false
       },
       "work": {
-        "total": 4608315,
-        "probe": 1976858,
+        "total": 4608301,
+        "probe": 1976844,
         "dense": 2631457,
         "byLabel": {
           "lp-pivot": {
             "count": 551,
             "work": 2608142,
             "maxUnits": 7380,
-            "ms": 23.969
+            "ms": 25.836
           },
           "climb-job": {
-            "count": 1301668,
-            "work": 1301668,
+            "count": 1301679,
+            "work": 1301679,
             "maxUnits": 1,
-            "ms": 2602.41
+            "ms": 2603.358
           },
           "repair-job": {
-            "count": 617951,
-            "work": 617951,
+            "count": 617926,
+            "work": 617926,
             "maxUnits": 1,
-            "ms": 1235.334
+            "ms": 1235.852
           },
           "lp-tableau-row": {
             "count": 96,
             "work": 23315,
             "maxUnits": 477,
-            "ms": 0.162
+            "ms": 0.232
           },
           "ils-perturb": {
             "count": 13366,
             "work": 13366,
             "maxUnits": 1,
-            "ms": 27.2
+            "ms": 26.732
           },
           "climb-pass": {
             "count": 10261,
             "work": 10261,
             "maxUnits": 1,
-            "ms": 20.6
+            "ms": 20.522
           },
           "lp-job-coefficient": {
             "count": 9597,
             "work": 9597,
             "maxUnits": 1,
-            "ms": 18.912
+            "ms": 19.194
           },
           "repair-pass": {
             "count": 8911,
             "work": 8911,
             "maxUnits": 1,
-            "ms": 17.928
+            "ms": 17.822
           },
           "gel-seed-line": {
             "count": 6452,
             "work": 6452,
             "maxUnits": 1,
-            "ms": 11.936
+            "ms": 12.904
           },
           "ils-iteration": {
             "count": 5300,
             "work": 5300,
             "maxUnits": 1,
-            "ms": 10.592
+            "ms": 10.6
           },
           "gel-seed-step": {
             "count": 1277,
             "work": 1277,
             "maxUnits": 1,
-            "ms": 3.52
+            "ms": 2.554
           },
           "lp-random-line": {
             "count": 1008,
             "work": 1008,
             "maxUnits": 1,
-            "ms": 1.864
+            "ms": 2.016
           },
           "seed-start": {
             "count": 274,
             "work": 274,
             "maxUnits": 1,
-            "ms": 2.46
+            "ms": 0.548
           },
           "raw-level": {
             "count": 273,
             "work": 273,
             "maxUnits": 1,
-            "ms": 0.492
+            "ms": 0.546
           },
           "lp-random-seed": {
             "count": 144,
             "work": 144,
             "maxUnits": 1,
-            "ms": 0.652
+            "ms": 0.288
           },
           "role-enumeration": {
             "count": 106,
             "work": 106,
             "maxUnits": 1,
-            "ms": 0.192
+            "ms": 0.212
           },
           "lp-line-row": {
             "count": 63,
             "work": 63,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.126
           },
           "lp-offset": {
             "count": 63,
             "work": 63,
             "maxUnits": 1,
-            "ms": 0.03
+            "ms": 0.126
           },
           "lp-resource-row": {
             "count": 33,
             "work": 33,
             "maxUnits": 1,
-            "ms": 0.448
+            "ms": 0.066
           },
           "gel-prefix": {
             "count": 21,
             "work": 21,
             "maxUnits": 1,
-            "ms": 0.096
+            "ms": 0.042
           },
           "raw-line": {
             "count": 21,
             "work": 21,
             "maxUnits": 1,
-            "ms": 0.06
+            "ms": 0.042
           },
           "credits-baseline-candidate": {
             "count": 12,
@@ -4551,7 +4551,7 @@
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.018
           },
           "baseline-product-start": {
             "count": 9,
@@ -4569,19 +4569,19 @@
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0.626
+            "ms": 0.265
           },
           "target-seed": {
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.018
           },
           "credits-baseline-complete": {
             "count": 3,
             "work": 3,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.006
           }
         }
       },
@@ -4611,11 +4611,11 @@
       "stopReasons": {},
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 3980.031,
-      "reportedMs": 3980.031,
+      "virtualMs": 3980.003,
+      "reportedMs": 3980.003,
       "nonDeterministic": {
-        "wallMs": 1472.9,
-        "lpMs": 14.363
+        "wallMs": 2798.2,
+        "lpMs": 8.267
       }
     },
     {
@@ -4715,153 +4715,153 @@
         "searchExhaustive": false
       },
       "work": {
-        "total": 13823641,
-        "probe": 9968230,
+        "total": 13823635,
+        "probe": 9968224,
         "dense": 3855411,
         "byLabel": {
           "climb-job": {
-            "count": 5894008,
-            "work": 5894008,
+            "count": 5894024,
+            "work": 5894024,
             "maxUnits": 1,
-            "ms": 11786.48
+            "ms": 11788.048
           },
           "repair-job": {
-            "count": 3871655,
-            "work": 3871655,
+            "count": 3871676,
+            "work": 3871676,
             "maxUnits": 1,
-            "ms": 7743.486
+            "ms": 7743.352
           },
           "lp-pivot": {
             "count": 785,
             "work": 3823334,
             "maxUnits": 7380,
-            "ms": 34.648
+            "ms": 37.896
           },
           "target-swap": {
-            "count": 65916,
-            "work": 65916,
+            "count": 65874,
+            "work": 65874,
             "maxUnits": 1,
-            "ms": 131.456
+            "ms": 131.748
           },
           "lp-tableau-row": {
             "count": 122,
             "work": 32077,
             "maxUnits": 477,
-            "ms": 0.291
+            "ms": 0.317
           },
           "ils-perturb": {
             "count": 31696,
             "work": 31696,
             "maxUnits": 1,
-            "ms": 65.12
+            "ms": 63.392
           },
           "repair-pass": {
             "count": 28846,
             "work": 28846,
             "maxUnits": 1,
-            "ms": 57.402
+            "ms": 57.692
           },
           "climb-pass": {
-            "count": 26249,
-            "work": 26249,
+            "count": 26251,
+            "work": 26251,
             "maxUnits": 1,
-            "ms": 51.792
+            "ms": 52.502
           },
           "lp-job-coefficient": {
             "count": 13678,
             "work": 13678,
             "maxUnits": 1,
-            "ms": 27.2
+            "ms": 27.356
           },
           "ils-iteration": {
             "count": 12635,
             "work": 12635,
             "maxUnits": 1,
-            "ms": 25.344
+            "ms": 25.27
           },
           "gel-seed-line": {
             "count": 10324,
             "work": 10324,
             "maxUnits": 1,
-            "ms": 18.24
+            "ms": 20.648
           },
           "swap-ils-perturb": {
-            "count": 6195,
-            "work": 6195,
+            "count": 6193,
+            "work": 6193,
             "maxUnits": 1,
-            "ms": 12.608
+            "ms": 12.386
           },
           "swap-ils": {
-            "count": 2475,
-            "work": 2475,
+            "count": 2474,
+            "work": 2474,
             "maxUnits": 1,
-            "ms": 4.864
+            "ms": 4.948
           },
           "gel-seed-step": {
             "count": 2067,
             "work": 2067,
             "maxUnits": 1,
-            "ms": 6.56
+            "ms": 4.134
           },
           "lp-random-line": {
             "count": 1232,
             "work": 1232,
             "maxUnits": 1,
-            "ms": 2.214
+            "ms": 2.464
           },
           "seed-start": {
             "count": 338,
             "work": 338,
             "maxUnits": 1,
-            "ms": 4.305
+            "ms": 0.676
           },
           "raw-level": {
             "count": 273,
             "work": 273,
             "maxUnits": 1,
-            "ms": 0.492
+            "ms": 0.546
           },
           "lp-random-seed": {
             "count": 176,
             "work": 176,
             "maxUnits": 1,
-            "ms": 0.672
+            "ms": 0.352
           },
           "role-enumeration": {
             "count": 122,
             "work": 122,
             "maxUnits": 1,
-            "ms": 0.16
+            "ms": 0.244
           },
           "lp-line-row": {
             "count": 77,
             "work": 77,
             "maxUnits": 1,
-            "ms": 0.02
+            "ms": 0.154
           },
           "lp-offset": {
             "count": 77,
             "work": 77,
             "maxUnits": 1,
-            "ms": 0.046
+            "ms": 0.154
           },
           "lp-resource-row": {
             "count": 45,
             "work": 45,
             "maxUnits": 1,
-            "ms": 0.3
+            "ms": 0.09
           },
           "gel-prefix": {
             "count": 35,
             "work": 35,
             "maxUnits": 1,
-            "ms": 0.096
+            "ms": 0.07
           },
           "raw-line": {
             "count": 21,
             "work": 21,
             "maxUnits": 1,
-            "ms": 0.06
+            "ms": 0.042
           },
           "credits-baseline-candidate": {
             "count": 12,
@@ -4879,25 +4879,25 @@
             "count": 11,
             "work": 11,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.022
           },
           "margin-stage": {
             "count": 11,
             "work": 11,
             "maxUnits": 1,
-            "ms": 0.626
+            "ms": 0.364
           },
           "target-seed": {
             "count": 11,
             "work": 11,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.022
           },
           "baseline-product-complete": {
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.018
           },
           "baseline-product-start": {
             "count": 9,
@@ -4909,13 +4909,13 @@
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.016
           },
           "credits-baseline-complete": {
             "count": 3,
             "work": 3,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.006
           }
         }
       },
@@ -4945,11 +4945,11 @@
       "stopReasons": {},
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 19975.014,
-      "reportedMs": 19975.014,
+      "virtualMs": 19975.002,
+      "reportedMs": 19975.002,
       "nonDeterministic": {
-        "wallMs": 6667.6,
-        "lpMs": 10.112
+        "wallMs": 13876.1,
+        "lpMs": 10.362
       }
     },
     {
@@ -4993,8 +4993,8 @@
         "searchExhaustive": false
       },
       "work": {
-        "total": 33565185,
-        "probe": 29262259,
+        "total": 18178830,
+        "probe": 13875904,
         "dense": 4302926,
         "byLabel": {}
       },
@@ -5016,44 +5016,44 @@
       },
       "events": {},
       "stopReasons": {},
-      "reportedMs": 20001.998,
+      "reportedMs": 20002.246,
       "wall": {
         "samples": 5,
         "ms": {
-          "median": 20002.7,
+          "median": 20002.5,
           "min": 20002.1,
-          "max": 20005.6,
+          "max": 20004.7,
           "cvPct": 0.01
         },
         "probeMs": {
-          "median": 19990.9,
-          "min": 19986.3,
-          "max": 19992.9,
+          "median": 19989.5,
+          "min": 19987.9,
+          "max": 19990.9,
           "cvPct": 0.01
         },
         "denseMs": {
-          "median": 11.5,
-          "min": 11.3,
-          "max": 16.7,
-          "cvPct": 18.05
+          "median": 13.2,
+          "min": 11.2,
+          "max": 15,
+          "cvPct": 11.43
         },
         "probeWorkPerSec": {
-          "median": 1463794,
-          "min": 1447398,
-          "max": 1473057,
-          "cvPct": 0.71
+          "median": 694160,
+          "min": 687185,
+          "max": 703405,
+          "cvPct": 0.88
         },
         "denseWorkPerSec": {
-          "median": 374841084,
-          "min": 257209107,
-          "max": 380460258,
-          "cvPct": 15.12
+          "median": 324849235,
+          "min": 285977586,
+          "max": 385274852,
+          "cvPct": 12.16
         },
         "totalWorkPerSec": {
-          "median": 1678082,
-          "min": 1661564,
-          "max": 1687342,
-          "cvPct": 0.63
+          "median": 908834,
+          "min": 901850,
+          "max": 918136,
+          "cvPct": 0.68
         }
       },
       "objectiveRange": [
@@ -5114,141 +5114,141 @@
         "searchExhaustive": false
       },
       "work": {
-        "total": 4752562,
-        "probe": 262456,
+        "total": 4752558,
+        "probe": 262452,
         "dense": 4490106,
         "byLabel": {
           "lp-pivot": {
             "count": 342,
             "work": 4471978,
             "maxUnits": 17080,
-            "ms": 43.86
+            "ms": 44.533
           },
           "climb-job": {
-            "count": 136558,
-            "work": 136558,
+            "count": 136554,
+            "work": 136554,
             "maxUnits": 1,
-            "ms": 273.07
+            "ms": 273.108
           },
           "repair-job": {
             "count": 102129,
             "work": 102129,
             "maxUnits": 1,
-            "ms": 203.894
+            "ms": 204.258
           },
           "lp-tableau-row": {
             "count": 33,
             "work": 18128,
             "maxUnits": 834,
-            "ms": 0.156
+            "ms": 0.176
           },
           "lp-job-coefficient": {
             "count": 11558,
             "work": 11558,
             "maxUnits": 1,
-            "ms": 23.058
+            "ms": 23.116
           },
           "ils-perturb": {
             "count": 3342,
             "work": 3342,
             "maxUnits": 1,
-            "ms": 6.752
+            "ms": 6.684
           },
           "repair-pass": {
             "count": 2445,
             "work": 2445,
             "maxUnits": 1,
-            "ms": 5.472
+            "ms": 4.89
           },
           "climb-pass": {
             "count": 2169,
             "work": 2169,
             "maxUnits": 1,
-            "ms": 3.904
+            "ms": 4.338
           },
           "gel-seed-line": {
             "count": 1936,
             "work": 1936,
             "maxUnits": 1,
-            "ms": 3.68
+            "ms": 3.872
           },
           "ils-iteration": {
             "count": 1331,
             "work": 1331,
             "maxUnits": 1,
-            "ms": 2.688
+            "ms": 2.662
           },
           "gel-seed-step": {
             "count": 395,
             "work": 395,
             "maxUnits": 1,
-            "ms": 0.96
+            "ms": 0.79
           },
           "dfs-node": {
             "count": 220,
             "work": 220,
             "maxUnits": 1,
-            "ms": 0.416
+            "ms": 0.44
           },
           "lp-random-line": {
             "count": 192,
             "work": 192,
             "maxUnits": 1,
-            "ms": 0.55
+            "ms": 0.384
           },
           "seed-start": {
             "count": 63,
             "work": 63,
             "maxUnits": 1,
-            "ms": 1.071
+            "ms": 0.126
           },
           "lp-random-seed": {
             "count": 48,
             "work": 48,
             "maxUnits": 1,
-            "ms": 0.078
+            "ms": 0.096
           },
           "lp-resource-row": {
             "count": 21,
             "work": 21,
             "maxUnits": 1,
-            "ms": 0.096
+            "ms": 0.042
           },
           "lp-line-row": {
             "count": 12,
             "work": 12,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.024
           },
           "lp-offset": {
             "count": 12,
             "work": 12,
             "maxUnits": 1,
-            "ms": 0.014
+            "ms": 0.02
           },
           "target-seed": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.016
           },
           "gel-prefix": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.014
           },
           "role-enumeration": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0.064
+            "ms": 0.014
           },
           "margin-stage": {
             "count": 3,
             "work": 3,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.198
           }
         }
       },
@@ -5277,11 +5277,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 569.813,
+      "virtualMs": 569.805,
       "nonDeterministic": {
-        "wallMs": 250.9,
-        "lpMs": 15.745,
-        "reportedMs": 250.803
+        "wallMs": 415.2,
+        "lpMs": 22.029,
+        "reportedMs": 415.137
       }
     },
     {
@@ -5337,141 +5337,141 @@
         "searchExhaustive": false
       },
       "work": {
-        "total": 5127570,
-        "probe": 637464,
+        "total": 5127558,
+        "probe": 637452,
         "dense": 4490106,
         "byLabel": {
           "lp-pivot": {
             "count": 342,
             "work": 4471978,
             "maxUnits": 17080,
-            "ms": 43.86
+            "ms": 44.533
           },
           "climb-job": {
-            "count": 335896,
-            "work": 335896,
+            "count": 335884,
+            "work": 335884,
             "maxUnits": 1,
-            "ms": 671.63
+            "ms": 671.768
           },
           "repair-job": {
             "count": 276415,
             "work": 276415,
             "maxUnits": 1,
-            "ms": 552.662
+            "ms": 552.83
           },
           "lp-tableau-row": {
             "count": 33,
             "work": 18128,
             "maxUnits": 834,
-            "ms": 0.156
+            "ms": 0.176
           },
           "lp-job-coefficient": {
             "count": 11558,
             "work": 11558,
             "maxUnits": 1,
-            "ms": 23.058
+            "ms": 23.116
           },
           "ils-perturb": {
             "count": 3865,
             "work": 3865,
             "maxUnits": 1,
-            "ms": 7.808
+            "ms": 7.73
           },
           "repair-pass": {
             "count": 2860,
             "work": 2860,
             "maxUnits": 1,
-            "ms": 6.048
+            "ms": 5.72
           },
           "climb-pass": {
             "count": 2411,
             "work": 2411,
             "maxUnits": 1,
-            "ms": 4.416
+            "ms": 4.822
           },
           "gel-seed-line": {
             "count": 1936,
             "work": 1936,
             "maxUnits": 1,
-            "ms": 3.68
+            "ms": 3.872
           },
           "ils-iteration": {
             "count": 1535,
             "work": 1535,
             "maxUnits": 1,
-            "ms": 3.232
+            "ms": 3.07
           },
           "gel-seed-step": {
             "count": 395,
             "work": 395,
             "maxUnits": 1,
-            "ms": 0.96
+            "ms": 0.79
           },
           "dfs-node": {
             "count": 220,
             "work": 220,
             "maxUnits": 1,
-            "ms": 0.416
+            "ms": 0.44
           },
           "lp-random-line": {
             "count": 192,
             "work": 192,
             "maxUnits": 1,
-            "ms": 0.55
+            "ms": 0.384
           },
           "seed-start": {
             "count": 63,
             "work": 63,
             "maxUnits": 1,
-            "ms": 1.071
+            "ms": 0.126
           },
           "lp-random-seed": {
             "count": 48,
             "work": 48,
             "maxUnits": 1,
-            "ms": 0.078
+            "ms": 0.096
           },
           "lp-resource-row": {
             "count": 21,
             "work": 21,
             "maxUnits": 1,
-            "ms": 0.096
+            "ms": 0.042
           },
           "lp-line-row": {
             "count": 12,
             "work": 12,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.024
           },
           "lp-offset": {
             "count": 12,
             "work": 12,
             "maxUnits": 1,
-            "ms": 0.014
+            "ms": 0.02
           },
           "target-seed": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.016
           },
           "gel-prefix": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.014
           },
           "role-enumeration": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0.064
+            "ms": 0.014
           },
           "margin-stage": {
             "count": 3,
             "work": 3,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.198
           }
         }
       },
@@ -5500,11 +5500,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 1319.829,
+      "virtualMs": 1319.805,
       "nonDeterministic": {
-        "wallMs": 582.7,
-        "lpMs": 18.377,
-        "reportedMs": 582.57
+        "wallMs": 929.6,
+        "lpMs": 18.229,
+        "reportedMs": 929.387
       }
     },
     {
@@ -5560,141 +5560,141 @@
         "searchExhaustive": false
       },
       "work": {
-        "total": 6627570,
-        "probe": 2137464,
+        "total": 6627558,
+        "probe": 2137452,
         "dense": 4490106,
         "byLabel": {
           "lp-pivot": {
             "count": 342,
             "work": 4471978,
             "maxUnits": 17080,
-            "ms": 43.86
+            "ms": 44.533
           },
           "climb-job": {
-            "count": 1109374,
-            "work": 1109374,
+            "count": 1109362,
+            "work": 1109362,
             "maxUnits": 1,
-            "ms": 2218.926
+            "ms": 2218.724
           },
           "repair-job": {
             "count": 997513,
             "work": 997513,
             "maxUnits": 1,
-            "ms": 1994.742
+            "ms": 1995.026
           },
           "lp-tableau-row": {
             "count": 33,
             "work": 18128,
             "maxUnits": 834,
-            "ms": 0.156
+            "ms": 0.176
           },
           "lp-job-coefficient": {
             "count": 11558,
             "work": 11558,
             "maxUnits": 1,
-            "ms": 23.058
+            "ms": 23.116
           },
           "ils-perturb": {
             "count": 5872,
             "work": 5872,
             "maxUnits": 1,
-            "ms": 11.68
+            "ms": 11.744
           },
           "repair-pass": {
             "count": 4537,
             "work": 4537,
             "maxUnits": 1,
-            "ms": 9.344
+            "ms": 9.074
           },
           "climb-pass": {
             "count": 3347,
             "work": 3347,
             "maxUnits": 1,
-            "ms": 6.08
+            "ms": 6.694
           },
           "ils-iteration": {
             "count": 2339,
             "work": 2339,
             "maxUnits": 1,
-            "ms": 5.024
+            "ms": 4.678
           },
           "gel-seed-line": {
             "count": 1936,
             "work": 1936,
             "maxUnits": 1,
-            "ms": 3.68
+            "ms": 3.872
           },
           "gel-seed-step": {
             "count": 395,
             "work": 395,
             "maxUnits": 1,
-            "ms": 0.96
+            "ms": 0.79
           },
           "dfs-node": {
             "count": 220,
             "work": 220,
             "maxUnits": 1,
-            "ms": 0.416
+            "ms": 0.44
           },
           "lp-random-line": {
             "count": 192,
             "work": 192,
             "maxUnits": 1,
-            "ms": 0.55
+            "ms": 0.384
           },
           "seed-start": {
             "count": 63,
             "work": 63,
             "maxUnits": 1,
-            "ms": 1.072
+            "ms": 0.126
           },
           "lp-random-seed": {
             "count": 48,
             "work": 48,
             "maxUnits": 1,
-            "ms": 0.078
+            "ms": 0.096
           },
           "lp-resource-row": {
             "count": 21,
             "work": 21,
             "maxUnits": 1,
-            "ms": 0.096
+            "ms": 0.042
           },
           "lp-line-row": {
             "count": 12,
             "work": 12,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.024
           },
           "lp-offset": {
             "count": 12,
             "work": 12,
             "maxUnits": 1,
-            "ms": 0.014
+            "ms": 0.02
           },
           "target-seed": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.016
           },
           "gel-prefix": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.014
           },
           "role-enumeration": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0.064
+            "ms": 0.014
           },
           "margin-stage": {
             "count": 3,
             "work": 3,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.198
           }
         }
       },
@@ -5723,11 +5723,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 4319.829,
+      "virtualMs": 4319.805,
       "nonDeterministic": {
-        "wallMs": 1566.5,
-        "lpMs": 19.674,
-        "reportedMs": 1566.381
+        "wallMs": 2983.4,
+        "lpMs": 22.975,
+        "reportedMs": 2983.249
       }
     },
     {
@@ -5771,129 +5771,129 @@
         "searchExhaustive": false
       },
       "work": {
-        "total": 14281425,
-        "probe": 9978499,
+        "total": 14281413,
+        "probe": 9978487,
         "dense": 4302926,
         "byLabel": {
           "climb-job": {
             "count": 5210408,
             "work": 5210408,
             "maxUnits": 1,
-            "ms": 10420.064
+            "ms": 10420.816
           },
           "repair-job": {
-            "count": 4720251,
-            "work": 4720251,
+            "count": 4720239,
+            "work": 4720239,
             "maxUnits": 1,
-            "ms": 9440.19
+            "ms": 9440.478
           },
           "lp-pivot": {
             "count": 251,
             "work": 4287080,
             "maxUnits": 17080,
-            "ms": 42.263
+            "ms": 42.708
           },
           "lp-tableau-row": {
             "count": 19,
             "work": 15846,
             "maxUnits": 834,
-            "ms": 0.095
+            "ms": 0.152
           },
           "ils-perturb": {
             "count": 12917,
             "work": 12917,
             "maxUnits": 1,
-            "ms": 25.858
+            "ms": 25.834
           },
           "repair-pass": {
             "count": 10920,
             "work": 10920,
             "maxUnits": 1,
-            "ms": 21.568
+            "ms": 21.84
           },
           "lp-job-coefficient": {
             "count": 9996,
             "work": 9996,
             "maxUnits": 1,
-            "ms": 19.968
+            "ms": 19.992
           },
           "climb-pass": {
             "count": 6308,
             "work": 6308,
             "maxUnits": 1,
-            "ms": 13.056
+            "ms": 12.616
           },
           "ils-iteration": {
             "count": 5176,
             "work": 5176,
             "maxUnits": 1,
-            "ms": 11.062
+            "ms": 10.352
           },
           "gel-seed-line": {
             "count": 1936,
             "work": 1936,
             "maxUnits": 1,
-            "ms": 3.68
+            "ms": 3.872
           },
           "gel-seed-step": {
             "count": 395,
             "work": 395,
             "maxUnits": 1,
-            "ms": 0.96
+            "ms": 0.79
           },
           "lp-random-line": {
             "count": 112,
             "work": 112,
             "maxUnits": 1,
-            "ms": 0.39
+            "ms": 0.224
           },
           "seed-start": {
             "count": 24,
             "work": 24,
             "maxUnits": 1,
-            "ms": 0.781
+            "ms": 0.048
           },
           "lp-random-seed": {
             "count": 16,
             "work": 16,
             "maxUnits": 1,
-            "ms": 0.026
+            "ms": 0.032
           },
           "lp-resource-row": {
             "count": 12,
             "work": 12,
             "maxUnits": 1,
-            "ms": 0.064
+            "ms": 0.024
           },
           "gel-prefix": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.014
           },
           "lp-line-row": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.014
           },
           "lp-offset": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.012
           },
           "target-seed": {
             "count": 6,
             "work": 6,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.012
           },
           "margin-stage": {
             "count": 1,
             "work": 1,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.171
           }
         }
       },
@@ -5921,11 +5921,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 20000.027,
+      "virtualMs": 20000.003,
       "nonDeterministic": {
-        "wallMs": 6911.7,
-        "lpMs": 10.974,
-        "reportedMs": 6911.598
+        "wallMs": 13587.4,
+        "lpMs": 17.216,
+        "reportedMs": 13587.309
       }
     },
     {
@@ -6009,8 +6009,8 @@
         "searchExhaustive": false
       },
       "work": {
-        "total": 40355366,
-        "probe": 30974645,
+        "total": 22292904,
+        "probe": 12912183,
         "dense": 9380721,
         "byLabel": {}
       },
@@ -6032,44 +6032,44 @@
       },
       "events": {},
       "stopReasons": {},
-      "reportedMs": 20002.975,
+      "reportedMs": 20001.818,
       "wall": {
         "samples": 5,
         "ms": {
-          "median": 20002.8,
-          "min": 20001.9,
-          "max": 20003.1,
+          "median": 20002,
+          "min": 20001.7,
+          "max": 20002.1,
           "cvPct": 0
         },
         "probeMs": {
-          "median": 19960.5,
-          "min": 19949.3,
-          "max": 19963.5,
-          "cvPct": 0.03
+          "median": 19958.5,
+          "min": 19953.6,
+          "max": 19965.3,
+          "cvPct": 0.02
         },
         "denseMs": {
-          "median": 42.5,
-          "min": 39.3,
-          "max": 52.6,
-          "cvPct": 11.81
+          "median": 43.2,
+          "min": 36.7,
+          "max": 48.5,
+          "cvPct": 10.39
         },
         "probeWorkPerSec": {
-          "median": 1551800,
-          "min": 1497190,
-          "max": 1581123,
-          "cvPct": 2.2
+          "median": 646731,
+          "min": 643940,
+          "max": 655962,
+          "cvPct": 0.86
         },
         "denseWorkPerSec": {
-          "median": 220548572,
-          "min": 178220557,
-          "max": 238982000,
-          "cvPct": 10.57
+          "median": 216919102,
+          "min": 193578740,
+          "max": 255830001,
+          "cvPct": 10.99
         },
         "totalWorkPerSec": {
-          "median": 2017456,
-          "min": 1962974,
-          "max": 2046484,
-          "cvPct": 1.68
+          "median": 1114535,
+          "min": 1111367,
+          "max": 1123436,
+          "cvPct": 0.49
         }
       },
       "objectiveRange": [
@@ -6158,123 +6158,123 @@
         "searchExhaustive": false
       },
       "work": {
-        "total": 9458822,
-        "probe": 78101,
+        "total": 9458819,
+        "probe": 78098,
         "dense": 9380721,
         "byLabel": {
           "lp-pivot": {
             "count": 809,
             "work": 9329034,
             "maxUnits": 15400,
-            "ms": 89.29
+            "ms": 92.758
           },
           "lp-tableau-row": {
             "count": 83,
             "work": 51687,
             "maxUnits": 750,
-            "ms": 0.302
+            "ms": 0.497
           },
           "lp-job-coefficient": {
             "count": 30534,
             "work": 30534,
             "maxUnits": 1,
-            "ms": 61.112
+            "ms": 61.068
           },
           "climb-job": {
-            "count": 29247,
-            "work": 29247,
+            "count": 29233,
+            "work": 29233,
             "maxUnits": 1,
-            "ms": 58.536
+            "ms": 58.466
           },
           "repair-job": {
-            "count": 15311,
-            "work": 15311,
+            "count": 15337,
+            "work": 15337,
             "maxUnits": 1,
-            "ms": 30.6
+            "ms": 30.674
           },
           "gel-seed-line": {
             "count": 1936,
             "work": 1936,
             "maxUnits": 1,
-            "ms": 4.288
+            "ms": 3.872
           },
           "gel-seed-step": {
             "count": 395,
             "work": 395,
             "maxUnits": 1,
-            "ms": 0.416
+            "ms": 0.79
           },
           "lp-random-line": {
             "count": 280,
             "work": 280,
             "maxUnits": 1,
-            "ms": 0.428
+            "ms": 0.56
           },
           "repair-pass": {
             "count": 87,
             "work": 87,
             "maxUnits": 1,
-            "ms": 0.082
+            "ms": 0.174
           },
           "climb-pass": {
             "count": 63,
             "work": 63,
             "maxUnits": 1,
-            "ms": 0.128
+            "ms": 0.126
           },
           "seed-start": {
             "count": 54,
             "work": 54,
             "maxUnits": 1,
-            "ms": 3.487
+            "ms": 0.108
           },
           "lp-resource-row": {
-            "count": 49,
-            "work": 49,
+            "count": 48,
+            "work": 48,
             "maxUnits": 1,
             "ms": 0.096
-          },
-          "lp-line-row": {
-            "count": 42,
-            "work": 42,
-            "maxUnits": 1,
-            "ms": 0
-          },
-          "lp-offset": {
-            "count": 42,
-            "work": 42,
-            "maxUnits": 1,
-            "ms": 0.01
           },
           "lp-random-seed": {
             "count": 40,
             "work": 40,
             "maxUnits": 1,
-            "ms": 0.128
+            "ms": 0.08
+          },
+          "lp-line-row": {
+            "count": 35,
+            "work": 35,
+            "maxUnits": 1,
+            "ms": 0.07
+          },
+          "lp-offset": {
+            "count": 35,
+            "work": 35,
+            "maxUnits": 1,
+            "ms": 0.068
           },
           "gel-prefix": {
             "count": 7,
             "work": 7,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.014
           },
           "margin-stage": {
             "count": 5,
             "work": 5,
             "maxUnits": 1,
-            "ms": 0.946
+            "ms": 0.563
           },
           "role-enumeration": {
             "count": 3,
             "work": 3,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.006
           },
           "target-seed": {
             "count": 1,
             "work": 1,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.002
           }
         }
       },
@@ -6303,11 +6303,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 250.009,
+      "virtualMs": 250.003,
       "nonDeterministic": {
-        "wallMs": 227.8,
-        "lpMs": 53.985,
-        "reportedMs": 227.654
+        "wallMs": 208.7,
+        "lpMs": 47.738,
+        "reportedMs": 208.565
       }
     },
     {
@@ -6391,135 +6391,135 @@
         "searchExhaustive": false
       },
       "work": {
-        "total": 9833830,
-        "probe": 453109,
+        "total": 9833819,
+        "probe": 453098,
         "dense": 9380721,
         "byLabel": {
           "lp-pivot": {
             "count": 809,
             "work": 9329034,
             "maxUnits": 15400,
-            "ms": 89.29
+            "ms": 92.758
           },
           "climb-job": {
-            "count": 224778,
-            "work": 224778,
+            "count": 224782,
+            "work": 224782,
             "maxUnits": 1,
-            "ms": 450.024
+            "ms": 449.564
           },
           "repair-job": {
-            "count": 185892,
-            "work": 185892,
+            "count": 185889,
+            "work": 185889,
             "maxUnits": 1,
-            "ms": 371.518
+            "ms": 371.778
           },
           "lp-tableau-row": {
             "count": 83,
             "work": 51687,
             "maxUnits": 750,
-            "ms": 0.302
+            "ms": 0.497
           },
           "lp-job-coefficient": {
             "count": 30534,
             "work": 30534,
             "maxUnits": 1,
-            "ms": 61.112
+            "ms": 61.068
           },
           "gel-seed-line": {
             "count": 7744,
             "work": 7744,
             "maxUnits": 1,
-            "ms": 16.896
+            "ms": 15.488
           },
           "gel-seed-step": {
             "count": 1580,
             "work": 1580,
             "maxUnits": 1,
-            "ms": 1.76
+            "ms": 3.16
           },
           "repair-pass": {
-            "count": 642,
-            "work": 642,
+            "count": 643,
+            "work": 643,
             "maxUnits": 1,
-            "ms": 1.016
+            "ms": 1.286
           },
           "lp-random-line": {
             "count": 560,
             "work": 560,
             "maxUnits": 1,
-            "ms": 1.068
+            "ms": 1.12
           },
           "ils-perturb": {
-            "count": 417,
-            "work": 417,
+            "count": 419,
+            "work": 419,
             "maxUnits": 1,
-            "ms": 0.928
+            "ms": 0.838
           },
           "climb-pass": {
             "count": 411,
             "work": 411,
             "maxUnits": 1,
-            "ms": 0.8
+            "ms": 0.822
           },
           "ils-iteration": {
             "count": 163,
             "work": 163,
             "maxUnits": 1,
-            "ms": 0.218
+            "ms": 0.326
           },
           "seed-start": {
             "count": 120,
             "work": 120,
             "maxUnits": 1,
-            "ms": 3.615
+            "ms": 0.24
           },
           "lp-random-seed": {
             "count": 80,
             "work": 80,
             "maxUnits": 1,
-            "ms": 0.234
+            "ms": 0.16
           },
           "lp-resource-row": {
-            "count": 49,
-            "work": 49,
+            "count": 48,
+            "work": 48,
             "maxUnits": 1,
             "ms": 0.096
           },
           "lp-line-row": {
-            "count": 42,
-            "work": 42,
+            "count": 35,
+            "work": 35,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.07
           },
           "lp-offset": {
-            "count": 42,
-            "work": 42,
+            "count": 35,
+            "work": 35,
             "maxUnits": 1,
-            "ms": 0.01
+            "ms": 0.068
           },
           "gel-prefix": {
             "count": 28,
             "work": 28,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.056
           },
           "target-seed": {
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.018
           },
           "role-enumeration": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.016
           },
           "margin-stage": {
             "count": 5,
             "work": 5,
             "maxUnits": 1,
-            "ms": 0.946
+            "ms": 0.563
           }
         }
       },
@@ -6548,11 +6548,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 1000.025,
+      "virtualMs": 1000.003,
       "nonDeterministic": {
-        "wallMs": 591.2,
-        "lpMs": 55.827,
-        "reportedMs": 591.13
+        "wallMs": 875.5,
+        "lpMs": 44.074,
+        "reportedMs": 875.343
       }
     },
     {
@@ -6636,135 +6636,135 @@
         "searchExhaustive": false
       },
       "work": {
-        "total": 11333830,
-        "probe": 1953109,
+        "total": 11333819,
+        "probe": 1953098,
         "dense": 9380721,
         "byLabel": {
           "lp-pivot": {
             "count": 809,
             "work": 9329034,
             "maxUnits": 15400,
-            "ms": 89.29
+            "ms": 92.758
           },
           "climb-job": {
             "count": 1032700,
             "work": 1032700,
             "maxUnits": 1,
-            "ms": 2065.16
+            "ms": 2065.4
           },
           "repair-job": {
-            "count": 870527,
-            "work": 870527,
+            "count": 870531,
+            "work": 870531,
             "maxUnits": 1,
-            "ms": 1740.926
+            "ms": 1741.062
           },
           "lp-tableau-row": {
             "count": 83,
             "work": 51687,
             "maxUnits": 750,
-            "ms": 0.302
+            "ms": 0.497
           },
           "lp-job-coefficient": {
             "count": 30534,
             "work": 30534,
             "maxUnits": 1,
-            "ms": 61.112
+            "ms": 61.068
           },
           "gel-seed-line": {
             "count": 7744,
             "work": 7744,
             "maxUnits": 1,
-            "ms": 16.896
+            "ms": 15.488
           },
           "ils-perturb": {
             "count": 3077,
             "work": 3077,
             "maxUnits": 1,
-            "ms": 6.816
+            "ms": 6.154
           },
           "repair-pass": {
             "count": 2927,
             "work": 2927,
             "maxUnits": 1,
-            "ms": 5.72
+            "ms": 5.854
           },
           "climb-pass": {
             "count": 1869,
             "work": 1869,
             "maxUnits": 1,
-            "ms": 3.296
+            "ms": 3.738
           },
           "gel-seed-step": {
             "count": 1580,
             "work": 1580,
             "maxUnits": 1,
-            "ms": 1.76
+            "ms": 3.16
           },
           "ils-iteration": {
             "count": 1203,
             "work": 1203,
             "maxUnits": 1,
-            "ms": 2.586
+            "ms": 2.406
           },
           "lp-random-line": {
             "count": 560,
             "work": 560,
             "maxUnits": 1,
-            "ms": 1.068
+            "ms": 1.12
           },
           "seed-start": {
             "count": 120,
             "work": 120,
             "maxUnits": 1,
-            "ms": 3.615
+            "ms": 0.24
           },
           "lp-random-seed": {
             "count": 80,
             "work": 80,
             "maxUnits": 1,
-            "ms": 0.234
+            "ms": 0.16
           },
           "lp-resource-row": {
-            "count": 49,
-            "work": 49,
+            "count": 48,
+            "work": 48,
             "maxUnits": 1,
             "ms": 0.096
           },
           "lp-line-row": {
-            "count": 42,
-            "work": 42,
+            "count": 35,
+            "work": 35,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.07
           },
           "lp-offset": {
-            "count": 42,
-            "work": 42,
+            "count": 35,
+            "work": 35,
             "maxUnits": 1,
-            "ms": 0.01
+            "ms": 0.068
           },
           "gel-prefix": {
             "count": 28,
             "work": 28,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.056
           },
           "target-seed": {
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.018
           },
           "role-enumeration": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.016
           },
           "margin-stage": {
             "count": 5,
             "work": 5,
             "maxUnits": 1,
-            "ms": 0.946
+            "ms": 0.563
           }
         }
       },
@@ -6793,11 +6793,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 4000.025,
+      "virtualMs": 4000.003,
       "nonDeterministic": {
-        "wallMs": 1499.8,
-        "lpMs": 53.813,
-        "reportedMs": 1499.651
+        "wallMs": 2985,
+        "lpMs": 39.669,
+        "reportedMs": 2984.939
       }
     },
     {
@@ -6881,165 +6881,165 @@
         "searchExhaustive": false
       },
       "work": {
-        "total": 19333830,
-        "probe": 9953109,
+        "total": 19333819,
+        "probe": 9953098,
         "dense": 9380721,
         "byLabel": {
           "lp-pivot": {
             "count": 809,
             "work": 9329034,
             "maxUnits": 15400,
-            "ms": 89.29
+            "ms": 92.758
           },
           "climb-job": {
-            "count": 5432058,
-            "work": 5432058,
+            "count": 5432078,
+            "work": 5432078,
             "maxUnits": 1,
-            "ms": 10863.016
+            "ms": 10864.156
           },
           "repair-job": {
-            "count": 4419774,
-            "work": 4419774,
+            "count": 4419758,
+            "work": 4419758,
             "maxUnits": 1,
-            "ms": 8840.03
+            "ms": 8839.516
           },
           "lp-tableau-row": {
             "count": 83,
             "work": 51687,
             "maxUnits": 750,
-            "ms": 0.302
+            "ms": 0.497
           },
           "lp-job-coefficient": {
             "count": 30534,
             "work": 30534,
             "maxUnits": 1,
-            "ms": 61.112
+            "ms": 61.068
           },
           "repair-pass": {
             "count": 14614,
             "work": 14614,
             "maxUnits": 1,
-            "ms": 28.632
+            "ms": 29.228
           },
           "ils-perturb": {
             "count": 14421,
             "work": 14421,
             "maxUnits": 1,
-            "ms": 29.888
+            "ms": 28.842
           },
           "target-swap": {
             "count": 13064,
             "work": 13064,
             "maxUnits": 1,
-            "ms": 26.016
+            "ms": 26.128
           },
           "climb-pass": {
             "count": 9896,
             "work": 9896,
             "maxUnits": 1,
-            "ms": 19.872
+            "ms": 19.792
           },
           "gel-seed-line": {
             "count": 7744,
             "work": 7744,
             "maxUnits": 1,
-            "ms": 16.896
+            "ms": 15.488
           },
           "ils-iteration": {
             "count": 5749,
             "work": 5749,
             "maxUnits": 1,
-            "ms": 11.514
+            "ms": 11.498
           },
           "swap-ils-perturb": {
             "count": 1946,
             "work": 1946,
             "maxUnits": 1,
-            "ms": 3.968
+            "ms": 3.892
           },
           "gel-seed-step": {
             "count": 1580,
             "work": 1580,
             "maxUnits": 1,
-            "ms": 1.76
+            "ms": 3.16
           },
           "swap-ils": {
             "count": 777,
             "work": 777,
             "maxUnits": 1,
-            "ms": 1.536
+            "ms": 1.554
           },
           "lp-random-line": {
             "count": 560,
             "work": 560,
             "maxUnits": 1,
-            "ms": 1.068
+            "ms": 1.12
           },
           "seed-start": {
             "count": 120,
             "work": 120,
             "maxUnits": 1,
-            "ms": 3.615
+            "ms": 0.24
           },
           "lp-random-seed": {
             "count": 80,
             "work": 80,
             "maxUnits": 1,
-            "ms": 0.234
+            "ms": 0.16
           },
           "lp-resource-row": {
-            "count": 49,
-            "work": 49,
+            "count": 48,
+            "work": 48,
             "maxUnits": 1,
             "ms": 0.096
           },
           "lp-line-row": {
-            "count": 42,
-            "work": 42,
+            "count": 35,
+            "work": 35,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.07
           },
           "lp-offset": {
-            "count": 42,
-            "work": 42,
+            "count": 35,
+            "work": 35,
             "maxUnits": 1,
-            "ms": 0.01
+            "ms": 0.068
           },
           "gel-prefix": {
             "count": 28,
             "work": 28,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.056
           },
           "target-seed": {
             "count": 9,
             "work": 9,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.018
           },
           "role-enumeration": {
             "count": 8,
             "work": 8,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.016
           },
           "margin-stage": {
             "count": 5,
             "work": 5,
             "maxUnits": 1,
-            "ms": 0.946
+            "ms": 0.563
           },
           "feeder-warm-start": {
             "count": 3,
             "work": 3,
             "maxUnits": 1,
-            "ms": 0.032
+            "ms": 0.006
           },
           "dfs-node": {
             "count": 1,
             "work": 1,
             "maxUnits": 1,
-            "ms": 0
+            "ms": 0.002
           }
         }
       },
@@ -7068,11 +7068,11 @@
       },
       "unitsPerMs": 500,
       "denseUnitsPerMs": 100000,
-      "virtualMs": 20000.025,
+      "virtualMs": 20000.003,
       "nonDeterministic": {
-        "wallMs": 7004.4,
-        "lpMs": 42.479,
-        "reportedMs": 7004.241
+        "wallMs": 14776.4,
+        "lpMs": 50.945,
+        "reportedMs": 14776.273
       }
     },
     {
@@ -7145,26 +7145,26 @@
       },
       "events": {},
       "stopReasons": {},
-      "reportedMs": 69.448,
+      "reportedMs": 66.333,
       "wall": {
         "samples": 5,
         "ms": {
-          "median": 86.6,
-          "min": 67.8,
-          "max": 105.3,
-          "cvPct": 17.98
+          "median": 66.4,
+          "min": 65.6,
+          "max": 72.8,
+          "cvPct": 4.31
         },
         "probeMs": {
-          "median": 23.4,
-          "min": 17.4,
-          "max": 27.2,
-          "cvPct": 17.88
+          "median": 18.5,
+          "min": 17.5,
+          "max": 22.9,
+          "cvPct": 11.52
         },
         "denseMs": {
-          "median": 60,
-          "min": 50.4,
-          "max": 78,
-          "cvPct": 18.96
+          "median": 48.5,
+          "min": 47.1,
+          "max": 49.8,
+          "cvPct": 2.13
         },
         "probeWorkPerSec": {
           "median": 0,
@@ -7264,9 +7264,9 @@
       "denseUnitsPerMs": 100000,
       "virtualMs": 0,
       "nonDeterministic": {
-        "wallMs": 87.6,
-        "lpMs": 66.209,
-        "reportedMs": 87.572
+        "wallMs": 63.2,
+        "lpMs": 46.825,
+        "reportedMs": 63.188
       }
     }
   ],
@@ -7350,8 +7350,8 @@
       "lowerBound": 1997926,
       "objective": 1.5024801354625407e+99,
       "work": {
-        "total": 2023708,
-        "probe": 1120620,
+        "total": 2023697,
+        "probe": 1120609,
         "dense": 903088
       },
       "controls": 1

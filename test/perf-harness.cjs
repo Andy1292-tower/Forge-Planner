@@ -10,8 +10,10 @@
  *  - the same virtual run repeated in a fresh realm returns an IDENTICAL metrics document apart
  *    from the fields under `nonDeterministic` — the machine-independence guarantee every later
  *    workstream's before/after comparison rests on;
- *  - a re-run reproduces the COMMITTED baseline's work counts exactly, so the baseline is a
- *    tripwire rather than a document, and that baseline names its corpus and the machine its
+ *  - a re-run reaches the COMMITTED baseline's objective exactly, and its work counts are either the
+ *    baseline's or a drift declared with a reason in test/perf/work-drift.json — so the baseline is
+ *    a tripwire rather than a document, and stays the project's before-picture rather than being
+ *    re-recorded around each change; and that baseline names its corpus and the machine its
  *    machine-dependent numbers came from;
  *  - no label outside the virtual clock's dense list ever charges more than one work unit, and
  *    every dense label does — the pricing check, made on observed behaviour rather than on a source
@@ -30,6 +32,9 @@ const { createSolverContext, runFixture, DENSE_LABELS, SOURCES, UNITS_PER_MS, DE
 
 const ROOT = path.join(__dirname, "..");
 const BASELINE_PATH = path.join(__dirname, "perf", "baseline.json");
+// Declared, reasoned differences from the baseline's work counts. The baseline itself is never
+// re-recorded, so this is where a change that legitimately moves a checkpoint count is written down.
+const DRIFT_PATH = path.join(__dirname, "perf", "work-drift.json");
 
 // The floor boundedPersistedField clamps solveBudget to, so this is the cheapest run that still
 // exercises the whole path. Two runs per fixture at this budget keep the suite in single seconds.
@@ -344,25 +349,61 @@ if (baseline) {
     (baseline.workToObjective || []).some(entry => entry.fixture === "items-7line" && entry.reached === true),
     (baseline.workToObjective || []).length + " bisections recorded");
 
-  // The baseline is only a tripwire if something re-runs against it. One cheap virtual rung, checked
-  // for exact work-count reproduction, is what makes "the baseline was recorded on another machine"
-  // and "the search changed" distinguishable without running the whole bench.
+  /* The baseline is only a tripwire if something re-runs against it. One cheap virtual rung is what
+   * makes "the baseline was recorded on another machine" and "the search changed" distinguishable
+   * without running the whole bench.
+   *
+   * The baseline is the project's before-picture and is never re-recorded, so a workstream that
+   * legitimately moves a checkpoint count cannot silence this by rewriting what it is measured
+   * against. It declares the new counts in test/perf/work-drift.json with a reason instead, and the
+   * rung then has to reproduce EITHER the baseline or its declaration. An undeclared change fails,
+   * which is the property the exact compare had; a declared one is reviewable as a diff of the
+   * reason next to the numbers.
+   *
+   * The objective is outside that concession. It must reproduce the baseline whatever the work
+   * counts did — a run that finds a different plan is a quality change, not drift, and the bench's
+   * --allow-work-change has no equivalent for it either. */
   const rung = (baseline.runs || []).find(run => run.fixture === "items-7line" && run.kind === "virtual" &&
     run.budgetMs === 250 && run.lp && run.work && Number.isFinite(run.work.probe));
   if (!rung) check("the committed baseline holds the items-7line virtual 250 ms rung this test re-runs", false,
     "rung missing, or recorded before the probe/dense split existed");
   else {
+    let drift = null, driftError = null;
+    try { drift = JSON.parse(fs.readFileSync(DRIFT_PATH, "utf8")); }
+    catch (error) { driftError = error; }
+    check("the declared work drift parses and every entry names a reason",
+      drift !== null && Array.isArray(drift.runs) &&
+      drift.runs.every(entry => typeof entry.reason === "string" && entry.reason.trim().length > 20),
+      driftError ? driftError.message : (drift.runs || []).length + " declared run(s)");
+
     const now = runFixture(FIXTURES.find(fixture => fixture.id === "items-7line"), { kind: "virtual", budgetMs: 250 });
     const labelCounts = run => Object.keys(run.work.byLabel).sort()
       .map(label => label + "=" + run.work.byLabel[label].count + "/" + run.work.byLabel[label].work).join(",");
-    check("re-running the items-7line virtual 250 ms rung reproduces the committed baseline exactly",
-      now.objective === rung.objective && now.work.total === rung.work.total &&
-      now.work.probe === rung.work.probe && now.work.dense === rung.work.dense &&
-      now.lp.pivots === rung.lp.pivots && labelCounts(now) === labelCounts(rung) &&
-      JSON.stringify(now.calls) === JSON.stringify(rung.calls),
-      "objective " + now.objective + " vs " + rung.objective + ", work " + now.work.total + " vs " + rung.work.total +
-      ", pivots " + now.lp.pivots + " vs " + rung.lp.pivots +
-      (labelCounts(now) === labelCounts(rung) ? "" : ", per-label counts differ"));
+    const declared = ((drift && drift.runs) || []).find(entry => entry.fixture === "items-7line" &&
+      entry.kind === "virtual" && entry.budgetMs === 250) || null;
+    const matches = expected => !!expected && now.work.total === expected.work.total &&
+      now.work.probe === expected.work.probe && now.work.dense === expected.work.dense &&
+      now.lp.pivots === expected.lp.pivots &&
+      labelCounts(now) === (expected.byLabel !== undefined ? expected.byLabel : labelCounts(expected)) &&
+      JSON.stringify(now.calls) === JSON.stringify(expected.calls);
+    const reproducesBaseline = matches(rung), reproducesDeclared = matches(declared);
+
+    check("the items-7line virtual 250 ms rung still reaches the baseline's objective exactly",
+      now.objective === rung.objective,
+      "objective " + now.objective + " vs " + rung.objective);
+    check("the items-7line virtual 250 ms rung's work counts are the baseline's or a declared drift from it",
+      reproducesBaseline || reproducesDeclared,
+      reproducesBaseline ? "unchanged since Phase 0"
+        : reproducesDeclared ? "declared: " + declared.reason
+        : "work " + now.work.total + " vs baseline " + rung.work.total +
+          (declared ? " / declared " + declared.work.total : " (nothing declared)") +
+          ", pivots " + now.lp.pivots + " vs " + rung.lp.pivots +
+          (labelCounts(now) === labelCounts(rung) ? "" : ", per-label counts differ"));
+    // A declaration that has been overtaken is as misleading as none: it describes a solver that no
+    // longer exists and it silences the tripwire for the run it names.
+    check("no declared drift describes work the solver no longer does",
+      !declared || reproducesDeclared || reproducesBaseline,
+      declared ? "declared total " + declared.work.total + ", measured " + now.work.total : "nothing declared");
   }
 }
 
