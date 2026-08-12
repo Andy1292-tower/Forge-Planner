@@ -681,17 +681,27 @@ test("the dispatched request message carries exactly the single-Worker protocol 
   assert.equal(status.workerBusy, true);
 });
 
-test("constructions stay bounded by busy terminations under a supersede storm", () => {
+test("every construction under a supersede storm is paid for by terminating busy work", () => {
+  /* Counting terminations of any kind would make this a tautology: each request either reuses an
+   * idle slot or terminates one and constructs, so "constructions <= 1 + terminations" holds even
+   * when a broken Worker drives unbounded churn. The bound only says something if it counts the
+   * terminations that abandoned work in flight. */
   const storm = lifecycleHarness();
+  let busyTerminations = 0;
   for (let revision = 1; revision <= 12; revision += 1) {
+    const busyBefore = storm.status().poolBusy;
+    const terminatedBefore = storm.workers.filter(worker => worker.terminated).length;
     storm.callRequest(request("items", revision, `S${revision}`), () => {});
+    const terminated = storm.workers.filter(worker => worker.terminated).length - terminatedBefore;
+    assert.ok(terminated <= busyBefore, "a request may only terminate Workers that were busy");
+    busyTerminations += terminated;
   }
   const stormStatus = storm.status();
   assert.equal(storm.workers.length, 12, "each supersede kills busy work and must respawn for the new one");
   assert.equal(stormStatus.poolConstructions, storm.workers.length);
-  assert.equal(storm.workers.filter(worker => worker.terminated).length, 11);
-  assert.ok(stormStatus.poolConstructions <= 1 + storm.workers.filter(worker => worker.terminated).length,
-    "constructions must not exceed the pool cap plus its observed busy terminations");
+  assert.equal(busyTerminations, 11);
+  assert.ok(stormStatus.poolConstructions <= 1 + busyTerminations,
+    "constructions must not exceed the pool cap plus its busy terminations");
   assert.equal(stormStatus.poolSize, 1);
 
   const idle = lifecycleHarness();
@@ -702,6 +712,34 @@ test("constructions stay bounded by busy terminations under a supersede storm", 
   }
   assert.equal(idle.workers.length, 1, "a pool that is idle between solves is reused, never churned");
   assert.equal(idle.status().poolConstructions, 1);
+});
+
+test("a Worker that dies after every delivery is reconstructed unrated, a known gap", () => {
+  /* The idle late-error branch disposes silently: no failure is counted and no retry backoff is
+   * armed, so this Worker is rebuilt for every solve forever. That is deliberate for a late error
+   * with no request behind it — surfacing the fallback notice there would be wrong — and it is
+   * unchanged from the single-Worker service. It is pinned here so the construction bound above
+   * cannot be read as proving something it does not cover, and so closing the gap fails loudly. */
+  const harness = lifecycleHarness();
+  let busyTerminations = 0;
+  for (let revision = 1; revision <= 40; revision += 1) {
+    harness.callRequest(request("items", revision, `X${revision}`), () => {});
+    const worker = harness.workers[harness.workers.length - 1];
+    worker.emitMessage(workerResponse(worker, { res: { mode: "items", marker: `X${revision}` } }));
+    const busyBefore = harness.status().poolBusy;
+    worker.emitError("died after delivering");
+    if (busyBefore > 0) busyTerminations += 1;
+  }
+  const status = harness.status();
+  assert.equal(harness.workers.length, 40, "a silently disposed Worker is replaced on the next request");
+  assert.equal(status.poolConstructions, 40);
+  assert.equal(status.workerFailures, 0, "the idle disposal path rates nothing");
+  assert.equal(status.retryInMs, 0, "and arms no backoff");
+  assert.equal(status.fallbackActive, false);
+  // The bound asserted above is false here, which is the whole reason it must count busy
+  // terminations: counting every termination would have made it true and hidden this.
+  assert.equal(busyTerminations, 0);
+  assert.ok(status.poolConstructions > 1 + busyTerminations);
 });
 
 test("with the pool off, cancel disposes the Worker exactly as the single-Worker service did", () => {
