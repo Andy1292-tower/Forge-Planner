@@ -267,6 +267,9 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   const resIndex={};resources.forEach((r,i)=>resIndex[r]=i);
   const R=resources.length;
   const tIdx=targets.map(t=>resIndex[t]);
+  // Declared here rather than beside the search state below because the feasibility cache reads
+  // them, and that cache has to exist before the first setCurTol call.
+  const produced=new Float64Array(R), consumed=new Float64Array(R);
   const tol=opts.tolOverride!=null
     ?Math.max(0,Math.min(0.5,Number(opts.tolOverride)||0))
     :boundedPersistedField("margin",S.margin,0,0,20)/100;
@@ -281,7 +284,27 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // hard burn rate, not a paper shortfall. Written only through setCurTol so the two can never
   // disagree.
   const needFrac=new Float64Array(R),minedRow=resources.map(isMinedResource);
-  const setCurTol=value=>{curTol=value;const relaxed=1-curTol;for(let r=0;r<R;r++)needFrac[r]=minedRow[r]?1:relaxed;};
+  /* Feasibility, cached per resource. The search asks "is this plan feasible" once per probe and
+   * the answer is a scan over every resource, but a probe changes one line, which changes a handful
+   * of rows. rowBad holds each row's verdict and infeasCount the number set, so the question itself
+   * becomes an integer test and only the rows a move touches are re-decided.
+   *
+   * Deliberately NOT extended to the total deficit. A deficit maintained the same way accumulates
+   * the mined rows' cancellation error — ~1e-3 on a 5.31e12/s budget — into a quantity that repair
+   * compares against a 1e-12 improvement threshold, which would turn rounding into a move the
+   * search believes in. The feasibility verdict is a comparison, not a sum, so it carries none of
+   * that: each row is re-decided from its current values, exactly as the full scan decides it.
+   *
+   * syncRow is idempotent, so a row reached twice in one move costs a compare and changes nothing. */
+  const rowBad=new Uint8Array(R);let infeasCount=0;
+  const rowIsBad=r=>produced[r]<consumed[r]*needFrac[r]-1e-7?1:0;
+  const syncRow=r=>{const bad=rowIsBad(r);if(bad!==rowBad[r]){rowBad[r]=bad;infeasCount+=bad?1:-1;}};
+  const rescanFeasibility=()=>{infeasCount=0;for(let r=0;r<R;r++){const bad=rowIsBad(r);rowBad[r]=bad;if(bad)infeasCount++;}};
+  const setCurTol=value=>{
+    curTol=value;const relaxed=1-curTol;
+    for(let r=0;r<R;r++)needFrac[r]=minedRow[r]?1:relaxed;
+    rescanFeasibility();                 // every row's verdict moves when the tolerance does
+  };
   setCurTol(tol);
   // Ceiling on the objective from the LP relaxation, in the same per-second units as best.score.
   // Declared here rather than read off `lp` because finishCoreResult runs before `lp` is
@@ -328,7 +351,6 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   const maxProd=Array.from({length:R},()=>new Float64Array(N+1));
   for(let r=0;r<R;r++)for(let i=N-1;i>=0;i--){let m=0;lineJobs[i].forEach(j=>{for(const[rr,a]of j.prod)if(rr===r)m=Math.max(m,a*sorted[i].sp*sorted[i].dp);});maxProd[r][i]=maxProd[r][i+1]+m;}
 
-  const produced=new Float64Array(R), consumed=new Float64Array(R);
   /* Every (line, job) pair's production and consumption, flattened into typed arrays and pre-scaled
    * by that line's speed and duplication. The coefficients are the same doubles the per-job loops
    * computed — a*sp*dp and a*sp, in the same association — so nothing downstream shifts by an ulp;
@@ -384,25 +406,32 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     if(consOff[s+1]-consOff[s]>maxConsLen)maxConsLen=consOff[s+1]-consOff[s];
   }
   // Two staged moves (the target swap), each replacing one job with another: four job slots.
-  const mvProdR=new Int32Array(4*maxProdLen),mvProdV=new Float64Array(4*maxProdLen);
-  const mvConsR=new Int32Array(4*maxConsLen),mvConsV=new Float64Array(4*maxConsLen);
-  let mvProdN=0,mvConsN=0;
-  const beginMove=()=>{mvProdN=0;mvConsN=0;};
+  const mvProdR=new Int32Array(4*maxProdLen),mvProdV=new Float64Array(4*maxProdLen),mvProdB=new Uint8Array(4*maxProdLen);
+  const mvConsR=new Int32Array(4*maxConsLen),mvConsV=new Float64Array(4*maxConsLen),mvConsB=new Uint8Array(4*maxConsLen);
+  let mvProdN=0,mvConsN=0,mvCount=0;
+  const beginMove=()=>{mvProdN=0;mvConsN=0;mvCount=infeasCount;};
   const applyMove=(i,oldK,newK)=>{
     const oldSlot=jobBase[i]+oldK,newSlot=jobBase[i]+newK;
-    for(let p=prodOff[oldSlot],e=prodOff[oldSlot+1];p<e;p++){mvProdR[mvProdN]=prodR[p];mvProdV[mvProdN++]=produced[prodR[p]];}
-    for(let p=prodOff[newSlot],e=prodOff[newSlot+1];p<e;p++){mvProdR[mvProdN]=prodR[p];mvProdV[mvProdN++]=produced[prodR[p]];}
-    for(let c=consOff[oldSlot],e=consOff[oldSlot+1];c<e;c++){mvConsR[mvConsN]=consR[c];mvConsV[mvConsN++]=consumed[consR[c]];}
-    for(let c=consOff[newSlot],e=consOff[newSlot+1];c<e;c++){mvConsR[mvConsN]=consR[c];mvConsV[mvConsN++]=consumed[consR[c]];}
+    for(let p=prodOff[oldSlot],e=prodOff[oldSlot+1];p<e;p++){const r=prodR[p];mvProdR[mvProdN]=r;mvProdB[mvProdN]=rowBad[r];mvProdV[mvProdN++]=produced[r];}
+    for(let p=prodOff[newSlot],e=prodOff[newSlot+1];p<e;p++){const r=prodR[p];mvProdR[mvProdN]=r;mvProdB[mvProdN]=rowBad[r];mvProdV[mvProdN++]=produced[r];}
+    for(let c=consOff[oldSlot],e=consOff[oldSlot+1];c<e;c++){const r=consR[c];mvConsR[mvConsN]=r;mvConsB[mvConsN]=rowBad[r];mvConsV[mvConsN++]=consumed[r];}
+    for(let c=consOff[newSlot],e=consOff[newSlot+1];c<e;c++){const r=consR[c];mvConsR[mvConsN]=r;mvConsB[mvConsN]=rowBad[r];mvConsV[mvConsN++]=consumed[r];}
     for(let p=prodOff[oldSlot],e=prodOff[oldSlot+1];p<e;p++)produced[prodR[p]]-=prodC[p];
     for(let c=consOff[oldSlot],e=consOff[oldSlot+1];c<e;c++)consumed[consR[c]]-=consC[c];
     for(let p=prodOff[newSlot],e=prodOff[newSlot+1];p<e;p++)produced[prodR[p]]+=prodC[p];
     for(let c=consOff[newSlot],e=consOff[newSlot+1];c<e;c++)consumed[consR[c]]+=consC[c];
+    // A row's verdict depends on both sides, so every row either side touched is re-decided.
+    for(let p=prodOff[oldSlot],e=prodOff[oldSlot+1];p<e;p++)syncRow(prodR[p]);
+    for(let p=prodOff[newSlot],e=prodOff[newSlot+1];p<e;p++)syncRow(prodR[p]);
+    for(let c=consOff[oldSlot],e=consOff[oldSlot+1];c<e;c++)syncRow(consR[c]);
+    for(let c=consOff[newSlot],e=consOff[newSlot+1];c<e;c++)syncRow(consR[c]);
   };
+  // The verdicts are restored from the same saved bytes as the values rather than re-decided: the
+  // restored state is the pre-move state exactly, so its cached answer is the pre-move answer.
   const revertMove=()=>{
-    for(let s=mvProdN-1;s>=0;s--)produced[mvProdR[s]]=mvProdV[s];
-    for(let s=mvConsN-1;s>=0;s--)consumed[mvConsR[s]]=mvConsV[s];
-    mvProdN=0;mvConsN=0;
+    for(let s=mvProdN-1;s>=0;s--){produced[mvProdR[s]]=mvProdV[s];rowBad[mvProdR[s]]=mvProdB[s];}
+    for(let s=mvConsN-1;s>=0;s--){consumed[mvConsR[s]]=mvConsV[s];rowBad[mvConsR[s]]=mvConsB[s];}
+    infeasCount=mvCount;mvProdN=0;mvConsN=0;
   };
   const choice=new Array(N).fill(0);
   let best={score:0,choice:new Array(N).fill(0),produced:new Float64Array(R),consumed:new Float64Array(R)};
@@ -427,11 +456,12 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     for(let i=0;i<N;i++){const slot=jobBase[i]+ch[i];
       for(let p=prodOff[slot],e=prodOff[slot+1];p<e;p++)produced[prodR[p]]+=prodC[p];
       for(let c=consOff[slot],e=consOff[slot+1];c<e;c++)consumed[consR[c]]+=consC[c];}
+    rescanFeasibility();
   }
   const totalDeficit=()=>{let D=0;for(let r=0;r<R;r++){const d=consumed[r]-produced[r];if(d>0)D+=d;}return D;};
   const idleIdx=i=>{const k=lineJobs[i].findIndex(j=>j.kind==="idle");return k<0?0:k;};
   function bestJobFor(i,res){let bj=-1,bg=0;lineJobs[i].forEach((job,k)=>{for(const[r,a]of job.prod)if(r===res){const g=a*sorted[i].sp*sorted[i].dp;if(g>bg){bg=g;bj=k;}}});return bj;}
-  const feasibleNow=()=>{for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac[r]-1e-7)return false;return true;};
+  const feasibleNow=()=>infeasCount===0;
   // Shared weighted floor: the smallest output-to-weight ratio across the targets.
   const scoreNow=()=>{let sc=Infinity;for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]];sc=Math.min(sc,net/w[k]);}return sc;};
   // Chain members the plan has to make but nothing scores — the feeders behind the single target.
@@ -656,6 +686,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       // terms a row actually sums rather than by the magnitude of what they sum TO. A delta on a row
       // whose terms span twelve orders is accurate to the largest term, not to the result.
       flat:{jobBase,prodOff,prodR,prodC,consOff,consR,consC,baseArr},
+      maintainedInfeasibleCount:()=>infeasCount,
       infeasibleCountNow:()=>{let n=0;for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac[r]-1e-7)n++;return n;}});
   }
 
@@ -861,7 +892,10 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     evalChoice(inc.ch);best={score:scoreNow(),choice:inc.ch.slice(),produced:produced.slice(),consumed:consumed.slice()};
   }
   if(interrupted){capped=true;break;}
-  produced.set(baseArr);consumed.fill(0);
+  // The DFS drives produced/consumed through its own incremental loops and does not touch the
+  // feasibility cache — it tests the rows inline. Re-derive the cache from the empty plan it starts
+  // and ends on, so the next caller of feasibleNow is not reading a verdict about another plan.
+  produced.set(baseArr);consumed.fill(0);rescanFeasibility();
   // LP z bounds the integer optimum; if the incumbent already reaches it, the search is done.
   let stageExhaustive=!!(lp&&lp.complete&&curTol===0&&best.score>=lp.z-1e-6*Math.max(1,lp.z));
   if(!stageExhaustive){dfs(0,0);stageExhaustive=!capped&&!interrupted;}
