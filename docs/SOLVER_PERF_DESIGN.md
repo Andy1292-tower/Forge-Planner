@@ -108,25 +108,40 @@ These are requirements, not suggestions. WS3 implements them; every later change
 - **N3 — Bounded pool.** Size = `min(4, max(1, navigator.hardwareConcurrency - 1))`, with a
   runtime kill switch (localStorage flag) forcing size 1, which is exactly today's behavior. No
   persisted-state field.
-- **N4 — Constructions are bounded by terminations.** Workers are persistent across solves. A new
-  Worker is constructed only (a) filling the pool on first parallel use, or (b) replacing a Worker
-  that was terminated because it was busy with a superseded generation or failed. Idle Workers are
-  reused, never churned. Superseding an idle pool constructs nothing.
+- **N4 — Every construction is accounted for.** Workers are persistent across solves: idle Workers
+  are reused, never churned, and superseding an idle pool constructs nothing. A construction is
+  charged to one of three things — filling the pool, a disposal the page asked for (`cancel` with
+  the pool switch off, `dispose` on teardown, a factory swap), or a termination that abandoned work
+  in flight. Exactly one disposal pays for nothing: a Worker that errors while idle, with no request
+  behind it, is dropped without rating the Worker mechanism, because nothing was lost and the next
+  request is entitled to a Worker. That is the path a Worker dying after every delivery walks, and
+  it is bounded by the N7 allowance rather than by a failure count.
 - **N5 — Dev path may fetch only at pool fill.** Source-served dev keeps URL Workers with
   `importScripts`; a K-Worker pool may cost up to K×6 requests once per page load and must never
   fetch per solve. The same reuse rules apply.
 - **N6 — Enforcement is automated.**
   - Build: existing assertions (no `importScripts`, no worker URL, exactly-one factory rewrite)
     stay green; a new assertion checks the bootstrap creates at most one object URL.
-  - Release smoke: a scripted session (load → ≥50 solves with rapid supersedes, pool enabled)
-    asserts zero solver-source requests after page load in the built app, and that the legacy
-    worker URL counts are unchanged.
+  - Scripted session: `test/solver-worker-session.cjs` loads the generated bundle's own bytes into a
+    VM and drives 60 solves with rapid supersedes on a page whose pool cap is four, asserting that
+    the payload is allocated once, that every Worker is constructed from that one in-memory URL,
+    that no network primitive is reached at all, and that the construction count stays inside its
+    allowance. It runs in `npm test`. Release smoke is the wrong home for it: `release-smoke.cjs` is
+    a raw HTTP client that executes no page JavaScript, and it is not in CI.
   - Unit: solve-service pool tests with an instrumented factory assert construction counts under a
     supersede storm (constructions ≤ pool cap + observed busy-terminations) and idle reuse.
-- **N7 — Runtime tripwire.** The pool counts constructions; exceeding `4 × pool cap` within 10
-  minutes disables parallelism for the session (falls back to one Worker) and surfaces the standing
-  fallback notice. A bug can then degrade performance, never generate a request storm — and in
-  production a storm is structurally impossible anyway (N1: construction has no network step).
+- **N7 — Runtime tripwire.** The pool counts constructions rather than parallel solves, so it still
+  fires on a page that never had more than one Worker — which is exactly the page the unrated
+  disposal in N4 ruins. Constructions are allowed up to the pool cap plus every accounted disposal
+  plus a small grace, so the only thing that can spend the grace is the unrated path: supersede
+  storms and Manual-mode toggling settle their own bills and never approach it. Exceeding the
+  allowance degrades the pool to one Worker and stops rebuilding, and the session solves on the main
+  thread from then on. There is no time window — a window would let a Worker that dies after every
+  delivery rebuild forever at one per window. The tripwire surfaces no notice of its own: the
+  standing fallback notice belongs to the synchronous fallback, where it is true, and announcing an
+  unavailable background solver while other slots were still working would not be. A bug can then
+  degrade performance, never generate a request storm — and in production a storm is structurally
+  impossible anyway (N1: construction has no network step).
 
 ## Workstreams
 
@@ -215,10 +230,15 @@ free-solve time.
   with a hidden prefer-current comparison.
 - Supersede: terminate **only** Workers busy with the obsolete generation; idle Workers are
   reused. Replacement construction is lazy and reuses the shared Blob URL (N2/N4).
-- Per-Worker failure/backoff mirrors today's `workerFailed` logic; total pool failure falls back
-  to one Worker, then to the existing synchronous main-thread path. The user-facing fallback
-  notice and overlay flow are unchanged.
-- `status()` gains pool fields (size, busy, constructions) for the existing diagnostics surface.
+- Failure degrades in four rungs, each with its own counter so the rung that fired is legible: a
+  slot failure drops that slot and (once work is sharded) reassigns its shard; a request left with
+  no healthy slot degrades the pool to one Worker until a delivery restores it; the Worker
+  mechanism's own failure count and retry cooldown decide whether a request may use a Worker at all;
+  and the synchronous main-thread solve is the floor. The first two rungs are the same event while
+  the pool holds one slot, which is every page today. The user-facing fallback notice and overlay
+  flow are unchanged.
+- `status()` gains pool fields: size, busy, constructions, one counter per failure rung, and the
+  tripwire flag.
 
 #### What runs in parallel (per mode)
 
@@ -239,9 +259,14 @@ free-solve time.
   independent pieces parallelize: the hidden prefer-current **alternative run** (pure given the
   cache snapshot; only the selected run may commit stability updates — already the rule) and the
   sequenced-mode **ordering-estimate** solves.
-- **Protocol:** the request message grows an optional shard descriptor (mode-specific: candidate
-  subset, RNG stream id, or run role). A Worker without a descriptor behaves exactly as today.
-  Merge logic is pure, main-thread, and unit-tested for arrival-order independence.
+- **Protocol:** the request message grows one optional top-level `shard` field, `{index, count}`
+  and nothing else — every mode above needs only "which of how many", and a mode-specific union
+  would need per-mode validation on a boundary that must reject rather than guess. It cannot ride on
+  `reqId` or `budget`: the Worker asserts `reqId === generation` and `budget === state.solveBudget`,
+  so neither can carry a per-shard value. The descriptor is echoed on the success and the error
+  reply, because the main thread matches on `generation` and generation is identical across the
+  shards of one request. A Worker without a descriptor behaves exactly as today, down to the bytes of
+  both messages. Merge logic is pure, main-thread, and unit-tested for arrival-order independence.
 
 #### Worker-resident caches
 
