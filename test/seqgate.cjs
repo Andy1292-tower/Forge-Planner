@@ -55,6 +55,15 @@ const domSrc = read("js", "dom.js");
 const projectScheduleSrc = read("js", "project-schedule.js");
 const solverSrc = read("js", "solver.js");
 const resultsSrc = read("js", "results.js");
+/* The budget-exhaustion blocks drive clocks that cost a fixed number of milliseconds per clock
+ * READ. The solver samples its clock once per CLOCK_SAMPLE_EVERY checkpoints, which under such a
+ * clock stretches every budget by that stride; sample every checkpoint here so those deadlines land
+ * where the assertions put them. */
+const sampleEverySrc = `makeSolveControl = (function(raw){ return function(budget, options){
+  const opts = Object.assign({}, options);
+  if (opts.clockSampleEvery === undefined) opts.clockSampleEvery = 1;
+  return raw(budget, opts);
+}; })(makeSolveControl);`;
 // state.js owns the real mutateState/save and pulls in localStorage persistence we don't want here;
 // renderProjectResults only needs them to seed the plan-start anchor, so shim the pair in-scope.
 const stateShim = `
@@ -572,4 +581,4 @@ globalThis.__emit = (str) => {
 // Direct eval keeps core/solver/results' top-level const/let (S, optimize, ...) visible to the
 // appended runner — the same trusted-local-source bootstrap parity.cjs and staticmode.cjs use.
 // eslint-disable-next-line no-eval
-eval(coreSrc + "\n;\n" + domSrc + "\n;\n" + projectScheduleSrc + "\n;\n" + solverSrc + "\n;\n" + resultsSrc + "\n;\n" + stateShim + "\n;\n" + runner);
+eval(coreSrc + "\n;\n" + domSrc + "\n;\n" + projectScheduleSrc + "\n;\n" + solverSrc + "\n;\n" + sampleEverySrc + "\n;\n" + resultsSrc + "\n;\n" + stateShim + "\n;\n" + runner);

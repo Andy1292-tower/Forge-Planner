@@ -141,6 +141,16 @@ function lineRows(){return S.lines.map((ln,i)=>({__i:i,max:ln.max,spx:ln.spx,tur
 const sortedLines=()=>lineRows().map(ln=>({orig:ln.__i,max:ln.max,sp:lineSpeed(ln),dp:dupeMult()})).sort((a,b)=>a.max-b.max||a.sp-b.sp||a.dp-b.dp);
 const forgieHr=r=>num(S.forgie&&S.forgie[r])||0;
 
+/* One clock read per this many checkpoints. A search probe is a few hundred nanoseconds of typed-
+ * array arithmetic and performance.now() is tens of nanoseconds of it, so sampling the clock on
+ * every probe spends a real share of the budget deciding whether the budget is spent. The stride
+ * bounds the cost of that decision without loosening any guarantee by more than itself: a deadline
+ * — root or local — is observed at most this many probes late, never later, because the deadline
+ * test is skipped rather than weakened. That overshoot is counted in probes, not milliseconds, so
+ * it does not grow on a slow machine; and result finalization reads the clock unconditionally, so
+ * an expiry can be deferred past a few probes but never past the result. */
+const CLOCK_SAMPLE_EVERY=16;
+
 // One solve control owns one absolute deadline. Credits shares the same instance across every
 // candidate, so starting a new candidate can never restart the user's clock. The optional hooks are
 // direct-source test seams: they are never persisted or posted through the Worker protocol.
@@ -148,11 +158,16 @@ function makeSolveControl(timeBudget,options){
   const opts=options||{},clock=typeof opts.now==="function"?opts.now:()=>performance.now();
   const observer=typeof opts.onCheckpoint==="function"?opts.onCheckpoint:null;
   const budget=Math.max(0,Number(timeBudget)||0),workLimit=Number.isFinite(opts.workLimit)?Math.max(0,Math.floor(opts.workLimit)):Infinity;
+  // A test that prices time per clock READ rather than per checkpoint passes clockSampleEvery:1.
+  const sampleEvery=Number.isFinite(opts.clockSampleEvery)?Math.max(1,Math.floor(opts.clockSampleEvery)):CLOCK_SAMPLE_EVERY;
   let lastNow=Number(clock());if(!Number.isFinite(lastNow))lastNow=0;
   const startedAt=lastNow,deadline=startedAt+budget;
-  let work=0,stopped=false,deadlineReached=false,reason=null;
+  let work=0,stopped=false,deadlineReached=false,reason=null,sampleSkips=0;
   const emit=event=>{if(observer)observer(event);};
   const readNow=()=>{let value=Number(clock());if(!Number.isFinite(value))value=lastNow;if(value<lastNow)value=lastNow;lastNow=value;return value;};
+  // True on the first checkpoint and every sampleEvery-th one after it. Shared by both checkpoint
+  // entry points so a solve that mixes them still reads the clock at the same average rate.
+  const dueForSample=()=>{if(sampleSkips>0){sampleSkips--;return false;}sampleSkips=sampleEvery-1;return true;};
   const reserveWork=(label,cost)=>{
     if(stopped)return false;
     const units=Math.max(1,Math.floor(Number(cost)||1));
@@ -163,23 +178,29 @@ function makeSolveControl(timeBudget,options){
     if(now>=deadline){stopped=true;deadlineReached=true;reason="deadline";emit({type:"stopped",label,reason,work,elapsed:now-startedAt});return false;}
     return true;
   };
+  // Work is charged first and on every call, so the work limit stays exact; only the clock is
+  // amortized. emit still fires per checkpoint, carrying the newest reading the control holds.
   const checkpoint=(label,cost)=>{
     if(!reserveWork(label,cost))return false;
-    const now=readNow();
-    if(!stopAtDeadline(label,now))return false;
-    emit({type:"checkpoint",label,work,elapsed:now-startedAt});return true;
+    if(dueForSample()&&!stopAtDeadline(label,readNow()))return false;
+    emit({type:"checkpoint",label,work,elapsed:lastNow-startedAt});return true;
   };
   // Charge global work first, then use one clock sample to arbitrate local and root time limits.
   // When the earlier local cutoff and the root deadline are both crossed by that sample, returning
   // the candidate's last safe incumbent takes temporary precedence; finalization observes the same
   // monotonic time and marks the root expired before any further shared work can begin.
+  // The stride covers the local cutoff too, or every solve carrying an opts.localDeadline — share
+  // calibration, the Credits refinement slices, the static phase slices, the idle-line fill — would
+  // keep paying for a clock read per probe.
   const checkpointWithin=(label,cost,localDeadline,onLocalLimit)=>{
     if(!reserveWork(label,cost))return false;
-    const now=readNow(),local=Number(localDeadline),hasLocal=Number.isFinite(local);
-    if(hasLocal&&local<deadline&&now>=local){if(onLocalLimit)onLocalLimit(label,now);return false;}
-    if(!stopAtDeadline(label,now))return false;
-    if(hasLocal&&now>=local){if(onLocalLimit)onLocalLimit(label,now);return false;}
-    emit({type:"checkpoint",label,work,elapsed:now-startedAt});return true;
+    if(dueForSample()){
+      const now=readNow(),local=Number(localDeadline),hasLocal=Number.isFinite(local);
+      if(hasLocal&&local<deadline&&now>=local){if(onLocalLimit)onLocalLimit(label,now);return false;}
+      if(!stopAtDeadline(label,now))return false;
+      if(hasLocal&&now>=local){if(onLocalLimit)onLocalLimit(label,now);return false;}
+    }
+    emit({type:"checkpoint",label,work,elapsed:lastNow-startedAt});return true;
   };
   const event=(type,data)=>emit(Object.assign({type,work,elapsed:lastNow-startedAt},data||{}));
   const refreshDeadline=()=>{
@@ -604,7 +625,9 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   function dfs(i,prevIdx){
     nodes++;
     if(!keepGoing("dfs-node")){capped=true;return;}
-    const _n=control.readNow();if(_n-tLastGain>convergeWindow)capped=true;
+    // keepGoing above already arbitrated the deadline on this node; the convergence window only
+    // needs the reading that produced, not a second syscall per DFS node.
+    const _n=control.currentTime();if(_n-tLastGain>convergeWindow)capped=true;
     if(capped)return;
     if(i===N){
       for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac[r]-1e-7)return;

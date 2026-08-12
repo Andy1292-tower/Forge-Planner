@@ -11,6 +11,16 @@ const src=["core.js","fields.js","state.js","project-schedule.js","solver.js","r
   .map(file=>fs.readFileSync(path.join(__dirname,"..","js",file),"utf8")).join("\n;\n");
 const indexHtml=fs.readFileSync(path.join(__dirname,"..","index.html"),"utf8");
 
+/* Every synthetic clock below prices time per clock READ — a now() that advances a fixed amount
+ * per call, or one armed by a checkpoint count. The solver samples its clock once per
+ * CLOCK_SAMPLE_EVERY checkpoints, which under such a clock stretches every budget by that stride
+ * instead of leaving these deadlines where the assertions put them. Sample every checkpoint here,
+ * so what each test asserts about budgets and cutoffs keeps meaning what it meant. */
+const sampleEverySrc=`makeSolveControl=(function(raw){return function(budget,options){
+  const opts=Object.assign({},options);
+  if(opts.clockSampleEvery===undefined)opts.clockSampleEvery=1;
+  return raw(budget,opts);};})(makeSolveControl);`;
+
 const runner=`
 (function(){
   let fail=0;
@@ -429,4 +439,4 @@ const runner=`
   if(fail)process.exitCode=1;
 })();`;
 
-eval(src+"\n"+runner);
+eval(src+"\n;\n"+sampleEverySrc+"\n"+runner);
