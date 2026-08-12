@@ -24,7 +24,7 @@ function shardDescriptorErrors(shard){
 }
 
 self.onmessage = function (e) {
-  const { reqId, generation, mode, stateRevision, state, budget, stab, shard } = e.data || {};
+  const { reqId, generation, mode, stateRevision, state, budget, stab, solo, shard } = e.data || {};
   /* Echoed on both replies so a merge layer can attribute a result or a failure to the shard that
    * produced it: the main thread matches on generation, and generation is identical across every
    * shard of one request. Only a descriptor that passed validation is echoed — sending an unusable
@@ -51,12 +51,25 @@ self.onmessage = function (e) {
       else _scanStructure(stab,stabilityErrors);
       if(stabilityErrors.length)throw new Error("Worker stability cache rejected: "+stabilityErrors.join("; "));
     }
+    if(solo!==null&&solo!==undefined){
+      const soloErrors=[];
+      if(!_plainObject(solo))soloErrors.push("share ceiling cache must be a plain object");
+      else _scanStructure(solo,soloErrors);
+      if(soloErrors.length)throw new Error("Worker share ceiling cache rejected: "+soloErrors.join("; "));
+    }
     commitState(checked.state);       // rebind the lexical S the solver closes over
     // Seed a reused Worker's line-stability cache from the main thread's latest copy, then return
     // the updated cache so the next solve can pin to it (issue #87).
     if (typeof setLineStability === "function") setLineStability(stab || {});
-    const res = optimize();
+    /* Same round trip for the share-of-max ceilings, and for the same reason now that a pool builds
+     * and reuses Workers: a ceiling is a fact about the factory, not about the Worker that computed
+     * it. Seeding also makes scattered calibration add up — each shard computes a slice and the main
+     * thread unions them — and the key check inside mixWeights stays the correctness net, so a cache
+     * describing a different factory is discarded rather than trusted. */
+    if (typeof setSoloMaxCache === "function") setSoloMaxCache(solo || null);
+    const res = optimize(undefined, attributed);
     if (res && typeof getLineStability === "function") res.__stab = getLineStability();
+    if (res && typeof getSoloMaxCache === "function") res.__solo = getSoloMaxCache();
     if(attributed===null)self.postMessage({ reqId, generation, mode, stateRevision, res });
     else self.postMessage({ reqId, generation, mode, stateRevision, shard: attributed, res });
   } catch (err) {

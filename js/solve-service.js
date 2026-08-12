@@ -214,6 +214,95 @@ function writeDailySolveCache(conditionKey,result,now=Date.now()){
   }catch(error){return false;}
 }
 
+/* ---------- shard merge ----------
+ * Pure, main-thread, and deliberately outside the service: a merge that reads no live state is one
+ * a test can drive with hand-built fragments, and arrival-order independence is a property of a
+ * function rather than a claim about a race. Every input is {shard:{index,count},res}; the caller
+ * guarantees only that each shard replied at most once.
+ *
+ * A merged Credits result has to satisfy dailySolveResultValid or the mode silently stops being
+ * cacheable — deliver() writes the daily cache and a result that fails validation is dropped there
+ * without a word, turning every solve into a full-budget solve. That is why the ranking is rebuilt
+ * as the union of the fragments in the solver's own order and why the derived fields (bestItem,
+ * credits, plan, resIndex) are re-read off the merged top rather than carried from any one shard. */
+function shardMergeOrder(entries){
+  // Sorted by shard index, so a merge is a function of the fragments and not of the network. Ties
+  // are impossible (one reply per shard); a missing shard simply is not in the list.
+  return entries.slice().sort((a,b)=>(a.shard&&a.shard.index||0)-(b.shard&&b.shard.index||0));
+}
+function mergeSoloCaches(entries){
+  // Union, first shard wins a repeat. The shards partition the missing ceilings, so a repeat only
+  // happens when two Workers were seeded from the same warm cache, and then the values agree.
+  let key=null;const collected={};
+  for(const entry of shardMergeOrder(entries)){
+    const solo=entry.res&&entry.res.__solo;
+    if(!solo||typeof solo!=="object"||typeof solo.key!=="string"||!solo.key)continue;
+    if(key===null)key=solo.key;
+    else if(key!==solo.key)return null;   // shards disagree about the factory; trust none of them
+    const from=solo.values&&typeof solo.values==="object"?solo.values:{};
+    Object.keys(from).forEach(item=>{
+      const ceiling=Number(from[item]);
+      if(collected[item]===undefined&&Number.isFinite(ceiling)&&ceiling>=0)collected[item]=ceiling;
+    });
+  }
+  if(key===null)return null;
+  // Sorted for the same reason getSoloMaxCache sorts: this is a wire payload, and a union assembled
+  // in shard order and a cache calibrated in target order should serialize to the same bytes.
+  const values={};Object.keys(collected).sort().forEach(item=>{values[item]=collected[item];});
+  return {key,values};
+}
+function mergeShardResults(mode,entries){
+  const ordered=shardMergeOrder(entries).filter(entry=>entry.res&&typeof entry.res==="object");
+  if(!ordered.length)return null;
+  if(ordered.length===1)return ordered[0].res;
+  const first=ordered[0].res;
+  if(mode!=="credits")return first;      // only Credits fans out today; anything else is shard 0's
+  if(ordered.some(entry=>entry.res.empty===true))return first;
+  const catalogOrder=new Map((typeof ALLITEMS!=="undefined"?ALLITEMS:[]).map((item,index)=>[item,index]));
+  const at=item=>catalogOrder.has(item)?catalogOrder.get(item):Number.MAX_SAFE_INTEGER;
+  const ranking=[],seen=new Set(),issues=[];
+  for(const entry of ordered){
+    for(const candidate of (Array.isArray(entry.res.ranking)?entry.res.ranking:[])){
+      if(!candidate||typeof candidate.item!=="string"||seen.has(candidate.item))continue;
+      seen.add(candidate.item);ranking.push(candidate);
+    }
+    for(const issue of (Array.isArray(entry.res.issues)?entry.res.issues:[]))
+      if(typeof issue==="string"&&!issues.includes(issue))issues.push(issue);
+  }
+  // The solver's own final order, applied to the union: evaluated first, then credits descending,
+  // then catalog order. Restating it here rather than trusting the fragments is what makes the
+  // merged ranking identical to the one a single Worker would have produced over the same plans.
+  ranking.sort((a,b)=>{
+    const evaluated=Number(!!b.evaluated)-Number(!!a.evaluated);if(evaluated)return evaluated;
+    if(a.credits!==b.credits)return a.credits>b.credits?-1:1;
+    return at(a.item)-at(b.item);
+  });
+  const top=ranking.find(candidate=>candidate.evaluated);
+  const feasible=!!top&&top.credits>1e-9;
+  /* Conservative aggregation, as the design states it: a completeness claim holds only if every
+   * shard makes it (AND), and "the clock ran out" holds if any shard hit it (OR). A shard that
+   * finished its slice early says nothing about the shard that did not. */
+  return Object.assign({},first,{
+    issues,ranking,
+    bestItem:feasible?top.item:null,
+    credits:feasible?top.credits:0,
+    objective:feasible?top.credits:0,
+    plan:feasible?top.plan:first.plan,
+    balance:feasible?top.balance:[],
+    minedUsage:feasible?top.minedUsage:[],
+    gelReserved:feasible?top.gelReserved:null,
+    resIndex:feasible?top.resIndex:{},
+    usesMargin:!!(feasible&&top.usesMargin),
+    feasible,
+    capped:!!(feasible&&top.capped),
+    allCandidatesEvaluated:ordered.every(entry=>entry.res.allCandidatesEvaluated===true),
+    searchExhaustive:ordered.every(entry=>entry.res.searchExhaustive===true),
+    deadlineReached:ordered.some(entry=>entry.res.deadlineReached===true),
+    // Wall time the user waited, which under a pool is the slowest shard rather than the sum.
+    ms:ordered.reduce((high,entry)=>Math.max(high,Number(entry.res.ms)||0),0)
+  });
+}
+
 /* One authority owns asynchronous solve generations, the Worker, fallback timer, callback, and
  * overlay. Callers provide the exact accepted-state revision and snapshot they want solved; a
  * completion is delivered only while that mode/solve-equivalent state is still current. */
@@ -360,7 +449,28 @@ const solveService=(()=>{
   function isCurrent(requestGeneration){
     return requestGeneration===generation&&expectedMode===S.mode&&expectedKey===solveStateKey(S);
   }
-  function clearRequest(){callback=null;expectedMode=null;expectedRevision=null;expectedKey=null;expectedDailyCacheKey=null;clearFallbackTimer();}
+  /* Fragments of a fanned-out request, held until every shard has answered. Null for a single-shard
+   * request, which is every request a defaulted page makes, so nothing on that path consults it. */
+  let pendingShards=null;
+  function applySoloCache(solo){
+    if(solo&&typeof setSoloMaxCache==="function")setSoloMaxCache(solo);
+  }
+  /* How many Workers one request is worth. Credits alone: it is the mode where one user action
+   * becomes many whole-factory solves that read nothing of each other (the reference save prices
+   * twelve items), so it is the one place a shard is a shorter catalog rather than a guess. Items is
+   * a single search and Project's phases carry inventory forward, so both stay whole — and the
+   * Project pieces the design named as independent are no longer worth a Worker: the run's repeated
+   * makespan tableaux are answered by the memo now, which removes the work rather than hiding it.
+   *
+   * Never more shards than priced items, or the tail of the pool is handed an empty catalog and the
+   * request pays a Worker round trip for a fragment with nothing in it. */
+  function shardCountFor(mode,state){
+    if(!poolActive()||mode!=="credits")return 1;
+    const prices=state&&state.sellPrice&&typeof state.sellPrice==="object"?state.sellPrice:{};
+    const priced=Object.keys(prices).filter(item=>(Number(prices[item])||0)>0).length;
+    return Math.max(1,Math.min(poolCap(),priced));
+  }
+  function clearRequest(){callback=null;expectedMode=null;expectedRevision=null;expectedKey=null;expectedDailyCacheKey=null;pendingShards=null;clearFallbackTimer();}
   function cancel(reason){
     generation+=1;
     lastReason=String(reason||"cancelled");
@@ -436,10 +546,32 @@ const solveService=(()=>{
       }
       slot.busy=false;
       workerFailures=0;retryAfter=0;poolDegraded=false;fallbackNotice(false,"");
-      if(data.error){deliver(data.generation,null,data.error);return;}
-      if(data.res&&data.res.__stab&&typeof setLineStability==="function"){
+      /* A failed shard fails the request. Rung 1 of the ladder says a slot failure reassigns its
+       * shard to a healthy slot; that is not implemented, so a sharded request degrades to the
+       * synchronous fallback exactly as an unsharded one does. Slower than a reassignment, never
+       * wrong, and the fan-out is bounded work rather than a retry loop. */
+      if(data.error){pendingShards=null;deliver(data.generation,null,data.error);return;}
+      const shardIndex=data.shard&&Number.isInteger(data.shard.index)?data.shard.index:0;
+      // Shard 0's cache is the one kept. Applying every arrival would make a Worker-resident cache a
+      // function of which Worker answered first; the share ceilings below are unioned instead, which
+      // is order-free because mergeSoloCaches reads the fragments in shard order.
+      if(shardIndex===0&&data.res&&data.res.__stab&&typeof setLineStability==="function"){
         setLineStability(data.res.__stab);delete data.res.__stab;
       }
+      /* Stripped before deliver, always. deliver() writes the delivered object straight into the
+       * daily solve cache and dailySolveResultValid does not reject unknown keys, so a Worker-
+       * resident cache left on the result is persisted and replayed for a day as part of the plan. */
+      const solo=data.res&&typeof data.res==="object"?data.res.__solo:null;
+      if(data.res&&typeof data.res==="object")delete data.res.__solo;
+      if(pendingShards&&pendingShards.generation===data.generation){
+        pendingShards.entries.push({shard:{index:shardIndex,count:pendingShards.count},res:data.res,solo});
+        if(pendingShards.entries.length<pendingShards.count)return;
+        const entries=pendingShards.entries;pendingShards=null;
+        applySoloCache(mergeSoloCaches(entries.map(entry=>({shard:entry.shard,res:{__solo:entry.solo}}))));
+        deliver(data.generation,mergeShardResults(expectedMode,entries),null);
+        return;
+      }
+      applySoloCache(solo);
       deliver(data.generation,data.res,null);
     };
     owned.onerror=event=>{
@@ -515,18 +647,35 @@ const solveService=(()=>{
       return requestGeneration;
     }
 
+    /* A caller-supplied descriptor means "solve exactly this slice and give me the fragment", and
+     * the service dispatches it as one message. Without one the service decides the fan-out itself,
+     * and a fan-out of one is the byte-identical single-Worker message: no shard field, no pending
+     * record, nothing to merge. */
+    const shardCount=shard!==null?1:shardCountFor(mode,dispatchedState);
+    pendingShards=shardCount>1?{generation:requestGeneration,count:shardCount,entries:[]}:null;
+
     let slot=null;
     try{
-      slot=acquireSlot();
-      slot.busy=true;
       const stabilitySnapshot=(typeof getLineStability==="function")?JSON.parse(JSON.stringify(getLineStability()||{})):{};
-      const message={
-        reqId:requestGeneration,generation:requestGeneration,mode,stateRevision:revision,
-        state:dispatchedState,budget,stab:stabilitySnapshot
-      };
-      if(shard!==null)message.shard={index:shard.index,count:shard.count};
-      slot.worker.postMessage(message);
-    }catch(error){workerFailed(slot,requestGeneration,(error&&error.message)||String(error));}
+      // One snapshot for every shard: they start from the same cache, and re-reading it per shard
+      // would seed later shards from a cache an earlier reply had already moved.
+      const soloSnapshot=(typeof getSoloMaxCache==="function")?getSoloMaxCache():null;
+      const seedSolo=soloSnapshot&&soloSnapshot.key&&Object.keys(soloSnapshot.values||{}).length?soloSnapshot:null;
+      for(let index=0;index<shardCount;index++){
+        slot=acquireSlot();
+        slot.busy=true;
+        const message={
+          reqId:requestGeneration,generation:requestGeneration,mode,stateRevision:revision,
+          state:dispatchedState,budget,stab:stabilitySnapshot
+        };
+        // Both optional fields are omitted rather than nulled when there is nothing to say, so a
+        // page with a cold cache and no fan-out sends the seven keys the single-Worker service sent.
+        if(seedSolo)message.solo=seedSolo;
+        if(shard!==null)message.shard={index:shard.index,count:shard.count};
+        else if(shardCount>1)message.shard={index,count:shardCount};
+        slot.worker.postMessage(message);
+      }
+    }catch(error){pendingShards=null;workerFailed(slot,requestGeneration,(error&&error.message)||String(error));}
     return requestGeneration;
   }
   function status(){

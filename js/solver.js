@@ -1415,15 +1415,47 @@ function solveRaw(Rw,control){
  *
  * Cached on the factory inputs alone. Shares are deliberately not part of the key: dragging a share
  * slider re-solves the plan but reuses the ceilings, which is the hot path this cache exists for.
- * The cache lives in the worker, so it survives ordinary back-to-back solves and is simply rebuilt
- * after a superseded solve terminates the worker. */
+ *
+ * The cache is Worker-resident and round-trips through the main thread exactly as _lineStability
+ * does, through the accessor pair below rather than as a bare global: a pool reuses and rebuilds
+ * Workers, and a ceiling computed in one of them is a fact about the factory, not about the Worker
+ * that happened to compute it. Without the round trip a rebuilt Worker recalibrates from cold, and
+ * scattering the calibration across the pool would throw away every ceiling but one shard's. */
 let _soloMaxCache={key:"",values:{}};
 const SHARE_CALIBRATION_FRACTION=0.5;   // ceiling on the solve budget calibration may consume
-function soloMaxKey(){
+function resetSoloMaxCache(){_soloMaxCache={key:"",values:{}};}
+// Emitted in sorted item order rather than in the order the ceilings happened to be computed. This
+// object is a wire payload and a merge input: a solve that calibrated in target order and a merge
+// that unioned in shard order describe the same cache, and they should serialize to the same bytes.
+function getSoloMaxCache(){
+  const values={};
+  Object.keys(_soloMaxCache.values).sort().forEach(item=>{values[item]=_soloMaxCache.values[item];});
+  return {key:_soloMaxCache.key,values};
+}
+/* Coerced rather than trusted, and dropped entry by entry rather than wholesale. These numbers are
+ * divisors and multipliers in the weight conversion below — a NaN or a negative ceiling does not
+ * fail there, it produces a NaN weight and a plan solved against nonsense — and the cache arrives
+ * from a Worker message that has crossed a structured clone and, on a replay, localStorage. A
+ * dropped entry costs one recalibration; a kept bad one costs the plan. */
+function setSoloMaxCache(value){
+  const key=value&&typeof value.key==="string"?value.key:"";
+  const source=value&&value.values&&typeof value.values==="object"?value.values:{};
+  const values={};
+  if(key)Object.keys(source).forEach(item=>{
+    const ceiling=Number(source[item]);
+    if(Number.isFinite(ceiling)&&ceiling>=0)values[item]=ceiling;
+  });
+  _soloMaxCache=key?{key,values}:{key:"",values:{}};
+}
+// Parameterized on the state it describes rather than reading the global S, so the key can be built
+// for a snapshot the caller holds — which is what lets the main thread decide whether a Worker's
+// returned ceilings still describe the factory on screen.
+function soloMaxKey(state){
+  const src=state||{};
   return canonicalShareKey({
-    lines:(S.lines||[]).map(line=>[line.max,line.spx,line.turbo]),
-    maxTurbo:S.maxTurbo,dupe:S.dupe,margin:S.margin,
-    baseTime:S.baseTime||{},prodCost:S.prodCost||{},forgie:S.forgie||{},minedIncome:S.minedIncome||{}
+    lines:(src.lines||[]).map(line=>[line.max,line.spx,line.turbo]),
+    maxTurbo:src.maxTurbo,dupe:src.dupe,margin:src.margin,
+    baseTime:src.baseTime||{},prodCost:src.prodCost||{},forgie:src.forgie||{},minedIncome:src.minedIncome||{}
   });
 }
 function canonicalShareKey(value){
@@ -1447,18 +1479,49 @@ function soloMaxFor(item,control,slice){
   if(sr.interrupted)return null;
   return sr.feasible?(sr.best.produced[sr.resIndex[item]]-sr.best.consumed[sr.resIndex[item]])*3600:0;
 }
+/* ---------- shard descriptors ----------
+ * A shard is {index,count}: which slice of one request this solve was handed, and nothing else.
+ * Every mode that fans out needs only that, and a mode-specific union would put per-mode validation
+ * on a boundary whose whole job is to reject rather than guess.
+ *
+ * Re-normalized here even though the Worker entry point already validated the wire form, because
+ * optimize() is also called directly on the main thread by the synchronous fallback and by tests.
+ * Anything unusable reads as "no shard", which is the whole-request solve — a shard descriptor may
+ * cost a solve its parallelism, never its correctness. */
+function normalizeShard(shard){
+  if(!shard||typeof shard!=="object")return null;
+  const index=shard.index,count=shard.count;
+  if(!Number.isInteger(count)||count<1||!Number.isInteger(index)||index<0||index>=count)return null;
+  return count===1?null:{index,count};
+}
+// Round-robin in the caller's order, which for every mode below is catalog order. Round-robin
+// rather than contiguous blocks because the per-item cost is wildly uneven — a raw resource's
+// baseline is a closed form and a deep product's is a full chain solve — and adjacent catalog
+// entries are the most alike, so contiguous blocks would hand one shard all the expensive ones.
+function shardSlice(list,shard){
+  const norm=normalizeShard(shard);
+  if(!norm)return list.slice();
+  return list.filter((entry,at)=>at%norm.count===norm.index);
+}
 /* Ratio weights for the checked outputs under the active mix mode. Ratio mode passes the sliders
  * straight through. Share mode returns the converted weights plus the ceilings behind them, and
  * names any output whose ceiling is zero — an item nothing in this factory can make, which would
  * otherwise silently drag the whole shared floor to zero with no indication of the culprit. */
-function mixWeights(targets,control,budget){
+function mixWeights(targets,control,budget,shard){
   if(S.targetMode!=="share")return {weights:targets.map(it=>S.targets[it].w),soloMax:null,blocked:[],calibrated:false};
-  const key=soloMaxKey();
+  const key=soloMaxKey(S);
   if(_soloMaxCache.key!==key)_soloMaxCache={key,values:{}};
   const cache=_soloMaxCache.values;
-  const missing=targets.filter(it=>cache[it]==null);
+  const absent=targets.filter(it=>cache[it]==null);
+  /* Scattered across the pool: the ceilings are one dedicated single-target solve each and share
+   * nothing, so shard i computes every count-th one. The slice is sized on this shard's own list, so
+   * K shards each spend the same fraction of the budget on a K-th of the work rather than K-thing
+   * the time as well. Ceilings this shard did not compute stay absent and fall through to the raw
+   * slider below; the merge unions every shard's __solo, so the next solve finds them all warm.
+   * `calibrated` therefore reports what THIS shard finished, and the merge ANDs it. */
+  const missing=shardSlice(absent,shard);
   const slice=missing.length?Math.max(300,Math.floor(budget*SHARE_CALIBRATION_FRACTION/missing.length)):0;
-  let calibrated=true;
+  let calibrated=missing.length===absent.length;
   for(let i=0;i<missing.length;i++){
     const value=soloMaxFor(missing[i],control,slice);
     if(value==null){calibrated=false;break;}
@@ -1475,7 +1538,7 @@ function mixWeights(targets,control,budget){
   return {weights,soloMax:calibrated||Object.keys(soloMax).length?soloMax:null,blocked,calibrated};
 }
 
-function optimizeInner(timeBudget,testOptions){
+function optimizeInner(timeBudget,testOptions,shard){
   // User-set max solve time (ms). It is an anytime cap, so easy factories still finish early; a
   // larger default gives slower devices and deep Credits chains room to improve. Solves run off the
   // main thread in the generated Worker, so the 10-second default does not freeze the interface.
@@ -1488,7 +1551,7 @@ function optimizeInner(timeBudget,testOptions){
     const itemControl=makeSolveControl(itemsBudget,testOptions),t0=itemControl.readNow();
     // Calibration runs before the plan solve and shares its control, so it is bounded by the same
     // user budget rather than added on top of it.
-    const mix=mixWeights(targets,itemControl,itemsBudget);
+    const mix=mixWeights(targets,itemControl,itemsBudget,shard);
     const w=mix.weights;
     const rc=relevantChain(targets);
     const sr=solveCore(targets,w,rc.prods,rc.raws,itemsBudget,{control:itemControl});
@@ -1525,11 +1588,21 @@ function optimizeInner(timeBudget,testOptions){
   // One shared control covers the complete comparison. Every item gets a finite deterministic
   // baseline in catalog order before any product receives deeper refinement.
   const control=makeSolveControl(credBudget,testOptions),t0=control.readNow();
-  const priced=ALLITEMS.filter(item=>(num(S.sellPrice&&S.sellPrice[item])||0)>0);
+  const pricedAll=ALLITEMS.filter(item=>(num(S.sellPrice&&S.sellPrice[item])||0)>0);
+  /* Sharded here and nowhere deeper: the candidates share a control and a budget but nothing else —
+   * no candidate reads another's plan — so a shard is simply a shorter catalog. Every rule below is
+   * stated over `priced` and holds unchanged on a slice of it: the baseline pass is still complete
+   * before any refinement, the fair pass still divides the SAME absolute remaining budget among the
+   * candidates this shard owns, and the clock is still started once and never restarted. What a
+   * shard cannot do is rank against candidates it never saw, which is why the ranking it returns is
+   * a fragment and mergeShardResults on the main thread owns the final order. */
+  const priced=shardSlice(pricedAll,shard);
   const baselineWorkLimit=Math.max(4000,(S.lines||[]).length*2000);
   const issues=[],cand=[];
   const addIssues=found=>(found||[]).forEach(issue=>{if(!issues.includes(issue))issues.push(issue);});
-  if(!priced.length)issues.push("No sell prices entered. Open “Projects + Prices” → “Sell prices” and add at least one.");
+  // Asked of the whole catalog, not of this shard: an empty slice means the pool out-numbered the
+  // priced items, which is not something to tell the reader to go and fix.
+  if(!pricedAll.length)issues.push("No sell prices entered. Open “Projects + Prices” → “Sell prices” and add at least one.");
   const unevaluated=item=>({item,kind:RAWS.includes(item)?"raw":"product",out:0,price:num(S.sellPrice[item])||0,credits:0,
     plan:null,balance:null,minedUsage:[],gelReserved:null,resIndex:{},feasible:false,usesMargin:false,capped:false,evaluated:false,ms:0});
   const fromCore=(item,sr,ms,cappedOverride)=>{
@@ -3158,9 +3231,13 @@ function optimizeProjectTop(testOptions){
 }
 
 
-function optimize(testOptions){
-  if(S.mode==="project")return optimizeProjectTop(testOptions);
+/* `shard` is a real parameter and deliberately not a member of testOptions: testOptions is the
+ * direct-source test seam and js/solver.js's own contract says it is never posted through the Worker
+ * protocol, so routing a production wire field through it would make the seam load-bearing. */
+function optimize(testOptions,shard){
+  const slice=normalizeShard(shard);
+  if(S.mode==="project")return optimizeProjectTop(testOptions,slice);
   // Gel is a native resource inside solveCore now (vespium is its budgeted input), so items and
   // credits need no reservation sweep — the solver allocates Gel lines like any other product.
-  return optimizeInner(undefined,testOptions);
+  return optimizeInner(undefined,testOptions,slice);
 }

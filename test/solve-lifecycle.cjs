@@ -706,6 +706,128 @@ test("a shard descriptor adds one wire field and nothing else", () => {
   );
 });
 
+/* ---- the Credits fan-out ---- */
+
+// A priced catalog on the dispatched state is what makes the fan-out worth more than one Worker; the
+// service sizes the fan-out on it so a pool never out-numbers the work.
+function creditsRequest(revision, priced = 8) {
+  const sellPrice = {};
+  for (let index = 0; index < priced; index += 1) sellPrice["Item" + index] = index + 1;
+  return {
+    mode: "credits", stateRevision: revision, budget: 200,
+    stateSnapshot: { mode: "credits", solveBudget: 200, sellPrice },
+  };
+}
+function creditsFragment(index, count, overrides = {}) {
+  return {
+    empty: false, mode: "credits", issues: [], ranking: [], bestItem: null, credits: 0, objective: 0,
+    plan: [], balance: [], minedUsage: [], resIndex: {}, tol: 0, usesMargin: false, feasible: false,
+    capped: false, allCandidatesEvaluated: true, deadlineReached: false, searchExhaustive: true,
+    ms: 10, shardEcho: index + "/" + count, ...overrides,
+  };
+}
+
+test("a Credits request on a pooled page fans out one shard per slot and delivers once", () => {
+  const harness = pooledHarness({ hardwareConcurrency: 5 });   // cap = min(4, cores-1) = 4
+  const delivered = [];
+  harness.callRequest(creditsRequest(1), (result, error) => delivered.push({ result, error }));
+
+  assert.equal(harness.workers.length, 4, "the fan-out fills the pool");
+  const descriptors = harness.workers.map(worker => worker.messages[0].shard);
+  assert.deepEqual(descriptors, [
+    { index: 0, count: 4 }, { index: 1, count: 4 }, { index: 2, count: 4 }, { index: 3, count: 4 },
+  ], "each slot is told which of how many it owns, and nothing else");
+  for (const worker of harness.workers) {
+    assert.equal(worker.messages[0].reqId, worker.messages[0].generation,
+      "a shard must not be smuggled through the request id");
+    assert.equal(worker.messages[0].budget, 200, "and must not carry a budget of its own");
+  }
+
+  // Partial arrivals deliver nothing: a merge over a fragment of the catalog would rank against
+  // candidates it never saw and report a completeness it cannot know.
+  for (let index = 0; index < 3; index += 1) {
+    harness.workers[index].emitMessage(workerResponse(harness.workers[index], { res: creditsFragment(index, 4) }));
+    assert.equal(delivered.length, 0, "delivered after only " + (index + 1) + " of 4 shards");
+  }
+  harness.workers[3].emitMessage(workerResponse(harness.workers[3], { res: creditsFragment(3, 4) }));
+  assert.equal(delivered.length, 1, "the last shard delivers exactly once");
+  assert.equal(delivered[0].error, null);
+  assert.equal(delivered[0].result.mode, "credits");
+});
+
+test("the fan-out is sized by the work, not by the pool", () => {
+  // Three priced items and four slots: a fourth shard would be handed an empty catalog and the
+  // request would pay a Worker round trip for a fragment with nothing in it.
+  const harness = pooledHarness({ hardwareConcurrency: 5 });
+  harness.callRequest(creditsRequest(1, 3), () => {});
+  assert.equal(harness.workers.length, 3);
+  assert.deepEqual(harness.workers.map(worker => worker.messages[0].shard.count), [3, 3, 3]);
+
+  // Items is a single search, so it stays whole however many slots are free.
+  const items = pooledHarness({ hardwareConcurrency: 5 });
+  items.callRequest(request("items", 1, "A"), () => {});
+  assert.equal(items.workers.length, 1);
+  assert.equal(items.workers[0].messages[0].shard, undefined, "an unsharded request sends no descriptor");
+});
+
+test("a defaulted page never fans out", () => {
+  // The kill switch is only a rollback if a defaulted page dispatches the byte-identical single
+  // message for the mode that fans out hardest.
+  const harness = lifecycleHarness();
+  harness.callRequest(creditsRequest(1), () => {});
+  assert.equal(harness.workers.length, 1);
+  assert.deepEqual(
+    Object.keys(harness.workers[0].messages[0]).sort(),
+    ["budget", "generation", "mode", "reqId", "stab", "state", "stateRevision"]
+  );
+});
+
+test("a failed shard fails the request rather than hanging it", () => {
+  /* Rung 1 of the ladder says a slot failure reassigns its shard to a healthy slot. That is not
+   * implemented: the request degrades to the synchronous fallback exactly as an unsharded one does.
+   * Slower than a reassignment, never wrong — and never a request that waits forever for a shard
+   * that is not coming. */
+  const harness = pooledHarness({ hardwareConcurrency: 5, optimize: () => ({ mode: "sync-fallback" }) });
+  const delivered = [];
+  harness.callRequest(creditsRequest(1), (result, error) => delivered.push({ result, error }));
+  assert.equal(harness.workers.length, 4);
+
+  harness.workers[0].emitMessage(workerResponse(harness.workers[0], { res: creditsFragment(0, 4) }));
+  harness.workers[1].emitMessage(workerResponse(harness.workers[1], { error: { message: "shard died" } }));
+  assert.equal(delivered.length, 1, "the failing shard ends the request");
+  assert.equal(delivered[0].error.message, "shard died");
+
+  // And the fragments it collected are dropped: a later straggler must not resurrect a merge.
+  harness.workers[2].emitMessage(workerResponse(harness.workers[2], { res: creditsFragment(2, 4) }));
+  harness.workers[3].emitMessage(workerResponse(harness.workers[3], { res: creditsFragment(3, 4) }));
+  assert.equal(delivered.length, 1, "a straggler must not deliver a second time");
+});
+
+test("a supersede clears the fragments the previous generation had collected", () => {
+  const harness = pooledHarness({ hardwareConcurrency: 5 });
+  const delivered = [];
+  harness.callRequest(creditsRequest(1), (result, error) => delivered.push({ result, error }));
+  const first = harness.workers.slice();
+  first[0].emitMessage(workerResponse(first[0], { res: creditsFragment(0, 4) }));
+
+  harness.callRequest(creditsRequest(2), (result, error) => delivered.push({ result, error }));
+  /* The second generation is not a contiguous tail of the worker list: shard 0 already delivered, so
+   * its slot was idle and is reused rather than rebuilt. Address the dispatch by its message. */
+  const second = [];
+  harness.workers.forEach(worker => {
+    worker.messages.forEach((message, messageIndex) => {
+      if (message.generation === 2) second.push({ worker, messageIndex, shard: message.shard });
+    });
+  });
+  assert.equal(second.length, 4, "the supersede must dispatch its own full fan-out");
+  // Every fragment of the second generation arrives; the stale one from the first must not count
+  // toward it, or the merge delivers a ranking assembled from two different factories.
+  second.forEach(({ worker, messageIndex, shard }) => {
+    worker.emitMessage(workerResponse(worker, { res: creditsFragment(shard.index, shard.count) }, messageIndex));
+  });
+  assert.equal(delivered.length, 1, "exactly one delivery, from the current generation");
+});
+
 test("an unusable shard descriptor is refused before it costs a Worker round trip", () => {
   const harness = lifecycleHarness();
   const refused = [
