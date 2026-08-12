@@ -229,6 +229,12 @@ const solveService=(()=>{
   const POOL_FLAG_STORAGE_KEY="forgePlannerSolverPool";
   const POOL_DEFAULT_ON=false;
   const POOL_MAX_SIZE=4;
+  /* Constructions the pool is allowed to make without anything to charge them to. Every disposal the
+   * page asked for, and every one that abandoned work in flight, buys back the construction it costs
+   * the next request; the one disposal that buys nothing is the unrated idle late-error branch in
+   * bindWorker, so this grace is the whole budget that branch gets. Four rebuilds is a Worker that
+   * dies every time rather than one that died once, and the pool stops rebuilding it. */
+  const POOL_CONSTRUCTION_GRACE=4;
   let poolEnabled=POOL_DEFAULT_ON;
   try{
     if(typeof localStorage!=="undefined"){
@@ -236,15 +242,25 @@ const solveService=(()=>{
       poolEnabled=flag==="on"?true:flag==="off"?false:POOL_DEFAULT_ON;
     }
   }catch(error){poolEnabled=POOL_DEFAULT_ON;}
+  /* Rung 2 of the degradation ladder, in its two forms. poolDegraded is the recoverable one: the
+   * pool ran out of healthy slots for a request, so it stops trying to be parallel until a Worker
+   * delivers again. poolTripped is the tripwire and is not cleared, because what trips it is a
+   * Worker that cannot survive its own delivery. */
+  let poolTripped=false;
+  let poolDegraded=false;
+  function poolActive(){return poolEnabled&&!poolTripped&&!poolDegraded;}
   // navigator is absent from the Node harnesses and from hosts that report no core count; both read
   // as a single slot rather than as an unbounded pool.
   function poolCap(){
-    if(!poolEnabled)return 1;
+    if(!poolActive())return 1;
     let cores=0;
     try{if(typeof navigator!=="undefined"&&navigator)cores=Math.floor(Number(navigator.hardwareConcurrency))||0;}
     catch(error){cores=0;}
     return Math.min(POOL_MAX_SIZE,Math.max(1,cores-1));
   }
+  // Sampled before anything can degrade the pool, so the construction ledger keeps one fixed base
+  // for the page instead of a base that shrinks exactly when the ledger starts to matter.
+  const POOL_CEILING=poolCap();
   let generation=0;
   let expectedMode=null;
   let expectedRevision=null;
@@ -256,6 +272,14 @@ const solveService=(()=>{
    * test whatever else the pool holds. */
   const pool=[];
   let poolConstructions=0;
+  /* One counter per rung, because a rung that shares its counter with the rung below it cannot be
+   * shown to have fired. slotFailures is rung 1 (one slot gave out and was dropped), poolFailures is
+   * rung 2 (the pool had no healthy slot left for the request), workerFailures below is rung 3 (the
+   * Worker mechanism itself is suspect and gets a cooldown), and rung 4 is runFallback. */
+  let slotFailures=0;
+  let poolFailures=0;
+  let paidTerminations=0;
+  let unratedDisposals=0;
   let fallbackTimer=null;
   let workerFailures=0;
   let retryAfter=0;
@@ -268,6 +292,12 @@ const solveService=(()=>{
     const el=document.getElementById("solveOverlay");if(el)el.hidden=!show;
     if(show){const stat=document.getElementById("solveStat");if(stat)stat.textContent="Solving plan…";}
   }
+  /* Shown by runFallback and nowhere else. The string is a statement about this solve, and it is
+   * true there because a request terminates busy slots before it dispatches and the failing slot is
+   * gone by the time the fallback runs, so nothing is solving in the background when it appears.
+   * The rungs above runFallback deliberately show nothing: degrading a pool to one slot changes how
+   * fast an answer arrives, not where it comes from, and announcing an unavailable background solver
+   * while other slots are still working would be false. */
   function fallbackNotice(show,reason){
     fallbackActive=show;
     if(reason)lastReason=String(reason);
@@ -279,17 +309,38 @@ const solveService=(()=>{
   function busySlots(){return pool.filter(slot=>slot.busy).length;}
   // Terminating a Worker never releases the payload URL: it is shared for the page's lifetime, so
   // revoking it here would break every Worker constructed after the first supersede.
-  function terminateSlot(slot){
+  function removeSlot(slot){
     const at=pool.indexOf(slot);
-    if(at<0)return;
+    if(at<0)return false;
     pool.splice(at,1);
     slot.busy=false;
     try{slot.worker.terminate();}catch(error){}
+    return true;
   }
+  // A disposal the page asked for, or one that abandoned work in flight, pays for the construction
+  // it forces on the next request. That is what keeps the ledger below blind to ordinary churn — a
+  // supersede storm and a Manual-mode toggle loop both settle their own bill.
+  function terminateSlot(slot){if(removeSlot(slot))paidTerminations+=1;}
   // Only work that is now obsolete is killed. An idle Worker costs nothing to keep and is the whole
   // reason a supersede constructs nothing.
   function terminateBusySlots(){pool.filter(slot=>slot.busy).forEach(slot=>terminateSlot(slot));}
   function terminatePool(){pool.slice().forEach(slot=>terminateSlot(slot));}
+  /* The N7 tripwire, counting constructions rather than parallel solves. Counting parallel solves
+   * would say nothing about a page that never had more than one Worker, which is exactly the page
+   * the unrated idle disposal ruins: it costs a construction per request and rates nothing, so
+   * constructions are the only quantity that moves. */
+  function constructionAllowance(){return POOL_CEILING+paidTerminations+POOL_CONSTRUCTION_GRACE;}
+  function tripPool(){if(poolTripped)return;poolTripped=true;poolFailures+=1;}
+  /* An idle slot serves the request without constructing, so the ledger only gets a say when a
+   * Worker actually has to be built — and refusing is what trips the pool, which is why this asks
+   * and decides in one step. A tripped pool still lends out a Worker it already has; what it stops
+   * is building more. */
+  function poolCanServe(){
+    if(pool.some(slot=>!slot.busy))return true;
+    if(!poolTripped&&poolConstructions<constructionAllowance())return true;
+    tripPool();
+    return false;
+  }
   /* The dispatching request terminates busy slots before it asks, so an idle slot is always waiting
    * or the pool is below its cap. An exhausted pool is unreachable today and degrades to the
    * synchronous fallback rather than growing past the cap. */
@@ -320,7 +371,7 @@ const solveService=(()=>{
      * exactly the schedule the single-Worker service did. That is what makes the switch a rollback
      * rather than a sizing knob, since cancel() is reached from ordinary UI — every render in
      * Manual mode, import, rollback, and reset. */
-    if(poolEnabled)terminateBusySlots();else terminatePool();
+    if(poolActive())terminateBusySlots();else terminatePool();
     fallbackNotice(false,"");
     overlay(false);
     return status();
@@ -353,11 +404,22 @@ const solveService=(()=>{
       deliver(requestGeneration,result,null);
     },0);
   }
-  // A null slot is a construction that never produced one; it still costs the request a failure and
-  // the fallback, which is what a factory that throws has always done.
+  /* The degradation ladder, in order. Rung 1 attributes the failure to the slot and drops it, which
+   * is all a failure means once work is sharded: the shard moves to a healthy slot and the rest of
+   * the pool is untouched. Rung 2 fires only when the drop left no slot to move it to. Rung 3 is the
+   * Worker mechanism's own rating, unchanged, and it is what makes the retry a cooldown rather than
+   * a permanent verdict. Rung 4 is the synchronous fallback.
+   *
+   * A null slot is a construction that never produced one; it still costs the request a failure and
+   * the fallback, which is what a factory that throws has always done.
+   *
+   * Rungs 1 and 2 are indistinguishable while the pool holds one slot, which is every page today:
+   * one request occupies one slot, so dropping it always empties the pool. They separate as soon as
+   * a request holds several. */
   function workerFailed(slot,requestGeneration,reason){
     if(requestGeneration!==generation||(slot&&!ownsSlot(slot)))return;
-    if(slot)terminateSlot(slot);
+    if(slot){slotFailures+=1;terminateSlot(slot);}
+    if(!pool.length){poolFailures+=1;poolDegraded=true;}
     workerFailures=Math.min(MAX_FAILURES,workerFailures+1);
     retryAfter=Date.now()+Math.min(1000,RETRY_BASE_MS*Math.pow(2,workerFailures-1));
     runFallback(requestGeneration,reason);
@@ -373,7 +435,7 @@ const solveService=(()=>{
         return;
       }
       slot.busy=false;
-      workerFailures=0;retryAfter=0;fallbackNotice(false,"");
+      workerFailures=0;retryAfter=0;poolDegraded=false;fallbackNotice(false,"");
       if(data.error){deliver(data.generation,null,data.error);return;}
       if(data.res&&data.res.__stab&&typeof setLineStability==="function"){
         setLineStability(data.res.__stab);delete data.res.__stab;
@@ -383,7 +445,11 @@ const solveService=(()=>{
     owned.onerror=event=>{
       if(!ownsSlot(slot))return;
       if(event&&typeof event.preventDefault==="function")event.preventDefault();
-      if(!slot.busy||callback===null){terminateSlot(slot);return;}
+      /* Unrated on purpose: a late error with no request behind it must not count against the Worker
+       * mechanism or arm a backoff, because nothing was lost and the next request is entitled to a
+       * Worker. Unrated is not free — it is the one disposal that pays for nothing, so it is drawn
+       * against the pool's construction allowance instead of against workerFailures. */
+      if(!slot.busy||callback===null){if(removeSlot(slot))unratedDisposals+=1;return;}
       if(!isCurrent(generation))return;
       workerFailed(slot,generation,(event&&event.message)||"Worker failed");
     };
@@ -431,6 +497,13 @@ const solveService=(()=>{
       runFallback(requestGeneration,typeof Worker==="undefined"?"Worker is unavailable":"Worker retry is cooling down");
       return requestGeneration;
     }
+    /* Checked here rather than inside acquireSlot: a slot the ledger declines is not a failure of
+     * this request's Worker, and routing it through workerFailed would rate a Worker that was never
+     * built and arm a cooldown that cannot fix anything. */
+    if(!poolCanServe()){
+      runFallback(requestGeneration,"Solver Workers were rebuilt more often than the pool can account for");
+      return requestGeneration;
+    }
 
     let slot=null;
     try{
@@ -451,7 +524,10 @@ const solveService=(()=>{
       current:callback!==null&&isCurrent(generation),
       workerOwned:pool.length>0,workerBusy:busySlots()>0,workerFailures,fallbackActive,
       retryInMs:Math.max(0,retryAfter-Date.now()),lastReason,
-      poolEnabled,poolSize:pool.length,poolBusy:busySlots(),poolConstructions
+      // poolEnabled reports whether the pool is parallel now, not what the switch said at load:
+      // a degraded or tripped pool is a pool of one however the reader set the key.
+      poolEnabled:poolActive(),poolSize:pool.length,poolBusy:busySlots(),poolConstructions,
+      poolTripped,poolSlotFailures:slotFailures,poolFailures,poolUnratedDisposals:unratedDisposals
     };
   }
 
