@@ -32,6 +32,11 @@ function lifecycleHarness(options = {}) {
   let now = options.now === undefined ? 1_000 : options.now;
   let stability = { remembered: ["line-1"] };
   const stabilityWrites = [];
+  /* The page's share-ceiling cache, cold by default because that is what a freshly loaded page has.
+   * js/solver.js's accessor returns the empty-key object rather than null when nothing is cached, so
+   * a cold harness has to as well: the service distinguishes "no cache" from "no accessor", and the
+   * absent accessor was making the optional `solo` wire field unreachable from these tests. */
+  let soloCache = options.soloMaxCache || { key: "", values: {} };
 
   class FakeWorker {
     constructor(url) {
@@ -71,6 +76,8 @@ function lifecycleHarness(options = {}) {
     // Recorded, not ignored: the snapshot a fan-out adopts is shard 0's, so which shard wrote it is
     // the observable difference between placing a fragment and guessing where it came from.
     setLineStability(next) { stabilityWrites.push(JSON.parse(JSON.stringify(next))); },
+    getSoloMaxCache() { return soloCache; },
+    setSoloMaxCache(next) { soloCache = next && typeof next === "object" ? next : { key: "", values: {} }; },
     // Absent unless a test asks for it: the pool cap is derived from the core count, and a page that
     // reports none is a page of one slot.
     navigator: options.hardwareConcurrency === undefined
@@ -691,6 +698,29 @@ test("the dispatched request message carries exactly the single-Worker protocol 
   assert.equal(status.poolConstructions, 1);
   assert.equal(status.workerOwned, true);
   assert.equal(status.workerBusy, true);
+});
+
+test("a warm share-ceiling cache adds one wire field and nothing else", () => {
+  // `solo` attaches on cache warmth, not on the pool switch, so a defaulted page with ceilings to
+  // pass on sends eight keys and one with a cold cache sends the seven above. The harness has to
+  // supply the accessor js/solver.js defines or the service reads no cache and neither case shows.
+  const harness = lifecycleHarness({ soloMaxCache: { key: "items|A", values: { Glass: 12.5 } } });
+  harness.callRequest(request("items", 1, "A"), () => {});
+  const sent = harness.workers[0].messages[0];
+  assert.deepEqual(
+    Object.keys(sent).sort(),
+    ["budget", "generation", "mode", "reqId", "solo", "stab", "state", "stateRevision"]
+  );
+  assert.deepEqual(sent.solo, { key: "items|A", values: { Glass: 12.5 } });
+  assert.equal(harness.status().poolEnabled, false, "the field must not ride on the pool switch");
+
+  // A keyed cache holding no ceiling has nothing to seed, and an omitted field is the absent case.
+  const barren = lifecycleHarness({ soloMaxCache: { key: "items|A", values: {} } });
+  barren.callRequest(request("items", 1, "A"), () => {});
+  assert.deepEqual(
+    Object.keys(barren.workers[0].messages[0]).sort(),
+    ["budget", "generation", "mode", "reqId", "stab", "state", "stateRevision"]
+  );
 });
 
 test("a shard descriptor adds one wire field and nothing else", () => {
