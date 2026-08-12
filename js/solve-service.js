@@ -669,6 +669,9 @@ const solveService=(()=>{
       const soloSnapshot=(typeof getSoloMaxCache==="function")?getSoloMaxCache():null;
       const seedSolo=soloSnapshot&&soloSnapshot.key&&Object.keys(soloSnapshot.values||{}).length?soloSnapshot:null;
       for(let index=0;index<shardCount;index++){
+        // Cleared first: a slot left over from the previous iteration is a healthy Worker still
+        // solving its own shard, and the catch below would charge this iteration's failure to it.
+        slot=null;
         slot=acquireSlot();
         /* The ledger declined mid fan-out. Rating it through workerFailed would charge a Worker that
          * was never built and arm a cooldown that cannot fix an accounting problem, so this drops
@@ -690,7 +693,11 @@ const solveService=(()=>{
         else if(shardCount>1)message.shard={index,count:shardCount};
         slot.worker.postMessage(message);
       }
-    }catch(error){pendingShards=null;workerFailed(slot,requestGeneration,(error&&error.message)||String(error));}
+    /* The pending record outlives the throw. The shards already dispatched are still flying and the
+     * callback is still armed, so discarding it would let the first fragment to arrive pass every
+     * gate and deliver a 1-of-K ranking as the whole comparison; kept, the request can never reach
+     * its shard count and the fallback below is what answers it. */
+    }catch(error){workerFailed(slot,requestGeneration,(error&&error.message)||String(error));}
     return requestGeneration;
   }
   function status(){

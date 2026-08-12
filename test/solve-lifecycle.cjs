@@ -869,6 +869,57 @@ test("a pooled fan-out cannot construct past what the ledger accounts for", () =
   assert.equal(delivered.length, 20, "every request is answered exactly once, by a shard or the fallback");
 });
 
+// A factory that builds two Workers and then throws, so a four-way fan-out dies halfway through
+// its dispatch loop with two shards already flying.
+function halfDispatchedFanOut() {
+  const harness = pooledHarness({ hardwareConcurrency: 5 });
+  const built = [];
+  harness.setWorkerFactory(() => {
+    if (built.length === 2) throw new Error("Worker construction failed");
+    const worker = {
+      messages: [], terminated: false,
+      postMessage(message) { this.messages.push(message); },
+      terminate() { this.terminated = true; },
+    };
+    built.push(worker);
+    return worker;
+  });
+  return { harness, built };
+}
+
+test("a fan-out that fails mid-dispatch never delivers one shard as the whole comparison", () => {
+  /* The shards already flying outlive the throw and the callback is still armed, so a fragment that
+   * beats the 0 ms fallback timer passes every gate. The pending record has to survive the throw:
+   * it can no longer reach its count, which is what keeps the fallback the thing that delivers. */
+  const { harness, built } = halfDispatchedFanOut();
+  const delivered = [];
+  harness.callRequest(creditsRequest(1), (result, error) => delivered.push({ result, error }));
+  assert.equal(built.length, 2, "two shards of four were dispatched before construction failed");
+
+  built[0].onmessage({ data: workerResponse(built[0], { res: creditsFragment(0, 4) }) });
+  assert.equal(delivered.length, 0, "a 1-of-4 ranking is not the comparison");
+
+  harness.flushTimers();
+  assert.equal(delivered.length, 1, "the synchronous fallback answers the request");
+  assert.equal(delivered[0].error, null);
+  assert.equal(delivered[0].result.mode, "sync-fallback");
+});
+
+test("a mid-dispatch construction failure charges no healthy slot", () => {
+  // The failure belongs to a Worker that was never built. Charging rung 1 to whichever slot the
+  // previous iteration left behind terminates a Worker that is still solving its own shard.
+  const { harness, built } = halfDispatchedFanOut();
+  harness.callRequest(creditsRequest(1), () => {});
+
+  assert.equal(built.length, 2);
+  assert.equal(built[1].terminated, false, "the last dispatched slot must not be dropped for a construction that threw");
+  assert.equal(built[0].terminated, false);
+  const status = harness.status();
+  assert.equal(status.poolSlotFailures, 0, "rung 1 names a slot, and a construction that threw produced none");
+  assert.equal(status.workerFailures, 1, "a factory that throws still rates the Worker mechanism");
+  assert.ok(status.retryInMs > 0);
+});
+
 test("an unusable shard descriptor is refused before it costs a Worker round trip", () => {
   const harness = lifecycleHarness();
   const refused = [
