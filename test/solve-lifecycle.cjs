@@ -42,6 +42,9 @@ function lifecycleHarness(options = {}) {
     }
     postMessage(message) { this.messages.push(message); }
     terminate() { this.terminated = true; }
+    // Kept as a tripwire, not a contract: the payload URL is shared for the page's lifetime, so
+    // every releaseCalls assertion below expects zero. A build that revives a per-Worker release
+    // would revoke the URL every later Worker is constructed from.
     __forgeRelease() { this.releaseCalls += 1; }
     emitMessage(data) { if (this.onmessage) this.onmessage({ data }); }
     emitError(message = "worker failed") {
@@ -65,6 +68,11 @@ function lifecycleHarness(options = {}) {
     domElement(_tag, _className, text) { const el = new FakeElement(); el.textContent = text || ""; return el; },
     getLineStability() { return stability; },
     setLineStability() {},
+    // Absent unless a test asks for it: the pool cap is derived from the core count, and a page that
+    // reports none is a page of one slot.
+    navigator: options.hardwareConcurrency === undefined
+      ? undefined
+      : { hardwareConcurrency: options.hardwareConcurrency },
     optimize: options.optimize || (() => ({ mode: "sync-fallback" })),
     num(value) { const number = Number(value); return Number.isFinite(number) ? number : null; },
     setTimeout(callback) { const id = nextTimer++; timers.set(id, callback); return id; },
@@ -81,7 +89,16 @@ function lifecycleHarness(options = {}) {
 
   const servicePath = path.join(root, "js", "solve-service.js");
   if (fs.existsSync(servicePath)) {
-    vm.runInContext(fs.readFileSync(servicePath, "utf8"), context, { filename: servicePath });
+    let source = fs.readFileSync(servicePath, "utf8");
+    /* The pool default is a source constant, so the only way to test what the switch does once it
+     * flips is to flip it. The literal must stay exact: a rename here has to fail rather than
+     * silently stop substituting and leave the default-on tests asserting the default-off page. */
+    if (options.poolDefaultOn === true) {
+      const before = "const POOL_DEFAULT_ON=false;";
+      assert.ok(source.includes(before), "the pool default constant must keep its declared form");
+      source = source.replace(before, "const POOL_DEFAULT_ON=true;");
+    }
+    vm.runInContext(source, context, { filename: servicePath });
   } else {
     // Before Task 3, the lifecycle lives in results.js. This adapter lets the first RED run
     // demonstrate the real stale-completion and late-error behavior, then the same tests move
@@ -134,6 +151,12 @@ function lifecycleHarness(options = {}) {
     cancel(reason) {
       context.__reason = reason;
       const value = vm.runInContext("solveService.cancel(globalThis.__reason)", context);
+      delete context.__reason;
+      return value;
+    },
+    dispose(reason) {
+      context.__reason = reason;
+      const value = vm.runInContext("solveService.dispose(globalThis.__reason)", context);
       delete context.__reason;
       return value;
     },
@@ -258,6 +281,14 @@ function schemaDispatchHarness() {
     },
   };
 }
+
+// The pool switch is read once at load, so it has to be in storage before the service is evaluated.
+function poolFlagHarness(value, options = {}) {
+  const storage = options.storage || new Map();
+  storage.set("forgePlannerSolverPool", value);
+  return lifecycleHarness({ ...options, storage });
+}
+function pooledHarness(options = {}) { return poolFlagHarness("on", options); }
 
 function request(mode, revision, marker) {
   return {
@@ -636,6 +667,292 @@ test("mode isolation, forceFresh, and malformed daily-cache bytes fail open to a
   assert.equal(malformed.workers.length, 1, "malformed cache bytes must silently dispatch a Worker");
 });
 
+test("the dispatched request message carries exactly the single-Worker protocol keys", () => {
+  // The pool kill switch is only literal if a defaulted page dispatches byte-identical work: any
+  // shard descriptor or pool field leaking into this key set is a behavior change, not a switch.
+  const harness = lifecycleHarness();
+  harness.callRequest(request("items", 1, "A"), () => {});
+  assert.equal(harness.workers.length, 1);
+  assert.deepEqual(
+    Object.keys(harness.workers[0].messages[0]).sort(),
+    ["budget", "generation", "mode", "reqId", "stab", "state", "stateRevision"]
+  );
+  const status = harness.status();
+  assert.equal(status.poolEnabled, false);
+  assert.equal(status.poolSize, 1);
+  assert.equal(status.poolBusy, 1);
+  assert.equal(status.poolConstructions, 1);
+  assert.equal(status.workerOwned, true);
+  assert.equal(status.workerBusy, true);
+});
+
+test("a shard descriptor adds one wire field and nothing else", () => {
+  const harness = lifecycleHarness();
+  harness.callRequest({ ...request("items", 1, "A"), shard: { index: 1, count: 3 } }, () => {});
+  const sent = harness.workers[0].messages[0];
+  assert.deepEqual(
+    Object.keys(sent).sort(),
+    ["budget", "generation", "mode", "reqId", "shard", "stab", "state", "stateRevision"]
+  );
+  assert.deepEqual(sent.shard, { index: 1, count: 3 });
+  assert.equal(sent.reqId, sent.generation, "a shard must not be smuggled through the request id");
+  assert.equal(sent.budget, 200, "and must not carry a budget of its own");
+
+  // An explicitly empty descriptor is the absent case, not a third state on the wire.
+  harness.callRequest({ ...request("items", 2, "B"), shard: null }, () => {});
+  assert.deepEqual(
+    Object.keys(harness.workers[harness.workers.length - 1].messages[0]).sort(),
+    ["budget", "generation", "mode", "reqId", "stab", "state", "stateRevision"]
+  );
+});
+
+test("an unusable shard descriptor is refused before it costs a Worker round trip", () => {
+  const harness = lifecycleHarness();
+  const refused = [
+    2, "1/3", [1, 3], { index: 1 }, { count: 3 }, { index: 1, count: 3, budget: 50 },
+    { index: 3, count: 3 }, { index: -1, count: 3 }, { index: 0.5, count: 3 }, { index: 0, count: 0 },
+  ];
+  for (const shard of refused) {
+    assert.throws(
+      () => harness.callRequest({ ...request("items", 1, "A"), shard }, () => {}),
+      /shard must be \{index,count\}/,
+      `${JSON.stringify(shard)} must be refused`
+    );
+  }
+  assert.equal(harness.workers.length, 0, "a caller's bad descriptor must not build a Worker to reject it");
+});
+
+test("every construction under a supersede storm is paid for by terminating busy work", () => {
+  /* Counting terminations of any kind would make this a tautology: each request either reuses an
+   * idle slot or terminates one and constructs, so "constructions <= 1 + terminations" holds even
+   * when a broken Worker drives unbounded churn. The bound only says something if it counts the
+   * terminations that abandoned work in flight. */
+  const storm = lifecycleHarness();
+  let busyTerminations = 0;
+  for (let revision = 1; revision <= 12; revision += 1) {
+    const busyBefore = storm.status().poolBusy;
+    const terminatedBefore = storm.workers.filter(worker => worker.terminated).length;
+    storm.callRequest(request("items", revision, `S${revision}`), () => {});
+    const terminated = storm.workers.filter(worker => worker.terminated).length - terminatedBefore;
+    assert.ok(terminated <= busyBefore, "a request may only terminate Workers that were busy");
+    busyTerminations += terminated;
+  }
+  const stormStatus = storm.status();
+  assert.equal(storm.workers.length, 12, "each supersede kills busy work and must respawn for the new one");
+  assert.equal(stormStatus.poolConstructions, storm.workers.length);
+  assert.equal(busyTerminations, 11);
+  assert.ok(stormStatus.poolConstructions <= 1 + busyTerminations,
+    "constructions must not exceed the pool cap plus its busy terminations");
+  assert.equal(stormStatus.poolSize, 1);
+
+  const idle = lifecycleHarness();
+  for (let revision = 1; revision <= 12; revision += 1) {
+    idle.callRequest(request("items", revision, `I${revision}`), () => {});
+    const worker = idle.workers[0];
+    worker.emitMessage(workerResponse(worker, { res: { mode: "items", marker: `I${revision}` } }, revision - 1));
+  }
+  assert.equal(idle.workers.length, 1, "a pool that is idle between solves is reused, never churned");
+  assert.equal(idle.status().poolConstructions, 1);
+});
+
+test("a Worker that dies after every delivery stops being rebuilt without ever being rated", () => {
+  /* The idle late-error branch still rates nothing: a late error with no request behind it lost no
+   * work, so counting it against the Worker mechanism would arm a backoff and surface the fallback
+   * notice for a solve that succeeded. What it costs instead is a construction, and the pool's
+   * allowance is what makes that finite. */
+  const harness = lifecycleHarness();
+  let busyTerminations = 0;
+  for (let revision = 1; revision <= 40; revision += 1) {
+    const before = harness.workers.length;
+    harness.callRequest(request("items", revision, `X${revision}`), () => {});
+    if (harness.workers.length === before) continue;
+    const worker = harness.workers[harness.workers.length - 1];
+    worker.emitMessage(workerResponse(worker, { res: { mode: "items", marker: `X${revision}` } }));
+    const busyBefore = harness.status().poolBusy;
+    worker.emitError("died after delivering");
+    if (busyBefore > 0) busyTerminations += 1;
+  }
+  const status = harness.status();
+  assert.equal(busyTerminations, 0, "nothing this Worker did ever abandoned work in flight");
+  assert.equal(harness.workers.length, 5, "the ledger stops paying for a Worker that cannot survive delivery");
+  assert.equal(status.poolConstructions, 5);
+  assert.equal(status.poolUnratedDisposals, 5);
+  assert.equal(status.workerFailures, 0, "the idle disposal path rates nothing");
+  assert.equal(status.retryInMs, 0, "and arms no backoff");
+  assert.equal(status.poolTripped, true);
+  assert.equal(status.fallbackActive, true, "solving continues on the main thread, which the notice now states truthfully");
+  assert.equal(harness.elements.solveFallback.hidden, false);
+
+  /* The same Worker on a pooled page. poolEnabled reading false means something only here — on the
+   * page above the switch was off before the first solve — so this is what shows the tripwire turns
+   * the pool off rather than the switch having been off all along. */
+  const pooled = pooledHarness({ hardwareConcurrency: 8 });
+  assert.equal(pooled.status().poolEnabled, true);
+  for (let revision = 1; revision <= 40; revision += 1) {
+    const before = pooled.workers.length;
+    pooled.callRequest(request("items", revision, `Y${revision}`), () => {});
+    if (pooled.workers.length === before) continue;
+    const worker = pooled.workers[pooled.workers.length - 1];
+    worker.emitMessage(workerResponse(worker, { res: { mode: "items", marker: `Y${revision}` } }));
+    worker.emitError("died after delivering");
+  }
+  const pooledStatus = pooled.status();
+  assert.equal(pooled.workers.length, 8, "four slots buy four more rebuilds than one slot does, not unlimited ones");
+  assert.equal(pooledStatus.poolUnratedDisposals, 8);
+  assert.equal(pooledStatus.workerFailures, 0);
+  assert.equal(pooledStatus.poolTripped, true);
+  assert.equal(pooledStatus.poolEnabled, false);
+});
+
+test("fifty-five supersedes on a pooled page pay for every construction", () => {
+  const storm = pooledHarness({ hardwareConcurrency: 8 });
+  assert.equal(storm.status().poolEnabled, true);
+  let busyTerminations = 0;
+  for (let revision = 1; revision <= 55; revision += 1) {
+    const busyBefore = storm.status().poolBusy;
+    const terminatedBefore = storm.workers.filter(worker => worker.terminated).length;
+    storm.callRequest(request("items", revision, `P${revision}`), () => {});
+    const terminated = storm.workers.filter(worker => worker.terminated).length - terminatedBefore;
+    assert.ok(terminated <= busyBefore, "a request may only terminate Workers that were busy");
+    busyTerminations += terminated;
+  }
+  const status = storm.status();
+  assert.equal(busyTerminations, 54);
+  assert.equal(status.poolConstructions, 55);
+  assert.ok(status.poolConstructions <= 4 + busyTerminations,
+    "constructions must not exceed the pool cap plus its busy terminations");
+  assert.equal(status.poolUnratedDisposals, 0);
+  assert.equal(status.poolTripped, false, "ordinary supersede churn settles its own bill");
+  assert.equal(status.poolSize, 1);
+});
+
+test("a Manual toggle loop constructs nothing pooled, and trips nothing unpooled", () => {
+  const pooled = pooledHarness({ hardwareConcurrency: 8 });
+  pooled.callRequest(request("items", 1, "A"), () => {});
+  pooled.workers[0].emitMessage(workerResponse(pooled.workers[0], { res: { mode: "items", marker: "A" } }));
+  for (let round = 1; round <= 25; round += 1) {
+    pooled.cancel("Manual mode renders synchronously");
+    pooled.callRequest(request("items", round + 1, `T${round}`), () => {});
+    pooled.workers[0].emitMessage(
+      workerResponse(pooled.workers[0], { res: { mode: "items", marker: `T${round}` } }, round));
+  }
+  assert.equal(pooled.workers.length, 1, "an idle Worker survives every toggle");
+  assert.equal(pooled.status().poolConstructions, 1);
+  assert.equal(pooled.status().poolTripped, false);
+
+  /* The same loop with the pool off rebuilds a Worker every round, because cancel() disposes idle
+   * Workers there. That churn is the page's own instruction and pays for itself; if it did not, the
+   * tripwire would fire on ordinary Manual-mode use and take the background solver with it. */
+  const unpooled = lifecycleHarness();
+  for (let round = 1; round <= 25; round += 1) {
+    unpooled.callRequest(request("items", round, `U${round}`), () => {});
+    const worker = unpooled.workers[unpooled.workers.length - 1];
+    worker.emitMessage(workerResponse(worker, { res: { mode: "items", marker: `U${round}` } }));
+    unpooled.cancel("Manual mode renders synchronously");
+  }
+  assert.equal(unpooled.workers.length, 25);
+  assert.equal(unpooled.status().poolConstructions, 25);
+  assert.equal(unpooled.status().poolUnratedDisposals, 0);
+  assert.equal(unpooled.status().poolTripped, false);
+});
+
+test("one Worker error climbs every rung of the ladder, and a delivery walks back the recoverable ones", () => {
+  // Rungs 1 and 2 are the same event while a request owns the whole pool, but they are counted
+  // apart so the rung that fired is legible once a request owns several slots.
+  const harness = pooledHarness({ hardwareConcurrency: 8 });
+  const painted = [];
+  harness.callRequest(request("items", 1, "A"), result => painted.push(result.mode));
+  harness.workers[0].emitError("load failed");
+
+  const failed = harness.status();
+  assert.equal(failed.poolSlotFailures, 1, "rung 1 attributed the failure to the slot");
+  assert.equal(failed.poolFailures, 1, "rung 2 fired because dropping it left no slot");
+  assert.equal(failed.workerFailures, 1, "rung 3 rated the Worker mechanism");
+  assert.ok(failed.retryInMs > 0);
+  assert.equal(failed.poolEnabled, false, "a pool with no healthy slot is not a parallel pool");
+  assert.equal(failed.poolTripped, false, "a rated failure is a cooldown, not a tripwire");
+  harness.flushTimers();
+  assert.deepEqual(painted, ["sync-fallback"], "rung 4 solved it on the main thread");
+
+  harness.advance(5_000);
+  harness.callRequest(request("items", 2, "B"), result => painted.push(result.marker));
+  const recovered = harness.workers[1];
+  recovered.emitMessage(workerResponse(recovered, { res: { mode: "items", marker: "B" } }));
+  const healthy = harness.status();
+  assert.deepEqual(painted, ["sync-fallback", "B"]);
+  assert.equal(healthy.workerFailures, 0);
+  assert.equal(healthy.poolEnabled, true, "a delivery restores the pool");
+  assert.equal(healthy.poolSlotFailures, 1, "the counters record what fired and are not walked back");
+  assert.equal(healthy.poolFailures, 1);
+});
+
+test("with the pool off, cancel disposes the Worker exactly as the single-Worker service did", () => {
+  // The switch is only a rollback if clearing it restores the disposal schedule too: cancel() is
+  // reached from every render in Manual mode, and from import, rollback, and reset.
+  const harness = lifecycleHarness();
+  assert.equal(harness.status().poolEnabled, false);
+  harness.callRequest(request("items", 1, "A"), () => {});
+  const worker = harness.workers[0];
+  worker.emitMessage(workerResponse(worker, { res: { mode: "items", marker: "A" } }));
+
+  const cancelled = harness.cancel("Manual mode renders synchronously");
+  assert.equal(worker.terminated, true, "an unpooled page releases its Worker on cancel");
+  assert.equal(cancelled.workerOwned, false);
+  assert.equal(cancelled.poolSize, 0);
+
+  harness.callRequest(request("items", 2, "B"), () => {});
+  assert.equal(harness.workers.length, 2, "and constructs a fresh one for the next request");
+  assert.equal(harness.status().poolConstructions, 2);
+});
+
+test("with the pool on, cancel abandons busy work but keeps an idle Worker for the next request", () => {
+  const harness = pooledHarness();
+  assert.equal(harness.status().poolEnabled, true);
+  harness.callRequest(request("items", 1, "A"), () => {});
+  const worker = harness.workers[0];
+  worker.emitMessage(workerResponse(worker, { res: { mode: "items", marker: "A" } }));
+
+  const cancelled = harness.cancel("Manual mode renders synchronously");
+  assert.equal(worker.terminated, false, "an idle Worker has no obsolete work to abandon");
+  assert.equal(cancelled.poolSize, 1);
+  assert.equal(cancelled.poolBusy, 0);
+
+  harness.callRequest(request("items", 2, "B"), () => {});
+  assert.equal(harness.workers.length, 1, "returning from Manual mode must construct nothing");
+  assert.equal(harness.status().poolConstructions, 1);
+});
+
+test("the pool switch reads on, off, and absent as three distinct states", () => {
+  assert.equal(lifecycleHarness().status().poolEnabled, false);
+  assert.equal(pooledHarness().status().poolEnabled, true);
+  assert.equal(poolFlagHarness("off").status().poolEnabled, false);
+  assert.equal(poolFlagHarness("ON").status().poolEnabled, false, "only the exact tokens are honored");
+  assert.equal(poolFlagHarness("1").status().poolEnabled, false);
+
+  /* A one-way opt-in reads identically to this while the default is off, and stops being a kill
+   * switch the moment the default flips. Flipping it here is what tells the two apart. */
+  const flipped = { poolDefaultOn: true };
+  assert.equal(lifecycleHarness(flipped).status().poolEnabled, true, "absent takes the default");
+  assert.equal(poolFlagHarness("on", flipped).status().poolEnabled, true);
+  assert.equal(poolFlagHarness("off", flipped).status().poolEnabled, false,
+    "an explicit off must still turn the pool off once the pool is the default");
+  assert.equal(poolFlagHarness("nonsense", flipped).status().poolEnabled, true,
+    "an unrecognized value is not an off switch");
+});
+
+test("page teardown disposes the pool whatever the switch says", () => {
+  // pagehide has no next request to reuse an idle Worker for, so it disposes rather than cancels.
+  for (const harness of [lifecycleHarness(), pooledHarness()]) {
+    harness.callRequest(request("items", 1, "A"), () => {});
+    const worker = harness.workers[0];
+    worker.emitMessage(workerResponse(worker, { res: { mode: "items", marker: "A" } }));
+    const disposed = harness.dispose("Page teardown");
+    assert.equal(worker.terminated, true);
+    assert.equal(disposed.poolSize, 0);
+    assert.equal(disposed.workerOwned, false);
+  }
+});
+
 test("a Credits completion cannot paint after the accepted state enters Manual", () => {
   const harness = lifecycleHarness();
   const painted = [];
@@ -656,7 +973,7 @@ test("a superseded Worker's late error cannot take over the newer request", () =
   const workerA = harness.workers[0];
   harness.callRequest(request("items", 2, "B"), result => painted.push(result.marker || result.mode));
   const workerB = harness.workers[1];
-  assert.equal(workerA.releaseCalls, 1);
+  assert.equal(workerA.releaseCalls, 0);
 
   workerA.emitError("late A failure");
   harness.flushTimers();
@@ -679,7 +996,7 @@ test("cancel invalidates the callback, clears fallback work, and terminates only
   harness.flushTimers();
 
   assert.equal(worker.terminated, true);
-  assert.equal(worker.releaseCalls, 1);
+  assert.equal(worker.releaseCalls, 0);
   assert.deepEqual(painted, []);
   assert.equal(cancelled.generation, 2);
   assert.equal(cancelled.active, false);
@@ -714,7 +1031,7 @@ test("an owned Worker failure preserves the generation and callback through sync
 
   worker.emitError("load failed");
   const failed = harness.status();
-  assert.equal(worker.releaseCalls, 1);
+  assert.equal(worker.releaseCalls, 0);
   assert.equal(failed.generation, generation);
   assert.equal(failed.active, true);
   assert.equal(failed.fallbackActive, true);
@@ -838,7 +1155,7 @@ test("a completed idle Worker's late error disposes it silently before the next 
   assert.equal(afterError.fallbackActive, false);
   assert.equal(afterError.active, false);
   assert.equal(worker.terminated, true);
-  assert.equal(worker.releaseCalls, 1);
+  assert.equal(worker.releaseCalls, 0);
   assert.equal(harness.elements.solveFallback.hidden, true);
   assert.equal(harness.elements.solveOverlay.hidden, true);
 
@@ -997,7 +1314,10 @@ test("a solver-relevant mutation rejects an in-flight solve even when mode is un
 });
 
 test("changing the Worker factory releases the owned Worker before a controlled slow solve", () => {
-  const harness = lifecycleHarness();
+  /* Pooled on purpose: with the pool off, cancel() already disposes everything, so this would pass
+   * even if setWorkerFactory stopped releasing the pool itself. Only a page that keeps idle Workers
+   * across a cancel can show that the factory swap is what disposed them. */
+  const harness = pooledHarness();
   const painted = [];
   harness.callRequest(request("items", 1, "default"), result => painted.push(result.marker));
   const owned = harness.workers[0];
@@ -1011,7 +1331,7 @@ test("changing the Worker factory releases the owned Worker before a controlled 
   };
   harness.setWorkerFactory(() => controlled);
   assert.equal(owned.terminated, true);
-  assert.equal(owned.releaseCalls, 1);
+  assert.equal(owned.releaseCalls, 0);
 
   harness.callRequest(request("items", 2, "controlled"), result => painted.push(result.marker));
   assert.equal(controlled.messages.length, 1);
@@ -1170,7 +1490,10 @@ function schedulerHarness(options = {}) {
     renderResults() { renders += 1; },
     solveService: {
       request() { requests += 1; },
+      // Both release solve ownership, so both count; the lifecycle trace records which entry point
+      // ran, because teardown must dispose the pool where a supersede only cancels.
       cancel() { cancels += 1;lifecycle.push("cancel"); },
+      dispose() { cancels += 1;lifecycle.push("dispose"); },
     },
     setTimeout(callback, delay = 0) {
       const id = nextTimer++;
@@ -1425,14 +1748,15 @@ test("an accepted direct result mutation persists, syncs controls, and renders o
   assert.deepEqual(harness.counts(), { saves: 2, renders: 1, requests: 0, cancels: 0 });
 });
 
-test("pagehide flushes persistence, clears delayed solving, then cancels solve ownership", () => {
+test("pagehide flushes persistence, clears delayed solving, then disposes solve ownership", () => {
   const harness = schedulerHarness();
   harness.mutate();
   harness.scheduleSolve();
   harness.pagehide();
   harness.advance(600);
 
-  assert.deepEqual(harness.lifecycle(), ["save", "cancel"]);
+  // dispose, not cancel: teardown has no next request, so it releases the Workers too.
+  assert.deepEqual(harness.lifecycle(), ["save", "dispose"]);
   assert.deepEqual(harness.counts(), { saves: 1, renders: 0, requests: 0, cancels: 1 });
 });
 

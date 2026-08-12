@@ -40,6 +40,7 @@ const tests = [
   "test/sharemode.cjs",
   "test/solve-lifecycle.cjs",
   "test/solver-bounds.cjs",
+  "test/solver-worker-session.cjs",
   "test/static-asset-build.cjs",
   "test/state-schema.cjs",
   "test/staticmode.cjs",

@@ -1184,5 +1184,7 @@ document.addEventListener("visibilitychange",()=>{if(document.visibilityState===
 window.addEventListener("pagehide",()=>{
   flushPersist();
   if(renderT!=null){clearTimeout(renderT);renderT=null;}
-  solveService.cancel("Page teardown");
+  // dispose, not cancel: there is no next request to reuse an idle Worker for, so teardown releases
+  // the whole pool whatever the pool switch says.
+  solveService.dispose("Page teardown");
 });

@@ -30,6 +30,16 @@ const BOOT_SCRIPT = "boot.js";
 const LEGACY_V2_SHA256 = "9d8747eea5a5c0c8d88066532eb9c3f51da6ebeb14e803284734405f3bcd1cf2";
 const ANALYTICS_SIGNATURE = /(?:\/_vercel\/(?:insights|speed-insights)|va\.vercel-scripts\.com|vercelAnalytics)/i;
 const ROOT_RELATIVE_OWNED_URL = /["'`(=]\/(?:static|assets|js|css)\//;
+/* A leftover literal naming one of the Worker scripts the build ships as permanent endpoints. This
+ * is a secondary net over a name shape, not the N1 rule: a construction path is forbidden by the
+ * whole-app `new Worker(` count below, which no script name can slip past. */
+const WORKER_SCRIPT_URL = /js\/[\w.-]*worker[\w.-]*\.js/i;
+const WORKER_CONSTRUCTION = /new\s+Worker\s*\(/g;
+const WORKER_FACTORY_CALL = /(?:^|[^\w$])workerFactory\s*\(/g;
+const WORKER_PAYLOAD_SOURCE = "__FORGE_SOLVER_WORKER_SOURCE__";
+const WORKER_URL_ACCESSOR = "__forgeSolverWorkerObjectUrl";
+const WORKER_URL_MEMO = "__forgeSolverWorkerUrl";
+const WORKER_URL_MEMO_GUARD = "if(__forgeSolverWorkerUrl===null)";
 
 function read(file) {
   return fs.readFileSync(file);
@@ -47,13 +57,22 @@ function sha256(bytes) {
   return crypto.createHash("sha256").update(bytes).digest("hex");
 }
 
+function countOccurrences(text, search) {
+  return text.split(search).length - 1;
+}
+
+// String.prototype.match ignores a global pattern's lastIndex, so these counts stay independent of
+// call order. RegExp.prototype.test does not, which is why no global pattern here is ever tested.
+function countMatches(text, pattern) {
+  return (text.match(pattern) || []).length;
+}
+
 function replaceExactly(text, search, replacement, expectedCount, label) {
-  const pieces = text.split(search);
-  const count = pieces.length - 1;
+  const count = countOccurrences(text, search);
   if (count !== expectedCount) {
     throw new Error(`${label}: expected ${expectedCount} occurrence(s), found ${count}`);
   }
-  return pieces.join(replacement);
+  return text.split(search).join(replacement);
 }
 
 function write(directory, relative, bytes) {
@@ -96,39 +115,89 @@ function buildWorkerPayload(sourceRoot) {
   return payload;
 }
 
+/* One payload, one object URL, page lifetime. Every solver Worker — the first, a respawn after
+ * termination, and every member of a pool — is constructed from this one memo, so construction
+ * costs no allocation and no request after the first. Nothing revokes it: a revoked URL cannot be
+ * constructed from again, so a per-Worker release would poison every later Worker on the page.
+ * The memo is also never cleared on failure, because a construction that throws must stay
+ * retryable rather than permanently disabling Worker solving.
+ *
+ * The cost is a ~250 KB Blob copy of the payload retained for the whole session, where a per-Worker
+ * release freed it seconds after the first message. That buys one allocation per page instead of
+ * one per Worker: a twelve-supersede storm allocated twelve Blobs before this.
+ *
+ * The memo accessor is emitted BEFORE the factory on purpose: test/static-asset-build.cjs finds
+ * the factory's closing brace by scanning forward from its declaration, and a helper after it
+ * would be swallowed into that slice. */
 function workerBootstrap(workerPayload) {
   return `"use strict";
 const __FORGE_SOLVER_WORKER_SOURCE__=${JSON.stringify(workerPayload)};
-function __forgeCreateSolverWorker(){
-  const objectUrl=URL.createObjectURL(new Blob([__FORGE_SOLVER_WORKER_SOURCE__],{type:"text/javascript"}));
-  let created=null;
-  let release=null;
-  try{
-    created=new Worker(objectUrl);
-    let released=false;
-    let releaseTimer=null;
-    release=()=>{
-      if(released)return;
-      released=true;
-      if(releaseTimer!==null){clearTimeout(releaseTimer);releaseTimer=null;}
-      URL.revokeObjectURL(objectUrl);
-    };
-    created.__forgeRelease=release;
-    if(typeof created.addEventListener==="function"){
-      created.addEventListener("message",release,{once:true});
-      created.addEventListener("error",release,{once:true});
-      releaseTimer=setTimeout(release,60000);
-    }else releaseTimer=setTimeout(release,0);
-    return created;
-  }catch(error){
-    if(created)try{created.terminate();}catch(cleanupError){}
-    if(release){
-      try{release();}catch(cleanupError){try{URL.revokeObjectURL(objectUrl);}catch(revokeError){}}
-    }else try{URL.revokeObjectURL(objectUrl);}catch(cleanupError){}
-    throw error;
+let __forgeSolverWorkerUrl=null;
+function __forgeSolverWorkerObjectUrl(){
+  if(__forgeSolverWorkerUrl===null){
+    __forgeSolverWorkerUrl=URL.createObjectURL(new Blob([__FORGE_SOLVER_WORKER_SOURCE__],{type:"text/javascript"}));
   }
+  return __forgeSolverWorkerUrl;
+}
+function __forgeCreateSolverWorker(){
+  const objectUrl=__forgeSolverWorkerObjectUrl();
+  return new Worker(objectUrl);
 }
 `;
+}
+
+/* The build is the only place a regression here can be caught. A revoked object URL is
+ * indistinguishable from a live one until a Worker silently fails to load, and a construction path
+ * that fetches a script the build never emits only shows up as a 404 on a page whose whole point is
+ * that the solver is inlined. Both degrade solving to the main thread for the rest of the session.
+ * So every rule below is a count over the whole emitted app rather than a match on a chosen name:
+ * an evasion written with a different identifier, script name, or spacing has to fail the same
+ * check the obvious spelling fails.
+ *
+ * A whole-app URL.createObjectURL count cannot express the payload rule, because the recovery
+ * download and the forge-build.json export legitimately create their own object URLs. Counting
+ * references to the payload constant does, and is blind to how the Blob call is written.
+ *
+ * The generated memo and factory bytes are not covered here — they are pinned byte-exactly by
+ * test/static-asset-build.cjs, which compares both against literals. */
+function assertSolverWorkerBootstrap(app) {
+  const constructions = countMatches(app, WORKER_CONSTRUCTION);
+  if (constructions !== 1) {
+    throw new Error(`The app must construct Workers at exactly one site, found ${constructions}`);
+  }
+  const payloadRefs = countOccurrences(app, WORKER_PAYLOAD_SOURCE);
+  if (payloadRefs !== 2) {
+    throw new Error(`The app must build the solver Worker payload into exactly one object URL, found ${payloadRefs - 1}`);
+  }
+  const accessorCallers = countOccurrences(app, WORKER_URL_ACCESSOR) - 1;
+  if (accessorCallers !== 1) {
+    throw new Error(`The shared solver Worker object URL must have exactly one caller, found ${accessorCallers}`);
+  }
+  // Ahead of the reference count on purpose: losing the guard also drops a reference, and the
+  // specific failure is the more useful one to report.
+  if (!app.includes(WORKER_URL_MEMO_GUARD)) {
+    throw new Error("The shared solver Worker object URL lost its page-lifetime memo guard");
+  }
+  // Declaration, memo guard, assignment, return: reaching the URL by any other name is how a revoke
+  // or a second wrapper gets at it.
+  const memoRefs = countOccurrences(app, WORKER_URL_MEMO);
+  if (memoRefs !== 4) {
+    throw new Error(`The shared solver Worker object URL must stay confined to its accessor, found ${memoRefs} references`);
+  }
+  if (/__forgeRelease/.test(app)) {
+    throw new Error("The app reintroduced a per-Worker solver Worker URL release hook");
+  }
+}
+
+/* N1: every solver Worker, pooled or not, is constructed through the one factory seam the build
+ * rewrites. Counted over the whole app, not over solve-service.js, because a second call site is a
+ * second construction path whichever page script holds it. A leading dot is deliberately not
+ * excluded: a member call through an alias object constructs exactly as directly. */
+function assertSingleConstructionPath(app) {
+  const callSites = countMatches(app, WORKER_FACTORY_CALL);
+  if (callSites !== 1) {
+    throw new Error(`The app must construct Workers at exactly one workerFactory() call site, found ${callSites}`);
+  }
 }
 
 function buildApp(sourceRoot, assetUrls) {
@@ -142,8 +211,10 @@ function buildApp(sourceRoot, assetUrls) {
     "production Worker constructor"
   );
   app = replaceExactly(app, "assets/speed.jpg", assetUrls.speed, 1, "speed tooltip image");
+  assertSingleConstructionPath(app);
+  assertSolverWorkerBootstrap(app);
   if (/importScripts\s*\(/.test(app)) throw new Error("The app still contains a network-importing Worker");
-  if (/js\/solver\.worker(?:\.v2)?\.js/.test(app)) throw new Error("The app still references a Worker URL");
+  if (WORKER_SCRIPT_URL.test(app)) throw new Error("The app still references a Worker URL");
   if (/assets\/speed\.jpg/.test(app)) throw new Error("The app still references the unhashed speed image");
   if (ROOT_RELATIVE_OWNED_URL.test(app)) throw new Error("The app contains a root-relative owned asset URL");
   if (ANALYTICS_SIGNATURE.test(app)) throw new Error("The app contains a Vercel Analytics signature");
@@ -301,4 +372,4 @@ if (require.main === module) {
   process.stdout.write(`Built Forge Planner at ${result.outputRoot}\n`);
 }
 
-module.exports = { buildStaticSite, buildWorkerPayload };
+module.exports = { buildStaticSite, buildWorkerPayload, assertSolverWorkerBootstrap };
