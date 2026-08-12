@@ -84,7 +84,16 @@ function lifecycleHarness(options = {}) {
 
   const servicePath = path.join(root, "js", "solve-service.js");
   if (fs.existsSync(servicePath)) {
-    vm.runInContext(fs.readFileSync(servicePath, "utf8"), context, { filename: servicePath });
+    let source = fs.readFileSync(servicePath, "utf8");
+    /* The pool default is a source constant, so the only way to test what the switch does once it
+     * flips is to flip it. The literal must stay exact: a rename here has to fail rather than
+     * silently stop substituting and leave the default-on tests asserting the default-off page. */
+    if (options.poolDefaultOn === true) {
+      const before = "const POOL_DEFAULT_ON=false;";
+      assert.ok(source.includes(before), "the pool default constant must keep its declared form");
+      source = source.replace(before, "const POOL_DEFAULT_ON=true;");
+    }
+    vm.runInContext(source, context, { filename: servicePath });
   } else {
     // Before Task 3, the lifecycle lives in results.js. This adapter lets the first RED run
     // demonstrate the real stale-completion and late-error behavior, then the same tests move
@@ -137,6 +146,12 @@ function lifecycleHarness(options = {}) {
     cancel(reason) {
       context.__reason = reason;
       const value = vm.runInContext("solveService.cancel(globalThis.__reason)", context);
+      delete context.__reason;
+      return value;
+    },
+    dispose(reason) {
+      context.__reason = reason;
+      const value = vm.runInContext("solveService.dispose(globalThis.__reason)", context);
       delete context.__reason;
       return value;
     },
@@ -261,6 +276,14 @@ function schemaDispatchHarness() {
     },
   };
 }
+
+// The pool switch is read once at load, so it has to be in storage before the service is evaluated.
+function poolFlagHarness(value, options = {}) {
+  const storage = options.storage || new Map();
+  storage.set("forgePlannerSolverPool", value);
+  return lifecycleHarness({ ...options, storage });
+}
+function pooledHarness(options = {}) { return poolFlagHarness("on", options); }
 
 function request(mode, revision, marker) {
   return {
@@ -681,8 +704,28 @@ test("constructions stay bounded by busy terminations under a supersede storm", 
   assert.equal(idle.status().poolConstructions, 1);
 });
 
-test("cancel abandons busy solve work but keeps an idle Worker for the next request", () => {
+test("with the pool off, cancel disposes the Worker exactly as the single-Worker service did", () => {
+  // The switch is only a rollback if clearing it restores the disposal schedule too: cancel() is
+  // reached from every render in Manual mode, and from import, rollback, and reset.
   const harness = lifecycleHarness();
+  assert.equal(harness.status().poolEnabled, false);
+  harness.callRequest(request("items", 1, "A"), () => {});
+  const worker = harness.workers[0];
+  worker.emitMessage(workerResponse(worker, { res: { mode: "items", marker: "A" } }));
+
+  const cancelled = harness.cancel("Manual mode renders synchronously");
+  assert.equal(worker.terminated, true, "an unpooled page releases its Worker on cancel");
+  assert.equal(cancelled.workerOwned, false);
+  assert.equal(cancelled.poolSize, 0);
+
+  harness.callRequest(request("items", 2, "B"), () => {});
+  assert.equal(harness.workers.length, 2, "and constructs a fresh one for the next request");
+  assert.equal(harness.status().poolConstructions, 2);
+});
+
+test("with the pool on, cancel abandons busy work but keeps an idle Worker for the next request", () => {
+  const harness = pooledHarness();
+  assert.equal(harness.status().poolEnabled, true);
   harness.callRequest(request("items", 1, "A"), () => {});
   const worker = harness.workers[0];
   worker.emitMessage(workerResponse(worker, { res: { mode: "items", marker: "A" } }));
@@ -695,6 +738,37 @@ test("cancel abandons busy solve work but keeps an idle Worker for the next requ
   harness.callRequest(request("items", 2, "B"), () => {});
   assert.equal(harness.workers.length, 1, "returning from Manual mode must construct nothing");
   assert.equal(harness.status().poolConstructions, 1);
+});
+
+test("the pool switch reads on, off, and absent as three distinct states", () => {
+  assert.equal(lifecycleHarness().status().poolEnabled, false);
+  assert.equal(pooledHarness().status().poolEnabled, true);
+  assert.equal(poolFlagHarness("off").status().poolEnabled, false);
+  assert.equal(poolFlagHarness("ON").status().poolEnabled, false, "only the exact tokens are honored");
+  assert.equal(poolFlagHarness("1").status().poolEnabled, false);
+
+  /* A one-way opt-in reads identically to this while the default is off, and stops being a kill
+   * switch the moment the default flips. Flipping it here is what tells the two apart. */
+  const flipped = { poolDefaultOn: true };
+  assert.equal(lifecycleHarness(flipped).status().poolEnabled, true, "absent takes the default");
+  assert.equal(poolFlagHarness("on", flipped).status().poolEnabled, true);
+  assert.equal(poolFlagHarness("off", flipped).status().poolEnabled, false,
+    "an explicit off must still turn the pool off once the pool is the default");
+  assert.equal(poolFlagHarness("nonsense", flipped).status().poolEnabled, true,
+    "an unrecognized value is not an off switch");
+});
+
+test("page teardown disposes the pool whatever the switch says", () => {
+  // pagehide has no next request to reuse an idle Worker for, so it disposes rather than cancels.
+  for (const harness of [lifecycleHarness(), pooledHarness()]) {
+    harness.callRequest(request("items", 1, "A"), () => {});
+    const worker = harness.workers[0];
+    worker.emitMessage(workerResponse(worker, { res: { mode: "items", marker: "A" } }));
+    const disposed = harness.dispose("Page teardown");
+    assert.equal(worker.terminated, true);
+    assert.equal(disposed.poolSize, 0);
+    assert.equal(disposed.workerOwned, false);
+  }
 });
 
 test("a Credits completion cannot paint after the accepted state enters Manual", () => {
@@ -1058,7 +1132,10 @@ test("a solver-relevant mutation rejects an in-flight solve even when mode is un
 });
 
 test("changing the Worker factory releases the owned Worker before a controlled slow solve", () => {
-  const harness = lifecycleHarness();
+  /* Pooled on purpose: with the pool off, cancel() already disposes everything, so this would pass
+   * even if setWorkerFactory stopped releasing the pool itself. Only a page that keeps idle Workers
+   * across a cancel can show that the factory swap is what disposed them. */
+  const harness = pooledHarness();
   const painted = [];
   harness.callRequest(request("items", 1, "default"), result => painted.push(result.marker));
   const owned = harness.workers[0];
@@ -1231,7 +1308,10 @@ function schedulerHarness(options = {}) {
     renderResults() { renders += 1; },
     solveService: {
       request() { requests += 1; },
+      // Both release solve ownership, so both count; the lifecycle trace records which entry point
+      // ran, because teardown must dispose the pool where a supersede only cancels.
       cancel() { cancels += 1;lifecycle.push("cancel"); },
+      dispose() { cancels += 1;lifecycle.push("dispose"); },
     },
     setTimeout(callback, delay = 0) {
       const id = nextTimer++;
@@ -1486,14 +1566,15 @@ test("an accepted direct result mutation persists, syncs controls, and renders o
   assert.deepEqual(harness.counts(), { saves: 2, renders: 1, requests: 0, cancels: 0 });
 });
 
-test("pagehide flushes persistence, clears delayed solving, then cancels solve ownership", () => {
+test("pagehide flushes persistence, clears delayed solving, then disposes solve ownership", () => {
   const harness = schedulerHarness();
   harness.mutate();
   harness.scheduleSolve();
   harness.pagehide();
   harness.advance(600);
 
-  assert.deepEqual(harness.lifecycle(), ["save", "cancel"]);
+  // dispose, not cancel: teardown has no next request, so it releases the Workers too.
+  assert.deepEqual(harness.lifecycle(), ["save", "dispose"]);
   assert.deepEqual(harness.counts(), { saves: 1, renders: 0, requests: 0, cancels: 1 });
 });
 

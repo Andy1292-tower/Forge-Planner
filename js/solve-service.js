@@ -220,14 +220,22 @@ function writeDailySolveCache(conditionKey,result,now=Date.now()){
 const solveService=(()=>{
   const MAX_FAILURES=3;
   const RETRY_BASE_MS=250;
-  /* Parallel solving is opt-in per page load and off by default, so a reader who hits a pool bug
-   * restores exact single-Worker behavior by clearing one storage key instead of waiting for a
-   * release. Read once: a switch that flips mid-session would leave live Workers unaccounted for. */
+  /* Parallel solving is opt-in per page load, so a reader who hits a pool bug restores exact
+   * single-Worker behavior by setting one storage key instead of waiting for a release. The switch
+   * is tri-state rather than a one-way opt-in: an explicit "on" or "off" wins and anything else
+   * takes the default, so making the pool the default later is a one-constant change and the key
+   * still turns it off afterwards. Read once, because a switch that flipped mid-session would
+   * leave live Workers unaccounted for. */
   const POOL_FLAG_STORAGE_KEY="forgePlannerSolverPool";
+  const POOL_DEFAULT_ON=false;
   const POOL_MAX_SIZE=4;
-  let poolEnabled=false;
-  try{if(typeof localStorage!=="undefined")poolEnabled=localStorage.getItem(POOL_FLAG_STORAGE_KEY)==="on";}
-  catch(error){poolEnabled=false;}
+  let poolEnabled=POOL_DEFAULT_ON;
+  try{
+    if(typeof localStorage!=="undefined"){
+      const flag=localStorage.getItem(POOL_FLAG_STORAGE_KEY);
+      poolEnabled=flag==="on"?true:flag==="off"?false:POOL_DEFAULT_ON;
+    }
+  }catch(error){poolEnabled=POOL_DEFAULT_ON;}
   // navigator is absent from the Node harnesses and from hosts that report no core count; both read
   // as a single slot rather than as an unbounded pool.
   function poolCap(){
@@ -306,13 +314,20 @@ const solveService=(()=>{
     generation+=1;
     lastReason=String(reason||"cancelled");
     clearRequest();
-    // Only the Workers still grinding on the cancelled generation are killed; an idle Worker has
-    // nothing to abandon and is the pool the next request reuses.
-    terminateBusySlots();
+    /* Pooling on: only the Workers still grinding on the cancelled generation are killed, and an
+     * idle Worker stays for the next request to reuse — it has no obsolete work to abandon.
+     * Pooling off: the whole pool goes, so a page with the switch cleared disposes Workers on
+     * exactly the schedule the single-Worker service did. That is what makes the switch a rollback
+     * rather than a sizing knob, since cancel() is reached from ordinary UI — every render in
+     * Manual mode, import, rollback, and reset. */
+    if(poolEnabled)terminateBusySlots();else terminatePool();
     fallbackNotice(false,"");
     overlay(false);
     return status();
   }
+  // Teardown, not supersede: every Worker goes however the switch is set. A page being unloaded and
+  // a factory swap both leave nothing a later request could legitimately reuse.
+  function dispose(reason){cancel(reason);terminatePool();return status();}
   function deliver(requestGeneration,result,error,metadata){
     if(!isCurrent(requestGeneration)){cancel("accepted state changed before solve completion");return;}
     const done=callback;
@@ -378,10 +393,9 @@ const solveService=(()=>{
     const next=factory==null?defaultWorkerFactory:factory;
     if(typeof next!=="function")throw new TypeError("solveService Worker factory must be a function or null");
     if(next===workerFactory)return status();
-    cancel("Solver Worker factory changed");
-    // Idle Workers survive a cancel, but not this one: a Worker built by the previous factory is
-    // not a Worker the new factory would have produced, so none of them may be reused.
-    terminatePool();
+    // A Worker built by the previous factory is not a Worker the new factory would have produced,
+    // so none of them may be reused however the pool switch is set.
+    dispose("Solver Worker factory changed");
     workerFactory=next;
     return status();
   }
@@ -441,5 +455,5 @@ const solveService=(()=>{
     };
   }
 
-  return {request,cancel,status,setWorkerFactory};
+  return {request,cancel,dispose,status,setWorkerFactory};
 })();
