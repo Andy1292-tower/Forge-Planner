@@ -144,11 +144,11 @@ const runner = `
   build([A()]);
   const aloneEta = optimize().eta;
   // ...and with the fill suppressed, the phase it banks for must be strictly longer.
-  const realFill = fillIdleLinesAhead;
-  fillIdleLinesAhead = function(){};
+  const realFill = putIdleLinesToWork;
+  putIdleLinesToWork = function(){};
   build([A(), B()]);
   const unfilled = optimize();
-  fillIdleLinesAhead = realFill;
+  putIdleLinesToWork = realFill;
   const unfilledGel = phaseNamed(unfilled, "Gel run"), unfilledBrick = phaseNamed(unfilled, "Brick run");
 
   record("sequenced static: banking costs the phase doing it nothing",
@@ -183,12 +183,59 @@ const runner = `
       " levels=" + fillers.map(f => f.entry.item + "@" + f.entry.lvl).join(","));
   }
 
+  /* ------------------------------------------------- 3. work THIS phase's own demand ---- */
+  // One project, two materials. Gel is hard-capped by the Vespium income — one line can work on it
+  // and no arrangement of the others changes that — while the Bricks order is small enough that one
+  // line clears it with time to spare. Demand weighting balances the rest, so the lines left over are
+  // genuinely spare: nothing they do shortens the phase, and the search idles them. Bricks is still
+  // this project's own shopping list, and building it is strictly better than standing there. There
+  // is no later project here at all: this is the one-combined-phase case, where banking ahead has
+  // never had anything to offer.
+  const M = () => project("m", "Mixed run", [["Gel", 10], ["Bricks", 20]], 1);
+  build([M()]);
+  const mixed = optimize();
+  const mixedPhase = phaseNamed(mixed, "Mixed run");
+  putIdleLinesToWork = function(){};
+  build([M()]);
+  const parkedRun = optimize();
+  putIdleLinesToWork = realFill;
+  const parkedPhase = phaseNamed(parkedRun, "Mixed run");
+  const idleOn = ph => ((ph && ph.plan) || []).filter(p => !p.entries || !p.entries.length).map(p => "#" + p.line);
+
+  record("one combined phase: lines it cannot use are put on its own remaining demand",
+    idleOn(parkedPhase).length > 0 && idleOn(mixedPhase).length < idleOn(parkedPhase).length &&
+    !!mixedPhase.idleFill && mixedPhase.idleFill.items.indexOf("Bricks") >= 0,
+    "parked=" + idleOn(parkedPhase).join(",") + " worked=" + idleOn(mixedPhase).join(",") +
+    " idleFill=" + JSON.stringify(mixedPhase.idleFill || null) + " jobs=" + jobsOn(mixedPhase).join(" "));
+  record("one combined phase: working the idle lines never costs the phase time",
+    mixedPhase.eta <= parkedPhase.eta + 1e-9 * Math.max(1, parkedPhase.eta),
+    "parked=" + parkedPhase.eta.toFixed(6) + "h worked=" + mixedPhase.eta.toFixed(6) + "h");
+  record("one combined phase: the worked schedule still replays",
+    mixed.feasible === true && mixed.scheduleValidation.ok === true,
+    "feasible=" + mixed.feasible + " replay=" + mixed.scheduleValidation.ok +
+    " failure=" + JSON.stringify(mixed.scheduleValidation.firstFailure || null));
+  record("one combined phase: no line the phase itself needed was taken",
+    jobsOn(parkedPhase).every(job => jobsOn(mixedPhase).indexOf(job) >= 0),
+    "parked=" + jobsOn(parkedPhase).join(" ") + " | worked=" + jobsOn(mixedPhase).join(" "));
+  record("one combined phase: the material those lines went to arrives faster",
+    (mixedPhase.rate.Bricks || 0) > (parkedPhase.rate.Bricks || 0) + 1e-9,
+    "Bricks/hr " + (parkedPhase.rate.Bricks || 0).toFixed(1) + " -> " + (mixedPhase.rate.Bricks || 0).toFixed(1));
+
+  // The pass only ever hands out work that exists. A project whose one material is already capped
+  // leaves its spare lines alone rather than inventing a job for them.
+  build([A()]);
+  const gelOnly = optimize();
+  const gelOnlyPhase = phaseNamed(gelOnly, "Gel run");
+  record("nothing free to do leaves the lines honestly idle",
+    !!gelOnlyPhase && idleOn(gelOnlyPhase).length > 0 && !gelOnlyPhase.idleFill,
+    "idle=" + idleOn(gelOnlyPhase).join(",") + " idleFill=" + JSON.stringify(gelOnlyPhase && gelOnlyPhase.idleFill || null));
+
   /* ------------------------------------------------------------------------- guards ---- */
   build([A(), B()], {lineMode: "split"});
   const split = optimize();
-  record("line switching never banks ahead",
-    (split.phases || []).every(p => !p.lookAhead),
-    "phases=" + (split.phases || []).map(p => p.name + ":" + (p.lookAhead ? "filled" : "-")).join(" "));
+  record("line switching never fills a line, ahead or otherwise",
+    (split.phases || []).every(p => !p.lookAhead && !p.idleFill),
+    "phases=" + (split.phases || []).map(p => p.name + ":" + (p.lookAhead || p.idleFill ? "filled" : "-")).join(" "));
 
   build([A(), B()], {seq: false});
   const together = optimize();
@@ -196,14 +243,32 @@ const runner = `
     (together.phases || []).every(p => !p.lookAhead),
     "phases=" + (together.phases || []).map(p => p.name + ":" + (p.lookAhead ? "filled" : "-")).join(" "));
 
-  // Frames and Wire carry an external pre-produced Bits obligation whose fixed point the phase has
-  // already closed, so they are never banked however idle the lines are.
-  build([A(), project("f", "Frame run", [["Frames", 40]], 2)]);
-  const frames = optimize();
-  const frameGel = phaseNamed(frames, "Gel run");
-  record("a pre-produced-Bits material (Frames) is never banked ahead",
-    !frameGel || !frameGel.lookAhead || frameGel.lookAhead.items.indexOf("Frames") < 0,
-    "lookAhead=" + JSON.stringify(frameGel && frameGel.lookAhead || null));
+  // Frames and Wire burn Bits OUTSIDE the recipe graph, pre-produced before the phase runs, and a
+  // fill making either moves that obligation after the phase closed it as a fixed point. Both halves
+  // of the rule are pinned here. With no Bits banked, the fill would hand the player a bill they
+  // cannot pay, so it is dropped and the lines stay honestly idle...
+  const F = () => project("f", "Frame run", [["Frames", 40]], 2);
+  build([A(), F()]);
+  const framesBroke = optimize();
+  const brokeGel = phaseNamed(framesBroke, "Gel run");
+  record("a pre-produced-Bits material is not banked when its Bits are not already on hand",
+    !!brokeGel && !brokeGel.lookAhead && idleOn(brokeGel).length > 0,
+    "lookAhead=" + JSON.stringify(brokeGel && brokeGel.lookAhead || null) +
+    " idle=" + idleOn(brokeGel).join(",") + " pre=" + JSON.stringify(brokeGel && brokeGel.preProducedDemand || null));
+
+  // ...and with the Bits on hand it is banked like anything else, the phase reserving exactly what
+  // its new plan owes. This is the whole point of not refusing outright: the idle lines here build
+  // the entire Rods -> Plates -> Frames chain, and the project they build it for lands at zero.
+  build([A(), F()]);
+  S.inventory.Bits = 1e9; normalize(S);
+  const framesOk = optimize();
+  const okGel = phaseNamed(framesOk, "Gel run"), okFrame = phaseNamed(framesOk, "Frame run");
+  const owed = (okGel && okGel.preProducedDemand && okGel.preProducedDemand.Bits) || 0;
+  record("a pre-produced-Bits material is banked when its Bits are, and the obligation is booked",
+    !!(okGel && okGel.lookAhead && okGel.lookAhead.items.indexOf("Frames") >= 0) && owed > 0 &&
+    framesOk.scheduleValidation.ok === true && okFrame.eta < framesBroke.eta - 1e-9,
+    "lookAhead=" + JSON.stringify(okGel && okGel.lookAhead || null) + " preProducedBits=" + owed.toFixed(2) +
+    " replay=" + framesOk.scheduleValidation.ok + " frame phase " + framesBroke.eta.toFixed(4) + "h -> " + okFrame.eta.toFixed(4) + "h");
 
   // A project already covered by stock leaves nothing to bank.
   build([A(), B()]);
