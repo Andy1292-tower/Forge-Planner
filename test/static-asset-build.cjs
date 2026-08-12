@@ -8,7 +8,7 @@ const path = require("path");
 const vm = require("vm");
 
 const root = path.resolve(__dirname, "..");
-const { buildStaticSite, buildWorkerPayload } = require("../scripts/build-static.cjs");
+const { buildStaticSite, buildWorkerPayload, assertSolverWorkerBootstrap } = require("../scripts/build-static.cjs");
 const ANALYTICS_SIGNATURE = /(?:\/_vercel\/(?:insights|speed-insights)|va\.vercel-scripts\.com|vercelAnalytics)/i;
 const ROOT_RELATIVE_OWNED_URL = /["'`(=]\/(?:static|assets|js|css)\//;
 const EXPECTED_WORKER_MEMO = `let __forgeSolverWorkerUrl=null;
@@ -582,6 +582,61 @@ test("an untracked CSS asset dependency fails the build instead of shipping a mu
   assert.throws(
     () => buildStaticSite({ sourceRoot: source, outputRoot: path.join(temporary, "output") }),
     /add that dependency to the content-hash build graph/
+  );
+});
+
+test("solver Worker construction regressions fail the build, each by name", () => {
+  const cases = [
+    {
+      label: "a second payload object URL",
+      injected: 'const _extraPayloadUrl=URL.createObjectURL(new Blob([__FORGE_SOLVER_WORKER_SOURCE__],{type:"text/javascript"}));',
+      message: /must build the solver Worker payload into exactly one object URL, found 2/,
+    },
+    {
+      label: "a revoke of the shared payload URL",
+      injected: "function _releaseSolverUrl(){URL.revokeObjectURL(__forgeSolverWorkerUrl);}",
+      message: /revokes the shared solver Worker object URL/,
+    },
+    {
+      label: "a revived per-Worker release hook",
+      injected: "function _bindRelease(w){w.__forgeRelease=()=>{};}",
+      message: /reintroduced a per-Worker solver Worker URL release hook/,
+    },
+    {
+      label: "a second Worker construction path",
+      injected: "function _spareWorker(){return workerFactory();}",
+      message: /exactly one workerFactory\(\) call site, found 2/,
+    },
+    {
+      label: "a network-fetched pool Worker URL",
+      injected: 'const _poolWorkerUrl="js/solver.pool.worker.js";',
+      message: /still references a Worker URL/,
+    },
+  ];
+
+  for (const entry of cases) {
+    const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "forge-static-worker-regression-"));
+    const source = path.join(temporary, "source");
+    copyBuildInputs(source);
+    fs.appendFileSync(path.join(source, "js", "solve-service.js"), `\n${entry.injected}\n`);
+    assert.throws(
+      () => buildStaticSite({ sourceRoot: source, outputRoot: path.join(temporary, "output") }),
+      entry.message,
+      `${entry.label} must fail the build with its own message`
+    );
+  }
+});
+
+test("dropping the payload URL memo guard fails the build", () => {
+  // The guard lives in bytes the build generates rather than in a source file, so this feeds the
+  // build's own assertion the app it would have emitted without it.
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "forge-static-worker-memo-guard-"));
+  buildStaticSite({ sourceRoot: root, outputRoot: temporary });
+  const app = generatedApp(temporary);
+  assert.doesNotThrow(() => assertSolverWorkerBootstrap(app));
+  assert.throws(
+    () => assertSolverWorkerBootstrap(app.replace("if(__forgeSolverWorkerUrl===null)", "if(true)")),
+    /lost its page-lifetime memo guard/
   );
 });
 

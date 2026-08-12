@@ -30,6 +30,12 @@ const BOOT_SCRIPT = "boot.js";
 const LEGACY_V2_SHA256 = "9d8747eea5a5c0c8d88066532eb9c3f51da6ebeb14e803284734405f3bcd1cf2";
 const ANALYTICS_SIGNATURE = /(?:\/_vercel\/(?:insights|speed-insights)|va\.vercel-scripts\.com|vercelAnalytics)/i;
 const ROOT_RELATIVE_OWNED_URL = /["'`(=]\/(?:static|assets|js|css)\//;
+/* Any Worker script under js/, not just the two names that exist today: a js/solver.pool.worker.js
+ * added to the source tree is exactly the network-fetching construction path N1 forbids, and the
+ * old two-name alternation would have shipped it. */
+const WORKER_SCRIPT_URL = /js\/[\w.-]*worker[\w.-]*\.js/i;
+const WORKER_PAYLOAD_BLOB = "new Blob([__FORGE_SOLVER_WORKER_SOURCE__]";
+const WORKER_URL_MEMO_GUARD = "if(__forgeSolverWorkerUrl===null)";
 
 function read(file) {
   return fs.readFileSync(file);
@@ -47,13 +53,16 @@ function sha256(bytes) {
   return crypto.createHash("sha256").update(bytes).digest("hex");
 }
 
+function countOccurrences(text, search) {
+  return text.split(search).length - 1;
+}
+
 function replaceExactly(text, search, replacement, expectedCount, label) {
-  const pieces = text.split(search);
-  const count = pieces.length - 1;
+  const count = countOccurrences(text, search);
   if (count !== expectedCount) {
     throw new Error(`${label}: expected ${expectedCount} occurrence(s), found ${count}`);
   }
-  return pieces.join(replacement);
+  return text.split(search).join(replacement);
 }
 
 function write(directory, relative, bytes) {
@@ -123,8 +132,39 @@ function __forgeCreateSolverWorker(){
 `;
 }
 
+/* A whole-app URL.createObjectURL count cannot express this: the recovery download and the
+ * forge-build.json export legitimately create their own object URLs. The solver payload is the one
+ * that must be allocated once and outlive every Worker built from it, so each check is anchored on
+ * the payload itself. */
+function assertSolverWorkerBootstrap(app) {
+  const payloads = countOccurrences(app, WORKER_PAYLOAD_BLOB);
+  if (payloads !== 1) {
+    throw new Error(`The app must build the solver Worker payload into exactly one object URL, found ${payloads}`);
+  }
+  if (!app.includes(WORKER_URL_MEMO_GUARD)) {
+    throw new Error("The shared solver Worker object URL lost its page-lifetime memo guard");
+  }
+  if (/revokeObjectURL\(\s*(?:objectUrl|__forgeSolverWorkerUrl)/.test(app)) {
+    throw new Error("The app revokes the shared solver Worker object URL");
+  }
+  if (/__forgeRelease/.test(app)) {
+    throw new Error("The app reintroduced a per-Worker solver Worker URL release hook");
+  }
+}
+
+/* N1: every solver Worker, pooled or not, is constructed through the one factory seam the build
+ * rewrites. The rewrite assertion below only matches a string literal inside that seam, so a second
+ * workerFactory() call site would pass it silently while adding a construction path nothing counts. */
+function assertSingleConstructionPath(serviceSource) {
+  const callSites = (serviceSource.match(/(?:^|[^\w$.])workerFactory\(\)/g) || []).length;
+  if (callSites !== 1) {
+    throw new Error(`solve-service.js must construct Workers at exactly one workerFactory() call site, found ${callSites}`);
+  }
+}
+
 function buildApp(sourceRoot, assetUrls) {
   const sources = PAGE_SCRIPTS.map(file => readText(path.join(sourceRoot, "js", file)));
+  assertSingleConstructionPath(sources[PAGE_SCRIPTS.indexOf("solve-service.js")]);
   let app = `${workerBootstrap(buildWorkerPayload(sourceRoot))}\n;\n${sources.join("\n;\n")}`;
   app = replaceExactly(
     app,
@@ -134,8 +174,9 @@ function buildApp(sourceRoot, assetUrls) {
     "production Worker constructor"
   );
   app = replaceExactly(app, "assets/speed.jpg", assetUrls.speed, 1, "speed tooltip image");
+  assertSolverWorkerBootstrap(app);
   if (/importScripts\s*\(/.test(app)) throw new Error("The app still contains a network-importing Worker");
-  if (/js\/solver\.worker(?:\.v2)?\.js/.test(app)) throw new Error("The app still references a Worker URL");
+  if (WORKER_SCRIPT_URL.test(app)) throw new Error("The app still references a Worker URL");
   if (/assets\/speed\.jpg/.test(app)) throw new Error("The app still references the unhashed speed image");
   if (ROOT_RELATIVE_OWNED_URL.test(app)) throw new Error("The app contains a root-relative owned asset URL");
   if (ANALYTICS_SIGNATURE.test(app)) throw new Error("The app contains a Vercel Analytics signature");
@@ -293,4 +334,4 @@ if (require.main === module) {
   process.stdout.write(`Built Forge Planner at ${result.outputRoot}\n`);
 }
 
-module.exports = { buildStaticSite, buildWorkerPayload };
+module.exports = { buildStaticSite, buildWorkerPayload, assertSolverWorkerBootstrap };
