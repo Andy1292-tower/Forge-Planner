@@ -243,8 +243,11 @@ const solveService=(()=>{
   let expectedKey=null;
   let expectedDailyCacheKey=null;
   let callback=null;
-  let worker=null;
-  let workerBusy=false;
+  /* Slot records, not one owned Worker: {worker,busy}. Membership in this array is the identity a
+   * late message or error is checked against, so a disposed Worker's events are ignored by the same
+   * test whatever else the pool holds. */
+  const pool=[];
+  let poolConstructions=0;
   let fallbackTimer=null;
   let workerFailures=0;
   let retryAfter=0;
@@ -264,11 +267,33 @@ const solveService=(()=>{
     el.hidden=!show;
     el.textContent=show?"Background solver unavailable; using slower fallback.":"";
   }
+  function ownsSlot(slot){return pool.indexOf(slot)>=0;}
+  function busySlots(){return pool.filter(slot=>slot.busy).length;}
   // Terminating a Worker never releases the payload URL: it is shared for the page's lifetime, so
   // revoking it here would break every Worker constructed after the first supersede.
-  function terminateOwned(){
-    const owned=worker;worker=null;workerBusy=false;
-    if(owned)try{owned.terminate();}catch(error){}
+  function terminateSlot(slot){
+    const at=pool.indexOf(slot);
+    if(at<0)return;
+    pool.splice(at,1);
+    slot.busy=false;
+    try{slot.worker.terminate();}catch(error){}
+  }
+  // Only work that is now obsolete is killed. An idle Worker costs nothing to keep and is the whole
+  // reason a supersede constructs nothing.
+  function terminateBusySlots(){pool.filter(slot=>slot.busy).forEach(slot=>terminateSlot(slot));}
+  function terminatePool(){pool.slice().forEach(slot=>terminateSlot(slot));}
+  /* The dispatching request terminates busy slots before it asks, so an idle slot is always waiting
+   * or the pool is below its cap. An exhausted pool is unreachable today and degrades to the
+   * synchronous fallback rather than growing past the cap. */
+  function acquireSlot(){
+    const idle=pool.find(slot=>!slot.busy);
+    if(idle)return idle;
+    if(pool.length>=poolCap())throw new Error("Solver Worker pool is exhausted");
+    const slot={worker:workerFactory(),busy:false};
+    poolConstructions+=1;
+    pool.push(slot);
+    bindWorker(slot);
+    return slot;
   }
   function clearFallbackTimer(){
     if(fallbackTimer!==null){clearTimeout(fallbackTimer);fallbackTimer=null;}
@@ -281,7 +306,9 @@ const solveService=(()=>{
     generation+=1;
     lastReason=String(reason||"cancelled");
     clearRequest();
-    terminateOwned();
+    // Only the Workers still grinding on the cancelled generation are killed; an idle Worker has
+    // nothing to abandon and is the pool the next request reuses.
+    terminateBusySlots();
     fallbackNotice(false,"");
     overlay(false);
     return status();
@@ -311,23 +338,26 @@ const solveService=(()=>{
       deliver(requestGeneration,result,null);
     },0);
   }
-  function workerFailed(owned,requestGeneration,reason){
-    if(owned!==worker||requestGeneration!==generation)return;
-    terminateOwned();
+  // A null slot is a construction that never produced one; it still costs the request a failure and
+  // the fallback, which is what a factory that throws has always done.
+  function workerFailed(slot,requestGeneration,reason){
+    if(requestGeneration!==generation||(slot&&!ownsSlot(slot)))return;
+    if(slot)terminateSlot(slot);
     workerFailures=Math.min(MAX_FAILURES,workerFailures+1);
     retryAfter=Date.now()+Math.min(1000,RETRY_BASE_MS*Math.pow(2,workerFailures-1));
     runFallback(requestGeneration,reason);
   }
-  function bindWorker(owned){
+  function bindWorker(slot){
+    const owned=slot.worker;
     owned.onmessage=event=>{
       const data=event.data||{};
-      if(owned!==worker||data.generation!==generation)return;
+      if(!ownsSlot(slot)||data.generation!==generation)return;
       if(!isCurrent(data.generation)){cancel("accepted state changed before Worker completion");return;}
       if(data.mode!==expectedMode||data.stateRevision!==expectedRevision){
-        workerFailed(owned,data.generation,"Worker response did not match the requested mode and revision");
+        workerFailed(slot,data.generation,"Worker response did not match the requested mode and revision");
         return;
       }
-      workerBusy=false;
+      slot.busy=false;
       workerFailures=0;retryAfter=0;fallbackNotice(false,"");
       if(data.error){deliver(data.generation,null,data.error);return;}
       if(data.res&&data.res.__stab&&typeof setLineStability==="function"){
@@ -336,11 +366,11 @@ const solveService=(()=>{
       deliver(data.generation,data.res,null);
     };
     owned.onerror=event=>{
-      if(owned!==worker)return;
+      if(!ownsSlot(slot))return;
       if(event&&typeof event.preventDefault==="function")event.preventDefault();
-      if(!workerBusy||callback===null){terminateOwned();return;}
+      if(!slot.busy||callback===null){terminateSlot(slot);return;}
       if(!isCurrent(generation))return;
-      workerFailed(owned,generation,(event&&event.message)||"Worker failed");
+      workerFailed(slot,generation,(event&&event.message)||"Worker failed");
     };
   }
   function shouldTryWorker(){return (workerFactory!==defaultWorkerFactory||typeof Worker!=="undefined")&&Date.now()>=retryAfter;}
@@ -349,6 +379,9 @@ const solveService=(()=>{
     if(typeof next!=="function")throw new TypeError("solveService Worker factory must be a function or null");
     if(next===workerFactory)return status();
     cancel("Solver Worker factory changed");
+    // Idle Workers survive a cancel, but not this one: a Worker built by the previous factory is
+    // not a Worker the new factory would have produced, so none of them may be reused.
+    terminatePool();
     workerFactory=next;
     return status();
   }
@@ -373,7 +406,7 @@ const solveService=(()=>{
 
     // optimize() is synchronous inside the Worker. Superseding busy work requires termination;
     // a healthy idle Worker may be reused and receives a fresh stability snapshot below.
-    if(workerBusy)terminateOwned();
+    terminateBusySlots();
     if(dailyCacheKey&&options.forceFresh===true)removeDailySolveCache(dailyCacheKey);
     if(dailyCacheKey&&options.forceFresh!==true){
       const cached=readDailySolveCache(dailyCacheKey,mode);
@@ -385,15 +418,16 @@ const solveService=(()=>{
       return requestGeneration;
     }
 
+    let slot=null;
     try{
-      if(!worker){worker=workerFactory();bindWorker(worker);}
-      workerBusy=true;
+      slot=acquireSlot();
+      slot.busy=true;
       const stabilitySnapshot=(typeof getLineStability==="function")?JSON.parse(JSON.stringify(getLineStability()||{})):{};
-      worker.postMessage({
+      slot.worker.postMessage({
         reqId:requestGeneration,generation:requestGeneration,mode,stateRevision:revision,
         state:dispatchedState,budget,stab:stabilitySnapshot
       });
-    }catch(error){workerFailed(worker,requestGeneration,(error&&error.message)||String(error));}
+    }catch(error){workerFailed(slot,requestGeneration,(error&&error.message)||String(error));}
     return requestGeneration;
   }
   function status(){
@@ -401,8 +435,9 @@ const solveService=(()=>{
       generation,active:callback!==null,mode:expectedMode,stateRevision:expectedRevision,
       solveStateOwned:expectedKey!==null,
       current:callback!==null&&isCurrent(generation),
-      workerOwned:worker!==null,workerBusy,workerFailures,fallbackActive,
-      retryInMs:Math.max(0,retryAfter-Date.now()),lastReason
+      workerOwned:pool.length>0,workerBusy:busySlots()>0,workerFailures,fallbackActive,
+      retryInMs:Math.max(0,retryAfter-Date.now()),lastReason,
+      poolEnabled,poolSize:pool.length,poolBusy:busySlots(),poolConstructions
     };
   }
 

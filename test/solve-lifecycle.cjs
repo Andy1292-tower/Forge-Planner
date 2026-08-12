@@ -649,6 +649,52 @@ test("the dispatched request message carries exactly the single-Worker protocol 
     Object.keys(harness.workers[0].messages[0]).sort(),
     ["budget", "generation", "mode", "reqId", "stab", "state", "stateRevision"]
   );
+  const status = harness.status();
+  assert.equal(status.poolEnabled, false);
+  assert.equal(status.poolSize, 1);
+  assert.equal(status.poolBusy, 1);
+  assert.equal(status.poolConstructions, 1);
+  assert.equal(status.workerOwned, true);
+  assert.equal(status.workerBusy, true);
+});
+
+test("constructions stay bounded by busy terminations under a supersede storm", () => {
+  const storm = lifecycleHarness();
+  for (let revision = 1; revision <= 12; revision += 1) {
+    storm.callRequest(request("items", revision, `S${revision}`), () => {});
+  }
+  const stormStatus = storm.status();
+  assert.equal(storm.workers.length, 12, "each supersede kills busy work and must respawn for the new one");
+  assert.equal(stormStatus.poolConstructions, storm.workers.length);
+  assert.equal(storm.workers.filter(worker => worker.terminated).length, 11);
+  assert.ok(stormStatus.poolConstructions <= 1 + storm.workers.filter(worker => worker.terminated).length,
+    "constructions must not exceed the pool cap plus its observed busy terminations");
+  assert.equal(stormStatus.poolSize, 1);
+
+  const idle = lifecycleHarness();
+  for (let revision = 1; revision <= 12; revision += 1) {
+    idle.callRequest(request("items", revision, `I${revision}`), () => {});
+    const worker = idle.workers[0];
+    worker.emitMessage(workerResponse(worker, { res: { mode: "items", marker: `I${revision}` } }, revision - 1));
+  }
+  assert.equal(idle.workers.length, 1, "a pool that is idle between solves is reused, never churned");
+  assert.equal(idle.status().poolConstructions, 1);
+});
+
+test("cancel abandons busy solve work but keeps an idle Worker for the next request", () => {
+  const harness = lifecycleHarness();
+  harness.callRequest(request("items", 1, "A"), () => {});
+  const worker = harness.workers[0];
+  worker.emitMessage(workerResponse(worker, { res: { mode: "items", marker: "A" } }));
+
+  const cancelled = harness.cancel("Manual mode renders synchronously");
+  assert.equal(worker.terminated, false, "an idle Worker has no obsolete work to abandon");
+  assert.equal(cancelled.poolSize, 1);
+  assert.equal(cancelled.poolBusy, 0);
+
+  harness.callRequest(request("items", 2, "B"), () => {});
+  assert.equal(harness.workers.length, 1, "returning from Manual mode must construct nothing");
+  assert.equal(harness.status().poolConstructions, 1);
 });
 
 test("a Credits completion cannot paint after the accepted state enters Manual", () => {
