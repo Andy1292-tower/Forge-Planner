@@ -420,22 +420,29 @@ const solveService=(()=>{
    * constructions are the only quantity that moves. */
   function constructionAllowance(){return POOL_CEILING+paidTerminations+POOL_CONSTRUCTION_GRACE;}
   function tripPool(){if(poolTripped)return;poolTripped=true;poolFailures+=1;}
-  /* An idle slot serves the request without constructing, so the ledger only gets a say when a
-   * Worker actually has to be built — and refusing is what trips the pool, which is why this asks
-   * and decides in one step. A tripped pool still lends out a Worker it already has; what it stops
-   * is building more. */
-  function poolCanServe(){
-    if(pool.some(slot=>!slot.busy))return true;
+  /* Asked once per Worker built and never once per request, because a fan-out is several
+   * constructions behind a single request: a ledger consulted before the dispatch loop approves on
+   * the one idle slot a dying pool left behind and never sees the rest of the fan-out rebuild. A
+   * tripped pool still lends out a Worker it already has; what it stops is building more. */
+  function poolCanConstruct(){
     if(!poolTripped&&poolConstructions<constructionAllowance())return true;
     tripPool();
     return false;
   }
-  /* The dispatching request terminates busy slots before it asks, so an idle slot is always waiting
-   * or the pool is below its cap. An exhausted pool is unreachable today and degrades to the
-   * synchronous fallback rather than growing past the cap. */
+  /* An idle slot serves the request without constructing, so the ledger only gets a say when a
+   * Worker actually has to be built. Asking here as well as at the construction site is what keeps
+   * a refusal that was knowable up front from costing a partial fan-out. */
+  function poolCanServe(){
+    if(pool.some(slot=>!slot.busy))return true;
+    return poolCanConstruct();
+  }
+  /* Null is the ledger declining to build, which is not a failure of anything and is the caller's
+   * to degrade. The dispatching request terminates busy slots before it asks, so an idle slot is
+   * always waiting or the pool is below its cap; an exhausted pool is unreachable today. */
   function acquireSlot(){
     const idle=pool.find(slot=>!slot.busy);
     if(idle)return idle;
+    if(!poolCanConstruct())return null;
     if(pool.length>=poolCap())throw new Error("Solver Worker pool is exhausted");
     const slot={worker:workerFactory(),busy:false};
     poolConstructions+=1;
@@ -663,6 +670,14 @@ const solveService=(()=>{
       const seedSolo=soloSnapshot&&soloSnapshot.key&&Object.keys(soloSnapshot.values||{}).length?soloSnapshot:null;
       for(let index=0;index<shardCount;index++){
         slot=acquireSlot();
+        /* The ledger declined mid fan-out. Rating it through workerFailed would charge a Worker that
+         * was never built and arm a cooldown that cannot fix an accounting problem, so this drops
+         * straight to rung 4. The shards already dispatched keep their pending record: it can no
+         * longer reach its count, so the fragments accumulate below it and the fallback delivers. */
+        if(slot===null){
+          runFallback(requestGeneration,"Solver Workers were rebuilt more often than the pool can account for");
+          return requestGeneration;
+        }
         slot.busy=true;
         const message={
           reqId:requestGeneration,generation:requestGeneration,mode,stateRevision:revision,

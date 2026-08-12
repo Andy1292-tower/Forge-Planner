@@ -828,6 +828,47 @@ test("a supersede clears the fragments the previous generation had collected", (
   assert.equal(delivered.length, 1, "exactly one delivery, from the current generation");
 });
 
+/* A fan-out reuses idle slots, so the Workers carrying one generation are not a contiguous tail of
+ * the construction order. Address a dispatch by the message that carries it. */
+function dispatchesFor(harness, generation) {
+  const dispatched = [];
+  harness.workers.forEach(worker => {
+    worker.messages.forEach((message, messageIndex) => {
+      if (message.generation === generation) dispatched.push({ worker, messageIndex, shard: message.shard || null });
+    });
+  });
+  return dispatched;
+}
+
+test("a pooled fan-out cannot construct past what the ledger accounts for", () => {
+  /* The shape N7 exists for, which the items-mode dying-Worker tests cannot reach: one request is
+   * four constructions, not one. A ledger consulted once per request approves on the idle slot the
+   * survivor left behind and never sees the three Workers the fan-out rebuilds behind it. */
+  const harness = pooledHarness({ hardwareConcurrency: 5 });   // cap = ceiling = min(4, cores-1) = 4
+  const allowance = 4 + 4;   // POOL_CEILING + POOL_CONSTRUCTION_GRACE, with no termination paying in
+  const delivered = [];
+  for (let revision = 1; revision <= 20; revision += 1) {
+    harness.callRequest(creditsRequest(revision), (result, error) => delivered.push({ result, error }));
+    const dispatched = dispatchesFor(harness, harness.status().generation);
+    dispatched.forEach(({ worker, messageIndex, shard }) => {
+      worker.emitMessage(workerResponse(worker,
+        { res: creditsFragment(shard ? shard.index : 0, shard ? shard.count : 1) }, messageIndex));
+    });
+    // Every Worker dies after delivering except one, so the next request rebuilds the rest.
+    dispatched.slice(1).forEach(({ worker }) => worker.emitError("died after delivering"));
+    harness.flushTimers();
+  }
+
+  const status = harness.status();
+  assert.ok(status.poolConstructions <= allowance,
+    `the fan-out constructed ${status.poolConstructions} Workers against an allowance of ${allowance}`);
+  assert.equal(status.poolConstructions, allowance, "and stops exactly at it rather than short of it");
+  assert.equal(harness.workers.length, allowance);
+  assert.equal(status.poolTripped, true, "a Worker that cannot survive its own delivery trips the pool");
+  assert.equal(status.workerFailures, 0, "refusing to build rates no Worker and arms no cooldown");
+  assert.equal(delivered.length, 20, "every request is answered exactly once, by a shard or the fallback");
+});
+
 test("an unusable shard descriptor is refused before it costs a Worker round trip", () => {
   const harness = lifecycleHarness();
   const refused = [
