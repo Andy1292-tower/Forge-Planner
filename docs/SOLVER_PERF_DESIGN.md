@@ -379,18 +379,29 @@ runs no longer double free-solve time.
   the "one clock, never restarted per candidate" rule holds per shard. Merge on the main thread:
   rank by credits then catalog order (unchanged rule); `allCandidatesEvaluated` /
   `searchExhaustive` / `deadlineReached` aggregate conservatively (AND / AND / OR).
-- **Items:** K independent `solveCore` chains over identical inputs, distinct ILS RNG streams,
-  shard 0 keeping the canonical seed constant (so shard 0 alone reproduces today's trajectory).
-  Merge takes the best objective; ties break by shard index. Each shard is budget-monotone, and a
-  max of monotone results is monotone, so the contract's language survives; run-to-run variance is
-  already acknowledged there. `bound` comes from the (deterministic) LP; `capped`/`deadlineReached`
-  OR across shards.
-- **Share-of-max calibration:** the per-output single-target ceiling solves are independent —
-  scatter across the pool.
-- **Project:** phases stay sequential on one Worker (inventory carry is inherently ordered). Two
-  independent pieces parallelize: the hidden prefer-current **alternative run** (pure given the
-  cache snapshot; only the selected run may commit stability updates — already the rule) and the
-  sequenced-mode **ordering-estimate** solves.
+- **Items: not sharded, and the reason is WS1 rather than the protocol.** K independent `solveCore`
+  chains over distinct ILS RNG streams was the plan, merging on best objective with shard 0 keeping
+  the canonical seed. What landed instead is a hot loop that runs 87–140% more probes per second in
+  the same budget, which spends the same silicon on one deeper search rather than on K shallower
+  ones. A racing merge also gives up the property the corpus is gated on — a virtual run is
+  bit-reproducible today, and a max over K RNG streams is not — for a win no measurement here
+  supports. The descriptor and the merge accept an Items fan-out unchanged if a fixture ever wants
+  one.
+- **Share-of-max calibration:** the per-output single-target ceiling solves are independent, so
+  shard i computes every count-th of the ceilings this factory still needs. It pays because the
+  ceilings are cached: the shards' `__solo` fragments are unioned on the main thread, so the scatter
+  warms the whole cache even though each shard's own plan solve saw only its slice. Without the
+  Worker-resident cache round-trip (WS3.7) the scatter would throw away every ceiling but one
+  shard's.
+- **Project: not sharded, because WS2 removed the work rather than hiding it.** The design named the
+  hidden prefer-current **alternative run** and the sequenced **ordering estimates** as the two
+  independent pieces. The alternative run re-derives the same free tableaux as the selected run, and
+  the exact-tableau memo now answers them: `project-split-7line` goes from 10 LP solves and 2,895
+  pivots to 4 and 681, and the whole Line switching run finishes in 94.5 virtual ms against a 20 s
+  budget. Splitting those two runs across Workers would *undo* that — a memo cannot be shared across
+  a structured clone — to hide a latency that no longer exists. The sequenced estimates are 1,876
+  pivots inside a 19.3M-unit search on `project-seq-7line`, which is not a Worker's worth of work.
+  Phases stay sequential regardless: inventory carry is inherently ordered.
 - **Protocol:** the request message grows one optional top-level `shard` field, `{index, count}`
   and nothing else — every mode above needs only "which of how many", and a mode-specific union
   would need per-mode validation on a boundary that must reject rather than guess. It cannot ride on
@@ -399,6 +410,13 @@ runs no longer double free-solve time.
   reply, because the main thread matches on `generation` and generation is identical across the
   shards of one request. A Worker without a descriptor behaves exactly as today, down to the bytes of
   both messages. Merge logic is pure, main-thread, and unit-tested for arrival-order independence.
+  The descriptor reaches `optimize()` as a real parameter: `testOptions` is the direct-source seam
+  and is documented as never posted through the Worker protocol, so carrying a production wire field
+  on it would make that seam load-bearing.
+- **Shard failure:** a failed shard fails the request, which degrades to the synchronous fallback
+  exactly as an unsharded failure does. Rung 1's shard *reassignment* is not implemented — the
+  fan-out is bounded work rather than a retry loop, and the alternative to reassigning is slower
+  rather than wrong.
 
 #### Worker-resident caches
 
