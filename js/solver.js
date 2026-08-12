@@ -362,6 +362,48 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       for(const[r,a]of job.cons)if(okIdx(r)){consR[c]=r;consC[c]=a*sp;c++;}
     }
   }
+  /* Delta evaluation. Every probe in the local search changes ONE line's job (the target swap
+   * changes two), so re-summing all N lines from baseArr to measure it is the single largest
+   * avoidable cost in the solver: the flat arrays above make one line's contribution addressable,
+   * and these apply it in place.
+   *
+   * A reject must cost nothing at all, so revertMove restores SAVED doubles instead of undoing the
+   * arithmetic. Re-adding what was subtracted does not in general land back on the same double, so
+   * an inverse undo would leave the incumbent every later probe is measured against drifting under
+   * the probes that were rejected — the exact bug that is invisible until an objective moves.
+   * Every touched slot is saved BEFORE anything is written, and restored in reverse, so a resource
+   * a staged pair of moves touches twice still ends on the value it started with.
+   *
+   * INVARIANT: produced/consumed describe `ch` at every point outside a begin/revert bracket. The
+   * accept paths below (climb, repair, target swap, dead-line drop) and the two ILS kicks maintain
+   * it explicitly; before this they left the vectors describing whichever candidate was probed
+   * last and relied on the next full evalChoice to repair them. */
+  let maxProdLen=0,maxConsLen=0;
+  for(let s=0;s<slots;s++){
+    if(prodOff[s+1]-prodOff[s]>maxProdLen)maxProdLen=prodOff[s+1]-prodOff[s];
+    if(consOff[s+1]-consOff[s]>maxConsLen)maxConsLen=consOff[s+1]-consOff[s];
+  }
+  // Two staged moves (the target swap), each replacing one job with another: four job slots.
+  const mvProdR=new Int32Array(4*maxProdLen),mvProdV=new Float64Array(4*maxProdLen);
+  const mvConsR=new Int32Array(4*maxConsLen),mvConsV=new Float64Array(4*maxConsLen);
+  let mvProdN=0,mvConsN=0;
+  const beginMove=()=>{mvProdN=0;mvConsN=0;};
+  const applyMove=(i,oldK,newK)=>{
+    const oldSlot=jobBase[i]+oldK,newSlot=jobBase[i]+newK;
+    for(let p=prodOff[oldSlot],e=prodOff[oldSlot+1];p<e;p++){mvProdR[mvProdN]=prodR[p];mvProdV[mvProdN++]=produced[prodR[p]];}
+    for(let p=prodOff[newSlot],e=prodOff[newSlot+1];p<e;p++){mvProdR[mvProdN]=prodR[p];mvProdV[mvProdN++]=produced[prodR[p]];}
+    for(let c=consOff[oldSlot],e=consOff[oldSlot+1];c<e;c++){mvConsR[mvConsN]=consR[c];mvConsV[mvConsN++]=consumed[consR[c]];}
+    for(let c=consOff[newSlot],e=consOff[newSlot+1];c<e;c++){mvConsR[mvConsN]=consR[c];mvConsV[mvConsN++]=consumed[consR[c]];}
+    for(let p=prodOff[oldSlot],e=prodOff[oldSlot+1];p<e;p++)produced[prodR[p]]-=prodC[p];
+    for(let c=consOff[oldSlot],e=consOff[oldSlot+1];c<e;c++)consumed[consR[c]]-=consC[c];
+    for(let p=prodOff[newSlot],e=prodOff[newSlot+1];p<e;p++)produced[prodR[p]]+=prodC[p];
+    for(let c=consOff[newSlot],e=consOff[newSlot+1];c<e;c++)consumed[consR[c]]+=consC[c];
+  };
+  const revertMove=()=>{
+    for(let s=mvProdN-1;s>=0;s--)produced[mvProdR[s]]=mvProdV[s];
+    for(let s=mvConsN-1;s>=0;s--)consumed[mvConsR[s]]=mvConsV[s];
+    mvProdN=0;mvConsN=0;
+  };
   const choice=new Array(N).fill(0);
   let best={score:0,choice:new Array(N).fill(0),produced:new Float64Array(R),consumed:new Float64Array(R)};
   const EPS=1e-9;
@@ -425,10 +467,11 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       let bI=-1,bJ=-1,bRed=1e-12;
       for(let i=0;i<N;i++){const old=ch[i],js=lineJobs[i];
         for(let k=0;k<js.length;k++){if(k===old)continue;
-          if(!keepGoing("repair-job")){ch[i]=old;evalChoice(ch);return null;}
-          ch[i]=k;evalChoice(ch);const red=D-totalDeficit();if(red>bRed){bRed=red;bI=i;bJ=k;}}
-        ch[i]=old;evalChoice(ch);}
-      if(bI<0)break;ch[bI]=bJ;
+          if(!keepGoing("repair-job"))return null;
+          beginMove();applyMove(i,old,k);const red=D-totalDeficit();revertMove();
+          if(red>bRed){bRed=red;bI=i;bJ=k;}}}
+      if(bI<0)break;
+      const prev=ch[bI];ch[bI]=bJ;beginMove();applyMove(bI,prev,bJ);
     }
     evalChoice(ch);return feasibleNow();
   }
@@ -443,9 +486,13 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       let improved=false;
       for(let i=0;i<N;i++){const old=ch[i];let bk=old,bs=cur;
         const js=lineJobs[i];for(let k=0;k<js.length;k++){if(k===old)continue;
-          if(!keepGoing("climb-job")){ch[i]=old;evalChoice(ch);return null;}
-          ch[i]=k;evalChoice(ch);if(feasibleNow()){const s=value();if(s>bs+EPS){bs=s;bk=k;}}}
-        ch[i]=bk;if(bk!==old){cur=bs;improved=true;}else evalChoice(ch);
+          if(!keepGoing("climb-job"))return null;
+          beginMove();applyMove(i,old,k);
+          if(feasibleNow()){const s=value();if(s>bs+EPS){bs=s;bk=k;}}
+          revertMove();}
+        // The accepted move is re-applied rather than left to the next full evaluation, so `cur`
+        // and the vectors describe the same plan: bs was measured on exactly this state.
+        if(bk!==old){ch[i]=bk;beginMove();applyMove(i,old,bk);cur=bs;improved=true;}
       }
       if(!improved)break;
     }
@@ -485,9 +532,11 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
           const oh=ch[h],oj=ch[j];
           const a=jobLike(h,lineJobs[j][oj]),b=jobLike(j,lineJobs[h][oh]);
           if(a<0||b<0||(a===oh&&b===oj))continue;
-          ch[h]=a;ch[j]=b;evalChoice(ch);
-          if(feasibleNow()&&value()>cur+EPS){cur=value();improved=true;break;}
-          ch[h]=oh;ch[j]=oj;
+          // Two moves staged under one bracket: revert unwinds them in reverse, so a resource both
+          // lines touch lands back on the value it held before either was applied.
+          beginMove();applyMove(h,oh,a);applyMove(j,oj,b);
+          if(feasibleNow()&&value()>cur+EPS){ch[h]=a;ch[j]=b;cur=value();improved=true;break;}
+          revertMove();
         }
       }
       if(!improved)break;
@@ -522,10 +571,11 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       let improved=false;
       for(let i=0;i<N;i++){const old=ch[i],js=lineJobs[i];let bk=old,bD=curD;
         for(let k=0;k<js.length;k++){if(k===old)continue;
-          if(!keepGoing("deficit-job")){ch[i]=old;evalChoice(ch);return null;}
-          ch[i]=k;evalChoice(ch);
-          if(feasibleNow()&&scoreNow()>=targetScore-EPS){const d=totalDeficit();if(d<bD-1e-9){bD=d;bk=k;}}}
-        ch[i]=bk;evalChoice(ch);if(bk!==old){curD=bD;improved=true;}}
+          if(!keepGoing("deficit-job"))return null;
+          beginMove();applyMove(i,old,k);
+          if(feasibleNow()&&scoreNow()>=targetScore-EPS){const d=totalDeficit();if(d<bD-1e-9){bD=d;bk=k;}}
+          revertMove();}
+        if(bk!==old){ch[i]=bk;beginMove();applyMove(i,old,bk);curD=bD;improved=true;}}
       if(!improved)break;
     }
     return ch;
@@ -541,12 +591,15 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // so this has to run on the interrupted path too. finishCoreResult calls it on every exit.
   function dropDeadLines(ch,targetScore){
     let dropped=false;
+    // Called on a copy of the incumbent, not on whatever the search evaluated last, so this one
+    // establishes the invariant the delta probes below rely on.
+    evalChoice(ch);
     for(let i=0;i<N;i++){
       const old=ch[i],idle=idleIdx(i);
       if(old===idle)continue;
-      ch[i]=idle;evalChoice(ch);
-      if(feasibleNow()&&scoreNow()>=targetScore-EPS){dropped=true;continue;}
-      ch[i]=old;evalChoice(ch);
+      beginMove();applyMove(i,old,idle);
+      if(feasibleNow()&&scoreNow()>=targetScore-EPS){ch[i]=idle;dropped=true;continue;}
+      revertMove();
     }
     return dropped;
   }
@@ -588,6 +641,22 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       ch[i]=pick;
     }
     return ch;
+  }
+
+  /* Direct-source test seam, in the same family as opts.now / opts.onCheckpoint: never persisted,
+   * never posted through the Worker protocol, never set by the app. It hands the delta-evaluation
+   * machinery to a checker before the search starts, so test/delta-eval.cjs can assert apply and
+   * revert against a full re-evaluation on the solver's own arrays for a real factory — the
+   * fixtures where one resource carries 5.31e12/s and another 1e99/min, and where the mismatch
+   * this guards against would be a rounding artefact rather than an obvious wrong answer. */
+  if(typeof opts.onDeltaProbe==="function"){
+    opts.onDeltaProbe({N,R,resources,lineJobs,targets,produced,consumed,idleIdx,
+      evalChoice,beginMove,applyMove,revertMove,feasibleNow,totalDeficit,scoreNow,setCurTol,
+      // The flat coefficient tables, so the checker can size its tolerance by the magnitude of the
+      // terms a row actually sums rather than by the magnitude of what they sum TO. A delta on a row
+      // whose terms span twelve orders is accurate to the largest term, not to the result.
+      flat:{jobBase,prodOff,prodR,prodC,consOff,consR,consC,baseArr},
+      infeasibleCountNow:()=>{let n=0;for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac[r]-1e-7)n++;return n;}});
   }
 
   // The Credits comparison first gives every priced product the same finite constructive baseline:
@@ -783,6 +852,9 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       if(stag>stagLimit||!keepGoing("ils-iteration"))break;
       const ch=inc.ch.slice();const k=1+((rnd()*2)|0);
       for(let m=0;m<=k;m++){if(!keepGoing("ils-perturb"))break;const li=(rnd()*N)|0,js=lineJobs[li];ch[li]=(rnd()*js.length)|0;}
+      // The kick rewrites `ch` wholesale; re-establish the invariant rather than leave the vectors
+      // describing the incumbent this kick moved away from.
+      evalChoice(ch);
       if(interrupted)break;
       const sc=localOpt(ch);if(sc!=null&&!interrupted&&sc>inc.sc+EPS){inc={sc,ch:ch.slice()};stag=0;tLastGain=control.readNow();}else if(!interrupted)stag++;
     }
@@ -828,6 +900,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       if(stag>SWAP_STAG_LIMIT||!keepGoing("swap-ils"))break;
       const ch=cur.ch.slice(),k=1+((rnd()*2)|0);
       for(let m=0;m<=k;m++){if(!keepGoing("swap-ils-perturb"))break;const li=(rnd()*N)|0,js=lineJobs[li];ch[li]=(rnd()*js.length)|0;}
+      evalChoice(ch);
       if(interrupted)break;
       const sc=deepOpt(ch);
       if(sc!=null&&!interrupted&&sc>cur.sc+EPS){cur={sc,ch:ch.slice()};stag=0;}else if(!interrupted)stag++;
