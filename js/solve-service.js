@@ -420,22 +420,29 @@ const solveService=(()=>{
    * constructions are the only quantity that moves. */
   function constructionAllowance(){return POOL_CEILING+paidTerminations+POOL_CONSTRUCTION_GRACE;}
   function tripPool(){if(poolTripped)return;poolTripped=true;poolFailures+=1;}
-  /* An idle slot serves the request without constructing, so the ledger only gets a say when a
-   * Worker actually has to be built — and refusing is what trips the pool, which is why this asks
-   * and decides in one step. A tripped pool still lends out a Worker it already has; what it stops
-   * is building more. */
-  function poolCanServe(){
-    if(pool.some(slot=>!slot.busy))return true;
+  /* Asked once per Worker built and never once per request, because a fan-out is several
+   * constructions behind a single request: a ledger consulted before the dispatch loop approves on
+   * the one idle slot a dying pool left behind and never sees the rest of the fan-out rebuild. A
+   * tripped pool still lends out a Worker it already has; what it stops is building more. */
+  function poolCanConstruct(){
     if(!poolTripped&&poolConstructions<constructionAllowance())return true;
     tripPool();
     return false;
   }
-  /* The dispatching request terminates busy slots before it asks, so an idle slot is always waiting
-   * or the pool is below its cap. An exhausted pool is unreachable today and degrades to the
-   * synchronous fallback rather than growing past the cap. */
+  /* An idle slot serves the request without constructing, so the ledger only gets a say when a
+   * Worker actually has to be built. Asking here as well as at the construction site is what keeps
+   * a refusal that was knowable up front from costing a partial fan-out. */
+  function poolCanServe(){
+    if(pool.some(slot=>!slot.busy))return true;
+    return poolCanConstruct();
+  }
+  /* Null is the ledger declining to build, which is not a failure of anything and is the caller's
+   * to degrade. The dispatching request terminates busy slots before it asks, so an idle slot is
+   * always waiting or the pool is below its cap; an exhausted pool is unreachable today. */
   function acquireSlot(){
     const idle=pool.find(slot=>!slot.busy);
     if(idle)return idle;
+    if(!poolCanConstruct())return null;
     if(pool.length>=poolCap())throw new Error("Solver Worker pool is exhausted");
     const slot={worker:workerFactory(),busy:false};
     poolConstructions+=1;
@@ -551,7 +558,20 @@ const solveService=(()=>{
        * synchronous fallback exactly as an unsharded one does. Slower than a reassignment, never
        * wrong, and the fan-out is bounded work rather than a retry loop. */
       if(data.error){pendingShards=null;deliver(data.generation,null,data.error);return;}
-      const shardIndex=data.shard&&Number.isInteger(data.shard.index)?data.shard.index:0;
+      const pending=pendingShards&&pendingShards.generation===data.generation?pendingShards:null;
+      const echoed=data.shard&&Number.isInteger(data.shard.index)?data.shard.index:null;
+      /* A fragment is placed before anything reads it, because everything below is a claim about
+       * which slice it is. An echo the service cannot place is dropped rather than read as shard 0,
+       * where it would take a slice the merge already holds and carry shard 0's stability snapshot
+       * with it; a repeat is dropped for the same reason, since entries reaching count with a shard
+       * still silent delivers a fragment of the catalog as the whole comparison. The request waits
+       * for the shard that has not answered, exactly as it waits for one that is merely slow. */
+      if(pending){
+        if(echoed===null||echoed<0||echoed>=pending.count||pending.seen.has(echoed))return;
+        pending.seen.add(echoed);
+      }
+      // Absent is the unsharded solve, which is shard 0's whole-request answer under another name.
+      const shardIndex=echoed===null?0:echoed;
       // Shard 0's cache is the one kept. Applying every arrival would make a Worker-resident cache a
       // function of which Worker answered first; the share ceilings below are unioned instead, which
       // is order-free because mergeSoloCaches reads the fragments in shard order.
@@ -563,10 +583,10 @@ const solveService=(()=>{
        * resident cache left on the result is persisted and replayed for a day as part of the plan. */
       const solo=data.res&&typeof data.res==="object"?data.res.__solo:null;
       if(data.res&&typeof data.res==="object")delete data.res.__solo;
-      if(pendingShards&&pendingShards.generation===data.generation){
-        pendingShards.entries.push({shard:{index:shardIndex,count:pendingShards.count},res:data.res,solo});
-        if(pendingShards.entries.length<pendingShards.count)return;
-        const entries=pendingShards.entries;pendingShards=null;
+      if(pending){
+        pending.entries.push({shard:{index:shardIndex,count:pending.count},res:data.res,solo});
+        if(pending.entries.length<pending.count)return;
+        const entries=pending.entries;pendingShards=null;
         applySoloCache(mergeSoloCaches(entries.map(entry=>({shard:entry.shard,res:{__solo:entry.solo}}))));
         deliver(data.generation,mergeShardResults(expectedMode,entries),null);
         return;
@@ -652,7 +672,9 @@ const solveService=(()=>{
      * and a fan-out of one is the byte-identical single-Worker message: no shard field, no pending
      * record, nothing to merge. */
     const shardCount=shard!==null?1:shardCountFor(mode,dispatchedState);
-    pendingShards=shardCount>1?{generation:requestGeneration,count:shardCount,entries:[]}:null;
+    // seen is what makes "each shard replied at most once" — the merge's stated precondition — a
+    // property the service enforces rather than one it hopes the Workers honor.
+    pendingShards=shardCount>1?{generation:requestGeneration,count:shardCount,entries:[],seen:new Set()}:null;
 
     let slot=null;
     try{
@@ -662,7 +684,18 @@ const solveService=(()=>{
       const soloSnapshot=(typeof getSoloMaxCache==="function")?getSoloMaxCache():null;
       const seedSolo=soloSnapshot&&soloSnapshot.key&&Object.keys(soloSnapshot.values||{}).length?soloSnapshot:null;
       for(let index=0;index<shardCount;index++){
+        // Cleared first: a slot left over from the previous iteration is a healthy Worker still
+        // solving its own shard, and the catch below would charge this iteration's failure to it.
+        slot=null;
         slot=acquireSlot();
+        /* The ledger declined mid fan-out. Rating it through workerFailed would charge a Worker that
+         * was never built and arm a cooldown that cannot fix an accounting problem, so this drops
+         * straight to rung 4. The shards already dispatched keep their pending record: it can no
+         * longer reach its count, so the fragments accumulate below it and the fallback delivers. */
+        if(slot===null){
+          runFallback(requestGeneration,"Solver Workers were rebuilt more often than the pool can account for");
+          return requestGeneration;
+        }
         slot.busy=true;
         const message={
           reqId:requestGeneration,generation:requestGeneration,mode,stateRevision:revision,
@@ -675,7 +708,11 @@ const solveService=(()=>{
         else if(shardCount>1)message.shard={index,count:shardCount};
         slot.worker.postMessage(message);
       }
-    }catch(error){pendingShards=null;workerFailed(slot,requestGeneration,(error&&error.message)||String(error));}
+    /* The pending record outlives the throw. The shards already dispatched are still flying and the
+     * callback is still armed, so discarding it would let the first fragment to arrive pass every
+     * gate and deliver a 1-of-K ranking as the whole comparison; kept, the request can never reach
+     * its shard count and the fallback below is what answers it. */
+    }catch(error){workerFailed(slot,requestGeneration,(error&&error.message)||String(error));}
     return requestGeneration;
   }
   function status(){
