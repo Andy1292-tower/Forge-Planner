@@ -51,6 +51,19 @@ function lineStabilityWithUpdates(cache,updates){
 function commitLineStabilityUpdates(updates,base){
   const next=lineStabilityWithUpdates(base===undefined?_lineStability:base,updates);setLineStability(next);return next;
 }
+/* The DFS's dual-priced bound (WS4.3), off by default and measured that way.
+ *
+ * It is a real bound and it dominates the standing one, but on this game's shape it prunes a tree
+ * the search hardly enters: across every bench fixture and every budget the DFS is reached with at
+ * most a few hundred nodes left in the clock, because the iterated local search consumes the budget
+ * first and the convergence window closes what is left. Pricing those nodes cannot pay for building
+ * the prices. It ships behind this switch so the measurement can be repeated rather than argued
+ * about, and so a factory shape that does reach the DFS — far fewer job choices per line, or a
+ * budget the local search converges well inside — can turn it on without a code change.
+ * opts.dfsDualBound overrides it per solve. */
+let _dfsDualBound=false;
+function getDfsDualBound(){return _dfsDualBound;}
+function setDfsDualBound(on){_dfsDualBound=!!on;}
 function relevantChain(targets){
   // A raw can now be a target itself (issue #78); only products have a recipe chain to expand,
   // so seed the product set from product targets and add any raw target straight into relR.
@@ -141,6 +154,16 @@ function lineRows(){return S.lines.map((ln,i)=>({__i:i,max:ln.max,spx:ln.spx,tur
 const sortedLines=()=>lineRows().map(ln=>({orig:ln.__i,max:ln.max,sp:lineSpeed(ln),dp:dupeMult()})).sort((a,b)=>a.max-b.max||a.sp-b.sp||a.dp-b.dp);
 const forgieHr=r=>num(S.forgie&&S.forgie[r])||0;
 
+/* One clock read per this many checkpoints. A search probe is a few hundred nanoseconds of typed-
+ * array arithmetic and performance.now() is tens of nanoseconds of it, so sampling the clock on
+ * every probe spends a real share of the budget deciding whether the budget is spent. The stride
+ * bounds the cost of that decision without loosening any guarantee by more than itself: a deadline
+ * — root or local — is observed at most this many probes late, never later, because the deadline
+ * test is skipped rather than weakened. That overshoot is counted in probes, not milliseconds, so
+ * it does not grow on a slow machine; and result finalization reads the clock unconditionally, so
+ * an expiry can be deferred past a few probes but never past the result. */
+const CLOCK_SAMPLE_EVERY=16;
+
 // One solve control owns one absolute deadline. Credits shares the same instance across every
 // candidate, so starting a new candidate can never restart the user's clock. The optional hooks are
 // direct-source test seams: they are never persisted or posted through the Worker protocol.
@@ -148,11 +171,16 @@ function makeSolveControl(timeBudget,options){
   const opts=options||{},clock=typeof opts.now==="function"?opts.now:()=>performance.now();
   const observer=typeof opts.onCheckpoint==="function"?opts.onCheckpoint:null;
   const budget=Math.max(0,Number(timeBudget)||0),workLimit=Number.isFinite(opts.workLimit)?Math.max(0,Math.floor(opts.workLimit)):Infinity;
+  // A test that prices time per clock READ rather than per checkpoint passes clockSampleEvery:1.
+  const sampleEvery=Number.isFinite(opts.clockSampleEvery)?Math.max(1,Math.floor(opts.clockSampleEvery)):CLOCK_SAMPLE_EVERY;
   let lastNow=Number(clock());if(!Number.isFinite(lastNow))lastNow=0;
   const startedAt=lastNow,deadline=startedAt+budget;
-  let work=0,stopped=false,deadlineReached=false,reason=null;
+  let work=0,stopped=false,deadlineReached=false,reason=null,sampleSkips=0;
   const emit=event=>{if(observer)observer(event);};
   const readNow=()=>{let value=Number(clock());if(!Number.isFinite(value))value=lastNow;if(value<lastNow)value=lastNow;lastNow=value;return value;};
+  // True on the first checkpoint and every sampleEvery-th one after it. Shared by both checkpoint
+  // entry points so a solve that mixes them still reads the clock at the same average rate.
+  const dueForSample=()=>{if(sampleSkips>0){sampleSkips--;return false;}sampleSkips=sampleEvery-1;return true;};
   const reserveWork=(label,cost)=>{
     if(stopped)return false;
     const units=Math.max(1,Math.floor(Number(cost)||1));
@@ -163,23 +191,29 @@ function makeSolveControl(timeBudget,options){
     if(now>=deadline){stopped=true;deadlineReached=true;reason="deadline";emit({type:"stopped",label,reason,work,elapsed:now-startedAt});return false;}
     return true;
   };
+  // Work is charged first and on every call, so the work limit stays exact; only the clock is
+  // amortized. emit still fires per checkpoint, carrying the newest reading the control holds.
   const checkpoint=(label,cost)=>{
     if(!reserveWork(label,cost))return false;
-    const now=readNow();
-    if(!stopAtDeadline(label,now))return false;
-    emit({type:"checkpoint",label,work,elapsed:now-startedAt});return true;
+    if(dueForSample()&&!stopAtDeadline(label,readNow()))return false;
+    emit({type:"checkpoint",label,work,elapsed:lastNow-startedAt});return true;
   };
   // Charge global work first, then use one clock sample to arbitrate local and root time limits.
   // When the earlier local cutoff and the root deadline are both crossed by that sample, returning
   // the candidate's last safe incumbent takes temporary precedence; finalization observes the same
   // monotonic time and marks the root expired before any further shared work can begin.
+  // The stride covers the local cutoff too, or every solve carrying an opts.localDeadline — share
+  // calibration, the Credits refinement slices, the static phase slices, the idle-line fill — would
+  // keep paying for a clock read per probe.
   const checkpointWithin=(label,cost,localDeadline,onLocalLimit)=>{
     if(!reserveWork(label,cost))return false;
-    const now=readNow(),local=Number(localDeadline),hasLocal=Number.isFinite(local);
-    if(hasLocal&&local<deadline&&now>=local){if(onLocalLimit)onLocalLimit(label,now);return false;}
-    if(!stopAtDeadline(label,now))return false;
-    if(hasLocal&&now>=local){if(onLocalLimit)onLocalLimit(label,now);return false;}
-    emit({type:"checkpoint",label,work,elapsed:now-startedAt});return true;
+    if(dueForSample()){
+      const now=readNow(),local=Number(localDeadline),hasLocal=Number.isFinite(local);
+      if(hasLocal&&local<deadline&&now>=local){if(onLocalLimit)onLocalLimit(label,now);return false;}
+      if(!stopAtDeadline(label,now))return false;
+      if(hasLocal&&now>=local){if(onLocalLimit)onLocalLimit(label,now);return false;}
+    }
+    emit({type:"checkpoint",label,work,elapsed:lastNow-startedAt});return true;
   };
   const event=(type,data)=>emit(Object.assign({type,work,elapsed:lastNow-startedAt},data||{}));
   const refreshDeadline=()=>{
@@ -246,6 +280,9 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   const resIndex={};resources.forEach((r,i)=>resIndex[r]=i);
   const R=resources.length;
   const tIdx=targets.map(t=>resIndex[t]);
+  // Declared here rather than beside the search state below because the feasibility cache reads
+  // them, and that cache has to exist before the first setCurTol call.
+  const produced=new Float64Array(R), consumed=new Float64Array(R);
   const tol=opts.tolOverride!=null
     ?Math.max(0,Math.min(0.5,Number(opts.tolOverride)||0))
     :boundedPersistedField("margin",S.margin,0,0,20)/100;
@@ -253,10 +290,49 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // (strict tol=0, then the user's margin) so its result is monotone in margin — see the staged
   // search at the bottom of solveCore (issue #60).
   let curTol=tol;
+  // needFrac per resource, materialized instead of recomputed: it is read once per resource inside
+  // three of the hottest loops in the solver (the feasibility test, the DFS leaf test and the DFS
+  // suffix prune), and its only inputs are the resource's mined-ness — fixed for the solve — and
+  // curTol, which changes exactly three times. Mined rows never get the margin: their budget is a
+  // hard burn rate, not a paper shortfall. Written only through setCurTol so the two can never
+  // disagree.
+  const needFrac=new Float64Array(R),minedRow=resources.map(isMinedResource);
+  /* Feasibility, cached per resource. The search asks "is this plan feasible" once per probe and
+   * the answer is a scan over every resource, but a probe changes one line, which changes a handful
+   * of rows. rowBad holds each row's verdict and infeasCount the number set, so the question itself
+   * becomes an integer test and only the rows a move touches are re-decided.
+   *
+   * Deliberately NOT extended to the total deficit. A deficit maintained the same way accumulates
+   * the mined rows' cancellation error — ~1e-3 on a 5.31e12/s budget — into a quantity that repair
+   * compares against a 1e-12 improvement threshold, which would turn rounding into a move the
+   * search believes in. The feasibility verdict is a comparison, not a sum, so it carries none of
+   * that: each row is re-decided from its current values, exactly as the full scan decides it.
+   *
+   * syncRow is idempotent, so a row reached twice in one move costs a compare and changes nothing. */
+  const rowBad=new Uint8Array(R);let infeasCount=0;
+  const rowIsBad=r=>produced[r]<consumed[r]*needFrac[r]-1e-7?1:0;
+  const syncRow=r=>{const bad=rowIsBad(r);if(bad!==rowBad[r]){rowBad[r]=bad;infeasCount+=bad?1:-1;}};
+  const rescanFeasibility=()=>{infeasCount=0;for(let r=0;r<R;r++){const bad=rowIsBad(r);rowBad[r]=bad;if(bad)infeasCount++;}};
+  const setCurTol=value=>{
+    curTol=value;const relaxed=1-curTol;
+    for(let r=0;r<R;r++)needFrac[r]=minedRow[r]?1:relaxed;
+    rescanFeasibility();                 // every row's verdict moves when the tolerance does
+  };
+  setCurTol(tol);
   // Ceiling on the objective from the LP relaxation, in the same per-second units as best.score.
   // Declared here rather than read off `lp` because finishCoreResult runs before `lp` is
   // initialized on the baselineOnly path. Null until lpRelax returns a completed solve.
-  let lpBound=null;
+  //
+  // Two of them, because a margin solve optimizes a different problem and the strict relaxation does
+  // not bound it: a may-work plan need only cover (1-tol) of what it consumes, which is a wider
+  // feasible set and a higher optimum. marginBound comes from the same relaxation rebuilt over
+  // needFrac (see lpRelax) and is the only ceiling a margin result may quote.
+  let lpBound=null,marginBound=null;
+  /* Dual prices for the DFS bound (see buildDualPrices). dualN is 0 whenever the bound is off or has
+   * no prices to work with, which is also the node test's own guard. Declared up here because the
+   * bound-probe seam below runs before the staged search builds them. */
+  const dualEnabled=opts.dfsDualBound!==undefined?!!opts.dfsDualBound:_dfsDualBound;
+  let dualN=0,dualIdx=null,dualProdPrice=null,dualConsPrice=null,dualSuffix=null;
   // Exogenous supply (per second) of each resource, added to the produced side. Craftable
   // materials use Lil' Forgie; mined resources use their own independent income budgets.
   // opts.supplyHr replaces both when the caller owns a narrower budget than the whole factory: the
@@ -298,7 +374,97 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   const maxProd=Array.from({length:R},()=>new Float64Array(N+1));
   for(let r=0;r<R;r++)for(let i=N-1;i>=0;i--){let m=0;lineJobs[i].forEach(j=>{for(const[rr,a]of j.prod)if(rr===r)m=Math.max(m,a*sorted[i].sp*sorted[i].dp);});maxProd[r][i]=maxProd[r][i+1]+m;}
 
-  const produced=new Float64Array(R), consumed=new Float64Array(R);
+  /* Every (line, job) pair's production and consumption, flattened into typed arrays and pre-scaled
+   * by that line's speed and duplication. The coefficients are the same doubles the per-job loops
+   * computed — a*sp*dp and a*sp, in the same association — so nothing downstream shifts by an ulp;
+   * what goes away is the megabyte of array-of-array destructuring the search did per evaluation.
+   * A pair's entries live at [prodOff[slot], prodOff[slot+1]) for slot = jobBase[i]+k.
+   *
+   * A cons entry whose resource is outside the chain is dropped rather than folded into row 0: it
+   * carries an undefined index, so the loops this replaces charged it to a property hanging off the
+   * typed array that no r<R read ever saw. Int32Array would coerce that to 0 and charge the burn to
+   * a real resource. */
+  const jobBase=new Int32Array(N+1);
+  for(let i=0;i<N;i++)jobBase[i+1]=jobBase[i]+lineJobs[i].length;
+  const slots=jobBase[N];
+  const prodOff=new Int32Array(slots+1),consOff=new Int32Array(slots+1);
+  const okIdx=r=>Number.isInteger(r)&&r>=0&&r<R;
+  for(let i=0;i<N;i++)for(let k=0;k<lineJobs[i].length;k++){
+    const job=lineJobs[i][k],slot=jobBase[i]+k;let np=0,nc=0;
+    for(const[r]of job.prod)if(okIdx(r))np++;
+    for(const[r]of job.cons)if(okIdx(r))nc++;
+    prodOff[slot+1]=np;consOff[slot+1]=nc;
+  }
+  for(let s=0;s<slots;s++){prodOff[s+1]+=prodOff[s];consOff[s+1]+=consOff[s];}
+  const prodR=new Int32Array(prodOff[slots]),prodC=new Float64Array(prodOff[slots]);
+  const consR=new Int32Array(consOff[slots]),consC=new Float64Array(consOff[slots]);
+  for(let i=0;i<N;i++){
+    const dp=sorted[i].dp;
+    for(let k=0;k<lineJobs[i].length;k++){
+      const job=lineJobs[i][k],sp=spEff[i][k],slot=jobBase[i]+k;
+      let p=prodOff[slot],c=consOff[slot];
+      for(const[r,a]of job.prod)if(okIdx(r)){prodR[p]=r;prodC[p]=a*sp*dp;p++;}
+      for(const[r,a]of job.cons)if(okIdx(r)){consR[c]=r;consC[c]=a*sp;c++;}
+    }
+  }
+  /* The reverse of prodR: every slot that produces a resource, grouped by resource and in ascending
+   * slot order. repair asks "what could close THIS shortfall" of a handful of short rows rather than
+   * pricing every job on every line, and this is the half of that question it cannot read off the
+   * plan it holds. Built once — the coefficients change, the incidence never does. */
+  const resProdOff=new Int32Array(R+1),resProdSlot=new Int32Array(prodOff[slots]);
+  for(let p=0;p<prodOff[slots];p++)resProdOff[prodR[p]+1]++;
+  for(let r=0;r<R;r++)resProdOff[r+1]+=resProdOff[r];
+  {const cursor=resProdOff.slice(0,R);
+    for(let s=0;s<slots;s++)for(let p=prodOff[s],e=prodOff[s+1];p<e;p++)resProdSlot[cursor[prodR[p]]++]=s;}
+  /* Delta evaluation. Every probe in the local search changes ONE line's job (the target swap
+   * changes two), so re-summing all N lines from baseArr to measure it is the single largest
+   * avoidable cost in the solver: the flat arrays above make one line's contribution addressable,
+   * and these apply it in place.
+   *
+   * A reject must cost nothing at all, so revertMove restores SAVED doubles instead of undoing the
+   * arithmetic. Re-adding what was subtracted does not in general land back on the same double, so
+   * an inverse undo would leave the incumbent every later probe is measured against drifting under
+   * the probes that were rejected — the exact bug that is invisible until an objective moves.
+   * Every touched slot is saved BEFORE anything is written, and restored in reverse, so a resource
+   * a staged pair of moves touches twice still ends on the value it started with.
+   *
+   * INVARIANT: produced/consumed describe `ch` at every point outside a begin/revert bracket. The
+   * accept paths below (climb, repair, target swap, dead-line drop) and the two ILS kicks maintain
+   * it explicitly; before this they left the vectors describing whichever candidate was probed
+   * last and relied on the next full evalChoice to repair them. */
+  let maxProdLen=0,maxConsLen=0;
+  for(let s=0;s<slots;s++){
+    if(prodOff[s+1]-prodOff[s]>maxProdLen)maxProdLen=prodOff[s+1]-prodOff[s];
+    if(consOff[s+1]-consOff[s]>maxConsLen)maxConsLen=consOff[s+1]-consOff[s];
+  }
+  // Two staged moves (the target swap), each replacing one job with another: four job slots.
+  const mvProdR=new Int32Array(4*maxProdLen),mvProdV=new Float64Array(4*maxProdLen),mvProdB=new Uint8Array(4*maxProdLen);
+  const mvConsR=new Int32Array(4*maxConsLen),mvConsV=new Float64Array(4*maxConsLen),mvConsB=new Uint8Array(4*maxConsLen);
+  let mvProdN=0,mvConsN=0,mvCount=0;
+  const beginMove=()=>{mvProdN=0;mvConsN=0;mvCount=infeasCount;};
+  const applyMove=(i,oldK,newK)=>{
+    const oldSlot=jobBase[i]+oldK,newSlot=jobBase[i]+newK;
+    for(let p=prodOff[oldSlot],e=prodOff[oldSlot+1];p<e;p++){const r=prodR[p];mvProdR[mvProdN]=r;mvProdB[mvProdN]=rowBad[r];mvProdV[mvProdN++]=produced[r];}
+    for(let p=prodOff[newSlot],e=prodOff[newSlot+1];p<e;p++){const r=prodR[p];mvProdR[mvProdN]=r;mvProdB[mvProdN]=rowBad[r];mvProdV[mvProdN++]=produced[r];}
+    for(let c=consOff[oldSlot],e=consOff[oldSlot+1];c<e;c++){const r=consR[c];mvConsR[mvConsN]=r;mvConsB[mvConsN]=rowBad[r];mvConsV[mvConsN++]=consumed[r];}
+    for(let c=consOff[newSlot],e=consOff[newSlot+1];c<e;c++){const r=consR[c];mvConsR[mvConsN]=r;mvConsB[mvConsN]=rowBad[r];mvConsV[mvConsN++]=consumed[r];}
+    for(let p=prodOff[oldSlot],e=prodOff[oldSlot+1];p<e;p++)produced[prodR[p]]-=prodC[p];
+    for(let c=consOff[oldSlot],e=consOff[oldSlot+1];c<e;c++)consumed[consR[c]]-=consC[c];
+    for(let p=prodOff[newSlot],e=prodOff[newSlot+1];p<e;p++)produced[prodR[p]]+=prodC[p];
+    for(let c=consOff[newSlot],e=consOff[newSlot+1];c<e;c++)consumed[consR[c]]+=consC[c];
+    // A row's verdict depends on both sides, so every row either side touched is re-decided.
+    for(let p=prodOff[oldSlot],e=prodOff[oldSlot+1];p<e;p++)syncRow(prodR[p]);
+    for(let p=prodOff[newSlot],e=prodOff[newSlot+1];p<e;p++)syncRow(prodR[p]);
+    for(let c=consOff[oldSlot],e=consOff[oldSlot+1];c<e;c++)syncRow(consR[c]);
+    for(let c=consOff[newSlot],e=consOff[newSlot+1];c<e;c++)syncRow(consR[c]);
+  };
+  // The verdicts are restored from the same saved bytes as the values rather than re-decided: the
+  // restored state is the pre-move state exactly, so its cached answer is the pre-move answer.
+  const revertMove=()=>{
+    for(let s=mvProdN-1;s>=0;s--){produced[mvProdR[s]]=mvProdV[s];rowBad[mvProdR[s]]=mvProdB[s];}
+    for(let s=mvConsN-1;s>=0;s--){consumed[mvConsR[s]]=mvConsV[s];rowBad[mvConsR[s]]=mvConsB[s];}
+    infeasCount=mvCount;mvProdN=0;mvConsN=0;
+  };
   const choice=new Array(N).fill(0);
   let best={score:0,choice:new Array(N).fill(0),produced:new Float64Array(R),consumed:new Float64Array(R)};
   const EPS=1e-9;
@@ -319,13 +485,15 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // shortfall until the plan balances. Seeds `best`, so the DFS prunes from the start.
   function evalChoice(ch){
     produced.set(baseArr);consumed.fill(0);
-    for(let i=0;i<N;i++){const job=lineJobs[i][ch[i]],sp=spEff[i][ch[i]],dp=sorted[i].dp;for(const[r,a]of job.prod)produced[r]+=a*sp*dp;for(const[r,a]of job.cons)consumed[r]+=a*sp;}
+    for(let i=0;i<N;i++){const slot=jobBase[i]+ch[i];
+      for(let p=prodOff[slot],e=prodOff[slot+1];p<e;p++)produced[prodR[p]]+=prodC[p];
+      for(let c=consOff[slot],e=consOff[slot+1];c<e;c++)consumed[consR[c]]+=consC[c];}
+    rescanFeasibility();
   }
   const totalDeficit=()=>{let D=0;for(let r=0;r<R;r++){const d=consumed[r]-produced[r];if(d>0)D+=d;}return D;};
   const idleIdx=i=>{const k=lineJobs[i].findIndex(j=>j.kind==="idle");return k<0?0:k;};
   function bestJobFor(i,res){let bj=-1,bg=0;lineJobs[i].forEach((job,k)=>{for(const[r,a]of job.prod)if(r===res){const g=a*sorted[i].sp*sorted[i].dp;if(g>bg){bg=g;bj=k;}}});return bj;}
-  const needFrac=r=>isMinedResource(resources[r])?1:(1-curTol);
-  const feasibleNow=()=>{for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac(r)-1e-7)return false;return true;};
+  const feasibleNow=()=>infeasCount===0;
   // Shared weighted floor: the smallest output-to-weight ratio across the targets.
   const scoreNow=()=>{let sc=Infinity;for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]];sc=Math.min(sc,net/w[k]);}return sc;};
   // Chain members the plan has to make but nothing scores — the feeders behind the single target.
@@ -350,21 +518,42 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     for(let f=0;f<feederIdx.length;f++){const net=produced[feederIdx[f]]-consumed[feederIdx[f]];if(net>0)bonus+=net/feederScale[f];}
     return sc*(1+eps*bonus);
   };
-  // repair input shortfall down to a feasible plan: each step makes the single line-switch
-  // (toward producing ANY short resource) that cuts total shortfall most. Returns feasibility.
-  // Drive total input shortfall to zero. Each step makes the single line-switch (to ANY job
-  // — produce an input, OR drop a craft to a cheaper/lower level) that cuts the shortfall most.
+  /* Drive total input shortfall to zero. Each step makes the single line-switch (to ANY job
+   * — produce an input, OR drop a craft to a cheaper/lower level) that cuts the shortfall most.
+   *
+   * Only the moves that could possibly cut it are priced. The shortfall sums max(0, cons-prod) over
+   * the rows: a row at or above balance contributes nothing and a move can only leave it there or
+   * push it up, and a SHORT row falls only if the incoming job produces it or the outgoing job was
+   * burning it. Every other move leaves every row's term where it was or higher, and the sum is the
+   * same additions of non-negative terms in the same order — addition is monotone in each argument,
+   * so the total is too, and `red` comes out at zero or below. It cannot clear bRed, so skipping it
+   * costs the search nothing: the scan still runs line-ascending, job-ascending and still adopts the
+   * first move holding the largest reduction, which is the same move on the same plan.
+   *
+   * Candidates are marked with a pass stamp rather than cleared between passes; the wrap guard keeps
+   * a long ILS run from stamping past what an Int32Array can hold and matching nothing. */
+  const repairCand=new Int32Array(slots);let repairStamp=0;
   function repair(ch){
     for(let guard=0;guard<6*N+40;guard++){
       if(!keepGoing("repair-pass"))return null;
       evalChoice(ch);const D=totalDeficit();if(D<=1e-7)break;
+      if(repairStamp===0x7fffffff){repairCand.fill(0);repairStamp=0;}
+      const stamp=++repairStamp;
+      for(let r=0;r<R;r++)if(consumed[r]-produced[r]>0)
+        for(let q=resProdOff[r],e=resProdOff[r+1];q<e;q++)repairCand[resProdSlot[q]]=stamp;
       let bI=-1,bJ=-1,bRed=1e-12;
-      for(let i=0;i<N;i++){const old=ch[i],js=lineJobs[i];
+      for(let i=0;i<N;i++){const old=ch[i],js=lineJobs[i],base=jobBase[i],slot=base+old;
+        // A line already burning a short resource can cut that burn by moving to any other job, so
+        // this one is priced whole rather than by what the incoming job makes.
+        let wholeLine=false;
+        for(let c=consOff[slot],e=consOff[slot+1];c<e;c++)if(consumed[consR[c]]-produced[consR[c]]>0){wholeLine=true;break;}
         for(let k=0;k<js.length;k++){if(k===old)continue;
-          if(!keepGoing("repair-job")){ch[i]=old;evalChoice(ch);return null;}
-          ch[i]=k;evalChoice(ch);const red=D-totalDeficit();if(red>bRed){bRed=red;bI=i;bJ=k;}}
-        ch[i]=old;evalChoice(ch);}
-      if(bI<0)break;ch[bI]=bJ;
+          if(!wholeLine&&repairCand[base+k]!==stamp)continue;
+          if(!keepGoing("repair-job"))return null;
+          beginMove();applyMove(i,old,k);const red=D-totalDeficit();revertMove();
+          if(red>bRed){bRed=red;bI=i;bJ=k;}}}
+      if(bI<0)break;
+      const prev=ch[bI];ch[bI]=bJ;beginMove();applyMove(bI,prev,bJ);
     }
     evalChoice(ch);return feasibleNow();
   }
@@ -379,9 +568,13 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       let improved=false;
       for(let i=0;i<N;i++){const old=ch[i];let bk=old,bs=cur;
         const js=lineJobs[i];for(let k=0;k<js.length;k++){if(k===old)continue;
-          if(!keepGoing("climb-job")){ch[i]=old;evalChoice(ch);return null;}
-          ch[i]=k;evalChoice(ch);if(feasibleNow()){const s=value();if(s>bs+EPS){bs=s;bk=k;}}}
-        ch[i]=bk;if(bk!==old){cur=bs;improved=true;}else evalChoice(ch);
+          if(!keepGoing("climb-job"))return null;
+          beginMove();applyMove(i,old,k);
+          if(feasibleNow()){const s=value();if(s>bs+EPS){bs=s;bk=k;}}
+          revertMove();}
+        // The accepted move is re-applied rather than left to the next full evaluation, so `cur`
+        // and the vectors describe the same plan: bs was measured on exactly this state.
+        if(bk!==old){ch[i]=bk;beginMove();applyMove(i,old,bk);cur=bs;improved=true;}
       }
       if(!improved)break;
     }
@@ -421,9 +614,11 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
           const oh=ch[h],oj=ch[j];
           const a=jobLike(h,lineJobs[j][oj]),b=jobLike(j,lineJobs[h][oh]);
           if(a<0||b<0||(a===oh&&b===oj))continue;
-          ch[h]=a;ch[j]=b;evalChoice(ch);
-          if(feasibleNow()&&value()>cur+EPS){cur=value();improved=true;break;}
-          ch[h]=oh;ch[j]=oj;
+          // Two moves staged under one bracket: revert unwinds them in reverse, so a resource both
+          // lines touch lands back on the value it held before either was applied.
+          beginMove();applyMove(h,oh,a);applyMove(j,oj,b);
+          if(feasibleNow()&&value()>cur+EPS){ch[h]=a;ch[j]=b;cur=value();improved=true;break;}
+          revertMove();
         }
       }
       if(!improved)break;
@@ -458,10 +653,11 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       let improved=false;
       for(let i=0;i<N;i++){const old=ch[i],js=lineJobs[i];let bk=old,bD=curD;
         for(let k=0;k<js.length;k++){if(k===old)continue;
-          if(!keepGoing("deficit-job")){ch[i]=old;evalChoice(ch);return null;}
-          ch[i]=k;evalChoice(ch);
-          if(feasibleNow()&&scoreNow()>=targetScore-EPS){const d=totalDeficit();if(d<bD-1e-9){bD=d;bk=k;}}}
-        ch[i]=bk;evalChoice(ch);if(bk!==old){curD=bD;improved=true;}}
+          if(!keepGoing("deficit-job"))return null;
+          beginMove();applyMove(i,old,k);
+          if(feasibleNow()&&scoreNow()>=targetScore-EPS){const d=totalDeficit();if(d<bD-1e-9){bD=d;bk=k;}}
+          revertMove();}
+        if(bk!==old){ch[i]=bk;beginMove();applyMove(i,old,bk);curD=bD;improved=true;}}
       if(!improved)break;
     }
     return ch;
@@ -477,12 +673,15 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // so this has to run on the interrupted path too. finishCoreResult calls it on every exit.
   function dropDeadLines(ch,targetScore){
     let dropped=false;
+    // Called on a copy of the incumbent, not on whatever the search evaluated last, so this one
+    // establishes the invariant the delta probes below rely on.
+    evalChoice(ch);
     for(let i=0;i<N;i++){
       const old=ch[i],idle=idleIdx(i);
       if(old===idle)continue;
-      ch[i]=idle;evalChoice(ch);
-      if(feasibleNow()&&scoreNow()>=targetScore-EPS){dropped=true;continue;}
-      ch[i]=old;evalChoice(ch);
+      beginMove();applyMove(i,old,idle);
+      if(feasibleNow()&&scoreNow()>=targetScore-EPS){ch[i]=idle;dropped=true;continue;}
+      revertMove();
     }
     return dropped;
   }
@@ -501,12 +700,13 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     const deadlineReached=control.deadlineReached();if(deadlineReached)capped=true;
     let usesMargin=false;for(let r=0;r<R;r++)if(best.produced[r]<best.consumed[r]-1e-6)usesMargin=true;
     const forgie={};resources.forEach((r,i)=>forgie[r]=baseArr[i]*3600);
-    // The LP ceiling only bounds a strictly feasible optimum: lpRelax's resource rows use baseArr
-    // with no tolerance applied. This gates on the requested tolerance rather than the pass that
-    // happened to run last, because a budget that expires before the margin pass leaves a strict
-    // incumbent while the optimum the user asked for is still the relaxed one — which sits above
-    // the ceiling and would turn the reported gap into a claim the search cannot make.
-    const bound=(lpBound!=null&&tol===0)?lpBound:null;
+    // Each ceiling bounds its own problem, so which one is reported follows the tolerance the caller
+    // ASKED for rather than the pass that happened to run last: a budget that expires before the
+    // margin pass leaves a strict incumbent while the optimum the user asked for is still the
+    // relaxed one, which sits above the strict ceiling. The margin ceiling covers a strict incumbent
+    // too — every strictly feasible plan is feasible at any margin — so quoting it is honest
+    // whichever pass the clock stopped in. Null until the relaxation for that tolerance completes.
+    const bound=tol===0?lpBound:marginBound;
     return {best,sorted,lineJobs,resources,resIndex,R,N,tIdx,tol,capped,usesMargin,issues,forgie,bound,deadlineReached,
       feasible:best.score>1e-9,interrupted:workInterrupted,localLimitReached,ms:Math.max(0,control.elapsed()-(solveStarted-control.startedAt))};
   }
@@ -526,13 +726,48 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     return ch;
   }
 
+  /* Direct-source test seam, in the same family as opts.now / opts.onCheckpoint: never persisted,
+   * never posted through the Worker protocol, never set by the app. It hands the delta-evaluation
+   * machinery to a checker before the search starts, so test/delta-eval.cjs can assert apply and
+   * revert against a full re-evaluation on the solver's own arrays for a real factory — the
+   * fixtures where one resource carries 5.31e12/s and another 1e99/min, and where the mismatch
+   * this guards against would be a rounding artefact rather than an obvious wrong answer. */
+  if(typeof opts.onDeltaProbe==="function"){
+    opts.onDeltaProbe({N,R,resources,lineJobs,targets,produced,consumed,idleIdx,
+      evalChoice,beginMove,applyMove,revertMove,feasibleNow,totalDeficit,scoreNow,setCurTol,
+      // The flat coefficient tables, so the checker can size its tolerance by the magnitude of the
+      // terms a row actually sums rather than by the magnitude of what they sum TO. A delta on a row
+      // whose terms span twelve orders is accurate to the largest term, not to the result.
+      flat:{jobBase,prodOff,prodR,prodC,consOff,consR,consC,baseArr},
+      maintainedInfeasibleCount:()=>infeasCount,
+      infeasibleCountNow:()=>{let n=0;for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac[r]-1e-7)n++;return n;}});
+  }
+
+  /* Same family of seam, for the DFS's two upper bounds. A bound is only ever read at a node the
+   * search is standing on, so the only way to check the claim it makes is to put the search on a
+   * chosen prefix and ask. prefixBound(ch,i) rebuilds produced/consumed from the first i lines of ch
+   * and returns both ceilings for that node; test/solver-bounds.cjs then completes ch and asserts
+   * neither ceiling sits below what the completed plan achieves. */
+  if(typeof opts.onBoundProbe==="function"){
+    buildDualPrices();
+    const prefixBound=(ch,i)=>{
+      produced.set(baseArr);consumed.fill(0);
+      for(let k=0;k<i;k++){const slot=jobBase[k]+ch[k];
+        for(let p=prodOff[slot],e=prodOff[slot+1];p<e;p++)produced[prodR[p]]+=prodC[p];
+        for(let c=consOff[slot],e=consOff[slot+1];c<e;c++)consumed[consR[c]]+=consC[c];}
+      return {suffix:suffixUB(i),dual:dualN>0?dualUB(i):null};
+    };
+    opts.onBoundProbe({N,R,resources,lineJobs,targets,evalChoice,feasibleNow,scoreNow,setCurTol,
+      prefixBound,dualReady:()=>dualN>0,rebuildPrices:buildDualPrices});
+  }
+
   // The Credits comparison first gives every priced product the same finite constructive baseline:
   // a zero-output idle lower bound plus one target-dedicated seed (and one bounded Gel loadout seed
   // for Gel), under a deterministic per-product work cap. It deliberately skips LP, randomized
   // seeds, ILS and DFS. Reaching the local cap keeps the valid idle/best-completed lower bound;
   // only the shared absolute deadline discards the partial candidate and leaves later rows unevaluated.
   if(opts.baselineOnly){
-    curTol=tol;capped=true;
+    setCurTol(tol);capped=true;
     if(!keepGoing("baseline-product-start"))return finishCoreResult();
     const idleChoice=new Array(N);for(let i=0;i<N;i++)idleChoice[i]=idleIdx(i);
     evalChoice(idleChoice);const idleScore=feasibleNow()?scoreNow():0;
@@ -558,24 +793,144 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     return finishCoreResult();
   }
 
+  // max-min upper bound: best achievable min-over-targets if remaining lines max-produce each target
+  // at zero input cost. Exact, and free — SP is a suffix sum built once — but it charges nothing for
+  // the feeders those lines would have to burn, so it stays far above anything reachable.
+  function suffixUB(i){
+    let ub=Infinity;
+    for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]]+SP[k][i];ub=Math.min(ub,net/w[k]);}
+    return ub;
+  }
+  /* Lagrangian bound on the same node, priced so that a line making a target pays for what it eats.
+   *
+   * Weak duality is the whole argument. Take any prices y>=0 on the relaxation's rows whose target
+   * rows' weights sum to at least 1, charge each line the best score any of its jobs earns at those
+   * prices (never below zero — a line may idle), and the total over the remaining lines plus the
+   * priced value of what the prefix has already banked bounds the LP over every completion of that
+   * prefix, hence every integer completion. The prices only have to be FEASIBLE, so the search for
+   * them below cannot make the bound wrong, only loose — which is why it is a cheap coordinate
+   * search rather than a second simplex.
+   *
+   * Two price vectors per resource because a target's row does double duty (see lpRelax): lam prices
+   * the relaxed balance, and mu the strict objective link that carries z. They collapse into one
+   * multiplier on production and one on consumption, so a node costs one dot product over the
+   * resources a price actually touches.
+   *
+   * dualSuffix carries the priced size of the leaf test's own 1e-7 slack. The search will return a
+   * plan whose rows are short by up to that much, which the LP would call infeasible; without the
+   * allowance the bound would be right about the relaxation and wrong about the search. */
+  function buildDualPrices(){
+    dualN=0;dualIdx=null;dualProdPrice=null;dualConsPrice=null;dualSuffix=null;
+    const T=targets.length;
+    if(N===0||T===0||slots===0)return;
+    const p=new Float64Array(slots),g=new Float64Array(slots);
+    const prodPrice=new Float64Array(R),consPrice=new Float64Array(R);
+    const lam=new Float64Array(R),mu=new Float64Array(T);
+    const setPrices=()=>{
+      for(let r=0;r<R;r++){prodPrice[r]=lam[r];consPrice[r]=lam[r]*needFrac[r];}
+      for(let k=0;k<T;k++){prodPrice[tIdx[k]]+=mu[k];consPrice[tIdx[k]]+=mu[k];}
+    };
+    const fillP=()=>{
+      for(let s=0;s<slots;s++){let v=0;
+        for(let q=prodOff[s],e=prodOff[s+1];q<e;q++)v+=prodPrice[prodR[q]]*prodC[q];
+        for(let q=consOff[s],e=consOff[s+1];q<e;q++)v-=consPrice[consR[q]]*consC[q];
+        p[s]=v;}
+    };
+    // The dual objective, offset by t along the coordinate whose per-slot relaxed net is g. A line's
+    // charge is the best its jobs earn, floored at zero because sum_j x_ij <= 1 lets a line sit out.
+    const objAt=t=>{
+      let sum=0;
+      for(let i=0;i<N;i++){let m=0;
+        for(let s=jobBase[i],e=jobBase[i+1];s<e;s++){const v=p[s]+t*g[s];if(v>m)m=v;}
+        sum+=m;}
+      return sum;
+    };
+    let baseTerm=0;
+    const evalD=()=>{setPrices();fillP();baseTerm=0;
+      for(let r=0;r<R;r++)baseTerm+=prodPrice[r]*baseArr[r];
+      return objAt(0)+baseTerm;};
+    /* Start from the trivial feasible prices — all the weight on one target, nothing on any balance
+     * row — which is what the standing bound already is, one target at a time. Descending from the
+     * best of them can only improve on it. */
+    let bestK=0,bestD=Infinity;
+    for(let k=0;k<T;k++){
+      if(!keepGoing("dual-price-start"))return;
+      mu.fill(0);mu[k]=1/w[k];lam.fill(0);
+      const d=evalD();
+      if(d<bestD){bestD=d;bestK=k;}
+    }
+    mu.fill(0);mu[bestK]=1/w[bestK];lam.fill(0);
+    let cur=evalD();
+    for(let pass=0;pass<2;pass++){
+      let moved=false;
+      for(let r=0;r<R;r++){
+        if(!keepGoing("dual-price-coordinate"))return;
+        let maxG=0,maxP=0;
+        const nf=needFrac[r];
+        for(let s=0;s<slots;s++){
+          let v=0;
+          for(let q=prodOff[s],e=prodOff[s+1];q<e;q++)if(prodR[q]===r)v+=prodC[q];
+          for(let q=consOff[s],e=consOff[s+1];q<e;q++)if(consR[q]===r)v-=nf*consC[q];
+          g[s]=v;
+          const a=v<0?-v:v;if(a>maxG)maxG=a;
+          const b=p[s]<0?-p[s]:p[s];if(b>maxP)maxP=b;
+        }
+        if(!(maxG>0))continue;
+        // A price on this row is measured in score per unit of it, so the size of the p values it
+        // has to move against, divided by the size of the row's own coefficients, is the scale a
+        // step is worth trying at. Geometric from there, both directions, never below zero.
+        const scale=(maxP>0?maxP:1)/maxG;
+        let step=0,low=cur;
+        for(let k=0;k<6;k++){
+          const t=scale/(1<<k);
+          for(let sign=0;sign<2;sign++){
+            const move=sign?-t:t;
+            if(lam[r]+move<0)continue;
+            const v=objAt(move)+baseTerm+baseArr[r]*move;
+            if(v<low-1e-12*Math.max(1,Math.abs(low))){low=v;step=move;}
+          }
+        }
+        if(step!==0){lam[r]+=step;cur=evalD();moved=true;}
+      }
+      if(!moved)break;
+    }
+    setPrices();fillP();
+    const suffix=new Float64Array(N+1);
+    // 1e-7 per row is what the leaf test forgives; priced, that is what the bound has to give back.
+    let slack=0;for(let r=0;r<R;r++)slack+=Math.abs(lam[r]);
+    suffix[N]=1e-7*slack;
+    for(let i=N-1;i>=0;i--){let m=0;
+      for(let s=jobBase[i],e=jobBase[i+1];s<e;s++)if(p[s]>m)m=p[s];
+      suffix[i]=suffix[i+1]+m;}
+    const idx=[];for(let r=0;r<R;r++)if(prodPrice[r]!==0||consPrice[r]!==0)idx.push(r);
+    if(!idx.length)return;
+    dualIdx=Int32Array.from(idx);dualN=idx.length;dualSuffix=suffix;
+    dualProdPrice=new Float64Array(dualN);dualConsPrice=new Float64Array(dualN);
+    for(let q=0;q<dualN;q++){dualProdPrice[q]=prodPrice[idx[q]];dualConsPrice[q]=consPrice[idx[q]];}
+  }
+  function dualUB(i){
+    let db=dualSuffix[i];
+    for(let q=0;q<dualN;q++){const r=dualIdx[q];db+=dualProdPrice[q]*produced[r]-dualConsPrice[q]*consumed[r];}
+    return db;
+  }
   function dfs(i,prevIdx){
     nodes++;
     if(!keepGoing("dfs-node")){capped=true;return;}
-    const _n=control.readNow();if(_n-tLastGain>convergeWindow)capped=true;
+    // keepGoing above already arbitrated the deadline on this node; the convergence window only
+    // needs the reading that produced, not a second syscall per DFS node.
+    const _n=control.currentTime();if(_n-tLastGain>convergeWindow)capped=true;
     if(capped)return;
     if(i===N){
-      for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac(r)-1e-7)return;
+      for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac[r]-1e-7)return;
       let sc=Infinity;
       for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]];sc=Math.min(sc,net/w[k]);}
       if(sc>best.score+EPS){best={score:sc,choice:choice.slice(),produced:produced.slice(),consumed:consumed.slice()};tLastGain=control.readNow();}
       return;
     }
     // feasibility prune: any resource whose current shortfall can't be covered by remaining lines kills this branch
-    for(let r=0;r<R;r++)if(produced[r]+maxProd[r][i]<consumed[r]*needFrac(r)-1e-7)return;
-    // max-min upper bound: best achievable min-over-targets if remaining lines max-produce each target
-    let ub=Infinity;
-    for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]]+SP[k][i];ub=Math.min(ub,net/w[k]);}
-    if(ub<=best.score+EPS)return;
+    for(let r=0;r<R;r++)if(produced[r]+maxProd[r][i]<consumed[r]*needFrac[r]-1e-7)return;
+    if(suffixUB(i)<=best.score+EPS)return;
+    if(dualN>0&&dualUB(i)<=best.score+EPS)return;
     const js=lineJobs[i];const dp=sorted[i].dp,spE=spEff[i];
     const start=sameAsPrev[i]?prevIdx:0;
     for(let j=start;j<js.length;j++){
@@ -589,12 +944,28 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       for(const[r,a]of job.cons)consumed[r]-=a*sp;
     }
   }
-  // LP relaxation: let each line split its time fractionally across its jobs and maximize the
-  // min target ratio z. It yields (a) an upper bound on the integer optimum and (b) a rounded
-  // incumbent for the discrete search to refine. This is what lets the search FIND feasible plans
-  // when Gel (a vespium-bounded intermediate) is in the chain — the pure combinatorial DFS can
-  // miss them at scale, which the old line-reservation sweep used to paper over by decomposing.
-  function lpRelax(){
+  /* LP relaxation: let each line split its time fractionally across its jobs and maximize the
+   * min target ratio z. It yields (a) an upper bound on the integer optimum and (b) a rounded
+   * incumbent for the discrete search to refine. This is what lets the search FIND feasible plans
+   * when Gel (a vespium-bounded intermediate) is in the chain — the pure combinatorial DFS can
+   * miss them at scale, which the old line-reservation sweep used to paper over by decomposing.
+   *
+   * `need` is the per-resource fraction of its consumption a plan actually has to cover — the
+   * solver's own needFrac. Passing it scales each row's consumption exactly as the feasibility test
+   * scales it, so the relaxation becomes a relaxation of the MARGIN problem rather than of the
+   * strict one, and a may-work optimum gets a ceiling for the first time. Every integer plan the
+   * margin search may return satisfies these rows, so its z bounds that search.
+   *
+   * Two details the scaling has to respect. Mined rows carry 1 in needFrac and are therefore
+   * untouched: a mined budget is a hard burn rate, not a paper shortfall. And a target's row does
+   * double duty — it is that resource's balance AND the link that holds z under the plan's net
+   * output — so discounting it would let z rise on consumption the plan never has to make good.
+   * Each target therefore gets a second, strict row carrying the z coefficient while its relaxed row
+   * keeps only the feasibility half.
+   *
+   * Called with no argument every coefficient is the double it always was (`a*sp*1` is `a*sp`, and
+   * no strict row is emitted), so the strict relaxation is unchanged. */
+  function lpRelax(need){
     const offs=[];let nv=0;
     for(let i=0;i<N;i++){if(!keepGoing("lp-offset"))return {interrupted:true};offs.push(nv);nv+=lineJobs[i].length;}
     const zc=nv,n=nv+1,A=[],b=[];
@@ -602,14 +973,17 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     const tw={};targets.forEach((t,k)=>tw[tIdx[k]]=w[k]);
     for(let r=0;r<R;r++){
       if(!keepGoing("lp-resource-row"))return {interrupted:true};
-      const row=new Float64Array(n);
+      const nf=need?need[r]:1,tgt=tw[r];
+      const row=new Float64Array(n),strict=(nf!==1&&tgt!==undefined)?new Float64Array(n):null;
       for(let i=0;i<N;i++)for(let j=0;j<lineJobs[i].length;j++){
         if(!keepGoing("lp-job-coefficient"))return {interrupted:true};
-        const job=lineJobs[i][j],sp=spEff[i][j],dp=sorted[i].dp;let net=0;
-        for(const[rr,a]of job.prod)if(rr===r)net+=a*sp*dp;
-        for(const[rr,a]of job.cons)if(rr===r)net-=a*sp;
-        if(net)row[offs[i]+j]=-net;}
-      if(tw[r]!==undefined)row[zc]=tw[r];
+        const job=lineJobs[i][j],sp=spEff[i][j],dp=sorted[i].dp;let net=0,sn=0;
+        for(const[rr,a]of job.prod)if(rr===r){net+=a*sp*dp;if(strict)sn+=a*sp*dp;}
+        for(const[rr,a]of job.cons)if(rr===r){net-=a*sp*nf;if(strict)sn-=a*sp;}
+        if(net)row[offs[i]+j]=-net;
+        if(strict&&sn)strict[offs[i]+j]=-sn;}
+      if(strict){strict[zc]=tgt;A.push(strict);b.push(baseArr[r]);}
+      else if(tgt!==undefined)row[zc]=tgt;
       A.push(row);b.push(baseArr[r]);
     }
     const c=new Float64Array(n);c[zc]=1;
@@ -628,6 +1002,19 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // An incomplete simplex leaves z short of a proven ceiling, so only a completed solve is kept.
   if(lp&&lp.complete&&Number.isFinite(lp.z))lpBound=lp.z;
   if(interrupted){capped=true;return finishCoreResult();}
+  /* The margin problem's ceiling, from the same relaxation over this solve's needFrac — which still
+   * holds the requested tolerance here, since the staged search below has not moved it yet.
+   *
+   * Solved at the root rather than lazily inside the margin stage because of WHEN a ceiling is worth
+   * quoting. The interface raises the gap notice only on a solve the clock cut short, and a solve
+   * the clock cut short is exactly the one that never reaches its margin stage: on the reference
+   * factory the strict pass consumes the whole budget and the relaxed pass never starts. A ceiling
+   * computed inside that pass would therefore exist only on the runs that had no use for it. */
+  if(tol>0&&N>0){
+    const mlp=lpRelax(needFrac);
+    if(mlp&&mlp.complete&&Number.isFinite(mlp.z))marginBound=mlp.z;
+    if(interrupted){capped=true;return finishCoreResult();}
+  }
   // Two-pass margin search for monotonicity (issue #60). A plan feasible with NO margin is feasible
   // at ANY margin with the same objective, so we solve strict (tol=0) first, then seed the relaxed
   // pass with that strict optimum — the margin result can only match or beat the no-margin result,
@@ -638,9 +1025,22 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   let carry=choiceFromPlan(opts.initialPlan),finalExhaustive=false;
   for(let si=0;si<stages.length;si++){
   if(!keepGoing("margin-stage"))break;
-  curTol=stages[si];capped=false;tLastGain=control.readNow();
+  setCurTol(stages[si]);capped=false;tLastGain=control.readNow();
   let inc=null;
-  const trySeed=ch=>{if(!ch||interrupted||!keepGoing("seed-start"))return false;const c=ch.slice();const sc=localOpt(c);
+  /* The generators below independently clamp what they cannot express, and they collide: a line that
+   * can run neither the requested feeder (roleJob finds no such craft) nor a compressed target
+   * (tgtSeed's lvl<=8 rule) falls back to the same job whichever role the enumeration meant it to
+   * take, so whole runs of role assignments — and LP roundings that differ only inside a line's
+   * fractional split — arrive as the identical choice vector. localOpt is deterministic in that
+   * vector, so a repeat can only re-derive the score it already produced; it cannot move `inc`,
+   * which improves on a strict >. Seen vectors are therefore dropped before they are charged.
+   *
+   * Scoped to the margin stage, not the solve: setCurTol changes which plans are feasible, so the
+   * same vector genuinely has to be re-optimised once per stage. */
+  const seenSeeds=new Set();
+  const trySeed=ch=>{if(!ch||interrupted)return false;
+    const key=ch.join(",");if(seenSeeds.has(key))return true;seenSeeds.add(key);
+    if(!keepGoing("seed-start"))return false;const c=ch.slice();const sc=localOpt(c);
     if(sc!=null&&!interrupted&&(!inc||sc>inc.sc)){inc={sc,ch:c.slice()};tLastGain=control.readNow();}return !interrupted;};
   if(carry)trySeed(carry);   // strict optimum seeds the relaxed pass -> never drops below no-margin
   // The seed set is fixed (budget-independent) on purpose: the ilsT/DFS caps are measured from the
@@ -713,20 +1113,180 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     // is budget-independent, which keeps the result monotonic in budget. The single-target case
     // (each credits item) converges in a handful of iterations, so it gets a much smaller limit.
     const stagLimit=targets.length>1?8000:1200;let stag=0;
+    /* Destroy-and-repair, an alternative to the random kick below — BUILT, MEASURED AND LEFT OFF.
+     * opts.lnsCadence is a direct-source test seam in the same family as opts.onDeltaProbe: never
+     * persisted, never posted through the Worker protocol, never set by the app. At 0 (production)
+     * nothing below runs, no random number is drawn and no work is charged, so the search is the one
+     * that was there before.
+     *
+     * What it does. The kick is blind: it rewrites k random lines and hands the wreck to localOpt,
+     * which walks it back one strictly-improving line at a time. That composition reaches only the
+     * plans a chain of single-line improvements reaches, and the ones it cannot reach are exactly the
+     * coupled ones — a feeder onto a spare line pays nothing until the target moves onto the line the
+     * feeder freed, and moving the target first is a loss, so neither half is ever taken. This
+     * instead FREEZES all but k lines and searches the freed ones exactly: every joint assignment of
+     * those k lines is enumerated against the frozen lines' production and burn, seeded with the
+     * incumbent's own score so the enumeration is an improvement search and a subset that cannot beat
+     * the plan it came from is refuted at its root. A two-line exchange that is uphill in both halves
+     * is one leaf of that enumeration rather than a sequence no improving move takes.
+     *
+     * Why it is off. Measured over the seven checkpointed bench fixtures at a 20 s budget, k=2, with
+     * a ceiling the repairs effectively never reached: ~21,600 repairs produced ONE strictly
+     * improving joint assignment (project-seq-7line), and it did not move the reported objective.
+     * Seven lines give 21 pairs and the leanest fixture still draws ~85 repairs per pair, so that is
+     * not a sampling gap — the plan the ILS converges to is 2-line optimal, and items-7line's 20% gap
+     * to the LP ceiling is not reachable by moving two lines at once. Larger k does not rescue it:
+     * one complete 3-line enumeration costs ~248,000 probes, 2.5% of the entire 20 s search, and 29
+     * of them refuted their subset as well; a 4-line enumeration did not finish inside 5,000,000
+     * probes, i.e. one repair costs more than the whole budget. Meanwhile the operator is not free —
+     * at one repair every second iteration it takes 50-75% of the search budget, and on project-7line
+     * that displacement alone costs 23% of the objective (0.0334 -> 0.0257, its 4000 ms plateau).
+     *
+     * The move it was built for is not in the corpus either: the feeder second pass below, which
+     * exists for exactly this coupled move, is reached 5 times across the whole corpus and improves
+     * the incumbent zero of those 5 times. Re-opening this needs a saved factory that exhibits the
+     * issue #134 shape, not a bigger k. */
+    const lnsCadence=Math.max(0,Math.floor(Number(opts.lnsCadence)||0));
+    const LNS_MAX_FREE=4,LNS_WORK_CAP=4000;
+    // Each line's largest single-job output of every resource — the enumeration's suffix bound. Taken
+    // off the same flat coefficients the probes sum, so the bound is on the same doubles the leaf test
+    // compares, and tighter than the DFS's own maxProd, which scales by the uncapped line speed.
+    const lnsLineMax=new Float64Array(lnsCadence>0?N*R:0);
+    // Which lines are worth freeing. The exchange that pays is between a line the objective reads
+    // directly and a line the relaxation wanted to split, so those carry the weight; every other line
+    // stays eligible at 1, because the spare line a feeder has to land on is usually neither.
+    const lnsSplit=new Uint8Array(lnsCadence>0?N:0);
+    if(lnsCadence>0){
+      for(let i=0;i<N;i++)for(let s=jobBase[i];s<jobBase[i+1];s++)
+        for(let p=prodOff[s],e=prodOff[s+1];p<e;p++){const at=i*R+prodR[p];if(prodC[p]>lnsLineMax[at])lnsLineMax[at]=prodC[p];}
+      if(lp&&lp.frac)for(let i=0;i<N;i++){let n=0;const fr=lp.frac[i]||[];for(let j=0;j<fr.length;j++)if(fr[j]>1e-6)n++;if(n>1)lnsSplit[i]=1;}
+    }
+    const lnsFree=new Int32Array(LNS_MAX_FREE),lnsCur=new Int32Array(LNS_MAX_FREE),lnsPick=new Int32Array(LNS_MAX_FREE);
+    const lnsSuf=new Float64Array(lnsCadence>0?(LNS_MAX_FREE+1)*R:0),lnsWeight=new Float64Array(lnsCadence>0?N:0);
+    /* Backtracking restores SAVED values, never the arithmetic that produced them: a leaf is compared
+     * at 1e-9 against a state reached four moves down, and re-adding what was subtracted does not in
+     * general land back on the same double — the state each later branch starts from would drift under
+     * the branches that failed. The whole row set is small enough (R is 9 on the reference chain) that
+     * saving it wholesale per depth beats tracking which rows a branch touched, and it carries the
+     * cached feasibility verdicts back with it for free. */
+    const lnsSaveP=new Float64Array(lnsCadence>0?LNS_MAX_FREE*R:0),lnsSaveC=new Float64Array(lnsCadence>0?LNS_MAX_FREE*R:0);
+    const lnsSaveB=new Uint8Array(lnsCadence>0?LNS_MAX_FREE*R:0),lnsSaveN=new Int32Array(LNS_MAX_FREE);
+    let lnsN=0,lnsBestSc=0,lnsFound=false,lnsWorkAt=0;
+    // Enumerate the freed lines against the frozen state. Returns false when the repair is out of work
+    // or the whole solve is interrupted — both unwind the same way, and both keep whatever the
+    // enumeration had already proved better than the incumbent.
+    function lnsDfs(p){
+      if(control.work()-lnsWorkAt>=LNS_WORK_CAP)return false;
+      if(!keepGoing("lns-node"))return false;
+      if(p===lnsN){
+        if(infeasCount!==0)return true;
+        const sc=scoreNow();
+        if(sc>lnsBestSc+EPS){lnsBestSc=sc;lnsFound=true;for(let q=0;q<lnsN;q++)lnsPick[q]=lnsCur[q];}
+        return true;
+      }
+      const off=p*R;
+      for(let r=0;r<R;r++)if(produced[r]+lnsSuf[off+r]<consumed[r]*needFrac[r]-1e-7)return true;
+      let ub=Infinity;
+      for(let k=0;k<targets.length;k++){const t=tIdx[k],v=(produced[t]-consumed[t]+lnsSuf[off+t])/w[k];if(v<ub)ub=v;}
+      if(ub<=lnsBestSc+EPS)return true;
+      const i=lnsFree[p],js=lineJobs[i],idle=idleIdx(i);
+      for(let r=0;r<R;r++){lnsSaveP[off+r]=produced[r];lnsSaveC[off+r]=consumed[r];lnsSaveB[off+r]=rowBad[r];}
+      lnsSaveN[p]=infeasCount;
+      let live=true;
+      for(let j=0;j<js.length&&live;j++){
+        // A freed line contributes nothing at entry, so moving it off Idle IS its assignment. The
+        // beginMove is only there to keep the shared move buffer from filling down the recursion:
+        // the unwind above is this frame's own snapshot, so revertMove is never the right undo here.
+        beginMove();applyMove(i,idle,j);lnsCur[p]=j;
+        live=lnsDfs(p+1);
+        for(let r=0;r<R;r++){produced[r]=lnsSaveP[off+r];consumed[r]=lnsSaveC[off+r];rowBad[r]=lnsSaveB[off+r];}
+        infeasCount=lnsSaveN[p];
+      }
+      return live;
+    }
+    // Sample 2..4 distinct lines under those weights, ascending so the enumeration walks them in the
+    // order the plan is written in.
+    const lnsSelect=()=>{
+      const want=Math.min(N,2+((rnd()*3)|0));let pool=0;
+      for(let i=0;i<N;i++){
+        const job=lineJobs[i][inc.ch[i]];
+        lnsWeight[i]=1+(lnsSplit[i]?2:0)+(job&&job.kind!=="idle"&&targets.indexOf(job.res)>=0?3:0);
+        pool+=lnsWeight[i];
+      }
+      lnsN=0;
+      for(let q=0;q<want;q++){
+        let x=rnd()*pool,pick=-1;
+        for(let i=0;i<N;i++){if(!(lnsWeight[i]>0))continue;x-=lnsWeight[i];if(x<=0){pick=i;break;}}
+        if(pick<0)for(let i=N-1;i>=0;i--)if(lnsWeight[i]>0){pick=i;break;}
+        if(pick<0)break;
+        pool-=lnsWeight[pick];lnsWeight[pick]=0;
+        let at=lnsN++;while(at>0&&lnsFree[at-1]>pick){lnsFree[at]=lnsFree[at-1];at--;}
+        lnsFree[at]=pick;
+      }
+      if(lnsN<2)return false;
+      for(let r=0;r<R;r++)lnsSuf[lnsN*R+r]=0;
+      for(let p=lnsN-1;p>=0;p--){const at=p*R,next=at+R,line=lnsFree[p]*R;
+        for(let r=0;r<R;r++)lnsSuf[at+r]=lnsSuf[next+r]+lnsLineMax[line+r];}
+      return true;
+    };
+    // One destroy-and-repair on the incumbent, writing the freed lines' best joint assignment into
+    // `ch`. False when nothing beat the incumbent, including when the bound refuted the subset.
+    const lnsRepair=ch=>{
+      if(!lnsSelect())return false;
+      for(let q=0;q<lnsN;q++)ch[lnsFree[q]]=idleIdx(lnsFree[q]);
+      evalChoice(ch);                     // the frozen lines' production and burn, and nothing else
+      lnsBestSc=inc.sc;lnsFound=false;lnsWorkAt=control.work();
+      lnsDfs(0);
+      if(!lnsFound)return false;
+      for(let q=0;q<lnsN;q++)ch[lnsFree[q]]=lnsPick[q];
+      return true;
+    };
     for(let it=0;it<2000000&&!interrupted;it++){
       if(stag>stagLimit||!keepGoing("ils-iteration"))break;
-      const ch=inc.ch.slice();const k=1+((rnd()*2)|0);
-      for(let m=0;m<=k;m++){if(!keepGoing("ils-perturb"))break;const li=(rnd()*N)|0,js=lineJobs[li];ch[li]=(rnd()*js.length)|0;}
+      const ch=inc.ch.slice();
+      let cand=null;
+      // Both moves hand a candidate to localOpt and both are accepted only on strict improvement, so
+      // the stagnation counter counts them alike and the repair's ceiling is a work count rather than
+      // a clock — the iteration the search stops at stays the same at every budget.
+      if(lnsCadence>0&&it%lnsCadence===lnsCadence-1){
+        if(!lnsRepair(ch)){if(!interrupted)stag++;continue;}
+        // The enumeration's leaf was feasible and strictly better, so keep it as a candidate in its
+        // own right: localOpt below leads with repair(), which drives total input shortfall to zero
+        // and will trade objective away to do it.
+        evalChoice(ch);
+        if(feasibleNow()){const raw=scoreNow();if(raw>inc.sc+EPS)cand={sc:raw,ch:ch.slice()};}
+      }else{
+        const k=1+((rnd()*2)|0);
+        for(let m=0;m<=k;m++){if(!keepGoing("ils-perturb"))break;const li=(rnd()*N)|0,js=lineJobs[li];ch[li]=(rnd()*js.length)|0;}
+        // The kick rewrites `ch` wholesale; re-establish the invariant rather than leave the vectors
+        // describing the incumbent this kick moved away from.
+        evalChoice(ch);
+      }
       if(interrupted)break;
-      const sc=localOpt(ch);if(sc!=null&&!interrupted&&sc>inc.sc+EPS){inc={sc,ch:ch.slice()};stag=0;tLastGain=control.readNow();}else if(!interrupted)stag++;
+      const sc=localOpt(ch);
+      if(sc!=null&&!interrupted&&(!cand||sc>cand.sc))cand={sc,ch:ch.slice()};
+      if(cand&&!interrupted&&cand.sc>inc.sc+EPS){inc=cand;stag=0;tLastGain=control.readNow();}
+      else if(!interrupted)stag++;
     }
     evalChoice(inc.ch);best={score:scoreNow(),choice:inc.ch.slice(),produced:produced.slice(),consumed:consumed.slice()};
   }
   if(interrupted){capped=true;break;}
-  produced.set(baseArr);consumed.fill(0);
-  // LP z bounds the integer optimum; if the incumbent already reaches it, the search is done.
-  let stageExhaustive=!!(lp&&lp.complete&&curTol===0&&best.score>=lp.z-1e-6*Math.max(1,lp.z));
-  if(!stageExhaustive){dfs(0,0);stageExhaustive=!capped&&!interrupted;}
+  // The DFS drives produced/consumed through its own incremental loops and does not touch the
+  // feasibility cache — it tests the rows inline. Re-derive the cache from the empty plan it starts
+  // and ends on, so the next caller of feasibleNow is not reading a verdict about another plan.
+  produced.set(baseArr);consumed.fill(0);rescanFeasibility();
+  // LP z bounds this stage's integer optimum; if the incumbent already reaches it, the search is
+  // done and neither the DFS nor the second pass can add anything.
+  const ceiling=curTol===0?lpBound:marginBound;
+  let stageExhaustive=ceiling!=null&&best.score>=ceiling-1e-6*Math.max(1,ceiling);
+  if(!stageExhaustive){
+    // Priced per stage, because the prices are built over needFrac and the stages do not share it,
+    // and only when a DFS is actually going to run. Cleared otherwise so the node test cannot read
+    // prices belonging to another tolerance.
+    dualN=0;
+    if(dualEnabled)buildDualPrices();
+    dfs(0,0);stageExhaustive=!capped&&!interrupted;
+  }
   // Second pass, on whatever budget the first one left. Everything above is untouched and runs to
   // exactly the same plan it always did; this only ever replaces that plan with one that scores
   // strictly higher on the same objective, so no factory can come out of a release reporting less
@@ -762,6 +1322,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       if(stag>SWAP_STAG_LIMIT||!keepGoing("swap-ils"))break;
       const ch=cur.ch.slice(),k=1+((rnd()*2)|0);
       for(let m=0;m<=k;m++){if(!keepGoing("swap-ils-perturb"))break;const li=(rnd()*N)|0,js=lineJobs[li];ch[li]=(rnd()*js.length)|0;}
+      evalChoice(ch);
       if(interrupted)break;
       const sc=deepOpt(ch);
       if(sc!=null&&!interrupted&&sc>cur.sc+EPS){cur={sc,ch:ch.slice()};stag=0;}else if(!interrupted)stag++;
@@ -854,15 +1415,47 @@ function solveRaw(Rw,control){
  *
  * Cached on the factory inputs alone. Shares are deliberately not part of the key: dragging a share
  * slider re-solves the plan but reuses the ceilings, which is the hot path this cache exists for.
- * The cache lives in the worker, so it survives ordinary back-to-back solves and is simply rebuilt
- * after a superseded solve terminates the worker. */
+ *
+ * The cache is Worker-resident and round-trips through the main thread exactly as _lineStability
+ * does, through the accessor pair below rather than as a bare global: a pool reuses and rebuilds
+ * Workers, and a ceiling computed in one of them is a fact about the factory, not about the Worker
+ * that happened to compute it. Without the round trip a rebuilt Worker recalibrates from cold, and
+ * scattering the calibration across the pool would throw away every ceiling but one shard's. */
 let _soloMaxCache={key:"",values:{}};
 const SHARE_CALIBRATION_FRACTION=0.5;   // ceiling on the solve budget calibration may consume
-function soloMaxKey(){
+function resetSoloMaxCache(){_soloMaxCache={key:"",values:{}};}
+// Emitted in sorted item order rather than in the order the ceilings happened to be computed. This
+// object is a wire payload and a merge input: a solve that calibrated in target order and a merge
+// that unioned in shard order describe the same cache, and they should serialize to the same bytes.
+function getSoloMaxCache(){
+  const values={};
+  Object.keys(_soloMaxCache.values).sort().forEach(item=>{values[item]=_soloMaxCache.values[item];});
+  return {key:_soloMaxCache.key,values};
+}
+/* Coerced rather than trusted, and dropped entry by entry rather than wholesale. These numbers are
+ * divisors and multipliers in the weight conversion below — a NaN or a negative ceiling does not
+ * fail there, it produces a NaN weight and a plan solved against nonsense — and the cache arrives
+ * from a Worker message that has crossed a structured clone and, on a replay, localStorage. A
+ * dropped entry costs one recalibration; a kept bad one costs the plan. */
+function setSoloMaxCache(value){
+  const key=value&&typeof value.key==="string"?value.key:"";
+  const source=value&&value.values&&typeof value.values==="object"?value.values:{};
+  const values={};
+  if(key)Object.keys(source).forEach(item=>{
+    const ceiling=Number(source[item]);
+    if(Number.isFinite(ceiling)&&ceiling>=0)values[item]=ceiling;
+  });
+  _soloMaxCache=key?{key,values}:{key:"",values:{}};
+}
+// Parameterized on the state it describes rather than reading the global S, so the key can be built
+// for a snapshot the caller holds — which is what lets the main thread decide whether a Worker's
+// returned ceilings still describe the factory on screen.
+function soloMaxKey(state){
+  const src=state||{};
   return canonicalShareKey({
-    lines:(S.lines||[]).map(line=>[line.max,line.spx,line.turbo]),
-    maxTurbo:S.maxTurbo,dupe:S.dupe,margin:S.margin,
-    baseTime:S.baseTime||{},prodCost:S.prodCost||{},forgie:S.forgie||{},minedIncome:S.minedIncome||{}
+    lines:(src.lines||[]).map(line=>[line.max,line.spx,line.turbo]),
+    maxTurbo:src.maxTurbo,dupe:src.dupe,margin:src.margin,
+    baseTime:src.baseTime||{},prodCost:src.prodCost||{},forgie:src.forgie||{},minedIncome:src.minedIncome||{}
   });
 }
 function canonicalShareKey(value){
@@ -886,18 +1479,49 @@ function soloMaxFor(item,control,slice){
   if(sr.interrupted)return null;
   return sr.feasible?(sr.best.produced[sr.resIndex[item]]-sr.best.consumed[sr.resIndex[item]])*3600:0;
 }
+/* ---------- shard descriptors ----------
+ * A shard is {index,count}: which slice of one request this solve was handed, and nothing else.
+ * Every mode that fans out needs only that, and a mode-specific union would put per-mode validation
+ * on a boundary whose whole job is to reject rather than guess.
+ *
+ * Re-normalized here even though the Worker entry point already validated the wire form, because
+ * optimize() is also called directly on the main thread by the synchronous fallback and by tests.
+ * Anything unusable reads as "no shard", which is the whole-request solve — a shard descriptor may
+ * cost a solve its parallelism, never its correctness. */
+function normalizeShard(shard){
+  if(!shard||typeof shard!=="object")return null;
+  const index=shard.index,count=shard.count;
+  if(!Number.isInteger(count)||count<1||!Number.isInteger(index)||index<0||index>=count)return null;
+  return count===1?null:{index,count};
+}
+// Round-robin in the caller's order, which for every mode below is catalog order. Round-robin
+// rather than contiguous blocks because the per-item cost is wildly uneven — a raw resource's
+// baseline is a closed form and a deep product's is a full chain solve — and adjacent catalog
+// entries are the most alike, so contiguous blocks would hand one shard all the expensive ones.
+function shardSlice(list,shard){
+  const norm=normalizeShard(shard);
+  if(!norm)return list.slice();
+  return list.filter((entry,at)=>at%norm.count===norm.index);
+}
 /* Ratio weights for the checked outputs under the active mix mode. Ratio mode passes the sliders
  * straight through. Share mode returns the converted weights plus the ceilings behind them, and
  * names any output whose ceiling is zero — an item nothing in this factory can make, which would
  * otherwise silently drag the whole shared floor to zero with no indication of the culprit. */
-function mixWeights(targets,control,budget){
+function mixWeights(targets,control,budget,shard){
   if(S.targetMode!=="share")return {weights:targets.map(it=>S.targets[it].w),soloMax:null,blocked:[],calibrated:false};
-  const key=soloMaxKey();
+  const key=soloMaxKey(S);
   if(_soloMaxCache.key!==key)_soloMaxCache={key,values:{}};
   const cache=_soloMaxCache.values;
-  const missing=targets.filter(it=>cache[it]==null);
+  const absent=targets.filter(it=>cache[it]==null);
+  /* Scattered across the pool: the ceilings are one dedicated single-target solve each and share
+   * nothing, so shard i computes every count-th one. The slice is sized on this shard's own list, so
+   * K shards each spend the same fraction of the budget on a K-th of the work rather than K-thing
+   * the time as well. Ceilings this shard did not compute stay absent and fall through to the raw
+   * slider below; the merge unions every shard's __solo, so the next solve finds them all warm.
+   * `calibrated` therefore reports what THIS shard finished, and the merge ANDs it. */
+  const missing=shardSlice(absent,shard);
   const slice=missing.length?Math.max(300,Math.floor(budget*SHARE_CALIBRATION_FRACTION/missing.length)):0;
-  let calibrated=true;
+  let calibrated=missing.length===absent.length;
   for(let i=0;i<missing.length;i++){
     const value=soloMaxFor(missing[i],control,slice);
     if(value==null){calibrated=false;break;}
@@ -914,7 +1538,7 @@ function mixWeights(targets,control,budget){
   return {weights,soloMax:calibrated||Object.keys(soloMax).length?soloMax:null,blocked,calibrated};
 }
 
-function optimizeInner(timeBudget,testOptions){
+function optimizeInner(timeBudget,testOptions,shard){
   // User-set max solve time (ms). It is an anytime cap, so easy factories still finish early; a
   // larger default gives slower devices and deep Credits chains room to improve. Solves run off the
   // main thread in the generated Worker, so the 10-second default does not freeze the interface.
@@ -927,7 +1551,7 @@ function optimizeInner(timeBudget,testOptions){
     const itemControl=makeSolveControl(itemsBudget,testOptions),t0=itemControl.readNow();
     // Calibration runs before the plan solve and shares its control, so it is bounded by the same
     // user budget rather than added on top of it.
-    const mix=mixWeights(targets,itemControl,itemsBudget);
+    const mix=mixWeights(targets,itemControl,itemsBudget,shard);
     const w=mix.weights;
     const rc=relevantChain(targets);
     const sr=solveCore(targets,w,rc.prods,rc.raws,itemsBudget,{control:itemControl});
@@ -964,11 +1588,21 @@ function optimizeInner(timeBudget,testOptions){
   // One shared control covers the complete comparison. Every item gets a finite deterministic
   // baseline in catalog order before any product receives deeper refinement.
   const control=makeSolveControl(credBudget,testOptions),t0=control.readNow();
-  const priced=ALLITEMS.filter(item=>(num(S.sellPrice&&S.sellPrice[item])||0)>0);
+  const pricedAll=ALLITEMS.filter(item=>(num(S.sellPrice&&S.sellPrice[item])||0)>0);
+  /* Sharded here and nowhere deeper: the candidates share a control and a budget but nothing else —
+   * no candidate reads another's plan — so a shard is simply a shorter catalog. Every rule below is
+   * stated over `priced` and holds unchanged on a slice of it: the baseline pass is still complete
+   * before any refinement, the fair pass still divides the SAME absolute remaining budget among the
+   * candidates this shard owns, and the clock is still started once and never restarted. What a
+   * shard cannot do is rank against candidates it never saw, which is why the ranking it returns is
+   * a fragment and mergeShardResults on the main thread owns the final order. */
+  const priced=shardSlice(pricedAll,shard);
   const baselineWorkLimit=Math.max(4000,(S.lines||[]).length*2000);
   const issues=[],cand=[];
   const addIssues=found=>(found||[]).forEach(issue=>{if(!issues.includes(issue))issues.push(issue);});
-  if(!priced.length)issues.push("No sell prices entered. Open “Projects + Prices” → “Sell prices” and add at least one.");
+  // Asked of the whole catalog, not of this shard: an empty slice means the pool out-numbered the
+  // priced items, which is not something to tell the reader to go and fix.
+  if(!pricedAll.length)issues.push("No sell prices entered. Open “Projects + Prices” → “Sell prices” and add at least one.");
   const unevaluated=item=>({item,kind:RAWS.includes(item)?"raw":"product",out:0,price:num(S.sellPrice[item])||0,credits:0,
     plan:null,balance:null,minedUsage:[],gelReserved:null,resIndex:{},feasible:false,usesMargin:false,capped:false,evaluated:false,ms:0});
   const fromCore=(item,sr,ms,cappedOverride)=>{
@@ -1276,8 +1910,127 @@ function chainMinedBlockers(item,seen){
   });
   return [...new Set(out)];
 }
-// Dense single-phase simplex. Maximize c·x s.t. A x <= b (b>=0), x>=0. Bland's rule (no cycling).
-function lpMaximize(c,A,b,control){
+/* Exact-tableau memo for the makespan LP.
+ *
+ * The key cannot be built from the arguments the tableau's builders were called with. Both builders
+ * read the global S on top of their arguments: projectSchedule takes line count, speeds, turbo and
+ * duplication from sortedLines(), base craft times from craftTime, and S.prodCost twice per
+ * (item,input,level) — once as a validity gate that DROPS the variable, so a key missing it can
+ * name two tableaux with different column counts — plus mined costs and which mined resources are
+ * active, which decides which ROWS exist; buildScheduleLP takes each row's bound from mined income
+ * or passive supply. Keying on (n,m,c,A,b) is exact by construction and stays exact when either
+ * builder grows another input. The digest only nominates a candidate; an element-wise compare
+ * decides the hit, so a collision costs a comparison rather than a wrong plan.
+ *
+ * Scoped to one optimize() call (optimizeProjectTop hangs it on runOptions), so the selected run
+ * and the hidden prefer-current comparison — which re-derives the same free tableaux — share it,
+ * and nothing outlives the run that built it. */
+const LP_MEMO_MAX_BYTES=4<<20;
+const _lpKeyView=new DataView(new ArrayBuffer(8));
+function lpTableauDigest(c,A,b){
+  let h=0x811c9dc5;
+  const mixByte=byte=>{h=Math.imul(h^(byte&0xff),0x01000193);};
+  const mixWord=word=>{mixByte(word);mixByte(word>>>8);mixByte(word>>>16);mixByte(word>>>24);};
+  // -0 normalized to 0: === treats them as equal, so the verify below cannot tell them apart and the
+  // digest must not either, or one tableau splits into two entries that each miss the other.
+  const mixNumber=value=>{_lpKeyView.setFloat64(0,value===0?0:value,true);
+    mixWord(_lpKeyView.getUint32(0,true));mixWord(_lpKeyView.getUint32(4,true));};
+  mixWord(c.length);mixWord(A.length);
+  for(let j=0;j<c.length;j++)mixNumber(c[j]);
+  for(let i=0;i<A.length;i++){const row=A[i];mixWord(row.length);
+    for(let j=0;j<row.length;j++)mixNumber(row[j]);
+    mixNumber(b[i]);}
+  return (h>>>0).toString(36);
+}
+function sameLpTableau(entry,c,A,b){
+  if(entry.n!==c.length||entry.m!==A.length)return false;
+  for(let j=0;j<entry.n;j++)if(entry.c[j]!==c[j])return false;
+  for(let i=0;i<entry.m;i++){
+    const row=A[i],kept=entry.A[i];
+    if(kept.length!==row.length)return false;
+    for(let j=0;j<kept.length;j++)if(kept[j]!==row[j])return false;
+    if(entry.b[i]!==b[i])return false;
+  }
+  return true;
+}
+function makeLpMemo(){
+  const table=new Map();let bytes=0,hits=0,misses=0,entries=0;
+  return {
+    __forgeLpMemo:true,
+    stats:()=>({hits,misses,entries,bytes}),
+    lookup(c,A,b){
+      const bucket=table.get(lpTableauDigest(c,A,b));
+      if(bucket)for(let k=0;k<bucket.length;k++)if(sameLpTableau(bucket[k],c,A,b)){
+        hits++;
+        // A fresh copy every time. projectSchedule keeps the returned vector and reads it across the
+        // whole stability pass and both plan walks; handing out the stored one lets any caller
+        // rewrite every later hit.
+        const out=bucket[k].out;
+        return {x:out.x?new Float64Array(out.x):null,complete:out.complete,unbounded:out.unbounded};
+      }
+      misses++;return null;
+    },
+    store(c,A,b,sol){
+      const n=c.length,m=A.length;
+      let size=8*(n+m+(sol.x?sol.x.length:0));
+      for(let i=0;i<m;i++)size+=8*A[i].length;
+      // Cap the table rather than evict from it: a run solves a handful of tableaux, and a bounded
+      // table with no eviction policy cannot make the memo's contents depend on call order.
+      if(bytes+size>LP_MEMO_MAX_BYTES)return;
+      const entry={n,m,c:Float64Array.from(c),A:A.map(row=>Float64Array.from(row)),b:Float64Array.from(b),
+        out:{x:sol.x?new Float64Array(sol.x):null,complete:!!sol.complete,unbounded:!!sol.unbounded}};
+      const digest=lpTableauDigest(c,A,b),bucket=table.get(digest);
+      if(bucket)bucket.push(entry);else table.set(digest,[entry]);
+      bytes+=size;entries++;
+    },
+  };
+}
+const LP_MAX_PIVOTS=20000;
+/* Certify a finished speculative solve against the caller's UNTOUCHED (c,A,b), which is the only
+ * data a bent tableau cannot have bent. x is the primal vertex and y the objective row's slack-
+ * column entries — the duals of the <= rows — so primal feasibility, dual feasibility and equal
+ * objectives together prove optimality outright, whatever the pivot arithmetic did on the way.
+ *
+ * Every tolerance is the residual's own summed magnitude, never a constant. A pivot-element
+ * magnitude test was measured here first and dropped: over the real corpus the chosen element runs
+ * as low as 2.5e-30 of its column on solves whose objective still agrees with Bland's to 1e-16, so
+ * no threshold separates a bad pivot from a good one. This checks the answer instead of the
+ * arithmetic, and costs about two pivots. */
+function lpCertifyOptimal(c,A,b,x,y){
+  const m=A.length,n=c.length;
+  let primalObj=0,dualObj=0,primalScale=0,dualScale=0;
+  for(let j=0;j<n;j++){
+    if(!(x[j]>=-1e-12))return false;
+    primalObj+=c[j]*x[j];primalScale+=Math.abs(c[j]*x[j]);
+  }
+  for(let i=0;i<m;i++){
+    if(!(y[i]>=-1e-12))return false;
+    dualObj+=b[i]*y[i];dualScale+=Math.abs(b[i]*y[i]);
+    const row=A[i];let used=0,scale=Math.abs(b[i]);
+    for(let j=0;j<n;j++){const term=row[j]*x[j];used+=term;scale+=Math.abs(term);}
+    if(!(used<=b[i]+1e-9*Math.max(1,scale)))return false;
+  }
+  for(let j=0;j<n;j++){
+    let covered=0,scale=Math.abs(c[j]);
+    for(let i=0;i<m;i++){const term=A[i][j]*y[i];covered+=term;scale+=Math.abs(term);}
+    if(!(covered>=c[j]-1e-9*Math.max(1,scale)))return false;
+  }
+  if(!Number.isFinite(primalObj)||!Number.isFinite(dualObj))return false;
+  return Math.abs(primalObj-dualObj)<=1e-9*Math.max(1,primalScale,dualScale);
+}
+/* Dense single-phase simplex. Maximize c·x s.t. A x <= b (b>=0), x>=0.
+ *
+ * `dantzig` selects the most-negative-reduced-cost entering column instead of Bland's lowest index.
+ * It reaches the same optimum in far fewer pivots and has neither an anti-cycling guarantee nor, on
+ * these tableaux, a numerical one: every tolerance below is absolute and unscaled while b spans 1.0
+ * to 1e100 (a Vespium rig income), so the ratio tie-break degrades to "first eligible row wins" and
+ * the loop can walk itself into a tableau that no longer represents the problem. The rule therefore
+ * runs as a speculative attempt under a pivot budget, with abort triggers on a falling objective
+ * row, a basic variable that went negative, an exhausted budget, an unboundedness claim, and a
+ * finished solve that fails to certify; it reports `aborted` instead of an answer and the caller
+ * re-solves the untouched (c,A,b) under Bland. Failure costs one wasted attempt, never a wrong
+ * vertex. */
+function lpSimplexSolve(c,A,b,control,dantzig){
   const m=A.length,n=c.length,W=n+m+1;
   const T=[];
   for(let i=0;i<m;i++){
@@ -1286,26 +2039,78 @@ function lpMaximize(c,A,b,control){
   }
   const obj=new Float64Array(W);for(let j=0;j<n;j++)obj[j]=-c[j];T.push(obj);
   const basis=[];for(let i=0;i<m;i++)basis.push(n+i);
-  let complete=false;
-  for(let it=0;it<20000;it++){
+  // The attempt gets a budget proportional to the tableau. Bland keeps the historical hard cap: it
+  // is the loop that has to terminate on its own.
+  const budget=dantzig?Math.min(LP_MAX_PIVOTS,4*(n+m)+64):LP_MAX_PIVOTS;
+  let rhsScale=1;
+  if(dantzig)for(let i=0;i<m;i++){const magnitude=Math.abs(b[i]);if(magnitude>rhsScale)rhsScale=magnitude;}
+  let objRhs=0,complete=false;
+  for(let it=0;it<budget;it++){
     // A simplex pivot is atomic: check before mutating its row/tableau so cancellation can never
     // expose a half-pivoted solution. The work charge reflects the dense row update.
     if(control&&!control.checkpoint("lp-pivot",Math.max(1,W*(m+1)))){
       const x=new Float64Array(n);for(let i=0;i<m;i++)if(basis[i]<n)x[basis[i]]=T[i][W-1];
       return {x,interrupted:true,complete:false};
     }
-    let piv=-1;for(let j=0;j<n+m;j++){if(T[m][j]<-1e-9){piv=j;break;}}   // entering (Bland)
+    let piv=-1;
+    // Same entering threshold under both rules, so "no entering column" means the same optimum test.
+    if(dantzig){let low=-1e-9;for(let j=0;j<n+m;j++){const rc=T[m][j];if(rc<low){low=rc;piv=j;}}}
+    else{for(let j=0;j<n+m;j++){if(T[m][j]<-1e-9){piv=j;break;}}}
     if(piv<0){complete=true;break;}
     let leave=-1,best=Infinity;
-    for(let i=0;i<m;i++){const a=T[i][piv];if(a>1e-9){const r=T[i][W-1]/a;if(r<best-1e-12||(Math.abs(r-best)<1e-12&&(leave<0||basis[i]<basis[leave]))){best=r;leave=i;}}}
-    if(leave<0)return {x:null,unbounded:true,complete:true};
+    for(let i=0;i<m;i++){const a=T[i][piv];
+      if(a>1e-9){const r=T[i][W-1]/a;if(r<best-1e-12||(Math.abs(r-best)<1e-12&&(leave<0||basis[i]<basis[leave]))){best=r;leave=i;}}}
+    // Unboundedness is a claim about the feasible region, so only the exact loop is allowed to make
+    // it; the attempt hands the question back rather than certify it off a tableau it may have bent.
+    if(leave<0)return dantzig?{aborted:true}:{x:null,unbounded:true,complete:true};
     const prow=T[leave],pv=prow[piv];
     for(let j=0;j<W;j++)prow[j]/=pv;
     for(let i=0;i<=m;i++){if(i===leave)continue;const f=T[i][piv];if(Math.abs(f)>1e-12){const ri=T[i];for(let j=0;j<W;j++)ri[j]-=f*prow[j];}}
     basis[leave]=piv;
+    if(dantzig){
+      // The objective row's RHS is the current objective value, and an entering column with negative
+      // reduced cost can only raise it. A fall, or a value that has stopped being a number, is the
+      // tableau coming apart rather than the rule being slow.
+      const now=T[m][W-1];
+      if(!Number.isFinite(now)||now<objRhs-1e-9*Math.max(1,Math.abs(objRhs)))return {aborted:true};
+      objRhs=now;
+    }
   }
   const x=new Float64Array(n);for(let i=0;i<m;i++)if(basis[i]<n)x[basis[i]]=T[i][W-1];
+  if(dantzig){
+    if(!complete)return {aborted:true};
+    // The ratio test keeps every basic variable non-negative. One that went negative got there by
+    // cancellation, and the vertex it names is not a point of the feasible region.
+    for(let i=0;i<m;i++)if(T[i][W-1]<-1e-9*rhsScale)return {aborted:true};
+    // The certificate is dense arithmetic of a pivot's order, so it is charged like one — a memoized
+    // or speculative path that spends work off the books makes the run's own accounting a lie.
+    if(control&&!control.checkpoint("lp-pivot",Math.max(1,2*n*(m+1))))return {x,interrupted:true,complete:false};
+    const y=new Float64Array(m);for(let i=0;i<m;i++)y[i]=T[m][n+i];
+    if(!lpCertifyOptimal(c,A,b,x,y))return {aborted:true};
+  }
   return {x,complete};
+}
+/* Solve one LP. `opts.pivotRule:"dantzig"` runs the speculative attempt first and falls back to the
+ * exact loop when it aborts; anything else goes straight to Bland, which is what every call site
+ * asks for today.
+ *
+ * The rule is opt-in rather than the default because BOTH families of caller read the vertex, not
+ * just the optimum. These LPs have alternate optima: z is unique, the vertex is not. The makespan LP
+ * hands its vertex to the line assignment, the warm-ups it implies and the reported project ETA;
+ * the relaxation inside solveCore hands its vertex to the roundings that seed the whole local
+ * search, so a different-but-equally-optimal vertex reseeds a bounded anytime search and moves the
+ * plan it settles on. test/lp-pivot.cjs measures both halves of that on real captured tableaux: the
+ * same optimum to 1e-16 for well under half the pivots, at a vertex Bland does not return. Switching
+ * the relaxation over to it moves test/credits-contract.cjs's pinned exact-Wire reproduction by 1%
+ * and flips its adversarial deep-winner to a candidate 2.5% worse. Cheaper pivots are not worth a
+ * worse plan; making the vertex canonical is what would let this be switched on, and that is a
+ * change to the LP rather than to the pivot rule. */
+function lpMaximize(c,A,b,control,opts){
+  if(opts&&opts.pivotRule==="dantzig"){
+    const attempt=lpSimplexSolve(c,A,b,control,true);
+    if(!attempt.aborted)return attempt;
+  }
+  return lpSimplexSolve(c,A,b,control,false);
 }
 // Assemble the makespan LP (A x <= b, maximize c·x) from a job-variable list. Split out of
 // projectSchedule so the stability pass (issue #87 item 5) can rebuild it over a pinned subset of the
@@ -1323,6 +2128,16 @@ function buildScheduleLP(vars,lns,items,net,avail,D0){
   const c=new Array(n).fill(0);c[zCol]=1;
   return {A,b,c,zCol,n};
 }
+/* One makespan LP solve. The memo is consulted at this level rather than inside lpMaximize so a hit
+ * costs no call at all — the repeated near-identical solves this exists to remove are visible as
+ * calls, not only as pivots. An interrupted solve is never stored: it reports where the run's clock
+ * ran out, not what the tableau evaluates to. */
+function solveScheduleLP(part,control,memo){
+  if(memo){const hit=memo.lookup(part.c,part.A,part.b);if(hit)return hit;}
+  const sol=lpMaximize(part.c,part.A,part.b,control);
+  if(memo&&!sol.interrupted)memo.store(part.c,part.A,part.b,sol);
+  return sol;
+}
 // Build & solve the makespan LP: each line splits its time-fraction across (item,level) jobs so that
 // net production meets the demand ratio. z = throughput multiplier (1/hr); makespan = 1/z.
 // `avail` (optional) is per-item stock that may be DRAWN DOWN over the project instead of produced —
@@ -1333,6 +2148,10 @@ function buildScheduleLP(vars,lns,items,net,avail,D0){
 // while opts.rememberStability returns a proposed record for the controller to commit only after the
 // complete selected Project run succeeds. This low-level LP never mutates either cache.
 function projectSchedule(net,targets,avail,opts){
+  // The run's solve control and its tableau memo ride in beside the stability policy: both are
+  // per-run, and threading them as extra positional arguments through solvePhaseFor's five callers
+  // would put two more slots on a signature that already has one optional trailing options object.
+  const control=(opts&&opts.control)||null,memo=(opts&&opts.lpMemo)||null;
   const lns=sortedLines();
   const prodT=targets.filter(it=>PRODUCTS.includes(it));
   const rawT=targets.filter(it=>RAWS.includes(it));
@@ -1363,7 +2182,15 @@ function projectSchedule(net,targets,avail,opts){
   // Free (unconstrained) solve — the makespan-optimal assignment, ignoring what ran last time.
   const free=buildScheduleLP(vars,lns,items,net,avail,D0);
   const zCol=free.zCol,n=free.n;
-  let y=lpMaximize(free.c,free.A,free.b).x||new Float64Array(n);
+  const freeSolution=solveScheduleLP(free,control,memo);
+  // A run whose clock ran out inside the simplex holds a half-optimal vertex, not a verdict about
+  // the factory. Reporting it as a schedule would publish "can't sustainably produce X" for items
+  // the LP simply never got to price, so it reports no assignment and says why, exactly as the
+  // Set & forget search does when its own budget stops it.
+  if(freeSolution.interrupted)
+    return {rate:{},plan:[],items:[],z:0,stabilized:false,zFree:null,zPin:null,stabilityKey:null,stabilityUpdate:null,
+      evaluated:false,capped:true,interrupted:true,searchExhaustive:false};
+  let y=freeSolution.x||new Float64Array(n);
   const zFree=y[zCol]||0;
   // Tier-2 hysteresis (issue #87 item 5): keep last solve's per-line jobs unless the free solve beats
   // a pinned re-solve by more than HYST_FRAC of throughput. Only final visible semantic phases opt in;
@@ -1387,7 +2214,11 @@ function projectSchedule(net,targets,avail,opts){
         vars.forEach((v,j)=>{if(allow[j]){idxMap.push(j);rvars.push(v);}});
         if(rvars.length){
           const pin=buildScheduleLP(rvars,lns,items,net,avail,D0);
-          const y2=lpMaximize(pin.c,pin.A,pin.b).x;
+          const pinSolution=solveScheduleLP(pin,control,memo);
+          // A pinned solve the clock cut short holds a feasible but unproven vertex. Adopting it
+          // would pin the plan to whatever the simplex had reached, so an interrupted pin simply
+          // declines to stabilize and the free solve above stands.
+          const y2=pinSolution.interrupted?null:pinSolution.x;
           const z2=y2?(y2[pin.zCol]||0):0;
           zPin=z2/D0;
           if(y2&&z2>1e-15&&z2>=zFree*(1-HYST_FRAC)){
@@ -1458,13 +2289,22 @@ function solvePhaseFor(net,name,avail,stabilityPolicy,phaseKey,solveOptions){
   const targets=demandItems.filter(it=>!blockedMined[it]);
   if(targets.length===0)
     return {name,phaseKey:(phaseKey!=null?phaseKey:name),plan:[],balance:[],minedUsage:[],demandItems,net,rate:{},eta:0,bottleneck:null,infeasItems:[],unsat,blockedMined,atRisk:[],items:[],z:0,partial:false,feasible:demandItems.length===0,stabilized:false,zFree:null,zPin:null,stabilityKey:null,stabilityUpdate:null,evaluated:true,capped:false,interrupted:false,searchExhaustive:true};
-  const staticControl=solveOptions&&solveOptions.static===true&&solveOptions.control;
-  if(staticControl&&staticControl.isStopped())
+  const isStatic=!!(solveOptions&&solveOptions.static===true);
+  // Set & forget spends the run control inside the discrete search; Line switching spends the same
+  // control inside the schedule LP's pivots. Either way a phase that starts after the run is already
+  // stopped returns no assignment rather than opening a search it cannot finish.
+  const runControl=(isStatic?solveOptions&&solveOptions.control:solveOptions&&solveOptions.scheduleControl)||null;
+  if(runControl&&runControl.isStopped())
     return {name,phaseKey:(phaseKey!=null?phaseKey:name),plan:[],balance:[],minedUsage:[],demandItems,net,rate:{},eta:0,bottleneck:null,infeasItems:[],unsat,blockedMined,atRisk:[],items:[],z:0,partial:false,feasible:false,stabilized:false,zFree:null,zPin:null,stabilityKey:null,stabilityUpdate:null,evaluated:false,capped:true,interrupted:true,searchExhaustive:false};
   let scheduleOptions=null;
   if(stabilityPolicy&&typeof stabilityPolicy==="object")scheduleOptions={...stabilityPolicy,phaseKey:(phaseKey!=null?phaseKey:name)};
   else if(stabilityPolicy===true)scheduleOptions={readStability:true,rememberStability:true,stabilityCache:cloneLineStability(_lineStability),phaseKey:(phaseKey!=null?phaseKey:name)};
-  const sch=solveOptions&&solveOptions.static===true
+  // stabilityRequested reads readStability/rememberStability only, so an options object carrying
+  // just these two is inert to the stability pass — including for the ordering estimates and
+  // warm-ups, which pass no policy at all and until now reached projectSchedule with no options.
+  if(!isStatic&&solveOptions&&(solveOptions.scheduleControl||solveOptions.lpMemo))
+    scheduleOptions=Object.assign({},scheduleOptions,{control:solveOptions.scheduleControl||null,lpMemo:solveOptions.lpMemo||null});
+  const sch=isStatic
     ?staticSchedule(net,targets,solveOptions.control,solveOptions.maxCompression,solveOptions.localDeadline)
     :projectSchedule(net,targets,avail,scheduleOptions);
   const rate={};targets.forEach(it=>rate[it]=Math.max(0,sch.rate[it]||0));
@@ -1563,6 +2403,7 @@ function solveProjectBuffer(deficit,_inventory,info,runOptions){
   const signature=Object.keys(deficit).sort().map(it=>it+":"+deficit[it].toPrecision(12)).join("|");
   const warm=solvePhaseFor(deficit,"Warm-up: "+Object.keys(deficit).join(" + "),{},false,"warmup:"+(info&&info.depth||0)+":"+signature,
     {static:S.projLineMode==="static",control:runOptions&&runOptions.staticControl,
+      scheduleControl:runOptions&&runOptions.scheduleControl,lpMemo:runOptions&&runOptions.lpMemo,
       localDeadline:runOptions&&runOptions.staticPhaseDeadline});
   warm.kind="warmup";warm.demandSub={};return warm;
 }
@@ -1615,6 +2456,7 @@ function solveExecutableProjectPhase(sub,name,inv,stabilityPolicy,phaseKey,runOp
       const passSolvedWith=Object.assign({},pre);
       const candidate=solvePhaseFor(projNetVec(sub,inv,passSolvedWith),name,projAvailVec(sub,inv,passSolvedWith),policy,phaseKey,
         {static:isStatic,control:runOptions&&runOptions.staticControl,maxCompression,
+          scheduleControl:runOptions&&runOptions.scheduleControl,lpMemo:runOptions&&runOptions.lpMemo,
           localDeadline:runOptions&&runOptions.staticPhaseDeadline});
       if(candidate.evaluated===false){
         if(!incumbent)return {phase:candidate,solvedWith:passSolvedWith,pre,converged:false,
@@ -2191,8 +3033,12 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
   // will not use. The estimate remains split-mode and cache-neutral; exact static work is budgeted
   // only for the selected executable phases below.
   const invInit=invStart();
+  // The estimates are split-mode LPs in both line modes, so they take the run's tableau memo — and,
+  // in Line switching, the run control that now bounds every other LP in the run. In Set & forget
+  // the control belongs to the discrete search and these estimates stay off it, as they always have.
+  const estimateOptions={scheduleControl:runOptions&&runOptions.scheduleControl,lpMemo:runOptions&&runOptions.lpMemo};
   const cost=perProject.map(p=>{const netDemand=projNetVec(p.sub,invInit),avail=S.projLineMode==="static"?{}:projAvailVec(p.sub,invInit);
-    const ph=solvePhaseFor(netDemand,p.name,avail);return ph.feasible?ph.eta:Infinity;});
+    const ph=solvePhaseFor(netDemand,p.name,avail,false,null,estimateOptions);return ph.feasible?ph.eta:Infinity;});
   const order=perProject.map((p,i)=>({p,i})).sort((a,b)=>{
     if(layer[a.i]!==layer[b.i])return layer[a.i]-layer[b.i];   // unlock precedence (hard)
     const pa=a.p.prio,pb=b.p.prio;
@@ -2352,13 +3198,23 @@ function optimizeProjectTop(testOptions){
   const projectStability=S.projectStability==="reoptimize"?"reoptimize":"prefer-current";
   if(perProject.length===0)return {empty:true,mode:"project",projLineMode:S.projLineMode==="static"?"static":"split",plan:[],phases:[],gross,net,perProject,projectStability,stabilityComparison:null,ms:performance.now()-t0};
   const seq=S.projectSeq!==false&&perProject.length>1,cacheSnapshot=cloneLineStability(_lineStability);
-  const staticBudget=boundedPersistedField("solveBudget",S.solveBudget,10000,200,60000,true);
-  const staticControl=S.projLineMode==="static"?makeSolveControl(staticBudget,testOptions):null;
+  const projectBudget=boundedPersistedField("solveBudget",S.solveBudget,10000,200,60000,true);
+  // One control per Project run, in BOTH line modes. Set & forget always had it; Line switching had
+  // none at all, so its schedule LPs answered to nothing but a 20000-pivot ceiling per solve and a
+  // run could spend unbounded time with no way for the user's solve-time setting to end it. The two
+  // modes spend it in different places — the discrete search versus the LP pivots — so it is handed
+  // down under the name of the path that consumes it, and each mode's other name stays null.
+  const isStatic=S.projLineMode==="static";
+  const projectControl=makeSolveControl(projectBudget,testOptions);
+  const staticControl=isStatic?projectControl:null;
   // The searches spend the user's budget exactly as they always have; the fills spend a clock of
   // their own, started when the first of them runs. One holder, shared by every phase in the run.
-  const runOptions={staticControl,
+  const runOptions={staticControl,scheduleControl:isStatic?null:projectControl,
+    // Scoped to this call so the selected run and the hidden prefer-current comparison share the
+    // tableaux they both derive, and so no plan can be answered out of a previous factory's memo.
+    lpMemo:makeLpMemo(),
     idleWork:staticControl
-      ?{budget:Math.max(staticBudget*STATIC_FILL_TIME_SHARE,STATIC_FILL_TIME_FLOOR),options:testOptions,control:null}
+      ?{budget:Math.max(projectBudget*STATIC_FILL_TIME_SHARE,STATIC_FILL_TIME_FLOOR),options:testOptions,control:null}
       :null};
   const selectedPolicy={readStability:projectStability==="prefer-current",rememberStability:true,stabilityCache:cacheSnapshot};
   const selected=solveProjectRun(seq,net,perProject,selectedPolicy,runOptions);selected.gross=gross;
@@ -2375,9 +3231,13 @@ function optimizeProjectTop(testOptions){
 }
 
 
-function optimize(testOptions){
-  if(S.mode==="project")return optimizeProjectTop(testOptions);
+/* `shard` is a real parameter and deliberately not a member of testOptions: testOptions is the
+ * direct-source test seam and js/solver.js's own contract says it is never posted through the Worker
+ * protocol, so routing a production wire field through it would make the seam load-bearing. */
+function optimize(testOptions,shard){
+  const slice=normalizeShard(shard);
+  if(S.mode==="project")return optimizeProjectTop(testOptions,slice);
   // Gel is a native resource inside solveCore now (vespium is its budgeted input), so items and
   // credits need no reservation sweep — the solver allocates Gel lines like any other product.
-  return optimizeInner(undefined,testOptions);
+  return optimizeInner(undefined,testOptions,slice);
 }

@@ -5,8 +5,9 @@
   "scripts": {
     "build": "node scripts/build-static.cjs",
     "preview": "node test/serve-built.cjs",
-    "check:syntax": "for file in js/*.js compat/*.js scripts/*.cjs test/*.cjs; do node --check \"$file\" || exit 1; done",
+    "check:syntax": "for file in js/*.js compat/*.js scripts/*.cjs test/*.cjs test/perf/*.cjs; do node --check \"$file\" || exit 1; done",
     "test:node": "node test/run-all.cjs",
+    "bench": "node test/perf/bench.cjs",
     "test:parity": "node test/run-parity.cjs",
     "test": "npm run check:syntax && npm run test:node",
     "test:release": "npm run build && node scripts/release-smoke.cjs"

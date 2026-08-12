@@ -37,6 +37,16 @@ globalThis.document = { getElementById: () => ({ innerHTML: "", textContent: "" 
 const coreSrc = fs.readFileSync(path.join(__dirname, "..", "js", "core.js"), "utf8");
 const projectScheduleSrc = fs.readFileSync(path.join(__dirname, "..", "js", "project-schedule.js"), "utf8");
 const solverSrc = fs.readFileSync(path.join(__dirname, "..", "js", "solver.js"), "utf8");
+/* The deadline blocks drive clocks that cost a fixed number of milliseconds per clock READ, and one
+ * builds a control directly to hand a phase an already-expired local deadline. The solver samples
+ * its clock once per CLOCK_SAMPLE_EVERY checkpoints, which under such a clock stretches every
+ * budget by that stride; sample every checkpoint here so those cutoffs land where the assertions
+ * put them. */
+const sampleEverySrc = `makeSolveControl = (function(raw){ return function(budget, options){
+  const opts = Object.assign({}, options);
+  if (opts.clockSampleEvery === undefined) opts.clockSampleEvery = 1;
+  return raw(budget, opts);
+}; })(makeSolveControl);`;
 
 const runner = `
 (function(){
@@ -477,4 +487,4 @@ globalThis.__emit = (str) => {
 };
 
 // eslint-disable-next-line no-eval
-eval(coreSrc + "\n;\n" + projectScheduleSrc + "\n;\n" + solverSrc + "\n;\n" + runner);
+eval(coreSrc + "\n;\n" + projectScheduleSrc + "\n;\n" + solverSrc + "\n;\n" + sampleEverySrc + "\n;\n" + runner);

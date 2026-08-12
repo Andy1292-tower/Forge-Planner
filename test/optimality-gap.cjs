@@ -8,7 +8,7 @@
  *  - a strict solve reports a bound, and it never sits below the objective it bounds;
  *  - the bound is a real ceiling: a longer solve of the same factory never passes it;
  *  - the bound does not move with the time budget, so the gap measures the search, not the clock;
- *  - a margin solve reports no bound, because the relaxation encodes strict feasibility;
+ *  - a margin solve reports a ceiling of its own, above the strict one and above its own objective;
  *  - the reported gap stays inside [0, 1).
  *
  * Usage: node test/optimality-gap.cjs
@@ -105,13 +105,23 @@ const runner = `
   check("a search cut off by its budget does report the deadline as reached",
     starved.deadlineReached===true,"ms="+Math.round(starved.ms)+" deadlineReached="+starved.deadlineReached);
 
-  /* ---- no bound can be quoted for a margin pass ---- */
-  // lpRelax's resource rows use baseArr with no tolerance, so its z cannot bound a may-work optimum.
+  /* ---- a margin pass gets a ceiling of its own ---- */
+  // Rebuilt over needFrac, the relaxation bounds the may-work problem the margin defines instead of
+  // the strict one, so the plans a margin solve is allowed to return have a ceiling too. It is a
+  // HIGHER ceiling: the margin admits plans strict feasibility rejects.
   const margin=solve(MIX,WIDE,1500,s=>{s.margin=5;});
-  check("a solve with a margin set reports no bound at all",
-    margin.bound===null,"bound="+JSON.stringify(margin.bound)+" tol="+margin.tol);
-  check("dropping the margin brings the bound back",
-    Number.isFinite(solve(MIX,WIDE,1500,s=>{s.margin=0;}).bound),"margin=0 solve");
+  const strict=solve(MIX,WIDE,1500,s=>{s.margin=0;});
+  check("a solve with a margin set reports a numeric bound of its own",
+    Number.isFinite(margin.bound)&&margin.tol>0,"bound="+JSON.stringify(margin.bound)+" tol="+margin.tol);
+  check("the margin bound never sits below the objective it bounds",
+    Number.isFinite(margin.bound)&&margin.bound>=margin.objective,
+    "bound="+round(margin.bound)+" objective="+round(margin.objective));
+  check("the margin ceiling sits at or above the same factory's strict ceiling",
+    margin.bound>=strict.bound*(1-1e-9),
+    "margin="+round(margin.bound)+" strict="+round(strict.bound));
+  check("a longer margin solve never produces an objective above the short one's margin ceiling",
+    solve(MIX,WIDE,12000,s=>{s.margin=5;}).objective<=margin.bound*(1+1e-6),
+    "short bound="+round(margin.bound));
 
   return fail;
 })()
