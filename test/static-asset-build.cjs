@@ -379,6 +379,88 @@ test("the current Worker returns a structured schema-rejection envelope", () => 
   assert.equal(typeof posted[0].error.stack, "string");
 });
 
+/* The current Worker source runs only as the generated payload — it importScripts its dependencies
+ * otherwise — so every wire-contract assertion below drives the bytes a release actually ships. */
+function currentWorkerSession() {
+  const posted = [];
+  const context = {
+    console,
+    performance: { now() { return 0; } },
+    self: { postMessage(message) { posted.push(message); } },
+  };
+  vm.createContext(context);
+  vm.runInContext(buildWorkerPayload(root), context, { filename: "generated-current-worker.js" });
+  vm.runInContext(`
+    globalThis.__solvable=normalize(defaults());
+    syncManual(__solvable);
+    __solvable.schemaVersion=CURRENT_SCHEMA_VERSION;
+    __solvable.solveBudget=200;
+    globalThis.__rejected=JSON.parse(JSON.stringify(__solvable));
+    __rejected.lines[0].max=1;
+    __rejected.manual[0].lvl=512;
+  `, context);
+  return {
+    posted,
+    send(fields, stateName = "__solvable") {
+      context.__fields = fields;
+      vm.runInContext(`self.onmessage({data:Object.assign({
+        reqId:7,generation:7,mode:${stateName}.mode,stateRevision:11,
+        state:${stateName},budget:${stateName}.solveBudget,stab:{}
+      },globalThis.__fields)})`, context);
+      delete context.__fields;
+      return posted[posted.length - 1];
+    },
+  };
+}
+
+test("a request carrying no shard descriptor is answered with the reply it always was", () => {
+  const session = currentWorkerSession();
+  assert.deepEqual(Object.keys(session.send({})), ["reqId", "generation", "mode", "stateRevision", "res"]);
+  const rejected = session.send({}, "__rejected");
+  assert.deepEqual(Object.keys(rejected), ["reqId", "generation", "mode", "stateRevision", "error"]);
+  assert.deepEqual(Object.keys(session.send({ shard: null })),
+    ["reqId", "generation", "mode", "stateRevision", "res"],
+    "an explicitly empty descriptor is the same as none at all");
+});
+
+test("a valid shard descriptor is echoed on the result and on the failure", () => {
+  // The main thread matches replies on generation, and generation is identical across the shards of
+  // one request, so without this echo a merged result could not name which shard produced what.
+  const session = currentWorkerSession();
+  const solved = session.send({ shard: { index: 1, count: 3 } });
+  assert.deepEqual(Object.keys(solved), ["reqId", "generation", "mode", "stateRevision", "shard", "res"]);
+  assert.deepEqual(solved.shard, { index: 1, count: 3 });
+  assert.equal(solved.error, undefined);
+
+  const failed = session.send({ shard: { index: 2, count: 3 } }, "__rejected");
+  assert.deepEqual(Object.keys(failed), ["reqId", "generation", "mode", "stateRevision", "shard", "error"]);
+  assert.deepEqual(failed.shard, { index: 2, count: 3 });
+  assert.match(failed.error.message, /Worker state rejected/);
+});
+
+test("an unusable shard descriptor is rejected by name and never echoed back", () => {
+  /* Reject, do not guess: a descriptor the Worker repaired would let a merge layer believe it had a
+   * shard the main thread never asked for. Every case is answered with a shardless error envelope,
+   * because echoing an id that failed validation is exactly the value that must not be trusted. */
+  const cases = [
+    { label: "not an object", shard: 2, message: /descriptor must be a plain object/ },
+    { label: "an array", shard: [0, 2], message: /descriptor must be a plain object/ },
+    { label: "a missing count", shard: { index: 0 }, message: /exactly index and count/ },
+    { label: "an unknown field", shard: { index: 0, count: 2, budget: 50 }, message: /exactly index and count/ },
+    { label: "a zero count", shard: { index: 0, count: 0 }, message: /count must be a positive integer/ },
+    { label: "a fractional index", shard: { index: 0.5, count: 2 }, message: /index must be a non-negative integer/ },
+    { label: "a negative index", shard: { index: -1, count: 2 }, message: /index must be a non-negative integer/ },
+    { label: "an index at count", shard: { index: 2, count: 2 }, message: /index must be below count/ },
+  ];
+  const session = currentWorkerSession();
+  for (const entry of cases) {
+    const reply = session.send({ shard: entry.shard });
+    assert.deepEqual(Object.keys(reply), ["reqId", "generation", "mode", "stateRevision", "error"], entry.label);
+    assert.match(reply.error.message, /Worker shard descriptor rejected/, entry.label);
+    assert.match(reply.error.message, entry.message, entry.label);
+  }
+});
+
 function generatedWorkerContext(app, overrides = {}) {
   const created = [];
   const revoked = [];

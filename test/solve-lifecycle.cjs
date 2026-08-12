@@ -686,6 +686,42 @@ test("the dispatched request message carries exactly the single-Worker protocol 
   assert.equal(status.workerBusy, true);
 });
 
+test("a shard descriptor adds one wire field and nothing else", () => {
+  const harness = lifecycleHarness();
+  harness.callRequest({ ...request("items", 1, "A"), shard: { index: 1, count: 3 } }, () => {});
+  const sent = harness.workers[0].messages[0];
+  assert.deepEqual(
+    Object.keys(sent).sort(),
+    ["budget", "generation", "mode", "reqId", "shard", "stab", "state", "stateRevision"]
+  );
+  assert.deepEqual(sent.shard, { index: 1, count: 3 });
+  assert.equal(sent.reqId, sent.generation, "a shard must not be smuggled through the request id");
+  assert.equal(sent.budget, 200, "and must not carry a budget of its own");
+
+  // An explicitly empty descriptor is the absent case, not a third state on the wire.
+  harness.callRequest({ ...request("items", 2, "B"), shard: null }, () => {});
+  assert.deepEqual(
+    Object.keys(harness.workers[harness.workers.length - 1].messages[0]).sort(),
+    ["budget", "generation", "mode", "reqId", "stab", "state", "stateRevision"]
+  );
+});
+
+test("an unusable shard descriptor is refused before it costs a Worker round trip", () => {
+  const harness = lifecycleHarness();
+  const refused = [
+    2, "1/3", [1, 3], { index: 1 }, { count: 3 }, { index: 1, count: 3, budget: 50 },
+    { index: 3, count: 3 }, { index: -1, count: 3 }, { index: 0.5, count: 3 }, { index: 0, count: 0 },
+  ];
+  for (const shard of refused) {
+    assert.throws(
+      () => harness.callRequest({ ...request("items", 1, "A"), shard }, () => {}),
+      /shard must be \{index,count\}/,
+      `${JSON.stringify(shard)} must be refused`
+    );
+  }
+  assert.equal(harness.workers.length, 0, "a caller's bad descriptor must not build a Worker to reject it");
+});
+
 test("every construction under a supersede storm is paid for by terminating busy work", () => {
   /* Counting terminations of any kind would make this a tautology: each request either reuses an
    * idle slot or terminates one and constructs, so "constructions <= 1 + terminations" holds even

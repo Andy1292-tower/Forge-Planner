@@ -478,6 +478,16 @@ const solveService=(()=>{
     if(options.solveKey!==undefined&&options.solveKey!==stateKey){
       throw new TypeError("solveService.request solveKey must describe the dispatched state snapshot");
     }
+    /* Rejected here as well as in the Worker, for two different reasons: the Worker cannot trust
+     * anything that arrives over the wire, and a caller that built a shard wrong should hear about
+     * it before it costs a Worker round trip. A caller with nothing to shard passes nothing, and
+     * the dispatched message is byte-for-byte the one the single-Worker service sent. */
+    const shard=options.shard===undefined||options.shard===null?null:options.shard;
+    if(shard!==null&&!(Object.prototype.toString.call(shard)==="[object Object]"&&
+      Object.keys(shard).length===2&&Number.isInteger(shard.index)&&Number.isInteger(shard.count)&&
+      shard.count>=1&&shard.index>=0&&shard.index<shard.count)){
+      throw new TypeError("solveService.request shard must be {index,count} with 0 <= index < count");
+    }
 
     const dailyCacheKey=(mode==="items"||mode==="credits")?dailySolveConditionKey(dispatchedState):null;
     const requestGeneration=++generation;
@@ -510,10 +520,12 @@ const solveService=(()=>{
       slot=acquireSlot();
       slot.busy=true;
       const stabilitySnapshot=(typeof getLineStability==="function")?JSON.parse(JSON.stringify(getLineStability()||{})):{};
-      slot.worker.postMessage({
+      const message={
         reqId:requestGeneration,generation:requestGeneration,mode,stateRevision:revision,
         state:dispatchedState,budget,stab:stabilitySnapshot
-      });
+      };
+      if(shard!==null)message.shard={index:shard.index,count:shard.count};
+      slot.worker.postMessage(message);
     }catch(error){workerFailed(slot,requestGeneration,(error&&error.message)||String(error));}
     return requestGeneration;
   }
