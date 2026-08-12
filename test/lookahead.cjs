@@ -243,14 +243,32 @@ const runner = `
     (together.phases || []).every(p => !p.lookAhead),
     "phases=" + (together.phases || []).map(p => p.name + ":" + (p.lookAhead ? "filled" : "-")).join(" "));
 
-  // Frames and Wire carry an external pre-produced Bits obligation whose fixed point the phase has
-  // already closed, so they are never banked however idle the lines are.
-  build([A(), project("f", "Frame run", [["Frames", 40]], 2)]);
-  const frames = optimize();
-  const frameGel = phaseNamed(frames, "Gel run");
-  record("a pre-produced-Bits material (Frames) is never banked ahead",
-    !frameGel || !frameGel.lookAhead || frameGel.lookAhead.items.indexOf("Frames") < 0,
-    "lookAhead=" + JSON.stringify(frameGel && frameGel.lookAhead || null));
+  // Frames and Wire burn Bits OUTSIDE the recipe graph, pre-produced before the phase runs, and a
+  // fill making either moves that obligation after the phase closed it as a fixed point. Both halves
+  // of the rule are pinned here. With no Bits banked, the fill would hand the player a bill they
+  // cannot pay, so it is dropped and the lines stay honestly idle...
+  const F = () => project("f", "Frame run", [["Frames", 40]], 2);
+  build([A(), F()]);
+  const framesBroke = optimize();
+  const brokeGel = phaseNamed(framesBroke, "Gel run");
+  record("a pre-produced-Bits material is not banked when its Bits are not already on hand",
+    !!brokeGel && !brokeGel.lookAhead && idleOn(brokeGel).length > 0,
+    "lookAhead=" + JSON.stringify(brokeGel && brokeGel.lookAhead || null) +
+    " idle=" + idleOn(brokeGel).join(",") + " pre=" + JSON.stringify(brokeGel && brokeGel.preProducedDemand || null));
+
+  // ...and with the Bits on hand it is banked like anything else, the phase reserving exactly what
+  // its new plan owes. This is the whole point of not refusing outright: the idle lines here build
+  // the entire Rods -> Plates -> Frames chain, and the project they build it for lands at zero.
+  build([A(), F()]);
+  S.inventory.Bits = 1e9; normalize(S);
+  const framesOk = optimize();
+  const okGel = phaseNamed(framesOk, "Gel run"), okFrame = phaseNamed(framesOk, "Frame run");
+  const owed = (okGel && okGel.preProducedDemand && okGel.preProducedDemand.Bits) || 0;
+  record("a pre-produced-Bits material is banked when its Bits are, and the obligation is booked",
+    !!(okGel && okGel.lookAhead && okGel.lookAhead.items.indexOf("Frames") >= 0) && owed > 0 &&
+    framesOk.scheduleValidation.ok === true && okFrame.eta < framesBroke.eta - 1e-9,
+    "lookAhead=" + JSON.stringify(okGel && okGel.lookAhead || null) + " preProducedBits=" + owed.toFixed(2) +
+    " replay=" + framesOk.scheduleValidation.ok + " frame phase " + framesBroke.eta.toFixed(4) + "h -> " + okFrame.eta.toFixed(4) + "h");
 
   // A project already covered by stock leaves nothing to bank.
   build([A(), B()]);
