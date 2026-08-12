@@ -1,0 +1,7402 @@
+{
+  "schema": "forge-solver-bench/3",
+  "generatedAt": "2026-08-12T07:44:09.281Z",
+  "corpus": [
+    {
+      "id": "items-7line",
+      "mode": "items",
+      "title": "Items — reference factory, 7 lines"
+    },
+    {
+      "id": "items-share-margin-7line",
+      "mode": "items",
+      "title": "Items — share-of-max mix with a 5% margin, 7 lines"
+    },
+    {
+      "id": "items-8line",
+      "mode": "items",
+      "title": "Items — 8 lines (the planned expansion)"
+    },
+    {
+      "id": "items-10line",
+      "mode": "items",
+      "title": "Items — 10 lines (the planning ceiling)"
+    },
+    {
+      "id": "credits-7line",
+      "mode": "credits",
+      "title": "Credits — all 12 items priced, 7 lines"
+    },
+    {
+      "id": "project-7line",
+      "mode": "project",
+      "title": "Project — Set & forget, one combined phase, gating off"
+    },
+    {
+      "id": "project-seq-7line",
+      "mode": "project",
+      "title": "Project — Set & forget, one project per phase (sequenced)"
+    },
+    {
+      "id": "project-split-7line",
+      "mode": "project",
+      "title": "Project — Line switching, 10-project list, prefer-current"
+    }
+  ],
+  "machineDependent": [
+    "runs[kind=wall]",
+    "runs[kind=virtual].nonDeterministic",
+    "elapsedMs"
+  ],
+  "machine": {
+    "node": "v24.9.0",
+    "platform": "darwin arm64",
+    "cpu": "Apple M1 Pro",
+    "cores": 8
+  },
+  "unitsPerMs": 500,
+  "denseUnitsPerMs": 100000,
+  "ladder": [
+    250,
+    1000,
+    4000,
+    20000
+  ],
+  "wallRepeat": 5,
+  "elapsedMs": 1180221,
+  "runs": [
+    {
+      "fixture": "items-7line",
+      "mode": "items",
+      "kind": "wall",
+      "budgetMs": 20000,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 744475.5911111111,
+      "result": {
+        "bound": 932397.0031753596,
+        "binding": "Rods",
+        "mixMode": "ratio",
+        "tol": 0,
+        "usesMargin": false,
+        "out": {
+          "Glass": 7370560.640000001,
+          "Bricks": 5740420.4799999995,
+          "Plates": 7780280.32,
+          "Rods": 6700280.32,
+          "Gel": 3199336.2765929834
+        },
+        "blocked": [],
+        "soloMax": null,
+        "shareOfMax": null,
+        "gap": 0.201547
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": false
+      },
+      "work": {
+        "total": 11367557,
+        "probe": 10550698,
+        "dense": 816859,
+        "byLabel": {}
+      },
+      "lp": {
+        "pivots": 95,
+        "tableauRows": 16,
+        "work": 816859,
+        "workOnControl": 816859,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 1,
+        "lpMaximize": 1,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {},
+      "stopReasons": {},
+      "reportedMs": 19754.937,
+      "wall": {
+        "samples": 5,
+        "ms": {
+          "median": 19755,
+          "min": 19490.7,
+          "max": 20001.3,
+          "cvPct": 0.92
+        },
+        "probeMs": {
+          "median": 19748.2,
+          "min": 19480.8,
+          "max": 19990.6,
+          "cvPct": 0.92
+        },
+        "denseMs": {
+          "median": 8.3,
+          "min": 6.1,
+          "max": 10.7,
+          "cvPct": 23.46
+        },
+        "probeWorkPerSec": {
+          "median": 534263,
+          "min": 496852,
+          "max": 541596,
+          "cvPct": 3.36
+        },
+        "denseWorkPerSec": {
+          "median": 98032389,
+          "min": 76204865,
+          "max": 134882376,
+          "cvPct": 24.23
+        },
+        "totalWorkPerSec": {
+          "median": 575427,
+          "min": 537426,
+          "max": 583231,
+          "cvPct": 3.18
+        }
+      },
+      "objectiveRange": [
+        744475.5911111111,
+        744475.5911111111
+      ]
+    },
+    {
+      "fixture": "items-7line",
+      "mode": "items",
+      "kind": "virtual",
+      "budgetMs": 250,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 744475.5911111111,
+      "result": {
+        "bound": 932397.0031753596,
+        "binding": "Rods",
+        "mixMode": "ratio",
+        "tol": 0,
+        "usesMargin": false,
+        "out": {
+          "Glass": 7370560.640000001,
+          "Bricks": 5740420.4799999995,
+          "Plates": 7780280.32,
+          "Rods": 6700280.32,
+          "Gel": 3199336.2765929834
+        },
+        "blocked": [],
+        "soloMax": null,
+        "shareOfMax": null,
+        "gap": 0.201547
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": true
+      },
+      "work": {
+        "total": 937776,
+        "probe": 120917,
+        "dense": 816859,
+        "byLabel": {
+          "lp-pivot": {
+            "count": 95,
+            "work": 809115,
+            "maxUnits": 8517,
+            "ms": 8.011
+          },
+          "climb-job": {
+            "count": 82139,
+            "work": 82139,
+            "maxUnits": 1,
+            "ms": 164.278
+          },
+          "repair-job": {
+            "count": 31416,
+            "work": 31416,
+            "maxUnits": 1,
+            "ms": 62.832
+          },
+          "lp-tableau-row": {
+            "count": 16,
+            "work": 7744,
+            "maxUnits": 484,
+            "ms": 0.075
+          },
+          "lp-job-coefficient": {
+            "count": 4347,
+            "work": 4347,
+            "maxUnits": 1,
+            "ms": 8.694
+          },
+          "gel-seed-line": {
+            "count": 1936,
+            "work": 1936,
+            "maxUnits": 1,
+            "ms": 3.872
+          },
+          "gel-seed-step": {
+            "count": 395,
+            "work": 395,
+            "maxUnits": 1,
+            "ms": 0.79
+          },
+          "climb-pass": {
+            "count": 173,
+            "work": 173,
+            "maxUnits": 1,
+            "ms": 0.346
+          },
+          "repair-pass": {
+            "count": 145,
+            "work": 145,
+            "maxUnits": 1,
+            "ms": 0.29
+          },
+          "ils-perturb": {
+            "count": 128,
+            "work": 128,
+            "maxUnits": 1,
+            "ms": 0.256
+          },
+          "lp-random-line": {
+            "count": 112,
+            "work": 112,
+            "maxUnits": 1,
+            "ms": 0.224
+          },
+          "ils-iteration": {
+            "count": 50,
+            "work": 50,
+            "maxUnits": 1,
+            "ms": 0.1
+          },
+          "seed-start": {
+            "count": 24,
+            "work": 24,
+            "maxUnits": 1,
+            "ms": 0.048
+          },
+          "lp-random-seed": {
+            "count": 16,
+            "work": 16,
+            "maxUnits": 1,
+            "ms": 0.032
+          },
+          "lp-resource-row": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "gel-prefix": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "lp-line-row": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "lp-offset": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.012
+          },
+          "target-seed": {
+            "count": 5,
+            "work": 5,
+            "maxUnits": 1,
+            "ms": 0.01
+          },
+          "margin-stage": {
+            "count": 1,
+            "work": 1,
+            "maxUnits": 1,
+            "ms": 0.085
+          }
+        }
+      },
+      "lp": {
+        "pivots": 95,
+        "tableauRows": 16,
+        "work": 816859,
+        "workOnControl": 816859,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 1,
+        "lpMaximize": 1,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 250.003,
+      "reportedMs": 250.003,
+      "nonDeterministic": {
+        "wallMs": 236,
+        "lpMs": 4.389
+      }
+    },
+    {
+      "fixture": "items-7line",
+      "mode": "items",
+      "kind": "virtual",
+      "budgetMs": 1000,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 744475.5911111111,
+      "result": {
+        "bound": 932397.0031753596,
+        "binding": "Rods",
+        "mixMode": "ratio",
+        "tol": 0,
+        "usesMargin": false,
+        "out": {
+          "Glass": 7370560.640000001,
+          "Bricks": 5740420.4799999995,
+          "Plates": 7780280.32,
+          "Rods": 6700280.32,
+          "Gel": 3199336.2765929834
+        },
+        "blocked": [],
+        "soloMax": null,
+        "shareOfMax": null,
+        "gap": 0.201547
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": true
+      },
+      "work": {
+        "total": 1312776,
+        "probe": 495917,
+        "dense": 816859,
+        "byLabel": {
+          "lp-pivot": {
+            "count": 95,
+            "work": 809115,
+            "maxUnits": 8517,
+            "ms": 8.011
+          },
+          "climb-job": {
+            "count": 401704,
+            "work": 401704,
+            "maxUnits": 1,
+            "ms": 803.408
+          },
+          "repair-job": {
+            "count": 84728,
+            "work": 84728,
+            "maxUnits": 1,
+            "ms": 169.456
+          },
+          "lp-tableau-row": {
+            "count": 16,
+            "work": 7744,
+            "maxUnits": 484,
+            "ms": 0.075
+          },
+          "lp-job-coefficient": {
+            "count": 4347,
+            "work": 4347,
+            "maxUnits": 1,
+            "ms": 8.694
+          },
+          "gel-seed-line": {
+            "count": 1936,
+            "work": 1936,
+            "maxUnits": 1,
+            "ms": 3.872
+          },
+          "ils-perturb": {
+            "count": 882,
+            "work": 882,
+            "maxUnits": 1,
+            "ms": 1.764
+          },
+          "climb-pass": {
+            "count": 844,
+            "work": 844,
+            "maxUnits": 1,
+            "ms": 1.688
+          },
+          "repair-pass": {
+            "count": 550,
+            "work": 550,
+            "maxUnits": 1,
+            "ms": 1.1
+          },
+          "gel-seed-step": {
+            "count": 395,
+            "work": 395,
+            "maxUnits": 1,
+            "ms": 0.79
+          },
+          "ils-iteration": {
+            "count": 343,
+            "work": 343,
+            "maxUnits": 1,
+            "ms": 0.686
+          },
+          "lp-random-line": {
+            "count": 112,
+            "work": 112,
+            "maxUnits": 1,
+            "ms": 0.224
+          },
+          "seed-start": {
+            "count": 24,
+            "work": 24,
+            "maxUnits": 1,
+            "ms": 0.048
+          },
+          "lp-random-seed": {
+            "count": 16,
+            "work": 16,
+            "maxUnits": 1,
+            "ms": 0.032
+          },
+          "lp-resource-row": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "gel-prefix": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "lp-line-row": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "lp-offset": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.012
+          },
+          "target-seed": {
+            "count": 5,
+            "work": 5,
+            "maxUnits": 1,
+            "ms": 0.01
+          },
+          "margin-stage": {
+            "count": 1,
+            "work": 1,
+            "maxUnits": 1,
+            "ms": 0.085
+          }
+        }
+      },
+      "lp": {
+        "pivots": 95,
+        "tableauRows": 16,
+        "work": 816859,
+        "workOnControl": 816859,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 1,
+        "lpMaximize": 1,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 1000.003,
+      "reportedMs": 1000.003,
+      "nonDeterministic": {
+        "wallMs": 933.1,
+        "lpMs": 7.15
+      }
+    },
+    {
+      "fixture": "items-7line",
+      "mode": "items",
+      "kind": "virtual",
+      "budgetMs": 4000,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 744475.5911111111,
+      "result": {
+        "bound": 932397.0031753596,
+        "binding": "Rods",
+        "mixMode": "ratio",
+        "tol": 0,
+        "usesMargin": false,
+        "out": {
+          "Glass": 7370560.640000001,
+          "Bricks": 5740420.4799999995,
+          "Plates": 7780280.32,
+          "Rods": 6700280.32,
+          "Gel": 3199336.2765929834
+        },
+        "blocked": [],
+        "soloMax": null,
+        "shareOfMax": null,
+        "gap": 0.201547
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": true
+      },
+      "work": {
+        "total": 2812776,
+        "probe": 1995917,
+        "dense": 816859,
+        "byLabel": {
+          "climb-job": {
+            "count": 1668342,
+            "work": 1668342,
+            "maxUnits": 1,
+            "ms": 3336.684
+          },
+          "lp-pivot": {
+            "count": 95,
+            "work": 809115,
+            "maxUnits": 8517,
+            "ms": 8.011
+          },
+          "repair-job": {
+            "count": 309876,
+            "work": 309876,
+            "maxUnits": 1,
+            "ms": 619.752
+          },
+          "lp-tableau-row": {
+            "count": 16,
+            "work": 7744,
+            "maxUnits": 484,
+            "ms": 0.075
+          },
+          "lp-job-coefficient": {
+            "count": 4347,
+            "work": 4347,
+            "maxUnits": 1,
+            "ms": 8.694
+          },
+          "ils-perturb": {
+            "count": 3698,
+            "work": 3698,
+            "maxUnits": 1,
+            "ms": 7.396
+          },
+          "climb-pass": {
+            "count": 3505,
+            "work": 3505,
+            "maxUnits": 1,
+            "ms": 7.01
+          },
+          "repair-pass": {
+            "count": 2155,
+            "work": 2155,
+            "maxUnits": 1,
+            "ms": 4.31
+          },
+          "gel-seed-line": {
+            "count": 1936,
+            "work": 1936,
+            "maxUnits": 1,
+            "ms": 3.872
+          },
+          "ils-iteration": {
+            "count": 1475,
+            "work": 1475,
+            "maxUnits": 1,
+            "ms": 2.95
+          },
+          "gel-seed-step": {
+            "count": 395,
+            "work": 395,
+            "maxUnits": 1,
+            "ms": 0.79
+          },
+          "lp-random-line": {
+            "count": 112,
+            "work": 112,
+            "maxUnits": 1,
+            "ms": 0.224
+          },
+          "seed-start": {
+            "count": 24,
+            "work": 24,
+            "maxUnits": 1,
+            "ms": 0.048
+          },
+          "lp-random-seed": {
+            "count": 16,
+            "work": 16,
+            "maxUnits": 1,
+            "ms": 0.032
+          },
+          "lp-resource-row": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "gel-prefix": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "lp-line-row": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "lp-offset": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.012
+          },
+          "target-seed": {
+            "count": 5,
+            "work": 5,
+            "maxUnits": 1,
+            "ms": 0.01
+          },
+          "margin-stage": {
+            "count": 1,
+            "work": 1,
+            "maxUnits": 1,
+            "ms": 0.085
+          }
+        }
+      },
+      "lp": {
+        "pivots": 95,
+        "tableauRows": 16,
+        "work": 816859,
+        "workOnControl": 816859,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 1,
+        "lpMaximize": 1,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 4000.003,
+      "reportedMs": 4000.003,
+      "nonDeterministic": {
+        "wallMs": 3572.5,
+        "lpMs": 7.28
+      }
+    },
+    {
+      "fixture": "items-7line",
+      "mode": "items",
+      "kind": "virtual",
+      "budgetMs": 20000,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 744475.5911111111,
+      "result": {
+        "bound": 932397.0031753596,
+        "binding": "Rods",
+        "mixMode": "ratio",
+        "tol": 0,
+        "usesMargin": false,
+        "out": {
+          "Glass": 7370560.640000001,
+          "Bricks": 5740420.4799999995,
+          "Plates": 7780280.32,
+          "Rods": 6700280.32,
+          "Gel": 3199336.2765929834
+        },
+        "blocked": [],
+        "soloMax": null,
+        "shareOfMax": null,
+        "gap": 0.201547
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": true
+      },
+      "work": {
+        "total": 10812776,
+        "probe": 9995917,
+        "dense": 816859,
+        "byLabel": {
+          "climb-job": {
+            "count": 8416569,
+            "work": 8416569,
+            "maxUnits": 1,
+            "ms": 16833.138
+          },
+          "repair-job": {
+            "count": 1517488,
+            "work": 1517488,
+            "maxUnits": 1,
+            "ms": 3034.976
+          },
+          "lp-pivot": {
+            "count": 95,
+            "work": 809115,
+            "maxUnits": 8517,
+            "ms": 8.011
+          },
+          "ils-perturb": {
+            "count": 18925,
+            "work": 18925,
+            "maxUnits": 1,
+            "ms": 37.85
+          },
+          "climb-pass": {
+            "count": 17682,
+            "work": 17682,
+            "maxUnits": 1,
+            "ms": 35.364
+          },
+          "repair-pass": {
+            "count": 10802,
+            "work": 10802,
+            "maxUnits": 1,
+            "ms": 21.604
+          },
+          "lp-tableau-row": {
+            "count": 16,
+            "work": 7744,
+            "maxUnits": 484,
+            "ms": 0.075
+          },
+          "ils-iteration": {
+            "count": 7585,
+            "work": 7585,
+            "maxUnits": 1,
+            "ms": 15.17
+          },
+          "lp-job-coefficient": {
+            "count": 4347,
+            "work": 4347,
+            "maxUnits": 1,
+            "ms": 8.694
+          },
+          "gel-seed-line": {
+            "count": 1936,
+            "work": 1936,
+            "maxUnits": 1,
+            "ms": 3.872
+          },
+          "gel-seed-step": {
+            "count": 395,
+            "work": 395,
+            "maxUnits": 1,
+            "ms": 0.79
+          },
+          "lp-random-line": {
+            "count": 112,
+            "work": 112,
+            "maxUnits": 1,
+            "ms": 0.224
+          },
+          "seed-start": {
+            "count": 24,
+            "work": 24,
+            "maxUnits": 1,
+            "ms": 0.048
+          },
+          "lp-random-seed": {
+            "count": 16,
+            "work": 16,
+            "maxUnits": 1,
+            "ms": 0.032
+          },
+          "lp-resource-row": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "gel-prefix": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "lp-line-row": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "lp-offset": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.012
+          },
+          "target-seed": {
+            "count": 5,
+            "work": 5,
+            "maxUnits": 1,
+            "ms": 0.01
+          },
+          "margin-stage": {
+            "count": 1,
+            "work": 1,
+            "maxUnits": 1,
+            "ms": 0.085
+          }
+        }
+      },
+      "lp": {
+        "pivots": 95,
+        "tableauRows": 16,
+        "work": 816859,
+        "workOnControl": 816859,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 1,
+        "lpMaximize": 1,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 20000.003,
+      "reportedMs": 20000.003,
+      "nonDeterministic": {
+        "wallMs": 18081,
+        "lpMs": 7.46
+      }
+    },
+    {
+      "fixture": "items-share-margin-7line",
+      "mode": "items",
+      "kind": "wall",
+      "budgetMs": 20000,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 0.8609784675947567,
+      "result": {
+        "bound": null,
+        "binding": "Bricks",
+        "mixMode": "share",
+        "tol": 0.05,
+        "usesMargin": false,
+        "out": {
+          "Glass": 7370560.640000001,
+          "Bricks": 4330280.319999999,
+          "Plates": 7780280.32,
+          "Rods": 6700280.32,
+          "Gel": 4586139.828668301
+        },
+        "blocked": [],
+        "soloMax": {
+          "Glass": 13716191.360000001,
+          "Bricks": 10058974.720000003,
+          "Plates": 16241121.280000001,
+          "Rods": 15161121.280000001,
+          "Gel": 8043162.578358059
+        },
+        "shareOfMax": {
+          "Glass": 0.5373620450859619,
+          "Bricks": 0.43048923379737836,
+          "Plates": 0.4790482249264996,
+          "Rods": 0.44193831025141694,
+          "Gel": 0.5701911137552216
+        },
+        "gap": null
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": true
+      },
+      "work": {
+        "total": 13330628,
+        "probe": 12035612,
+        "dense": 1295016,
+        "byLabel": {}
+      },
+      "lp": {
+        "pivots": 250,
+        "tableauRows": 61,
+        "work": 1295016,
+        "workOnControl": 1295016,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 6,
+        "lpMaximize": 6,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {},
+      "stopReasons": {},
+      "reportedMs": 20000.627,
+      "wall": {
+        "samples": 5,
+        "ms": {
+          "median": 20000.6,
+          "min": 20000.3,
+          "max": 20000.8,
+          "cvPct": 0
+        },
+        "probeMs": {
+          "median": 19997,
+          "min": 19995.7,
+          "max": 19997.4,
+          "cvPct": 0
+        },
+        "denseMs": {
+          "median": 3.8,
+          "min": 3.2,
+          "max": 4.9,
+          "cvPct": 17.82
+        },
+        "probeWorkPerSec": {
+          "median": 601872,
+          "min": 592729,
+          "max": 605061,
+          "cvPct": 0.79
+        },
+        "denseWorkPerSec": {
+          "median": 343372775,
+          "min": 263764089,
+          "max": 405384060,
+          "cvPct": 16.64
+        },
+        "totalWorkPerSec": {
+          "median": 666507,
+          "min": 657355,
+          "max": 669710,
+          "cvPct": 0.71
+        }
+      },
+      "objectiveRange": [
+        0.8609784675947567,
+        0.8609784675947567
+      ]
+    },
+    {
+      "fixture": "items-share-margin-7line",
+      "mode": "items",
+      "kind": "virtual",
+      "budgetMs": 250,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 0,
+      "result": {
+        "bound": null,
+        "binding": null,
+        "mixMode": "share",
+        "tol": 0.05,
+        "usesMargin": false,
+        "out": {
+          "Glass": 0,
+          "Bricks": 0,
+          "Plates": 0,
+          "Rods": 0,
+          "Gel": 0
+        },
+        "blocked": [],
+        "soloMax": null,
+        "shareOfMax": null,
+        "gap": null
+      },
+      "flags": {
+        "feasible": false,
+        "capped": true,
+        "deadlineReached": true
+      },
+      "work": {
+        "total": 152497,
+        "probe": 124863,
+        "dense": 27634,
+        "byLabel": {
+          "climb-job": {
+            "count": 93178,
+            "work": 93178,
+            "maxUnits": 1,
+            "ms": 186.356
+          },
+          "repair-job": {
+            "count": 27832,
+            "work": 27832,
+            "maxUnits": 1,
+            "ms": 55.664
+          },
+          "lp-pivot": {
+            "count": 23,
+            "work": 26680,
+            "maxUnits": 1160,
+            "ms": 0.256
+          },
+          "ils-perturb": {
+            "count": 1235,
+            "work": 1235,
+            "maxUnits": 1,
+            "ms": 2.47
+          },
+          "lp-tableau-row": {
+            "count": 9,
+            "work": 954,
+            "maxUnits": 106,
+            "ms": 0.01
+          },
+          "climb-pass": {
+            "count": 951,
+            "work": 951,
+            "maxUnits": 1,
+            "ms": 1.902
+          },
+          "repair-pass": {
+            "count": 794,
+            "work": 794,
+            "maxUnits": 1,
+            "ms": 1.588
+          },
+          "ils-iteration": {
+            "count": 485,
+            "work": 485,
+            "maxUnits": 1,
+            "ms": 0.97
+          },
+          "lp-job-coefficient": {
+            "count": 210,
+            "work": 210,
+            "maxUnits": 1,
+            "ms": 0.42
+          },
+          "lp-random-line": {
+            "count": 112,
+            "work": 112,
+            "maxUnits": 1,
+            "ms": 0.224
+          },
+          "seed-start": {
+            "count": 24,
+            "work": 24,
+            "maxUnits": 1,
+            "ms": 0.048
+          },
+          "lp-random-seed": {
+            "count": 16,
+            "work": 16,
+            "maxUnits": 1,
+            "ms": 0.032
+          },
+          "role-enumeration": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.016
+          },
+          "lp-line-row": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "lp-offset": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.012
+          },
+          "lp-resource-row": {
+            "count": 2,
+            "work": 2,
+            "maxUnits": 1,
+            "ms": 0.004
+          },
+          "margin-stage": {
+            "count": 1,
+            "work": 1,
+            "maxUnits": 1,
+            "ms": 0.012
+          },
+          "target-seed": {
+            "count": 1,
+            "work": 1,
+            "maxUnits": 1,
+            "ms": 0.002
+          }
+        }
+      },
+      "lp": {
+        "pivots": 23,
+        "tableauRows": 9,
+        "work": 27634,
+        "workOnControl": 27634,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 2,
+        "lpMaximize": 1,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 250.002,
+      "reportedMs": 250.002,
+      "nonDeterministic": {
+        "wallMs": 164.1,
+        "lpMs": 0.562
+      }
+    },
+    {
+      "fixture": "items-share-margin-7line",
+      "mode": "items",
+      "kind": "virtual",
+      "budgetMs": 1000,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 0,
+      "result": {
+        "bound": null,
+        "binding": null,
+        "mixMode": "share",
+        "tol": 0.05,
+        "usesMargin": false,
+        "out": {
+          "Glass": 0,
+          "Bricks": 0,
+          "Plates": 0,
+          "Rods": 0,
+          "Gel": 0
+        },
+        "blocked": [],
+        "soloMax": {
+          "Glass": 13011121.280000001,
+          "Bricks": 9970840.96,
+          "Plates": 16241121.280000001
+        },
+        "shareOfMax": {
+          "Glass": 0,
+          "Bricks": 0,
+          "Plates": 0
+        },
+        "gap": null
+      },
+      "flags": {
+        "feasible": false,
+        "capped": true,
+        "deadlineReached": true
+      },
+      "work": {
+        "total": 626144,
+        "probe": 499368,
+        "dense": 126776,
+        "byLabel": {
+          "climb-job": {
+            "count": 366568,
+            "work": 366568,
+            "maxUnits": 1,
+            "ms": 733.136
+          },
+          "lp-pivot": {
+            "count": 106,
+            "work": 122960,
+            "maxUnits": 1160,
+            "ms": 1.187
+          },
+          "repair-job": {
+            "count": 117457,
+            "work": 117457,
+            "maxUnits": 1,
+            "ms": 234.914
+          },
+          "ils-perturb": {
+            "count": 4894,
+            "work": 4894,
+            "maxUnits": 1,
+            "ms": 9.788
+          },
+          "lp-tableau-row": {
+            "count": 36,
+            "work": 3816,
+            "maxUnits": 106,
+            "ms": 0.042
+          },
+          "climb-pass": {
+            "count": 3742,
+            "work": 3742,
+            "maxUnits": 1,
+            "ms": 7.484
+          },
+          "repair-pass": {
+            "count": 3225,
+            "work": 3225,
+            "maxUnits": 1,
+            "ms": 6.45
+          },
+          "ils-iteration": {
+            "count": 1927,
+            "work": 1927,
+            "maxUnits": 1,
+            "ms": 3.854
+          },
+          "lp-job-coefficient": {
+            "count": 840,
+            "work": 840,
+            "maxUnits": 1,
+            "ms": 1.68
+          },
+          "lp-random-line": {
+            "count": 448,
+            "work": 448,
+            "maxUnits": 1,
+            "ms": 0.896
+          },
+          "seed-start": {
+            "count": 96,
+            "work": 96,
+            "maxUnits": 1,
+            "ms": 0.192
+          },
+          "lp-random-seed": {
+            "count": 64,
+            "work": 64,
+            "maxUnits": 1,
+            "ms": 0.128
+          },
+          "role-enumeration": {
+            "count": 32,
+            "work": 32,
+            "maxUnits": 1,
+            "ms": 0.064
+          },
+          "lp-line-row": {
+            "count": 28,
+            "work": 28,
+            "maxUnits": 1,
+            "ms": 0.056
+          },
+          "lp-offset": {
+            "count": 28,
+            "work": 28,
+            "maxUnits": 1,
+            "ms": 0.054
+          },
+          "lp-resource-row": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.016
+          },
+          "margin-stage": {
+            "count": 4,
+            "work": 4,
+            "maxUnits": 1,
+            "ms": 0.046
+          },
+          "target-seed": {
+            "count": 4,
+            "work": 4,
+            "maxUnits": 1,
+            "ms": 0.008
+          }
+        }
+      },
+      "lp": {
+        "pivots": 106,
+        "tableauRows": 36,
+        "work": 126776,
+        "workOnControl": 126776,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 5,
+        "lpMaximize": 4,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {
+        "local-time-limit": 3,
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 1000.004,
+      "reportedMs": 1000.004,
+      "nonDeterministic": {
+        "wallMs": 692.3,
+        "lpMs": 1.914
+      }
+    },
+    {
+      "fixture": "items-share-margin-7line",
+      "mode": "items",
+      "kind": "virtual",
+      "budgetMs": 4000,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 0.8685887855140353,
+      "result": {
+        "bound": null,
+        "binding": "Bricks",
+        "mixMode": "share",
+        "tol": 0.05,
+        "usesMargin": false,
+        "out": {
+          "Glass": 7370560.640000001,
+          "Bricks": 4330280.319999999,
+          "Plates": 7780280.32,
+          "Rods": 6700280.32,
+          "Gel": 4586139.828668301
+        },
+        "blocked": [],
+        "soloMax": {
+          "Glass": 13011121.280000001,
+          "Bricks": 9970840.96,
+          "Plates": 16241121.280000001,
+          "Rods": 15161121.280000001,
+          "Gel": 8043162.578358059
+        },
+        "shareOfMax": {
+          "Glass": 0.5664815876652869,
+          "Bricks": 0.43429439275701764,
+          "Plates": 0.4790482249264996,
+          "Rods": 0.44193831025141694,
+          "Gel": 0.5701911137552216
+        },
+        "gap": null
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": true
+      },
+      "work": {
+        "total": 3297017,
+        "probe": 1993484,
+        "dense": 1303533,
+        "byLabel": {
+          "climb-job": {
+            "count": 1525105,
+            "work": 1525105,
+            "maxUnits": 1,
+            "ms": 3050.21
+          },
+          "lp-pivot": {
+            "count": 251,
+            "work": 1291082,
+            "maxUnits": 8517,
+            "ms": 12.778
+          },
+          "repair-job": {
+            "count": 423029,
+            "work": 423029,
+            "maxUnits": 1,
+            "ms": 846.058
+          },
+          "lp-tableau-row": {
+            "count": 61,
+            "work": 12451,
+            "maxUnits": 484,
+            "ms": 0.126
+          },
+          "ils-perturb": {
+            "count": 12270,
+            "work": 12270,
+            "maxUnits": 1,
+            "ms": 24.54
+          },
+          "climb-pass": {
+            "count": 9611,
+            "work": 9611,
+            "maxUnits": 1,
+            "ms": 19.222
+          },
+          "repair-pass": {
+            "count": 7478,
+            "work": 7478,
+            "maxUnits": 1,
+            "ms": 14.956
+          },
+          "lp-job-coefficient": {
+            "count": 5383,
+            "work": 5383,
+            "maxUnits": 1,
+            "ms": 10.766
+          },
+          "ils-iteration": {
+            "count": 4864,
+            "work": 4864,
+            "maxUnits": 1,
+            "ms": 9.728
+          },
+          "gel-seed-line": {
+            "count": 3872,
+            "work": 3872,
+            "maxUnits": 1,
+            "ms": 7.744
+          },
+          "gel-seed-step": {
+            "count": 790,
+            "work": 790,
+            "maxUnits": 1,
+            "ms": 1.58
+          },
+          "lp-random-line": {
+            "count": 672,
+            "work": 672,
+            "maxUnits": 1,
+            "ms": 1.344
+          },
+          "seed-start": {
+            "count": 144,
+            "work": 144,
+            "maxUnits": 1,
+            "ms": 0.288
+          },
+          "lp-random-seed": {
+            "count": 96,
+            "work": 96,
+            "maxUnits": 1,
+            "ms": 0.192
+          },
+          "lp-line-row": {
+            "count": 42,
+            "work": 42,
+            "maxUnits": 1,
+            "ms": 0.084
+          },
+          "lp-offset": {
+            "count": 42,
+            "work": 42,
+            "maxUnits": 1,
+            "ms": 0.082
+          },
+          "role-enumeration": {
+            "count": 32,
+            "work": 32,
+            "maxUnits": 1,
+            "ms": 0.064
+          },
+          "lp-resource-row": {
+            "count": 19,
+            "work": 19,
+            "maxUnits": 1,
+            "ms": 0.038
+          },
+          "gel-prefix": {
+            "count": 14,
+            "work": 14,
+            "maxUnits": 1,
+            "ms": 0.028
+          },
+          "target-seed": {
+            "count": 10,
+            "work": 10,
+            "maxUnits": 1,
+            "ms": 0.02
+          },
+          "margin-stage": {
+            "count": 6,
+            "work": 6,
+            "maxUnits": 1,
+            "ms": 0.142
+          }
+        }
+      },
+      "lp": {
+        "pivots": 251,
+        "tableauRows": 61,
+        "work": 1303533,
+        "workOnControl": 1303533,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 6,
+        "lpMaximize": 6,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {
+        "local-time-limit": 5,
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 4000.003,
+      "reportedMs": 4000.003,
+      "nonDeterministic": {
+        "wallMs": 3134.5,
+        "lpMs": 3.234
+      }
+    },
+    {
+      "fixture": "items-share-margin-7line",
+      "mode": "items",
+      "kind": "virtual",
+      "budgetMs": 20000,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 0.8609784675947567,
+      "result": {
+        "bound": null,
+        "binding": "Bricks",
+        "mixMode": "share",
+        "tol": 0.05,
+        "usesMargin": false,
+        "out": {
+          "Glass": 7370560.640000001,
+          "Bricks": 4330280.319999999,
+          "Plates": 7780280.32,
+          "Rods": 6700280.32,
+          "Gel": 4586139.828668301
+        },
+        "blocked": [],
+        "soloMax": {
+          "Glass": 13716191.360000001,
+          "Bricks": 10058974.720000003,
+          "Plates": 16241121.280000001,
+          "Rods": 15161121.280000001,
+          "Gel": 8043162.578358059
+        },
+        "shareOfMax": {
+          "Glass": 0.5373620450859619,
+          "Bricks": 0.43048923379737836,
+          "Plates": 0.4790482249264996,
+          "Rods": 0.44193831025141694,
+          "Gel": 0.5701911137552216
+        },
+        "gap": null
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": true
+      },
+      "work": {
+        "total": 11288542,
+        "probe": 9993526,
+        "dense": 1295016,
+        "byLabel": {
+          "climb-job": {
+            "count": 7643658,
+            "work": 7643658,
+            "maxUnits": 1,
+            "ms": 15287.316
+          },
+          "repair-job": {
+            "count": 2212098,
+            "work": 2212098,
+            "maxUnits": 1,
+            "ms": 4424.196
+          },
+          "lp-pivot": {
+            "count": 250,
+            "work": 1282565,
+            "maxUnits": 8517,
+            "ms": 12.693
+          },
+          "ils-perturb": {
+            "count": 43590,
+            "work": 43590,
+            "maxUnits": 1,
+            "ms": 87.18
+          },
+          "climb-pass": {
+            "count": 34800,
+            "work": 34800,
+            "maxUnits": 1,
+            "ms": 69.6
+          },
+          "repair-pass": {
+            "count": 27488,
+            "work": 27488,
+            "maxUnits": 1,
+            "ms": 54.976
+          },
+          "ils-iteration": {
+            "count": 17418,
+            "work": 17418,
+            "maxUnits": 1,
+            "ms": 34.836
+          },
+          "lp-tableau-row": {
+            "count": 61,
+            "work": 12451,
+            "maxUnits": 484,
+            "ms": 0.126
+          },
+          "gel-seed-line": {
+            "count": 5808,
+            "work": 5808,
+            "maxUnits": 1,
+            "ms": 11.616
+          },
+          "lp-job-coefficient": {
+            "count": 5383,
+            "work": 5383,
+            "maxUnits": 1,
+            "ms": 10.766
+          },
+          "lp-random-line": {
+            "count": 1232,
+            "work": 1232,
+            "maxUnits": 1,
+            "ms": 2.464
+          },
+          "gel-seed-step": {
+            "count": 1185,
+            "work": 1185,
+            "maxUnits": 1,
+            "ms": 2.37
+          },
+          "seed-start": {
+            "count": 269,
+            "work": 269,
+            "maxUnits": 1,
+            "ms": 0.538
+          },
+          "deficit-job": {
+            "count": 196,
+            "work": 196,
+            "maxUnits": 1,
+            "ms": 0.392
+          },
+          "lp-random-seed": {
+            "count": 176,
+            "work": 176,
+            "maxUnits": 1,
+            "ms": 0.352
+          },
+          "role-enumeration": {
+            "count": 64,
+            "work": 64,
+            "maxUnits": 1,
+            "ms": 0.128
+          },
+          "lp-line-row": {
+            "count": 42,
+            "work": 42,
+            "maxUnits": 1,
+            "ms": 0.084
+          },
+          "lp-offset": {
+            "count": 42,
+            "work": 42,
+            "maxUnits": 1,
+            "ms": 0.082
+          },
+          "gel-prefix": {
+            "count": 21,
+            "work": 21,
+            "maxUnits": 1,
+            "ms": 0.042
+          },
+          "lp-resource-row": {
+            "count": 19,
+            "work": 19,
+            "maxUnits": 1,
+            "ms": 0.038
+          },
+          "target-seed": {
+            "count": 15,
+            "work": 15,
+            "maxUnits": 1,
+            "ms": 0.03
+          },
+          "margin-stage": {
+            "count": 11,
+            "work": 11,
+            "maxUnits": 1,
+            "ms": 0.152
+          },
+          "dfs-node": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "deficit-pass": {
+            "count": 2,
+            "work": 2,
+            "maxUnits": 1,
+            "ms": 0.004
+          }
+        }
+      },
+      "lp": {
+        "pivots": 250,
+        "tableauRows": 61,
+        "work": 1295016,
+        "workOnControl": 1295016,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 6,
+        "lpMaximize": 6,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 20000.002,
+      "reportedMs": 20000.002,
+      "nonDeterministic": {
+        "wallMs": 15862.2,
+        "lpMs": 3.26
+      }
+    },
+    {
+      "fixture": "items-8line",
+      "mode": "items",
+      "kind": "wall",
+      "budgetMs": 20000,
+      "seedRuns": 0,
+      "lines": 8,
+      "objective": 820060.0685714287,
+      "result": {
+        "bound": 965557.5584886838,
+        "binding": "Bricks",
+        "mixMode": "ratio",
+        "tol": 0,
+        "usesMargin": false,
+        "out": {
+          "Glass": 7370560.640000001,
+          "Bricks": 5740420.48,
+          "Plates": 7780280.32,
+          "Rods": 8110420.4799999995,
+          "Gel": 3199336.2765929834
+        },
+        "blocked": [],
+        "soloMax": null,
+        "shareOfMax": null,
+        "gap": 0.150688
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": true
+      },
+      "work": {
+        "total": 12152701,
+        "probe": 10692395,
+        "dense": 1460306,
+        "byLabel": {}
+      },
+      "lp": {
+        "pivots": 145,
+        "tableauRows": 17,
+        "work": 1460306,
+        "workOnControl": 1460306,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 1,
+        "lpMaximize": 1,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {},
+      "stopReasons": {},
+      "reportedMs": 20001.697,
+      "wall": {
+        "samples": 5,
+        "ms": {
+          "median": 20000.6,
+          "min": 20000.4,
+          "max": 20001.8,
+          "cvPct": 0
+        },
+        "probeMs": {
+          "median": 19992.7,
+          "min": 19990.1,
+          "max": 19994.5,
+          "cvPct": 0.01
+        },
+        "denseMs": {
+          "median": 9.1,
+          "min": 6.1,
+          "max": 10.8,
+          "cvPct": 24.38
+        },
+        "probeWorkPerSec": {
+          "median": 534815,
+          "min": 533930,
+          "max": 539896,
+          "cvPct": 0.48
+        },
+        "denseWorkPerSec": {
+          "median": 160995094,
+          "min": 135044201,
+          "max": 239603942,
+          "cvPct": 25.97
+        },
+        "totalWorkPerSec": {
+          "median": 607581,
+          "min": 606707,
+          "max": 612634,
+          "cvPct": 0.42
+        }
+      },
+      "objectiveRange": [
+        820060.0685714287,
+        820060.0685714287
+      ]
+    },
+    {
+      "fixture": "items-8line",
+      "mode": "items",
+      "kind": "virtual",
+      "budgetMs": 250,
+      "seedRuns": 0,
+      "lines": 8,
+      "objective": 820060.0685714287,
+      "result": {
+        "bound": 965557.5584886838,
+        "binding": "Bricks",
+        "mixMode": "ratio",
+        "tol": 0,
+        "usesMargin": false,
+        "out": {
+          "Glass": 7370560.640000001,
+          "Bricks": 5740420.48,
+          "Plates": 7780280.32,
+          "Rods": 8110420.4799999995,
+          "Gel": 3199336.2765929834
+        },
+        "blocked": [],
+        "soloMax": null,
+        "shareOfMax": null,
+        "gap": 0.150688
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": true
+      },
+      "work": {
+        "total": 1578006,
+        "probe": 117700,
+        "dense": 1460306,
+        "byLabel": {
+          "lp-pivot": {
+            "count": 145,
+            "work": 1451160,
+            "maxUnits": 10008,
+            "ms": 14.417
+          },
+          "climb-job": {
+            "count": 76755,
+            "work": 76755,
+            "maxUnits": 1,
+            "ms": 153.51
+          },
+          "repair-job": {
+            "count": 32269,
+            "work": 32269,
+            "maxUnits": 1,
+            "ms": 64.538
+          },
+          "lp-tableau-row": {
+            "count": 17,
+            "work": 9146,
+            "maxUnits": 538,
+            "ms": 0.088
+          },
+          "lp-job-coefficient": {
+            "count": 4833,
+            "work": 4833,
+            "maxUnits": 1,
+            "ms": 9.666
+          },
+          "gel-seed-line": {
+            "count": 2752,
+            "work": 2752,
+            "maxUnits": 1,
+            "ms": 5.504
+          },
+          "gel-seed-step": {
+            "count": 497,
+            "work": 497,
+            "maxUnits": 1,
+            "ms": 0.994
+          },
+          "climb-pass": {
+            "count": 146,
+            "work": 146,
+            "maxUnits": 1,
+            "ms": 0.292
+          },
+          "lp-random-line": {
+            "count": 128,
+            "work": 128,
+            "maxUnits": 1,
+            "ms": 0.256
+          },
+          "repair-pass": {
+            "count": 124,
+            "work": 124,
+            "maxUnits": 1,
+            "ms": 0.248
+          },
+          "ils-perturb": {
+            "count": 83,
+            "work": 83,
+            "maxUnits": 1,
+            "ms": 0.166
+          },
+          "ils-iteration": {
+            "count": 33,
+            "work": 33,
+            "maxUnits": 1,
+            "ms": 0.066
+          },
+          "seed-start": {
+            "count": 25,
+            "work": 25,
+            "maxUnits": 1,
+            "ms": 0.05
+          },
+          "lp-random-seed": {
+            "count": 16,
+            "work": 16,
+            "maxUnits": 1,
+            "ms": 0.032
+          },
+          "lp-resource-row": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "gel-prefix": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.016
+          },
+          "lp-line-row": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.016
+          },
+          "lp-offset": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "target-seed": {
+            "count": 5,
+            "work": 5,
+            "maxUnits": 1,
+            "ms": 0.01
+          },
+          "margin-stage": {
+            "count": 1,
+            "work": 1,
+            "maxUnits": 1,
+            "ms": 0.1
+          }
+        }
+      },
+      "lp": {
+        "pivots": 145,
+        "tableauRows": 17,
+        "work": 1460306,
+        "workOnControl": 1460306,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 1,
+        "lpMaximize": 1,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 250.003,
+      "reportedMs": 250.003,
+      "nonDeterministic": {
+        "wallMs": 241.9,
+        "lpMs": 8.996
+      }
+    },
+    {
+      "fixture": "items-8line",
+      "mode": "items",
+      "kind": "virtual",
+      "budgetMs": 1000,
+      "seedRuns": 0,
+      "lines": 8,
+      "objective": 820060.0685714287,
+      "result": {
+        "bound": 965557.5584886838,
+        "binding": "Bricks",
+        "mixMode": "ratio",
+        "tol": 0,
+        "usesMargin": false,
+        "out": {
+          "Glass": 7370560.640000001,
+          "Bricks": 5740420.48,
+          "Plates": 7780280.32,
+          "Rods": 8110420.4799999995,
+          "Gel": 3199336.2765929834
+        },
+        "blocked": [],
+        "soloMax": null,
+        "shareOfMax": null,
+        "gap": 0.150688
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": true
+      },
+      "work": {
+        "total": 1953006,
+        "probe": 492700,
+        "dense": 1460306,
+        "byLabel": {
+          "lp-pivot": {
+            "count": 145,
+            "work": 1451160,
+            "maxUnits": 10008,
+            "ms": 14.417
+          },
+          "climb-job": {
+            "count": 393749,
+            "work": 393749,
+            "maxUnits": 1,
+            "ms": 787.498
+          },
+          "repair-job": {
+            "count": 88343,
+            "work": 88343,
+            "maxUnits": 1,
+            "ms": 176.686
+          },
+          "lp-tableau-row": {
+            "count": 17,
+            "work": 9146,
+            "maxUnits": 538,
+            "ms": 0.088
+          },
+          "lp-job-coefficient": {
+            "count": 4833,
+            "work": 4833,
+            "maxUnits": 1,
+            "ms": 9.666
+          },
+          "gel-seed-line": {
+            "count": 2752,
+            "work": 2752,
+            "maxUnits": 1,
+            "ms": 5.504
+          },
+          "ils-perturb": {
+            "count": 772,
+            "work": 772,
+            "maxUnits": 1,
+            "ms": 1.544
+          },
+          "climb-pass": {
+            "count": 745,
+            "work": 745,
+            "maxUnits": 1,
+            "ms": 1.49
+          },
+          "repair-pass": {
+            "count": 499,
+            "work": 499,
+            "maxUnits": 1,
+            "ms": 0.998
+          },
+          "gel-seed-step": {
+            "count": 497,
+            "work": 497,
+            "maxUnits": 1,
+            "ms": 0.994
+          },
+          "ils-iteration": {
+            "count": 302,
+            "work": 302,
+            "maxUnits": 1,
+            "ms": 0.604
+          },
+          "lp-random-line": {
+            "count": 128,
+            "work": 128,
+            "maxUnits": 1,
+            "ms": 0.256
+          },
+          "seed-start": {
+            "count": 25,
+            "work": 25,
+            "maxUnits": 1,
+            "ms": 0.05
+          },
+          "lp-random-seed": {
+            "count": 16,
+            "work": 16,
+            "maxUnits": 1,
+            "ms": 0.032
+          },
+          "lp-resource-row": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "gel-prefix": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.016
+          },
+          "lp-line-row": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.016
+          },
+          "lp-offset": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "target-seed": {
+            "count": 5,
+            "work": 5,
+            "maxUnits": 1,
+            "ms": 0.01
+          },
+          "margin-stage": {
+            "count": 1,
+            "work": 1,
+            "maxUnits": 1,
+            "ms": 0.1
+          }
+        }
+      },
+      "lp": {
+        "pivots": 145,
+        "tableauRows": 17,
+        "work": 1460306,
+        "workOnControl": 1460306,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 1,
+        "lpMaximize": 1,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 1000.003,
+      "reportedMs": 1000.003,
+      "nonDeterministic": {
+        "wallMs": 897.8,
+        "lpMs": 6.7
+      }
+    },
+    {
+      "fixture": "items-8line",
+      "mode": "items",
+      "kind": "virtual",
+      "budgetMs": 4000,
+      "seedRuns": 0,
+      "lines": 8,
+      "objective": 820060.0685714287,
+      "result": {
+        "bound": 965557.5584886838,
+        "binding": "Bricks",
+        "mixMode": "ratio",
+        "tol": 0,
+        "usesMargin": false,
+        "out": {
+          "Glass": 7370560.640000001,
+          "Bricks": 5740420.48,
+          "Plates": 7780280.32,
+          "Rods": 8110420.4799999995,
+          "Gel": 3199336.2765929834
+        },
+        "blocked": [],
+        "soloMax": null,
+        "shareOfMax": null,
+        "gap": 0.150688
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": true
+      },
+      "work": {
+        "total": 3453006,
+        "probe": 1992700,
+        "dense": 1460306,
+        "byLabel": {
+          "climb-job": {
+            "count": 1652497,
+            "work": 1652497,
+            "maxUnits": 1,
+            "ms": 3304.994
+          },
+          "lp-pivot": {
+            "count": 145,
+            "work": 1451160,
+            "maxUnits": 10008,
+            "ms": 14.417
+          },
+          "repair-job": {
+            "count": 322161,
+            "work": 322161,
+            "maxUnits": 1,
+            "ms": 644.322
+          },
+          "lp-tableau-row": {
+            "count": 17,
+            "work": 9146,
+            "maxUnits": 538,
+            "ms": 0.088
+          },
+          "lp-job-coefficient": {
+            "count": 4833,
+            "work": 4833,
+            "maxUnits": 1,
+            "ms": 9.666
+          },
+          "ils-perturb": {
+            "count": 3329,
+            "work": 3329,
+            "maxUnits": 1,
+            "ms": 6.658
+          },
+          "climb-pass": {
+            "count": 3124,
+            "work": 3124,
+            "maxUnits": 1,
+            "ms": 6.248
+          },
+          "gel-seed-line": {
+            "count": 2752,
+            "work": 2752,
+            "maxUnits": 1,
+            "ms": 5.504
+          },
+          "repair-pass": {
+            "count": 1969,
+            "work": 1969,
+            "maxUnits": 1,
+            "ms": 3.938
+          },
+          "ils-iteration": {
+            "count": 1330,
+            "work": 1330,
+            "maxUnits": 1,
+            "ms": 2.66
+          },
+          "gel-seed-step": {
+            "count": 497,
+            "work": 497,
+            "maxUnits": 1,
+            "ms": 0.994
+          },
+          "lp-random-line": {
+            "count": 128,
+            "work": 128,
+            "maxUnits": 1,
+            "ms": 0.256
+          },
+          "seed-start": {
+            "count": 25,
+            "work": 25,
+            "maxUnits": 1,
+            "ms": 0.05
+          },
+          "lp-random-seed": {
+            "count": 16,
+            "work": 16,
+            "maxUnits": 1,
+            "ms": 0.032
+          },
+          "lp-resource-row": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "gel-prefix": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.016
+          },
+          "lp-line-row": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.016
+          },
+          "lp-offset": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "target-seed": {
+            "count": 5,
+            "work": 5,
+            "maxUnits": 1,
+            "ms": 0.01
+          },
+          "margin-stage": {
+            "count": 1,
+            "work": 1,
+            "maxUnits": 1,
+            "ms": 0.1
+          }
+        }
+      },
+      "lp": {
+        "pivots": 145,
+        "tableauRows": 17,
+        "work": 1460306,
+        "workOnControl": 1460306,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 1,
+        "lpMaximize": 1,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 4000.003,
+      "reportedMs": 4000.003,
+      "nonDeterministic": {
+        "wallMs": 3546.2,
+        "lpMs": 11.085
+      }
+    },
+    {
+      "fixture": "items-8line",
+      "mode": "items",
+      "kind": "virtual",
+      "budgetMs": 20000,
+      "seedRuns": 0,
+      "lines": 8,
+      "objective": 820060.0685714287,
+      "result": {
+        "bound": 965557.5584886838,
+        "binding": "Bricks",
+        "mixMode": "ratio",
+        "tol": 0,
+        "usesMargin": false,
+        "out": {
+          "Glass": 7370560.640000001,
+          "Bricks": 5740420.48,
+          "Plates": 7780280.32,
+          "Rods": 8110420.4799999995,
+          "Gel": 3199336.2765929834
+        },
+        "blocked": [],
+        "soloMax": null,
+        "shareOfMax": null,
+        "gap": 0.150688
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": true
+      },
+      "work": {
+        "total": 11453006,
+        "probe": 9992700,
+        "dense": 1460306,
+        "byLabel": {
+          "climb-job": {
+            "count": 8381385,
+            "work": 8381385,
+            "maxUnits": 1,
+            "ms": 16762.77
+          },
+          "repair-job": {
+            "count": 1553144,
+            "work": 1553144,
+            "maxUnits": 1,
+            "ms": 3106.288
+          },
+          "lp-pivot": {
+            "count": 145,
+            "work": 1451160,
+            "maxUnits": 10008,
+            "ms": 14.417
+          },
+          "ils-perturb": {
+            "count": 17245,
+            "work": 17245,
+            "maxUnits": 1,
+            "ms": 34.49
+          },
+          "climb-pass": {
+            "count": 15844,
+            "work": 15844,
+            "maxUnits": 1,
+            "ms": 31.688
+          },
+          "repair-pass": {
+            "count": 9879,
+            "work": 9879,
+            "maxUnits": 1,
+            "ms": 19.758
+          },
+          "lp-tableau-row": {
+            "count": 17,
+            "work": 9146,
+            "maxUnits": 538,
+            "ms": 0.088
+          },
+          "ils-iteration": {
+            "count": 6913,
+            "work": 6913,
+            "maxUnits": 1,
+            "ms": 13.826
+          },
+          "lp-job-coefficient": {
+            "count": 4833,
+            "work": 4833,
+            "maxUnits": 1,
+            "ms": 9.666
+          },
+          "gel-seed-line": {
+            "count": 2752,
+            "work": 2752,
+            "maxUnits": 1,
+            "ms": 5.504
+          },
+          "gel-seed-step": {
+            "count": 497,
+            "work": 497,
+            "maxUnits": 1,
+            "ms": 0.994
+          },
+          "lp-random-line": {
+            "count": 128,
+            "work": 128,
+            "maxUnits": 1,
+            "ms": 0.256
+          },
+          "seed-start": {
+            "count": 25,
+            "work": 25,
+            "maxUnits": 1,
+            "ms": 0.05
+          },
+          "lp-random-seed": {
+            "count": 16,
+            "work": 16,
+            "maxUnits": 1,
+            "ms": 0.032
+          },
+          "lp-resource-row": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "gel-prefix": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.016
+          },
+          "lp-line-row": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.016
+          },
+          "lp-offset": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "target-seed": {
+            "count": 5,
+            "work": 5,
+            "maxUnits": 1,
+            "ms": 0.01
+          },
+          "margin-stage": {
+            "count": 1,
+            "work": 1,
+            "maxUnits": 1,
+            "ms": 0.1
+          }
+        }
+      },
+      "lp": {
+        "pivots": 145,
+        "tableauRows": 17,
+        "work": 1460306,
+        "workOnControl": 1460306,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 1,
+        "lpMaximize": 1,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 20000.003,
+      "reportedMs": 20000.003,
+      "nonDeterministic": {
+        "wallMs": 18175.2,
+        "lpMs": 5.98
+      }
+    },
+    {
+      "fixture": "items-10line",
+      "mode": "items",
+      "kind": "wall",
+      "budgetMs": 20000,
+      "seedRuns": 0,
+      "lines": 10,
+      "objective": 901157.8311111111,
+      "result": {
+        "bound": 1015676.5840405166,
+        "binding": "Rods",
+        "mixMode": "ratio",
+        "tol": 0,
+        "usesMargin": false,
+        "out": {
+          "Glass": 7370560.640000001,
+          "Bricks": 7150560.64,
+          "Plates": 8132815.359999999,
+          "Rods": 8110420.4799999995,
+          "Gel": 3199336.2765929834
+        },
+        "blocked": [],
+        "soloMax": null,
+        "shareOfMax": null,
+        "gap": 0.112751
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": true
+      },
+      "work": {
+        "total": 12847066,
+        "probe": 10650312,
+        "dense": 2196754,
+        "byLabel": {}
+      },
+      "lp": {
+        "pivots": 164,
+        "tableauRows": 19,
+        "work": 2196754,
+        "workOnControl": 2196754,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 1,
+        "lpMaximize": 1,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {},
+      "stopReasons": {},
+      "reportedMs": 20000.669,
+      "wall": {
+        "samples": 5,
+        "ms": {
+          "median": 20000.6,
+          "min": 20000.4,
+          "max": 20072.3,
+          "cvPct": 0.16
+        },
+        "probeMs": {
+          "median": 19990.8,
+          "min": 19979,
+          "max": 20051.1,
+          "cvPct": 0.14
+        },
+        "denseMs": {
+          "median": 12.3,
+          "min": 7.5,
+          "max": 21.7,
+          "cvPct": 45.31
+        },
+        "probeWorkPerSec": {
+          "median": 533075,
+          "min": 521151,
+          "max": 538878,
+          "cvPct": 1.45
+        },
+        "denseWorkPerSec": {
+          "median": 177891627,
+          "min": 101084035,
+          "max": 294858037,
+          "cvPct": 45.7
+        },
+        "totalWorkPerSec": {
+          "median": 642330,
+          "min": 630730,
+          "max": 648512,
+          "cvPct": 1.22
+        }
+      },
+      "objectiveRange": [
+        901157.8311111111,
+        901157.8311111111
+      ]
+    },
+    {
+      "fixture": "items-10line",
+      "mode": "items",
+      "kind": "virtual",
+      "budgetMs": 250,
+      "seedRuns": 0,
+      "lines": 10,
+      "objective": 901157.8311111111,
+      "result": {
+        "bound": 1015676.5840405166,
+        "binding": "Rods",
+        "mixMode": "ratio",
+        "tol": 0,
+        "usesMargin": false,
+        "out": {
+          "Glass": 7370560.640000001,
+          "Bricks": 7150560.64,
+          "Plates": 8132815.359999999,
+          "Rods": 8110420.4799999995,
+          "Gel": 3199336.2765929834
+        },
+        "blocked": [],
+        "soloMax": null,
+        "shareOfMax": null,
+        "gap": 0.112751
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": true
+      },
+      "work": {
+        "total": 2310772,
+        "probe": 114018,
+        "dense": 2196754,
+        "byLabel": {
+          "lp-pivot": {
+            "count": 164,
+            "work": 2184480,
+            "maxUnits": 13320,
+            "ms": 21.718
+          },
+          "climb-job": {
+            "count": 66675,
+            "work": 66675,
+            "maxUnits": 1,
+            "ms": 133.35
+          },
+          "repair-job": {
+            "count": 35325,
+            "work": 35325,
+            "maxUnits": 1,
+            "ms": 70.65
+          },
+          "lp-tableau-row": {
+            "count": 19,
+            "work": 12274,
+            "maxUnits": 646,
+            "ms": 0.118
+          },
+          "lp-job-coefficient": {
+            "count": 5805,
+            "work": 5805,
+            "maxUnits": 1,
+            "ms": 11.61
+          },
+          "gel-seed-line": {
+            "count": 4980,
+            "work": 4980,
+            "maxUnits": 1,
+            "ms": 9.96
+          },
+          "gel-seed-step": {
+            "count": 731,
+            "work": 731,
+            "maxUnits": 1,
+            "ms": 1.462
+          },
+          "lp-random-line": {
+            "count": 160,
+            "work": 160,
+            "maxUnits": 1,
+            "ms": 0.32
+          },
+          "climb-pass": {
+            "count": 105,
+            "work": 105,
+            "maxUnits": 1,
+            "ms": 0.21
+          },
+          "repair-pass": {
+            "count": 100,
+            "work": 100,
+            "maxUnits": 1,
+            "ms": 0.2
+          },
+          "ils-perturb": {
+            "count": 36,
+            "work": 36,
+            "maxUnits": 1,
+            "ms": 0.072
+          },
+          "seed-start": {
+            "count": 27,
+            "work": 27,
+            "maxUnits": 1,
+            "ms": 0.054
+          },
+          "lp-random-seed": {
+            "count": 16,
+            "work": 16,
+            "maxUnits": 1,
+            "ms": 0.032
+          },
+          "ils-iteration": {
+            "count": 13,
+            "work": 13,
+            "maxUnits": 1,
+            "ms": 0.026
+          },
+          "gel-prefix": {
+            "count": 10,
+            "work": 10,
+            "maxUnits": 1,
+            "ms": 0.02
+          },
+          "lp-line-row": {
+            "count": 10,
+            "work": 10,
+            "maxUnits": 1,
+            "ms": 0.02
+          },
+          "lp-offset": {
+            "count": 10,
+            "work": 10,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "lp-resource-row": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "target-seed": {
+            "count": 5,
+            "work": 5,
+            "maxUnits": 1,
+            "ms": 0.01
+          },
+          "margin-stage": {
+            "count": 1,
+            "work": 1,
+            "maxUnits": 1,
+            "ms": 0.133
+          }
+        }
+      },
+      "lp": {
+        "pivots": 164,
+        "tableauRows": 19,
+        "work": 2196754,
+        "workOnControl": 2196754,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 1,
+        "lpMaximize": 1,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 250.004,
+      "reportedMs": 250.004,
+      "nonDeterministic": {
+        "wallMs": 259.7,
+        "lpMs": 12.474
+      }
+    },
+    {
+      "fixture": "items-10line",
+      "mode": "items",
+      "kind": "virtual",
+      "budgetMs": 1000,
+      "seedRuns": 0,
+      "lines": 10,
+      "objective": 901157.8311111111,
+      "result": {
+        "bound": 1015676.5840405166,
+        "binding": "Rods",
+        "mixMode": "ratio",
+        "tol": 0,
+        "usesMargin": false,
+        "out": {
+          "Glass": 7370560.640000001,
+          "Bricks": 7150560.64,
+          "Plates": 8132815.359999999,
+          "Rods": 8110420.4799999995,
+          "Gel": 3199336.2765929834
+        },
+        "blocked": [],
+        "soloMax": null,
+        "shareOfMax": null,
+        "gap": 0.112751
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": true
+      },
+      "work": {
+        "total": 2685772,
+        "probe": 489018,
+        "dense": 2196754,
+        "byLabel": {
+          "lp-pivot": {
+            "count": 164,
+            "work": 2184480,
+            "maxUnits": 13320,
+            "ms": 21.718
+          },
+          "climb-job": {
+            "count": 387985,
+            "work": 387985,
+            "maxUnits": 1,
+            "ms": 775.97
+          },
+          "repair-job": {
+            "count": 87415,
+            "work": 87415,
+            "maxUnits": 1,
+            "ms": 174.83
+          },
+          "lp-tableau-row": {
+            "count": 19,
+            "work": 12274,
+            "maxUnits": 646,
+            "ms": 0.118
+          },
+          "lp-job-coefficient": {
+            "count": 5805,
+            "work": 5805,
+            "maxUnits": 1,
+            "ms": 11.61
+          },
+          "gel-seed-line": {
+            "count": 4980,
+            "work": 4980,
+            "maxUnits": 1,
+            "ms": 9.96
+          },
+          "gel-seed-step": {
+            "count": 731,
+            "work": 731,
+            "maxUnits": 1,
+            "ms": 1.462
+          },
+          "climb-pass": {
+            "count": 611,
+            "work": 611,
+            "maxUnits": 1,
+            "ms": 1.222
+          },
+          "ils-perturb": {
+            "count": 604,
+            "work": 604,
+            "maxUnits": 1,
+            "ms": 1.208
+          },
+          "repair-pass": {
+            "count": 404,
+            "work": 404,
+            "maxUnits": 1,
+            "ms": 0.808
+          },
+          "ils-iteration": {
+            "count": 235,
+            "work": 235,
+            "maxUnits": 1,
+            "ms": 0.47
+          },
+          "lp-random-line": {
+            "count": 160,
+            "work": 160,
+            "maxUnits": 1,
+            "ms": 0.32
+          },
+          "seed-start": {
+            "count": 27,
+            "work": 27,
+            "maxUnits": 1,
+            "ms": 0.054
+          },
+          "lp-random-seed": {
+            "count": 16,
+            "work": 16,
+            "maxUnits": 1,
+            "ms": 0.032
+          },
+          "gel-prefix": {
+            "count": 10,
+            "work": 10,
+            "maxUnits": 1,
+            "ms": 0.02
+          },
+          "lp-line-row": {
+            "count": 10,
+            "work": 10,
+            "maxUnits": 1,
+            "ms": 0.02
+          },
+          "lp-offset": {
+            "count": 10,
+            "work": 10,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "lp-resource-row": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "target-seed": {
+            "count": 5,
+            "work": 5,
+            "maxUnits": 1,
+            "ms": 0.01
+          },
+          "margin-stage": {
+            "count": 1,
+            "work": 1,
+            "maxUnits": 1,
+            "ms": 0.133
+          }
+        }
+      },
+      "lp": {
+        "pivots": 164,
+        "tableauRows": 19,
+        "work": 2196754,
+        "workOnControl": 2196754,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 1,
+        "lpMaximize": 1,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 1000.004,
+      "reportedMs": 1000.004,
+      "nonDeterministic": {
+        "wallMs": 942.9,
+        "lpMs": 7.424
+      }
+    },
+    {
+      "fixture": "items-10line",
+      "mode": "items",
+      "kind": "virtual",
+      "budgetMs": 4000,
+      "seedRuns": 0,
+      "lines": 10,
+      "objective": 901157.8311111111,
+      "result": {
+        "bound": 1015676.5840405166,
+        "binding": "Rods",
+        "mixMode": "ratio",
+        "tol": 0,
+        "usesMargin": false,
+        "out": {
+          "Glass": 7370560.640000001,
+          "Bricks": 7150560.64,
+          "Plates": 8132815.359999999,
+          "Rods": 8110420.4799999995,
+          "Gel": 3199336.2765929834
+        },
+        "blocked": [],
+        "soloMax": null,
+        "shareOfMax": null,
+        "gap": 0.112751
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": true
+      },
+      "work": {
+        "total": 4185772,
+        "probe": 1989018,
+        "dense": 2196754,
+        "byLabel": {
+          "lp-pivot": {
+            "count": 164,
+            "work": 2184480,
+            "maxUnits": 13320,
+            "ms": 21.718
+          },
+          "climb-job": {
+            "count": 1654830,
+            "work": 1654830,
+            "maxUnits": 1,
+            "ms": 3309.66
+          },
+          "repair-job": {
+            "count": 314325,
+            "work": 314325,
+            "maxUnits": 1,
+            "ms": 628.65
+          },
+          "lp-tableau-row": {
+            "count": 19,
+            "work": 12274,
+            "maxUnits": 646,
+            "ms": 0.118
+          },
+          "lp-job-coefficient": {
+            "count": 5805,
+            "work": 5805,
+            "maxUnits": 1,
+            "ms": 11.61
+          },
+          "gel-seed-line": {
+            "count": 4980,
+            "work": 4980,
+            "maxUnits": 1,
+            "ms": 9.96
+          },
+          "ils-perturb": {
+            "count": 2763,
+            "work": 2763,
+            "maxUnits": 1,
+            "ms": 5.526
+          },
+          "climb-pass": {
+            "count": 2607,
+            "work": 2607,
+            "maxUnits": 1,
+            "ms": 5.214
+          },
+          "repair-pass": {
+            "count": 1628,
+            "work": 1628,
+            "maxUnits": 1,
+            "ms": 3.256
+          },
+          "ils-iteration": {
+            "count": 1101,
+            "work": 1101,
+            "maxUnits": 1,
+            "ms": 2.202
+          },
+          "gel-seed-step": {
+            "count": 731,
+            "work": 731,
+            "maxUnits": 1,
+            "ms": 1.462
+          },
+          "lp-random-line": {
+            "count": 160,
+            "work": 160,
+            "maxUnits": 1,
+            "ms": 0.32
+          },
+          "seed-start": {
+            "count": 27,
+            "work": 27,
+            "maxUnits": 1,
+            "ms": 0.054
+          },
+          "lp-random-seed": {
+            "count": 16,
+            "work": 16,
+            "maxUnits": 1,
+            "ms": 0.032
+          },
+          "gel-prefix": {
+            "count": 10,
+            "work": 10,
+            "maxUnits": 1,
+            "ms": 0.02
+          },
+          "lp-line-row": {
+            "count": 10,
+            "work": 10,
+            "maxUnits": 1,
+            "ms": 0.02
+          },
+          "lp-offset": {
+            "count": 10,
+            "work": 10,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "lp-resource-row": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "target-seed": {
+            "count": 5,
+            "work": 5,
+            "maxUnits": 1,
+            "ms": 0.01
+          },
+          "margin-stage": {
+            "count": 1,
+            "work": 1,
+            "maxUnits": 1,
+            "ms": 0.133
+          }
+        }
+      },
+      "lp": {
+        "pivots": 164,
+        "tableauRows": 19,
+        "work": 2196754,
+        "workOnControl": 2196754,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 1,
+        "lpMaximize": 1,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 4000.004,
+      "reportedMs": 4000.004,
+      "nonDeterministic": {
+        "wallMs": 3702.6,
+        "lpMs": 11.548
+      }
+    },
+    {
+      "fixture": "items-10line",
+      "mode": "items",
+      "kind": "virtual",
+      "budgetMs": 20000,
+      "seedRuns": 0,
+      "lines": 10,
+      "objective": 901157.8311111111,
+      "result": {
+        "bound": 1015676.5840405166,
+        "binding": "Rods",
+        "mixMode": "ratio",
+        "tol": 0,
+        "usesMargin": false,
+        "out": {
+          "Glass": 7370560.640000001,
+          "Bricks": 7150560.64,
+          "Plates": 8132815.359999999,
+          "Rods": 8110420.4799999995,
+          "Gel": 3199336.2765929834
+        },
+        "blocked": [],
+        "soloMax": null,
+        "shareOfMax": null,
+        "gap": 0.112751
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": true
+      },
+      "work": {
+        "total": 12185772,
+        "probe": 9989018,
+        "dense": 2196754,
+        "byLabel": {
+          "climb-job": {
+            "count": 8388913,
+            "work": 8388913,
+            "maxUnits": 1,
+            "ms": 16777.826
+          },
+          "lp-pivot": {
+            "count": 164,
+            "work": 2184480,
+            "maxUnits": 13320,
+            "ms": 21.718
+          },
+          "repair-job": {
+            "count": 1546860,
+            "work": 1546860,
+            "maxUnits": 1,
+            "ms": 3093.72
+          },
+          "ils-perturb": {
+            "count": 14322,
+            "work": 14322,
+            "maxUnits": 1,
+            "ms": 28.644
+          },
+          "climb-pass": {
+            "count": 13211,
+            "work": 13211,
+            "maxUnits": 1,
+            "ms": 26.422
+          },
+          "lp-tableau-row": {
+            "count": 19,
+            "work": 12274,
+            "maxUnits": 646,
+            "ms": 0.118
+          },
+          "repair-pass": {
+            "count": 8208,
+            "work": 8208,
+            "maxUnits": 1,
+            "ms": 16.416
+          },
+          "lp-job-coefficient": {
+            "count": 5805,
+            "work": 5805,
+            "maxUnits": 1,
+            "ms": 11.61
+          },
+          "ils-iteration": {
+            "count": 5740,
+            "work": 5740,
+            "maxUnits": 1,
+            "ms": 11.48
+          },
+          "gel-seed-line": {
+            "count": 4980,
+            "work": 4980,
+            "maxUnits": 1,
+            "ms": 9.96
+          },
+          "gel-seed-step": {
+            "count": 731,
+            "work": 731,
+            "maxUnits": 1,
+            "ms": 1.462
+          },
+          "lp-random-line": {
+            "count": 160,
+            "work": 160,
+            "maxUnits": 1,
+            "ms": 0.32
+          },
+          "seed-start": {
+            "count": 27,
+            "work": 27,
+            "maxUnits": 1,
+            "ms": 0.054
+          },
+          "lp-random-seed": {
+            "count": 16,
+            "work": 16,
+            "maxUnits": 1,
+            "ms": 0.032
+          },
+          "gel-prefix": {
+            "count": 10,
+            "work": 10,
+            "maxUnits": 1,
+            "ms": 0.02
+          },
+          "lp-line-row": {
+            "count": 10,
+            "work": 10,
+            "maxUnits": 1,
+            "ms": 0.02
+          },
+          "lp-offset": {
+            "count": 10,
+            "work": 10,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "lp-resource-row": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "target-seed": {
+            "count": 5,
+            "work": 5,
+            "maxUnits": 1,
+            "ms": 0.01
+          },
+          "margin-stage": {
+            "count": 1,
+            "work": 1,
+            "maxUnits": 1,
+            "ms": 0.133
+          }
+        }
+      },
+      "lp": {
+        "pivots": 164,
+        "tableauRows": 19,
+        "work": 2196754,
+        "workOnControl": 2196754,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 1,
+        "lpMaximize": 1,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 20000.004,
+      "reportedMs": 20000.004,
+      "nonDeterministic": {
+        "wallMs": 18084.5,
+        "lpMs": 10.357
+      }
+    },
+    {
+      "fixture": "credits-7line",
+      "mode": "credits",
+      "kind": "wall",
+      "budgetMs": 20000,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 1.5024801354625407e+99,
+      "result": {
+        "bestItem": "Batteries",
+        "credits": 1.5024801354625407e+99,
+        "ranking": [
+          {
+            "item": "Batteries",
+            "credits": 1.5024801354625407e+99,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Wire",
+            "credits": 2.625517930354032e+83,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Reinforced Concrete",
+            "credits": 1.7453062762878146e+83,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Gel",
+            "credits": 1.230603874488783e+83,
+            "capped": false,
+            "evaluated": true
+          },
+          {
+            "item": "Bricks",
+            "credits": 5.663437665280001e+81,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Glass",
+            "credits": 3.3959026540800005e+81,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Frames",
+            "credits": 2.7064626e+81,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Ingots",
+            "credits": 1.8741232550399999e+81,
+            "capped": false,
+            "evaluated": true
+          },
+          {
+            "item": "Concrete",
+            "credits": 9.645091050367998e+80,
+            "capped": false,
+            "evaluated": true
+          },
+          {
+            "item": "Bits",
+            "credits": 8.269221895999999e+80,
+            "capped": false,
+            "evaluated": true
+          },
+          {
+            "item": "Rods",
+            "credits": 3.2748021964800004e+80,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Plates",
+            "credits": 2.63106164736e+80,
+            "capped": true,
+            "evaluated": true
+          }
+        ],
+        "priced": 12,
+        "pricedEvaluated": 12,
+        "pricedRefined": 4
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": false,
+        "allCandidatesEvaluated": true,
+        "searchExhaustive": false
+      },
+      "work": {
+        "total": 18388621,
+        "probe": 13485952,
+        "dense": 4902669,
+        "byLabel": {}
+      },
+      "lp": {
+        "pivots": 926,
+        "tableauRows": 136,
+        "work": 4902669,
+        "workOnControl": 4902669,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 21,
+        "lpMaximize": 12,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {},
+      "stopReasons": {},
+      "reportedMs": 19975.651,
+      "wall": {
+        "samples": 5,
+        "ms": {
+          "median": 19975.2,
+          "min": 19975.2,
+          "max": 19975.8,
+          "cvPct": 0
+        },
+        "probeMs": {
+          "median": 19962,
+          "min": 19958,
+          "max": 19966.1,
+          "cvPct": 0.02
+        },
+        "denseMs": {
+          "median": 13.2,
+          "min": 9.1,
+          "max": 17.2,
+          "cvPct": 23.31
+        },
+        "probeWorkPerSec": {
+          "median": 675499,
+          "min": 671281,
+          "max": 684798,
+          "cvPct": 0.82
+        },
+        "denseWorkPerSec": {
+          "median": 370530043,
+          "min": 285404678,
+          "max": 538151219,
+          "cvPct": 23.46
+        },
+        "totalWorkPerSec": {
+          "median": 920547,
+          "min": 916273,
+          "max": 929782,
+          "cvPct": 0.59
+        }
+      },
+      "objectiveRange": [
+        1.5024801354625407e+99,
+        1.5024801354625407e+99
+      ]
+    },
+    {
+      "fixture": "credits-7line",
+      "mode": "credits",
+      "kind": "virtual",
+      "budgetMs": 250,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 1.5024801354625407e+99,
+      "result": {
+        "bestItem": "Batteries",
+        "credits": 1.5024801354625407e+99,
+        "ranking": [
+          {
+            "item": "Batteries",
+            "credits": 1.5024801354625407e+99,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Wire",
+            "credits": 2.625517930354032e+83,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Reinforced Concrete",
+            "credits": 1.7453062762878146e+83,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Gel",
+            "credits": 1.230603874488783e+83,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Bricks",
+            "credits": 5.663437665280001e+81,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Glass",
+            "credits": 3.3959026540800005e+81,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Frames",
+            "credits": 2.7064626e+81,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Ingots",
+            "credits": 1.8741232550399999e+81,
+            "capped": false,
+            "evaluated": true
+          },
+          {
+            "item": "Concrete",
+            "credits": 9.645091050367998e+80,
+            "capped": false,
+            "evaluated": true
+          },
+          {
+            "item": "Bits",
+            "credits": 8.269221895999999e+80,
+            "capped": false,
+            "evaluated": true
+          },
+          {
+            "item": "Rods",
+            "credits": 3.2748021964800004e+80,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Plates",
+            "credits": 2.63106164736e+80,
+            "capped": true,
+            "evaluated": true
+          }
+        ],
+        "priced": 12,
+        "pricedEvaluated": 12,
+        "pricedRefined": 3
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": false,
+        "allCandidatesEvaluated": true,
+        "searchExhaustive": false
+      },
+      "work": {
+        "total": 2742676,
+        "probe": 111219,
+        "dense": 2631457,
+        "byLabel": {
+          "lp-pivot": {
+            "count": 551,
+            "work": 2608142,
+            "maxUnits": 7380,
+            "ms": 25.836
+          },
+          "climb-job": {
+            "count": 61187,
+            "work": 61187,
+            "maxUnits": 1,
+            "ms": 122.374
+          },
+          "repair-job": {
+            "count": 34059,
+            "work": 34059,
+            "maxUnits": 1,
+            "ms": 68.118
+          },
+          "lp-tableau-row": {
+            "count": 96,
+            "work": 23315,
+            "maxUnits": 477,
+            "ms": 0.232
+          },
+          "lp-job-coefficient": {
+            "count": 9597,
+            "work": 9597,
+            "maxUnits": 1,
+            "ms": 19.194
+          },
+          "gel-seed-line": {
+            "count": 2580,
+            "work": 2580,
+            "maxUnits": 1,
+            "ms": 5.16
+          },
+          "lp-random-line": {
+            "count": 868,
+            "work": 868,
+            "maxUnits": 1,
+            "ms": 1.736
+          },
+          "repair-pass": {
+            "count": 539,
+            "work": 539,
+            "maxUnits": 1,
+            "ms": 1.078
+          },
+          "climb-pass": {
+            "count": 512,
+            "work": 512,
+            "maxUnits": 1,
+            "ms": 1.024
+          },
+          "gel-seed-step": {
+            "count": 487,
+            "work": 487,
+            "maxUnits": 1,
+            "ms": 0.974
+          },
+          "ils-perturb": {
+            "count": 382,
+            "work": 382,
+            "maxUnits": 1,
+            "ms": 0.764
+          },
+          "raw-level": {
+            "count": 273,
+            "work": 273,
+            "maxUnits": 1,
+            "ms": 0.546
+          },
+          "seed-start": {
+            "count": 178,
+            "work": 178,
+            "maxUnits": 1,
+            "ms": 0.356
+          },
+          "ils-iteration": {
+            "count": 147,
+            "work": 147,
+            "maxUnits": 1,
+            "ms": 0.294
+          },
+          "lp-random-seed": {
+            "count": 124,
+            "work": 124,
+            "maxUnits": 1,
+            "ms": 0.248
+          },
+          "lp-line-row": {
+            "count": 63,
+            "work": 63,
+            "maxUnits": 1,
+            "ms": 0.126
+          },
+          "lp-offset": {
+            "count": 63,
+            "work": 63,
+            "maxUnits": 1,
+            "ms": 0.126
+          },
+          "role-enumeration": {
+            "count": 34,
+            "work": 34,
+            "maxUnits": 1,
+            "ms": 0.068
+          },
+          "lp-resource-row": {
+            "count": 33,
+            "work": 33,
+            "maxUnits": 1,
+            "ms": 0.066
+          },
+          "raw-line": {
+            "count": 21,
+            "work": 21,
+            "maxUnits": 1,
+            "ms": 0.042
+          },
+          "credits-baseline-candidate": {
+            "count": 12,
+            "work": 12,
+            "maxUnits": 1,
+            "ms": 0
+          },
+          "baseline-product-complete": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "baseline-product-start": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "credits-refinement-candidate": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0
+          },
+          "margin-stage": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.265
+          },
+          "gel-prefix": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "target-seed": {
+            "count": 5,
+            "work": 5,
+            "maxUnits": 1,
+            "ms": 0.01
+          },
+          "credits-baseline-complete": {
+            "count": 3,
+            "work": 3,
+            "maxUnits": 1,
+            "ms": 0.006
+          }
+        }
+      },
+      "lp": {
+        "pivots": 551,
+        "tableauRows": 96,
+        "work": 2631457,
+        "workOnControl": 2631457,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 18,
+        "lpMaximize": 9,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {
+        "baseline-complete": 12,
+        "baseline-start": 12,
+        "local-time-limit": 9,
+        "refinement-complete": 9,
+        "refinement-start": 9
+      },
+      "stopReasons": {},
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 248.753,
+      "reportedMs": 248.753,
+      "nonDeterministic": {
+        "wallMs": 200.7,
+        "lpMs": 9.521
+      }
+    },
+    {
+      "fixture": "credits-7line",
+      "mode": "credits",
+      "kind": "virtual",
+      "budgetMs": 1000,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 1.5024801354625407e+99,
+      "result": {
+        "bestItem": "Batteries",
+        "credits": 1.5024801354625407e+99,
+        "ranking": [
+          {
+            "item": "Batteries",
+            "credits": 1.5024801354625407e+99,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Wire",
+            "credits": 2.625517930354032e+83,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Reinforced Concrete",
+            "credits": 1.7453062762878146e+83,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Gel",
+            "credits": 1.230603874488783e+83,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Bricks",
+            "credits": 5.663437665280001e+81,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Glass",
+            "credits": 3.3959026540800005e+81,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Frames",
+            "credits": 2.7064626e+81,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Ingots",
+            "credits": 1.8741232550399999e+81,
+            "capped": false,
+            "evaluated": true
+          },
+          {
+            "item": "Concrete",
+            "credits": 9.645091050367998e+80,
+            "capped": false,
+            "evaluated": true
+          },
+          {
+            "item": "Bits",
+            "credits": 8.269221895999999e+80,
+            "capped": false,
+            "evaluated": true
+          },
+          {
+            "item": "Rods",
+            "credits": 3.2748021964800004e+80,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Plates",
+            "credits": 2.63106164736e+80,
+            "capped": true,
+            "evaluated": true
+          }
+        ],
+        "priced": 12,
+        "pricedEvaluated": 12,
+        "pricedRefined": 3
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": false,
+        "allCandidatesEvaluated": true,
+        "searchExhaustive": false
+      },
+      "work": {
+        "total": 3115801,
+        "probe": 484344,
+        "dense": 2631457,
+        "byLabel": {
+          "lp-pivot": {
+            "count": 551,
+            "work": 2608142,
+            "maxUnits": 7380,
+            "ms": 25.836
+          },
+          "climb-job": {
+            "count": 304281,
+            "work": 304281,
+            "maxUnits": 1,
+            "ms": 608.562
+          },
+          "repair-job": {
+            "count": 152024,
+            "work": 152024,
+            "maxUnits": 1,
+            "ms": 304.048
+          },
+          "lp-tableau-row": {
+            "count": 96,
+            "work": 23315,
+            "maxUnits": 477,
+            "ms": 0.232
+          },
+          "lp-job-coefficient": {
+            "count": 9597,
+            "work": 9597,
+            "maxUnits": 1,
+            "ms": 19.194
+          },
+          "gel-seed-line": {
+            "count": 6452,
+            "work": 6452,
+            "maxUnits": 1,
+            "ms": 12.904
+          },
+          "ils-perturb": {
+            "count": 2908,
+            "work": 2908,
+            "maxUnits": 1,
+            "ms": 5.816
+          },
+          "climb-pass": {
+            "count": 2451,
+            "work": 2451,
+            "maxUnits": 1,
+            "ms": 4.902
+          },
+          "repair-pass": {
+            "count": 2215,
+            "work": 2215,
+            "maxUnits": 1,
+            "ms": 4.43
+          },
+          "gel-seed-step": {
+            "count": 1277,
+            "work": 1277,
+            "maxUnits": 1,
+            "ms": 2.554
+          },
+          "ils-iteration": {
+            "count": 1138,
+            "work": 1138,
+            "maxUnits": 1,
+            "ms": 2.276
+          },
+          "lp-random-line": {
+            "count": 1008,
+            "work": 1008,
+            "maxUnits": 1,
+            "ms": 2.016
+          },
+          "raw-level": {
+            "count": 273,
+            "work": 273,
+            "maxUnits": 1,
+            "ms": 0.546
+          },
+          "seed-start": {
+            "count": 240,
+            "work": 240,
+            "maxUnits": 1,
+            "ms": 0.48
+          },
+          "lp-random-seed": {
+            "count": 144,
+            "work": 144,
+            "maxUnits": 1,
+            "ms": 0.288
+          },
+          "role-enumeration": {
+            "count": 67,
+            "work": 67,
+            "maxUnits": 1,
+            "ms": 0.134
+          },
+          "lp-line-row": {
+            "count": 63,
+            "work": 63,
+            "maxUnits": 1,
+            "ms": 0.126
+          },
+          "lp-offset": {
+            "count": 63,
+            "work": 63,
+            "maxUnits": 1,
+            "ms": 0.126
+          },
+          "lp-resource-row": {
+            "count": 33,
+            "work": 33,
+            "maxUnits": 1,
+            "ms": 0.066
+          },
+          "gel-prefix": {
+            "count": 21,
+            "work": 21,
+            "maxUnits": 1,
+            "ms": 0.042
+          },
+          "raw-line": {
+            "count": 21,
+            "work": 21,
+            "maxUnits": 1,
+            "ms": 0.042
+          },
+          "credits-baseline-candidate": {
+            "count": 12,
+            "work": 12,
+            "maxUnits": 1,
+            "ms": 0
+          },
+          "baseline-product-complete": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "baseline-product-start": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "credits-refinement-candidate": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0
+          },
+          "margin-stage": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.265
+          },
+          "target-seed": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.016
+          },
+          "credits-baseline-complete": {
+            "count": 3,
+            "work": 3,
+            "maxUnits": 1,
+            "ms": 0.006
+          }
+        }
+      },
+      "lp": {
+        "pivots": 551,
+        "tableauRows": 96,
+        "work": 2631457,
+        "workOnControl": 2631457,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 18,
+        "lpMaximize": 9,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {
+        "baseline-complete": 12,
+        "baseline-start": 12,
+        "local-time-limit": 9,
+        "refinement-complete": 9,
+        "refinement-start": 9
+      },
+      "stopReasons": {},
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 995.003,
+      "reportedMs": 995.003,
+      "nonDeterministic": {
+        "wallMs": 737,
+        "lpMs": 7.799
+      }
+    },
+    {
+      "fixture": "credits-7line",
+      "mode": "credits",
+      "kind": "virtual",
+      "budgetMs": 4000,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 1.5024801354625407e+99,
+      "result": {
+        "bestItem": "Batteries",
+        "credits": 1.5024801354625407e+99,
+        "ranking": [
+          {
+            "item": "Batteries",
+            "credits": 1.5024801354625407e+99,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Wire",
+            "credits": 2.625517930354032e+83,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Reinforced Concrete",
+            "credits": 1.7453062762878146e+83,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Gel",
+            "credits": 1.230603874488783e+83,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Bricks",
+            "credits": 5.663437665280001e+81,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Glass",
+            "credits": 3.3959026540800005e+81,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Frames",
+            "credits": 2.7064626e+81,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Ingots",
+            "credits": 1.8741232550399999e+81,
+            "capped": false,
+            "evaluated": true
+          },
+          {
+            "item": "Concrete",
+            "credits": 9.645091050367998e+80,
+            "capped": false,
+            "evaluated": true
+          },
+          {
+            "item": "Bits",
+            "credits": 8.269221895999999e+80,
+            "capped": false,
+            "evaluated": true
+          },
+          {
+            "item": "Rods",
+            "credits": 3.2748021964800004e+80,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Plates",
+            "credits": 2.63106164736e+80,
+            "capped": true,
+            "evaluated": true
+          }
+        ],
+        "priced": 12,
+        "pricedEvaluated": 12,
+        "pricedRefined": 3
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": false,
+        "allCandidatesEvaluated": true,
+        "searchExhaustive": false
+      },
+      "work": {
+        "total": 4608301,
+        "probe": 1976844,
+        "dense": 2631457,
+        "byLabel": {
+          "lp-pivot": {
+            "count": 551,
+            "work": 2608142,
+            "maxUnits": 7380,
+            "ms": 25.836
+          },
+          "climb-job": {
+            "count": 1301679,
+            "work": 1301679,
+            "maxUnits": 1,
+            "ms": 2603.358
+          },
+          "repair-job": {
+            "count": 617926,
+            "work": 617926,
+            "maxUnits": 1,
+            "ms": 1235.852
+          },
+          "lp-tableau-row": {
+            "count": 96,
+            "work": 23315,
+            "maxUnits": 477,
+            "ms": 0.232
+          },
+          "ils-perturb": {
+            "count": 13366,
+            "work": 13366,
+            "maxUnits": 1,
+            "ms": 26.732
+          },
+          "climb-pass": {
+            "count": 10261,
+            "work": 10261,
+            "maxUnits": 1,
+            "ms": 20.522
+          },
+          "lp-job-coefficient": {
+            "count": 9597,
+            "work": 9597,
+            "maxUnits": 1,
+            "ms": 19.194
+          },
+          "repair-pass": {
+            "count": 8911,
+            "work": 8911,
+            "maxUnits": 1,
+            "ms": 17.822
+          },
+          "gel-seed-line": {
+            "count": 6452,
+            "work": 6452,
+            "maxUnits": 1,
+            "ms": 12.904
+          },
+          "ils-iteration": {
+            "count": 5300,
+            "work": 5300,
+            "maxUnits": 1,
+            "ms": 10.6
+          },
+          "gel-seed-step": {
+            "count": 1277,
+            "work": 1277,
+            "maxUnits": 1,
+            "ms": 2.554
+          },
+          "lp-random-line": {
+            "count": 1008,
+            "work": 1008,
+            "maxUnits": 1,
+            "ms": 2.016
+          },
+          "seed-start": {
+            "count": 274,
+            "work": 274,
+            "maxUnits": 1,
+            "ms": 0.548
+          },
+          "raw-level": {
+            "count": 273,
+            "work": 273,
+            "maxUnits": 1,
+            "ms": 0.546
+          },
+          "lp-random-seed": {
+            "count": 144,
+            "work": 144,
+            "maxUnits": 1,
+            "ms": 0.288
+          },
+          "role-enumeration": {
+            "count": 106,
+            "work": 106,
+            "maxUnits": 1,
+            "ms": 0.212
+          },
+          "lp-line-row": {
+            "count": 63,
+            "work": 63,
+            "maxUnits": 1,
+            "ms": 0.126
+          },
+          "lp-offset": {
+            "count": 63,
+            "work": 63,
+            "maxUnits": 1,
+            "ms": 0.126
+          },
+          "lp-resource-row": {
+            "count": 33,
+            "work": 33,
+            "maxUnits": 1,
+            "ms": 0.066
+          },
+          "gel-prefix": {
+            "count": 21,
+            "work": 21,
+            "maxUnits": 1,
+            "ms": 0.042
+          },
+          "raw-line": {
+            "count": 21,
+            "work": 21,
+            "maxUnits": 1,
+            "ms": 0.042
+          },
+          "credits-baseline-candidate": {
+            "count": 12,
+            "work": 12,
+            "maxUnits": 1,
+            "ms": 0
+          },
+          "baseline-product-complete": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "baseline-product-start": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "credits-refinement-candidate": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0
+          },
+          "margin-stage": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.265
+          },
+          "target-seed": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "credits-baseline-complete": {
+            "count": 3,
+            "work": 3,
+            "maxUnits": 1,
+            "ms": 0.006
+          }
+        }
+      },
+      "lp": {
+        "pivots": 551,
+        "tableauRows": 96,
+        "work": 2631457,
+        "workOnControl": 2631457,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 18,
+        "lpMaximize": 9,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {
+        "baseline-complete": 12,
+        "baseline-start": 12,
+        "local-time-limit": 9,
+        "refinement-complete": 9,
+        "refinement-start": 9
+      },
+      "stopReasons": {},
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 3980.003,
+      "reportedMs": 3980.003,
+      "nonDeterministic": {
+        "wallMs": 2798.2,
+        "lpMs": 8.267
+      }
+    },
+    {
+      "fixture": "credits-7line",
+      "mode": "credits",
+      "kind": "virtual",
+      "budgetMs": 20000,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 1.5024801354625407e+99,
+      "result": {
+        "bestItem": "Batteries",
+        "credits": 1.5024801354625407e+99,
+        "ranking": [
+          {
+            "item": "Batteries",
+            "credits": 1.5024801354625407e+99,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Wire",
+            "credits": 2.625517930354032e+83,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Reinforced Concrete",
+            "credits": 1.7453062762878146e+83,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Gel",
+            "credits": 1.230603874488783e+83,
+            "capped": false,
+            "evaluated": true
+          },
+          {
+            "item": "Bricks",
+            "credits": 5.663437665280001e+81,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Glass",
+            "credits": 3.3959026540800005e+81,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Frames",
+            "credits": 2.7064626e+81,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Ingots",
+            "credits": 1.8741232550399999e+81,
+            "capped": false,
+            "evaluated": true
+          },
+          {
+            "item": "Concrete",
+            "credits": 9.645091050367998e+80,
+            "capped": false,
+            "evaluated": true
+          },
+          {
+            "item": "Bits",
+            "credits": 8.269221895999999e+80,
+            "capped": false,
+            "evaluated": true
+          },
+          {
+            "item": "Rods",
+            "credits": 3.2748021964800004e+80,
+            "capped": true,
+            "evaluated": true
+          },
+          {
+            "item": "Plates",
+            "credits": 2.63106164736e+80,
+            "capped": true,
+            "evaluated": true
+          }
+        ],
+        "priced": 12,
+        "pricedEvaluated": 12,
+        "pricedRefined": 4
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": false,
+        "allCandidatesEvaluated": true,
+        "searchExhaustive": false
+      },
+      "work": {
+        "total": 13823635,
+        "probe": 9968224,
+        "dense": 3855411,
+        "byLabel": {
+          "climb-job": {
+            "count": 5894024,
+            "work": 5894024,
+            "maxUnits": 1,
+            "ms": 11788.048
+          },
+          "repair-job": {
+            "count": 3871676,
+            "work": 3871676,
+            "maxUnits": 1,
+            "ms": 7743.352
+          },
+          "lp-pivot": {
+            "count": 785,
+            "work": 3823334,
+            "maxUnits": 7380,
+            "ms": 37.896
+          },
+          "target-swap": {
+            "count": 65874,
+            "work": 65874,
+            "maxUnits": 1,
+            "ms": 131.748
+          },
+          "lp-tableau-row": {
+            "count": 122,
+            "work": 32077,
+            "maxUnits": 477,
+            "ms": 0.317
+          },
+          "ils-perturb": {
+            "count": 31696,
+            "work": 31696,
+            "maxUnits": 1,
+            "ms": 63.392
+          },
+          "repair-pass": {
+            "count": 28846,
+            "work": 28846,
+            "maxUnits": 1,
+            "ms": 57.692
+          },
+          "climb-pass": {
+            "count": 26251,
+            "work": 26251,
+            "maxUnits": 1,
+            "ms": 52.502
+          },
+          "lp-job-coefficient": {
+            "count": 13678,
+            "work": 13678,
+            "maxUnits": 1,
+            "ms": 27.356
+          },
+          "ils-iteration": {
+            "count": 12635,
+            "work": 12635,
+            "maxUnits": 1,
+            "ms": 25.27
+          },
+          "gel-seed-line": {
+            "count": 10324,
+            "work": 10324,
+            "maxUnits": 1,
+            "ms": 20.648
+          },
+          "swap-ils-perturb": {
+            "count": 6193,
+            "work": 6193,
+            "maxUnits": 1,
+            "ms": 12.386
+          },
+          "swap-ils": {
+            "count": 2474,
+            "work": 2474,
+            "maxUnits": 1,
+            "ms": 4.948
+          },
+          "gel-seed-step": {
+            "count": 2067,
+            "work": 2067,
+            "maxUnits": 1,
+            "ms": 4.134
+          },
+          "lp-random-line": {
+            "count": 1232,
+            "work": 1232,
+            "maxUnits": 1,
+            "ms": 2.464
+          },
+          "seed-start": {
+            "count": 338,
+            "work": 338,
+            "maxUnits": 1,
+            "ms": 0.676
+          },
+          "raw-level": {
+            "count": 273,
+            "work": 273,
+            "maxUnits": 1,
+            "ms": 0.546
+          },
+          "lp-random-seed": {
+            "count": 176,
+            "work": 176,
+            "maxUnits": 1,
+            "ms": 0.352
+          },
+          "role-enumeration": {
+            "count": 122,
+            "work": 122,
+            "maxUnits": 1,
+            "ms": 0.244
+          },
+          "lp-line-row": {
+            "count": 77,
+            "work": 77,
+            "maxUnits": 1,
+            "ms": 0.154
+          },
+          "lp-offset": {
+            "count": 77,
+            "work": 77,
+            "maxUnits": 1,
+            "ms": 0.154
+          },
+          "lp-resource-row": {
+            "count": 45,
+            "work": 45,
+            "maxUnits": 1,
+            "ms": 0.09
+          },
+          "gel-prefix": {
+            "count": 35,
+            "work": 35,
+            "maxUnits": 1,
+            "ms": 0.07
+          },
+          "raw-line": {
+            "count": 21,
+            "work": 21,
+            "maxUnits": 1,
+            "ms": 0.042
+          },
+          "credits-baseline-candidate": {
+            "count": 12,
+            "work": 12,
+            "maxUnits": 1,
+            "ms": 0
+          },
+          "credits-refinement-candidate": {
+            "count": 11,
+            "work": 11,
+            "maxUnits": 1,
+            "ms": 0
+          },
+          "feeder-warm-start": {
+            "count": 11,
+            "work": 11,
+            "maxUnits": 1,
+            "ms": 0.022
+          },
+          "margin-stage": {
+            "count": 11,
+            "work": 11,
+            "maxUnits": 1,
+            "ms": 0.364
+          },
+          "target-seed": {
+            "count": 11,
+            "work": 11,
+            "maxUnits": 1,
+            "ms": 0.022
+          },
+          "baseline-product-complete": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "baseline-product-start": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "dfs-node": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.016
+          },
+          "credits-baseline-complete": {
+            "count": 3,
+            "work": 3,
+            "maxUnits": 1,
+            "ms": 0.006
+          }
+        }
+      },
+      "lp": {
+        "pivots": 785,
+        "tableauRows": 122,
+        "work": 3855411,
+        "workOnControl": 3855411,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 20,
+        "lpMaximize": 11,
+        "projectSchedule": 0,
+        "staticSchedule": 0,
+        "projectPhase": 0
+      },
+      "events": {
+        "baseline-complete": 12,
+        "baseline-start": 12,
+        "local-time-limit": 5,
+        "refinement-complete": 11,
+        "refinement-start": 11
+      },
+      "stopReasons": {},
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 19975.002,
+      "reportedMs": 19975.002,
+      "nonDeterministic": {
+        "wallMs": 13876.1,
+        "lpMs": 10.362
+      }
+    },
+    {
+      "fixture": "project-7line",
+      "mode": "project",
+      "kind": "wall",
+      "budgetMs": 20000,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 0.03491408382355771,
+      "result": {
+        "eta": 28.641736814679533,
+        "workEta": 28.641736814679533,
+        "warmupEta": 0,
+        "lpFeasible": true,
+        "partial": false,
+        "phases": [
+          {
+            "phaseKey": "pmsihuucetuq+pmsj15karizj+pmsnojkg3bdp+pmsodgpefnag+pmspfqzknws8",
+            "name": "All projects",
+            "eta": 28.641736814679533,
+            "z": 3742.3533598375916,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          }
+        ],
+        "idleFillPhases": 0,
+        "lookAheadPhases": 0,
+        "executionPhases": 1,
+        "hiddenComparisonRan": false,
+        "stabilityComparison": null
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": null,
+        "staticDeadlineReached": true,
+        "allPhasesEvaluated": true,
+        "searchExhaustive": false
+      },
+      "work": {
+        "total": 18178830,
+        "probe": 13875904,
+        "dense": 4302926,
+        "byLabel": {}
+      },
+      "lp": {
+        "pivots": 251,
+        "tableauRows": 19,
+        "work": 4302926,
+        "workOnControl": 4302926,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 1,
+        "lpMaximize": 1,
+        "projectSchedule": 0,
+        "staticSchedule": 1,
+        "projectPhase": 1
+      },
+      "events": {},
+      "stopReasons": {},
+      "reportedMs": 20002.246,
+      "wall": {
+        "samples": 5,
+        "ms": {
+          "median": 20002.5,
+          "min": 20002.1,
+          "max": 20004.7,
+          "cvPct": 0.01
+        },
+        "probeMs": {
+          "median": 19989.5,
+          "min": 19987.9,
+          "max": 19990.9,
+          "cvPct": 0.01
+        },
+        "denseMs": {
+          "median": 13.2,
+          "min": 11.2,
+          "max": 15,
+          "cvPct": 11.43
+        },
+        "probeWorkPerSec": {
+          "median": 694160,
+          "min": 687185,
+          "max": 703405,
+          "cvPct": 0.88
+        },
+        "denseWorkPerSec": {
+          "median": 324849235,
+          "min": 285977586,
+          "max": 385274852,
+          "cvPct": 12.16
+        },
+        "totalWorkPerSec": {
+          "median": 908834,
+          "min": 901850,
+          "max": 918136,
+          "cvPct": 0.68
+        }
+      },
+      "objectiveRange": [
+        0.03491408382355771,
+        0.03491408382355771
+      ]
+    },
+    {
+      "fixture": "project-7line",
+      "mode": "project",
+      "kind": "virtual",
+      "budgetMs": 250,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 0.025711880711880714,
+      "result": {
+        "eta": 38.89252642409503,
+        "workEta": 38.89252642409503,
+        "warmupEta": 0,
+        "lpFeasible": true,
+        "partial": false,
+        "phases": [
+          {
+            "phaseKey": "pmsihuucetuq+pmsj15karizj+pmsnojkg3bdp+pmsodgpefnag+pmspfqzknws8",
+            "name": "All projects",
+            "eta": 38.89252642409503,
+            "z": 2755.9922138047136,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": {
+              "lines": [
+                2,
+                4,
+                5
+              ],
+              "items": [
+                "Reinforced Concrete",
+                "Bricks",
+                "Concrete"
+              ],
+              "shortened": false
+            },
+            "lookAhead": null
+          }
+        ],
+        "idleFillPhases": 1,
+        "lookAheadPhases": 0,
+        "executionPhases": 1,
+        "hiddenComparisonRan": false,
+        "stabilityComparison": null
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": null,
+        "staticDeadlineReached": true,
+        "allPhasesEvaluated": true,
+        "searchExhaustive": false
+      },
+      "work": {
+        "total": 4752558,
+        "probe": 262452,
+        "dense": 4490106,
+        "byLabel": {
+          "lp-pivot": {
+            "count": 342,
+            "work": 4471978,
+            "maxUnits": 17080,
+            "ms": 44.533
+          },
+          "climb-job": {
+            "count": 136554,
+            "work": 136554,
+            "maxUnits": 1,
+            "ms": 273.108
+          },
+          "repair-job": {
+            "count": 102129,
+            "work": 102129,
+            "maxUnits": 1,
+            "ms": 204.258
+          },
+          "lp-tableau-row": {
+            "count": 33,
+            "work": 18128,
+            "maxUnits": 834,
+            "ms": 0.176
+          },
+          "lp-job-coefficient": {
+            "count": 11558,
+            "work": 11558,
+            "maxUnits": 1,
+            "ms": 23.116
+          },
+          "ils-perturb": {
+            "count": 3342,
+            "work": 3342,
+            "maxUnits": 1,
+            "ms": 6.684
+          },
+          "repair-pass": {
+            "count": 2445,
+            "work": 2445,
+            "maxUnits": 1,
+            "ms": 4.89
+          },
+          "climb-pass": {
+            "count": 2169,
+            "work": 2169,
+            "maxUnits": 1,
+            "ms": 4.338
+          },
+          "gel-seed-line": {
+            "count": 1936,
+            "work": 1936,
+            "maxUnits": 1,
+            "ms": 3.872
+          },
+          "ils-iteration": {
+            "count": 1331,
+            "work": 1331,
+            "maxUnits": 1,
+            "ms": 2.662
+          },
+          "gel-seed-step": {
+            "count": 395,
+            "work": 395,
+            "maxUnits": 1,
+            "ms": 0.79
+          },
+          "dfs-node": {
+            "count": 220,
+            "work": 220,
+            "maxUnits": 1,
+            "ms": 0.44
+          },
+          "lp-random-line": {
+            "count": 192,
+            "work": 192,
+            "maxUnits": 1,
+            "ms": 0.384
+          },
+          "seed-start": {
+            "count": 63,
+            "work": 63,
+            "maxUnits": 1,
+            "ms": 0.126
+          },
+          "lp-random-seed": {
+            "count": 48,
+            "work": 48,
+            "maxUnits": 1,
+            "ms": 0.096
+          },
+          "lp-resource-row": {
+            "count": 21,
+            "work": 21,
+            "maxUnits": 1,
+            "ms": 0.042
+          },
+          "lp-line-row": {
+            "count": 12,
+            "work": 12,
+            "maxUnits": 1,
+            "ms": 0.024
+          },
+          "lp-offset": {
+            "count": 12,
+            "work": 12,
+            "maxUnits": 1,
+            "ms": 0.02
+          },
+          "target-seed": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.016
+          },
+          "gel-prefix": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "role-enumeration": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "margin-stage": {
+            "count": 3,
+            "work": 3,
+            "maxUnits": 1,
+            "ms": 0.198
+          }
+        }
+      },
+      "lp": {
+        "pivots": 342,
+        "tableauRows": 33,
+        "work": 4490106,
+        "workOnControl": 4490106,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 2,
+        "solveCore": 3,
+        "lpMaximize": 3,
+        "projectSchedule": 0,
+        "staticSchedule": 1,
+        "projectPhase": 1
+      },
+      "events": {
+        "local-work-limit": 1,
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 569.805,
+      "nonDeterministic": {
+        "wallMs": 415.2,
+        "lpMs": 22.029,
+        "reportedMs": 415.137
+      }
+    },
+    {
+      "fixture": "project-7line",
+      "mode": "project",
+      "kind": "virtual",
+      "budgetMs": 1000,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 0.025711880711880714,
+      "result": {
+        "eta": 38.89252642409503,
+        "workEta": 38.89252642409503,
+        "warmupEta": 0,
+        "lpFeasible": true,
+        "partial": false,
+        "phases": [
+          {
+            "phaseKey": "pmsihuucetuq+pmsj15karizj+pmsnojkg3bdp+pmsodgpefnag+pmspfqzknws8",
+            "name": "All projects",
+            "eta": 38.89252642409503,
+            "z": 2755.9922138047136,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": {
+              "lines": [
+                2,
+                4,
+                5
+              ],
+              "items": [
+                "Reinforced Concrete",
+                "Bricks",
+                "Concrete"
+              ],
+              "shortened": false
+            },
+            "lookAhead": null
+          }
+        ],
+        "idleFillPhases": 1,
+        "lookAheadPhases": 0,
+        "executionPhases": 1,
+        "hiddenComparisonRan": false,
+        "stabilityComparison": null
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": null,
+        "staticDeadlineReached": true,
+        "allPhasesEvaluated": true,
+        "searchExhaustive": false
+      },
+      "work": {
+        "total": 5127558,
+        "probe": 637452,
+        "dense": 4490106,
+        "byLabel": {
+          "lp-pivot": {
+            "count": 342,
+            "work": 4471978,
+            "maxUnits": 17080,
+            "ms": 44.533
+          },
+          "climb-job": {
+            "count": 335884,
+            "work": 335884,
+            "maxUnits": 1,
+            "ms": 671.768
+          },
+          "repair-job": {
+            "count": 276415,
+            "work": 276415,
+            "maxUnits": 1,
+            "ms": 552.83
+          },
+          "lp-tableau-row": {
+            "count": 33,
+            "work": 18128,
+            "maxUnits": 834,
+            "ms": 0.176
+          },
+          "lp-job-coefficient": {
+            "count": 11558,
+            "work": 11558,
+            "maxUnits": 1,
+            "ms": 23.116
+          },
+          "ils-perturb": {
+            "count": 3865,
+            "work": 3865,
+            "maxUnits": 1,
+            "ms": 7.73
+          },
+          "repair-pass": {
+            "count": 2860,
+            "work": 2860,
+            "maxUnits": 1,
+            "ms": 5.72
+          },
+          "climb-pass": {
+            "count": 2411,
+            "work": 2411,
+            "maxUnits": 1,
+            "ms": 4.822
+          },
+          "gel-seed-line": {
+            "count": 1936,
+            "work": 1936,
+            "maxUnits": 1,
+            "ms": 3.872
+          },
+          "ils-iteration": {
+            "count": 1535,
+            "work": 1535,
+            "maxUnits": 1,
+            "ms": 3.07
+          },
+          "gel-seed-step": {
+            "count": 395,
+            "work": 395,
+            "maxUnits": 1,
+            "ms": 0.79
+          },
+          "dfs-node": {
+            "count": 220,
+            "work": 220,
+            "maxUnits": 1,
+            "ms": 0.44
+          },
+          "lp-random-line": {
+            "count": 192,
+            "work": 192,
+            "maxUnits": 1,
+            "ms": 0.384
+          },
+          "seed-start": {
+            "count": 63,
+            "work": 63,
+            "maxUnits": 1,
+            "ms": 0.126
+          },
+          "lp-random-seed": {
+            "count": 48,
+            "work": 48,
+            "maxUnits": 1,
+            "ms": 0.096
+          },
+          "lp-resource-row": {
+            "count": 21,
+            "work": 21,
+            "maxUnits": 1,
+            "ms": 0.042
+          },
+          "lp-line-row": {
+            "count": 12,
+            "work": 12,
+            "maxUnits": 1,
+            "ms": 0.024
+          },
+          "lp-offset": {
+            "count": 12,
+            "work": 12,
+            "maxUnits": 1,
+            "ms": 0.02
+          },
+          "target-seed": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.016
+          },
+          "gel-prefix": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "role-enumeration": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "margin-stage": {
+            "count": 3,
+            "work": 3,
+            "maxUnits": 1,
+            "ms": 0.198
+          }
+        }
+      },
+      "lp": {
+        "pivots": 342,
+        "tableauRows": 33,
+        "work": 4490106,
+        "workOnControl": 4490106,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 2,
+        "solveCore": 3,
+        "lpMaximize": 3,
+        "projectSchedule": 0,
+        "staticSchedule": 1,
+        "projectPhase": 1
+      },
+      "events": {
+        "local-work-limit": 1,
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 1319.805,
+      "nonDeterministic": {
+        "wallMs": 929.6,
+        "lpMs": 18.229,
+        "reportedMs": 929.387
+      }
+    },
+    {
+      "fixture": "project-7line",
+      "mode": "project",
+      "kind": "virtual",
+      "budgetMs": 4000,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 0.025711880711880714,
+      "result": {
+        "eta": 38.89252642409503,
+        "workEta": 38.89252642409503,
+        "warmupEta": 0,
+        "lpFeasible": true,
+        "partial": false,
+        "phases": [
+          {
+            "phaseKey": "pmsihuucetuq+pmsj15karizj+pmsnojkg3bdp+pmsodgpefnag+pmspfqzknws8",
+            "name": "All projects",
+            "eta": 38.89252642409503,
+            "z": 2755.9922138047136,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": {
+              "lines": [
+                2,
+                4,
+                5
+              ],
+              "items": [
+                "Reinforced Concrete",
+                "Bricks",
+                "Concrete"
+              ],
+              "shortened": false
+            },
+            "lookAhead": null
+          }
+        ],
+        "idleFillPhases": 1,
+        "lookAheadPhases": 0,
+        "executionPhases": 1,
+        "hiddenComparisonRan": false,
+        "stabilityComparison": null
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": null,
+        "staticDeadlineReached": true,
+        "allPhasesEvaluated": true,
+        "searchExhaustive": false
+      },
+      "work": {
+        "total": 6627558,
+        "probe": 2137452,
+        "dense": 4490106,
+        "byLabel": {
+          "lp-pivot": {
+            "count": 342,
+            "work": 4471978,
+            "maxUnits": 17080,
+            "ms": 44.533
+          },
+          "climb-job": {
+            "count": 1109362,
+            "work": 1109362,
+            "maxUnits": 1,
+            "ms": 2218.724
+          },
+          "repair-job": {
+            "count": 997513,
+            "work": 997513,
+            "maxUnits": 1,
+            "ms": 1995.026
+          },
+          "lp-tableau-row": {
+            "count": 33,
+            "work": 18128,
+            "maxUnits": 834,
+            "ms": 0.176
+          },
+          "lp-job-coefficient": {
+            "count": 11558,
+            "work": 11558,
+            "maxUnits": 1,
+            "ms": 23.116
+          },
+          "ils-perturb": {
+            "count": 5872,
+            "work": 5872,
+            "maxUnits": 1,
+            "ms": 11.744
+          },
+          "repair-pass": {
+            "count": 4537,
+            "work": 4537,
+            "maxUnits": 1,
+            "ms": 9.074
+          },
+          "climb-pass": {
+            "count": 3347,
+            "work": 3347,
+            "maxUnits": 1,
+            "ms": 6.694
+          },
+          "ils-iteration": {
+            "count": 2339,
+            "work": 2339,
+            "maxUnits": 1,
+            "ms": 4.678
+          },
+          "gel-seed-line": {
+            "count": 1936,
+            "work": 1936,
+            "maxUnits": 1,
+            "ms": 3.872
+          },
+          "gel-seed-step": {
+            "count": 395,
+            "work": 395,
+            "maxUnits": 1,
+            "ms": 0.79
+          },
+          "dfs-node": {
+            "count": 220,
+            "work": 220,
+            "maxUnits": 1,
+            "ms": 0.44
+          },
+          "lp-random-line": {
+            "count": 192,
+            "work": 192,
+            "maxUnits": 1,
+            "ms": 0.384
+          },
+          "seed-start": {
+            "count": 63,
+            "work": 63,
+            "maxUnits": 1,
+            "ms": 0.126
+          },
+          "lp-random-seed": {
+            "count": 48,
+            "work": 48,
+            "maxUnits": 1,
+            "ms": 0.096
+          },
+          "lp-resource-row": {
+            "count": 21,
+            "work": 21,
+            "maxUnits": 1,
+            "ms": 0.042
+          },
+          "lp-line-row": {
+            "count": 12,
+            "work": 12,
+            "maxUnits": 1,
+            "ms": 0.024
+          },
+          "lp-offset": {
+            "count": 12,
+            "work": 12,
+            "maxUnits": 1,
+            "ms": 0.02
+          },
+          "target-seed": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.016
+          },
+          "gel-prefix": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "role-enumeration": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "margin-stage": {
+            "count": 3,
+            "work": 3,
+            "maxUnits": 1,
+            "ms": 0.198
+          }
+        }
+      },
+      "lp": {
+        "pivots": 342,
+        "tableauRows": 33,
+        "work": 4490106,
+        "workOnControl": 4490106,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 2,
+        "solveCore": 3,
+        "lpMaximize": 3,
+        "projectSchedule": 0,
+        "staticSchedule": 1,
+        "projectPhase": 1
+      },
+      "events": {
+        "local-work-limit": 1,
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 4319.805,
+      "nonDeterministic": {
+        "wallMs": 2983.4,
+        "lpMs": 22.975,
+        "reportedMs": 2983.249
+      }
+    },
+    {
+      "fixture": "project-7line",
+      "mode": "project",
+      "kind": "virtual",
+      "budgetMs": 20000,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 0.03341167563939722,
+      "result": {
+        "eta": 29.929657248942483,
+        "workEta": 29.929657248942483,
+        "warmupEta": 0,
+        "lpFeasible": true,
+        "partial": false,
+        "phases": [
+          {
+            "phaseKey": "pmsihuucetuq+pmsj15karizj+pmsnojkg3bdp+pmsodgpefnag+pmspfqzknws8",
+            "name": "All projects",
+            "eta": 29.929657248942483,
+            "z": 3581.3139825978897,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          }
+        ],
+        "idleFillPhases": 0,
+        "lookAheadPhases": 0,
+        "executionPhases": 1,
+        "hiddenComparisonRan": false,
+        "stabilityComparison": null
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": null,
+        "staticDeadlineReached": true,
+        "allPhasesEvaluated": true,
+        "searchExhaustive": false
+      },
+      "work": {
+        "total": 14281413,
+        "probe": 9978487,
+        "dense": 4302926,
+        "byLabel": {
+          "climb-job": {
+            "count": 5210408,
+            "work": 5210408,
+            "maxUnits": 1,
+            "ms": 10420.816
+          },
+          "repair-job": {
+            "count": 4720239,
+            "work": 4720239,
+            "maxUnits": 1,
+            "ms": 9440.478
+          },
+          "lp-pivot": {
+            "count": 251,
+            "work": 4287080,
+            "maxUnits": 17080,
+            "ms": 42.708
+          },
+          "lp-tableau-row": {
+            "count": 19,
+            "work": 15846,
+            "maxUnits": 834,
+            "ms": 0.152
+          },
+          "ils-perturb": {
+            "count": 12917,
+            "work": 12917,
+            "maxUnits": 1,
+            "ms": 25.834
+          },
+          "repair-pass": {
+            "count": 10920,
+            "work": 10920,
+            "maxUnits": 1,
+            "ms": 21.84
+          },
+          "lp-job-coefficient": {
+            "count": 9996,
+            "work": 9996,
+            "maxUnits": 1,
+            "ms": 19.992
+          },
+          "climb-pass": {
+            "count": 6308,
+            "work": 6308,
+            "maxUnits": 1,
+            "ms": 12.616
+          },
+          "ils-iteration": {
+            "count": 5176,
+            "work": 5176,
+            "maxUnits": 1,
+            "ms": 10.352
+          },
+          "gel-seed-line": {
+            "count": 1936,
+            "work": 1936,
+            "maxUnits": 1,
+            "ms": 3.872
+          },
+          "gel-seed-step": {
+            "count": 395,
+            "work": 395,
+            "maxUnits": 1,
+            "ms": 0.79
+          },
+          "lp-random-line": {
+            "count": 112,
+            "work": 112,
+            "maxUnits": 1,
+            "ms": 0.224
+          },
+          "seed-start": {
+            "count": 24,
+            "work": 24,
+            "maxUnits": 1,
+            "ms": 0.048
+          },
+          "lp-random-seed": {
+            "count": 16,
+            "work": 16,
+            "maxUnits": 1,
+            "ms": 0.032
+          },
+          "lp-resource-row": {
+            "count": 12,
+            "work": 12,
+            "maxUnits": 1,
+            "ms": 0.024
+          },
+          "gel-prefix": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "lp-line-row": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "lp-offset": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.012
+          },
+          "target-seed": {
+            "count": 6,
+            "work": 6,
+            "maxUnits": 1,
+            "ms": 0.012
+          },
+          "margin-stage": {
+            "count": 1,
+            "work": 1,
+            "maxUnits": 1,
+            "ms": 0.171
+          }
+        }
+      },
+      "lp": {
+        "pivots": 251,
+        "tableauRows": 19,
+        "work": 4302926,
+        "workOnControl": 4302926,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 1,
+        "lpMaximize": 1,
+        "projectSchedule": 0,
+        "staticSchedule": 1,
+        "projectPhase": 1
+      },
+      "events": {
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 20000.003,
+      "nonDeterministic": {
+        "wallMs": 13587.4,
+        "lpMs": 17.216,
+        "reportedMs": 13587.309
+      }
+    },
+    {
+      "fixture": "project-seq-7line",
+      "mode": "project",
+      "kind": "wall",
+      "budgetMs": 20000,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 0.0361924783640555,
+      "result": {
+        "eta": 27.63005036408748,
+        "workEta": 27.63005036408748,
+        "warmupEta": 0,
+        "lpFeasible": true,
+        "partial": false,
+        "phases": [
+          {
+            "phaseKey": "pmsodgpefnag",
+            "name": "New project",
+            "eta": 2.051534547841786,
+            "z": 0.17304119999999998,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          },
+          {
+            "phaseKey": "pmsj15karizj",
+            "name": "The Tower of Chad",
+            "eta": 3.504834700423238,
+            "z": 423.199767778721,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          },
+          {
+            "phaseKey": "pmsnojkg3bdp",
+            "name": "Biochemical Laboratory",
+            "eta": 3.1564839483626423,
+            "z": 69.5983188169889,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          },
+          {
+            "phaseKey": "pmsihuucetuq",
+            "name": "+cans",
+            "eta": 0.20987325014618238,
+            "z": 0.1775981247591656,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          },
+          {
+            "phaseKey": "pmspfqzknws8",
+            "name": "Nyra",
+            "eta": 18.70732391731363,
+            "z": 0.28839273734141996,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          }
+        ],
+        "idleFillPhases": 0,
+        "lookAheadPhases": 0,
+        "executionPhases": 5,
+        "hiddenComparisonRan": false,
+        "stabilityComparison": null
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": null,
+        "staticDeadlineReached": true,
+        "allPhasesEvaluated": true,
+        "searchExhaustive": false
+      },
+      "work": {
+        "total": 22292904,
+        "probe": 12912183,
+        "dense": 9380721,
+        "byLabel": {}
+      },
+      "lp": {
+        "pivots": 1876,
+        "tableauRows": 168,
+        "work": 26442749,
+        "workOnControl": 9380721,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 6,
+        "lpMaximize": 10,
+        "projectSchedule": 5,
+        "staticSchedule": 6,
+        "projectPhase": 5
+      },
+      "events": {},
+      "stopReasons": {},
+      "reportedMs": 20001.818,
+      "wall": {
+        "samples": 5,
+        "ms": {
+          "median": 20002,
+          "min": 20001.7,
+          "max": 20002.1,
+          "cvPct": 0
+        },
+        "probeMs": {
+          "median": 19958.5,
+          "min": 19953.6,
+          "max": 19965.3,
+          "cvPct": 0.02
+        },
+        "denseMs": {
+          "median": 43.2,
+          "min": 36.7,
+          "max": 48.5,
+          "cvPct": 10.39
+        },
+        "probeWorkPerSec": {
+          "median": 646731,
+          "min": 643940,
+          "max": 655962,
+          "cvPct": 0.86
+        },
+        "denseWorkPerSec": {
+          "median": 216919102,
+          "min": 193578740,
+          "max": 255830001,
+          "cvPct": 10.99
+        },
+        "totalWorkPerSec": {
+          "median": 1114535,
+          "min": 1111367,
+          "max": 1123436,
+          "cvPct": 0.49
+        }
+      },
+      "objectiveRange": [
+        0.0361924783640555,
+        0.0361924783640555
+      ]
+    },
+    {
+      "fixture": "project-seq-7line",
+      "mode": "project",
+      "kind": "virtual",
+      "budgetMs": 250,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 0.036181190238587055,
+      "result": {
+        "eta": 27.63867062984305,
+        "workEta": 27.63867062984305,
+        "warmupEta": 0,
+        "lpFeasible": true,
+        "partial": false,
+        "phases": [
+          {
+            "phaseKey": "pmsodgpefnag",
+            "name": "New project",
+            "eta": 2.051534547841786,
+            "z": 0.17304119999999998,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          },
+          {
+            "phaseKey": "pmsj15karizj",
+            "name": "The Tower of Chad",
+            "eta": 3.504834700423238,
+            "z": 423.199767778721,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          },
+          {
+            "phaseKey": "pmsnojkg3bdp",
+            "name": "Biochemical Laboratory",
+            "eta": 3.166835088936194,
+            "z": 69.37082923779533,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          },
+          {
+            "phaseKey": "pmsihuucetuq",
+            "name": "+cans",
+            "eta": 0.20814237532820176,
+            "z": 0.1775981247591656,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          },
+          {
+            "phaseKey": "pmspfqzknws8",
+            "name": "Nyra",
+            "eta": 18.70732391731363,
+            "z": 0.2883195481477512,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          }
+        ],
+        "idleFillPhases": 0,
+        "lookAheadPhases": 0,
+        "executionPhases": 5,
+        "hiddenComparisonRan": false,
+        "stabilityComparison": null
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": null,
+        "staticDeadlineReached": true,
+        "allPhasesEvaluated": true,
+        "searchExhaustive": false
+      },
+      "work": {
+        "total": 9458819,
+        "probe": 78098,
+        "dense": 9380721,
+        "byLabel": {
+          "lp-pivot": {
+            "count": 809,
+            "work": 9329034,
+            "maxUnits": 15400,
+            "ms": 92.758
+          },
+          "lp-tableau-row": {
+            "count": 83,
+            "work": 51687,
+            "maxUnits": 750,
+            "ms": 0.497
+          },
+          "lp-job-coefficient": {
+            "count": 30534,
+            "work": 30534,
+            "maxUnits": 1,
+            "ms": 61.068
+          },
+          "climb-job": {
+            "count": 29233,
+            "work": 29233,
+            "maxUnits": 1,
+            "ms": 58.466
+          },
+          "repair-job": {
+            "count": 15337,
+            "work": 15337,
+            "maxUnits": 1,
+            "ms": 30.674
+          },
+          "gel-seed-line": {
+            "count": 1936,
+            "work": 1936,
+            "maxUnits": 1,
+            "ms": 3.872
+          },
+          "gel-seed-step": {
+            "count": 395,
+            "work": 395,
+            "maxUnits": 1,
+            "ms": 0.79
+          },
+          "lp-random-line": {
+            "count": 280,
+            "work": 280,
+            "maxUnits": 1,
+            "ms": 0.56
+          },
+          "repair-pass": {
+            "count": 87,
+            "work": 87,
+            "maxUnits": 1,
+            "ms": 0.174
+          },
+          "climb-pass": {
+            "count": 63,
+            "work": 63,
+            "maxUnits": 1,
+            "ms": 0.126
+          },
+          "seed-start": {
+            "count": 54,
+            "work": 54,
+            "maxUnits": 1,
+            "ms": 0.108
+          },
+          "lp-resource-row": {
+            "count": 48,
+            "work": 48,
+            "maxUnits": 1,
+            "ms": 0.096
+          },
+          "lp-random-seed": {
+            "count": 40,
+            "work": 40,
+            "maxUnits": 1,
+            "ms": 0.08
+          },
+          "lp-line-row": {
+            "count": 35,
+            "work": 35,
+            "maxUnits": 1,
+            "ms": 0.07
+          },
+          "lp-offset": {
+            "count": 35,
+            "work": 35,
+            "maxUnits": 1,
+            "ms": 0.068
+          },
+          "gel-prefix": {
+            "count": 7,
+            "work": 7,
+            "maxUnits": 1,
+            "ms": 0.014
+          },
+          "margin-stage": {
+            "count": 5,
+            "work": 5,
+            "maxUnits": 1,
+            "ms": 0.563
+          },
+          "role-enumeration": {
+            "count": 3,
+            "work": 3,
+            "maxUnits": 1,
+            "ms": 0.006
+          },
+          "target-seed": {
+            "count": 1,
+            "work": 1,
+            "maxUnits": 1,
+            "ms": 0.002
+          }
+        }
+      },
+      "lp": {
+        "pivots": 1876,
+        "tableauRows": 168,
+        "work": 26442749,
+        "workOnControl": 9380721,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 6,
+        "lpMaximize": 10,
+        "projectSchedule": 5,
+        "staticSchedule": 6,
+        "projectPhase": 5
+      },
+      "events": {
+        "local-time-limit": 5,
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 250.003,
+      "nonDeterministic": {
+        "wallMs": 208.7,
+        "lpMs": 47.738,
+        "reportedMs": 208.565
+      }
+    },
+    {
+      "fixture": "project-seq-7line",
+      "mode": "project",
+      "kind": "virtual",
+      "budgetMs": 1000,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 0.0361924783640555,
+      "result": {
+        "eta": 27.63005036408748,
+        "workEta": 27.63005036408748,
+        "warmupEta": 0,
+        "lpFeasible": true,
+        "partial": false,
+        "phases": [
+          {
+            "phaseKey": "pmsodgpefnag",
+            "name": "New project",
+            "eta": 2.051534547841786,
+            "z": 0.17304119999999998,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          },
+          {
+            "phaseKey": "pmsj15karizj",
+            "name": "The Tower of Chad",
+            "eta": 3.504834700423238,
+            "z": 423.199767778721,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          },
+          {
+            "phaseKey": "pmsnojkg3bdp",
+            "name": "Biochemical Laboratory",
+            "eta": 3.1564839483626423,
+            "z": 69.5983188169889,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          },
+          {
+            "phaseKey": "pmsihuucetuq",
+            "name": "+cans",
+            "eta": 0.20987325014618238,
+            "z": 0.1775981247591656,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          },
+          {
+            "phaseKey": "pmspfqzknws8",
+            "name": "Nyra",
+            "eta": 18.70732391731363,
+            "z": 0.28839273734141996,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          }
+        ],
+        "idleFillPhases": 0,
+        "lookAheadPhases": 0,
+        "executionPhases": 5,
+        "hiddenComparisonRan": false,
+        "stabilityComparison": null
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": null,
+        "staticDeadlineReached": true,
+        "allPhasesEvaluated": true,
+        "searchExhaustive": false
+      },
+      "work": {
+        "total": 9833819,
+        "probe": 453098,
+        "dense": 9380721,
+        "byLabel": {
+          "lp-pivot": {
+            "count": 809,
+            "work": 9329034,
+            "maxUnits": 15400,
+            "ms": 92.758
+          },
+          "climb-job": {
+            "count": 224782,
+            "work": 224782,
+            "maxUnits": 1,
+            "ms": 449.564
+          },
+          "repair-job": {
+            "count": 185889,
+            "work": 185889,
+            "maxUnits": 1,
+            "ms": 371.778
+          },
+          "lp-tableau-row": {
+            "count": 83,
+            "work": 51687,
+            "maxUnits": 750,
+            "ms": 0.497
+          },
+          "lp-job-coefficient": {
+            "count": 30534,
+            "work": 30534,
+            "maxUnits": 1,
+            "ms": 61.068
+          },
+          "gel-seed-line": {
+            "count": 7744,
+            "work": 7744,
+            "maxUnits": 1,
+            "ms": 15.488
+          },
+          "gel-seed-step": {
+            "count": 1580,
+            "work": 1580,
+            "maxUnits": 1,
+            "ms": 3.16
+          },
+          "repair-pass": {
+            "count": 643,
+            "work": 643,
+            "maxUnits": 1,
+            "ms": 1.286
+          },
+          "lp-random-line": {
+            "count": 560,
+            "work": 560,
+            "maxUnits": 1,
+            "ms": 1.12
+          },
+          "ils-perturb": {
+            "count": 419,
+            "work": 419,
+            "maxUnits": 1,
+            "ms": 0.838
+          },
+          "climb-pass": {
+            "count": 411,
+            "work": 411,
+            "maxUnits": 1,
+            "ms": 0.822
+          },
+          "ils-iteration": {
+            "count": 163,
+            "work": 163,
+            "maxUnits": 1,
+            "ms": 0.326
+          },
+          "seed-start": {
+            "count": 120,
+            "work": 120,
+            "maxUnits": 1,
+            "ms": 0.24
+          },
+          "lp-random-seed": {
+            "count": 80,
+            "work": 80,
+            "maxUnits": 1,
+            "ms": 0.16
+          },
+          "lp-resource-row": {
+            "count": 48,
+            "work": 48,
+            "maxUnits": 1,
+            "ms": 0.096
+          },
+          "lp-line-row": {
+            "count": 35,
+            "work": 35,
+            "maxUnits": 1,
+            "ms": 0.07
+          },
+          "lp-offset": {
+            "count": 35,
+            "work": 35,
+            "maxUnits": 1,
+            "ms": 0.068
+          },
+          "gel-prefix": {
+            "count": 28,
+            "work": 28,
+            "maxUnits": 1,
+            "ms": 0.056
+          },
+          "target-seed": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "role-enumeration": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.016
+          },
+          "margin-stage": {
+            "count": 5,
+            "work": 5,
+            "maxUnits": 1,
+            "ms": 0.563
+          }
+        }
+      },
+      "lp": {
+        "pivots": 1876,
+        "tableauRows": 168,
+        "work": 26442749,
+        "workOnControl": 9380721,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 6,
+        "lpMaximize": 10,
+        "projectSchedule": 5,
+        "staticSchedule": 6,
+        "projectPhase": 5
+      },
+      "events": {
+        "local-time-limit": 5,
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 1000.003,
+      "nonDeterministic": {
+        "wallMs": 875.5,
+        "lpMs": 44.074,
+        "reportedMs": 875.343
+      }
+    },
+    {
+      "fixture": "project-seq-7line",
+      "mode": "project",
+      "kind": "virtual",
+      "budgetMs": 4000,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 0.0361924783640555,
+      "result": {
+        "eta": 27.63005036408748,
+        "workEta": 27.63005036408748,
+        "warmupEta": 0,
+        "lpFeasible": true,
+        "partial": false,
+        "phases": [
+          {
+            "phaseKey": "pmsodgpefnag",
+            "name": "New project",
+            "eta": 2.051534547841786,
+            "z": 0.17304119999999998,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          },
+          {
+            "phaseKey": "pmsj15karizj",
+            "name": "The Tower of Chad",
+            "eta": 3.504834700423238,
+            "z": 423.199767778721,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          },
+          {
+            "phaseKey": "pmsnojkg3bdp",
+            "name": "Biochemical Laboratory",
+            "eta": 3.1564839483626423,
+            "z": 69.5983188169889,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          },
+          {
+            "phaseKey": "pmsihuucetuq",
+            "name": "+cans",
+            "eta": 0.20987325014618238,
+            "z": 0.1775981247591656,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          },
+          {
+            "phaseKey": "pmspfqzknws8",
+            "name": "Nyra",
+            "eta": 18.70732391731363,
+            "z": 0.28839273734141996,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          }
+        ],
+        "idleFillPhases": 0,
+        "lookAheadPhases": 0,
+        "executionPhases": 5,
+        "hiddenComparisonRan": false,
+        "stabilityComparison": null
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": null,
+        "staticDeadlineReached": true,
+        "allPhasesEvaluated": true,
+        "searchExhaustive": false
+      },
+      "work": {
+        "total": 11333819,
+        "probe": 1953098,
+        "dense": 9380721,
+        "byLabel": {
+          "lp-pivot": {
+            "count": 809,
+            "work": 9329034,
+            "maxUnits": 15400,
+            "ms": 92.758
+          },
+          "climb-job": {
+            "count": 1032700,
+            "work": 1032700,
+            "maxUnits": 1,
+            "ms": 2065.4
+          },
+          "repair-job": {
+            "count": 870531,
+            "work": 870531,
+            "maxUnits": 1,
+            "ms": 1741.062
+          },
+          "lp-tableau-row": {
+            "count": 83,
+            "work": 51687,
+            "maxUnits": 750,
+            "ms": 0.497
+          },
+          "lp-job-coefficient": {
+            "count": 30534,
+            "work": 30534,
+            "maxUnits": 1,
+            "ms": 61.068
+          },
+          "gel-seed-line": {
+            "count": 7744,
+            "work": 7744,
+            "maxUnits": 1,
+            "ms": 15.488
+          },
+          "ils-perturb": {
+            "count": 3077,
+            "work": 3077,
+            "maxUnits": 1,
+            "ms": 6.154
+          },
+          "repair-pass": {
+            "count": 2927,
+            "work": 2927,
+            "maxUnits": 1,
+            "ms": 5.854
+          },
+          "climb-pass": {
+            "count": 1869,
+            "work": 1869,
+            "maxUnits": 1,
+            "ms": 3.738
+          },
+          "gel-seed-step": {
+            "count": 1580,
+            "work": 1580,
+            "maxUnits": 1,
+            "ms": 3.16
+          },
+          "ils-iteration": {
+            "count": 1203,
+            "work": 1203,
+            "maxUnits": 1,
+            "ms": 2.406
+          },
+          "lp-random-line": {
+            "count": 560,
+            "work": 560,
+            "maxUnits": 1,
+            "ms": 1.12
+          },
+          "seed-start": {
+            "count": 120,
+            "work": 120,
+            "maxUnits": 1,
+            "ms": 0.24
+          },
+          "lp-random-seed": {
+            "count": 80,
+            "work": 80,
+            "maxUnits": 1,
+            "ms": 0.16
+          },
+          "lp-resource-row": {
+            "count": 48,
+            "work": 48,
+            "maxUnits": 1,
+            "ms": 0.096
+          },
+          "lp-line-row": {
+            "count": 35,
+            "work": 35,
+            "maxUnits": 1,
+            "ms": 0.07
+          },
+          "lp-offset": {
+            "count": 35,
+            "work": 35,
+            "maxUnits": 1,
+            "ms": 0.068
+          },
+          "gel-prefix": {
+            "count": 28,
+            "work": 28,
+            "maxUnits": 1,
+            "ms": 0.056
+          },
+          "target-seed": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "role-enumeration": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.016
+          },
+          "margin-stage": {
+            "count": 5,
+            "work": 5,
+            "maxUnits": 1,
+            "ms": 0.563
+          }
+        }
+      },
+      "lp": {
+        "pivots": 1876,
+        "tableauRows": 168,
+        "work": 26442749,
+        "workOnControl": 9380721,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 6,
+        "lpMaximize": 10,
+        "projectSchedule": 5,
+        "staticSchedule": 6,
+        "projectPhase": 5
+      },
+      "events": {
+        "local-time-limit": 5,
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 4000.003,
+      "nonDeterministic": {
+        "wallMs": 2985,
+        "lpMs": 39.669,
+        "reportedMs": 2984.939
+      }
+    },
+    {
+      "fixture": "project-seq-7line",
+      "mode": "project",
+      "kind": "virtual",
+      "budgetMs": 20000,
+      "seedRuns": 0,
+      "lines": 7,
+      "objective": 0.0361924783640555,
+      "result": {
+        "eta": 27.63005036408748,
+        "workEta": 27.63005036408748,
+        "warmupEta": 0,
+        "lpFeasible": true,
+        "partial": false,
+        "phases": [
+          {
+            "phaseKey": "pmsodgpefnag",
+            "name": "New project",
+            "eta": 2.051534547841786,
+            "z": 0.17304119999999998,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          },
+          {
+            "phaseKey": "pmsj15karizj",
+            "name": "The Tower of Chad",
+            "eta": 3.504834700423238,
+            "z": 423.199767778721,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          },
+          {
+            "phaseKey": "pmsnojkg3bdp",
+            "name": "Biochemical Laboratory",
+            "eta": 3.1564839483626423,
+            "z": 69.5983188169889,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          },
+          {
+            "phaseKey": "pmsihuucetuq",
+            "name": "+cans",
+            "eta": 0.20987325014618238,
+            "z": 0.1775981247591656,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          },
+          {
+            "phaseKey": "pmspfqzknws8",
+            "name": "Nyra",
+            "eta": 18.70732391731363,
+            "z": 0.28839273734141996,
+            "capped": true,
+            "stabilized": false,
+            "idleFill": null,
+            "lookAhead": null
+          }
+        ],
+        "idleFillPhases": 0,
+        "lookAheadPhases": 0,
+        "executionPhases": 5,
+        "hiddenComparisonRan": false,
+        "stabilityComparison": null
+      },
+      "flags": {
+        "feasible": true,
+        "capped": true,
+        "deadlineReached": null,
+        "staticDeadlineReached": true,
+        "allPhasesEvaluated": true,
+        "searchExhaustive": false
+      },
+      "work": {
+        "total": 19333819,
+        "probe": 9953098,
+        "dense": 9380721,
+        "byLabel": {
+          "lp-pivot": {
+            "count": 809,
+            "work": 9329034,
+            "maxUnits": 15400,
+            "ms": 92.758
+          },
+          "climb-job": {
+            "count": 5432078,
+            "work": 5432078,
+            "maxUnits": 1,
+            "ms": 10864.156
+          },
+          "repair-job": {
+            "count": 4419758,
+            "work": 4419758,
+            "maxUnits": 1,
+            "ms": 8839.516
+          },
+          "lp-tableau-row": {
+            "count": 83,
+            "work": 51687,
+            "maxUnits": 750,
+            "ms": 0.497
+          },
+          "lp-job-coefficient": {
+            "count": 30534,
+            "work": 30534,
+            "maxUnits": 1,
+            "ms": 61.068
+          },
+          "repair-pass": {
+            "count": 14614,
+            "work": 14614,
+            "maxUnits": 1,
+            "ms": 29.228
+          },
+          "ils-perturb": {
+            "count": 14421,
+            "work": 14421,
+            "maxUnits": 1,
+            "ms": 28.842
+          },
+          "target-swap": {
+            "count": 13064,
+            "work": 13064,
+            "maxUnits": 1,
+            "ms": 26.128
+          },
+          "climb-pass": {
+            "count": 9896,
+            "work": 9896,
+            "maxUnits": 1,
+            "ms": 19.792
+          },
+          "gel-seed-line": {
+            "count": 7744,
+            "work": 7744,
+            "maxUnits": 1,
+            "ms": 15.488
+          },
+          "ils-iteration": {
+            "count": 5749,
+            "work": 5749,
+            "maxUnits": 1,
+            "ms": 11.498
+          },
+          "swap-ils-perturb": {
+            "count": 1946,
+            "work": 1946,
+            "maxUnits": 1,
+            "ms": 3.892
+          },
+          "gel-seed-step": {
+            "count": 1580,
+            "work": 1580,
+            "maxUnits": 1,
+            "ms": 3.16
+          },
+          "swap-ils": {
+            "count": 777,
+            "work": 777,
+            "maxUnits": 1,
+            "ms": 1.554
+          },
+          "lp-random-line": {
+            "count": 560,
+            "work": 560,
+            "maxUnits": 1,
+            "ms": 1.12
+          },
+          "seed-start": {
+            "count": 120,
+            "work": 120,
+            "maxUnits": 1,
+            "ms": 0.24
+          },
+          "lp-random-seed": {
+            "count": 80,
+            "work": 80,
+            "maxUnits": 1,
+            "ms": 0.16
+          },
+          "lp-resource-row": {
+            "count": 48,
+            "work": 48,
+            "maxUnits": 1,
+            "ms": 0.096
+          },
+          "lp-line-row": {
+            "count": 35,
+            "work": 35,
+            "maxUnits": 1,
+            "ms": 0.07
+          },
+          "lp-offset": {
+            "count": 35,
+            "work": 35,
+            "maxUnits": 1,
+            "ms": 0.068
+          },
+          "gel-prefix": {
+            "count": 28,
+            "work": 28,
+            "maxUnits": 1,
+            "ms": 0.056
+          },
+          "target-seed": {
+            "count": 9,
+            "work": 9,
+            "maxUnits": 1,
+            "ms": 0.018
+          },
+          "role-enumeration": {
+            "count": 8,
+            "work": 8,
+            "maxUnits": 1,
+            "ms": 0.016
+          },
+          "margin-stage": {
+            "count": 5,
+            "work": 5,
+            "maxUnits": 1,
+            "ms": 0.563
+          },
+          "feeder-warm-start": {
+            "count": 3,
+            "work": 3,
+            "maxUnits": 1,
+            "ms": 0.006
+          },
+          "dfs-node": {
+            "count": 1,
+            "work": 1,
+            "maxUnits": 1,
+            "ms": 0.002
+          }
+        }
+      },
+      "lp": {
+        "pivots": 1876,
+        "tableauRows": 168,
+        "work": 26442749,
+        "workOnControl": 9380721,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 1,
+        "solveCore": 6,
+        "lpMaximize": 10,
+        "projectSchedule": 5,
+        "staticSchedule": 6,
+        "projectPhase": 5
+      },
+      "events": {
+        "local-time-limit": 5,
+        "stopped": 1
+      },
+      "stopReasons": {
+        "deadline": 1
+      },
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 20000.003,
+      "nonDeterministic": {
+        "wallMs": 14776.4,
+        "lpMs": 50.945,
+        "reportedMs": 14776.273
+      }
+    },
+    {
+      "fixture": "project-split-7line",
+      "mode": "project",
+      "kind": "wall",
+      "budgetMs": 20000,
+      "seedRuns": 1,
+      "lines": 7,
+      "objective": 0.040046317950307816,
+      "result": {
+        "eta": 24.971084763419892,
+        "workEta": 20.48697372650746,
+        "warmupEta": 4.484111036912431,
+        "lpFeasible": true,
+        "partial": false,
+        "phases": [
+          {
+            "phaseKey": "pmsihuucetuq+pmsj15karizj+pmsnojkg3bdp+pmsodgpefnag+pmspfqzknws8",
+            "name": "All projects",
+            "eta": 20.48697372650746,
+            "z": 0.04881150400003385,
+            "capped": false,
+            "stabilized": true,
+            "idleFill": null,
+            "lookAhead": null
+          }
+        ],
+        "idleFillPhases": 0,
+        "lookAheadPhases": 0,
+        "executionPhases": 2,
+        "hiddenComparisonRan": true,
+        "stabilityComparison": {
+          "comparable": true,
+          "orderChanged": false,
+          "selectedTotalEta": 24.971084763419892,
+          "alternativeTotalEta": 24.97108476343007,
+          "alternativeIsShorter": false
+        }
+      },
+      "flags": {
+        "feasible": true,
+        "capped": false,
+        "deadlineReached": null,
+        "staticDeadlineReached": false,
+        "allPhasesEvaluated": true,
+        "searchExhaustive": true
+      },
+      "work": {
+        "total": 0,
+        "probe": 0,
+        "dense": 0,
+        "byLabel": {}
+      },
+      "lp": {
+        "pivots": 2895,
+        "tableauRows": 176,
+        "work": 50425171,
+        "workOnControl": 0,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 0,
+        "solveCore": 0,
+        "lpMaximize": 10,
+        "projectSchedule": 8,
+        "staticSchedule": 0,
+        "projectPhase": 2
+      },
+      "events": {},
+      "stopReasons": {},
+      "reportedMs": 66.333,
+      "wall": {
+        "samples": 5,
+        "ms": {
+          "median": 66.4,
+          "min": 65.6,
+          "max": 72.8,
+          "cvPct": 4.31
+        },
+        "probeMs": {
+          "median": 18.5,
+          "min": 17.5,
+          "max": 22.9,
+          "cvPct": 11.52
+        },
+        "denseMs": {
+          "median": 48.5,
+          "min": 47.1,
+          "max": 49.8,
+          "cvPct": 2.13
+        },
+        "probeWorkPerSec": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "cvPct": 0
+        },
+        "denseWorkPerSec": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "cvPct": 0
+        },
+        "totalWorkPerSec": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "cvPct": 0
+        }
+      },
+      "objectiveRange": [
+        0.040046317950307816,
+        0.040046317950307816
+      ]
+    },
+    {
+      "fixture": "project-split-7line",
+      "mode": "project",
+      "kind": "virtual",
+      "budgetMs": 20000,
+      "seedRuns": 1,
+      "lines": 7,
+      "objective": 0.040046317950307816,
+      "result": {
+        "eta": 24.971084763419892,
+        "workEta": 20.48697372650746,
+        "warmupEta": 4.484111036912431,
+        "lpFeasible": true,
+        "partial": false,
+        "phases": [
+          {
+            "phaseKey": "pmsihuucetuq+pmsj15karizj+pmsnojkg3bdp+pmsodgpefnag+pmspfqzknws8",
+            "name": "All projects",
+            "eta": 20.48697372650746,
+            "z": 0.04881150400003385,
+            "capped": false,
+            "stabilized": true,
+            "idleFill": null,
+            "lookAhead": null
+          }
+        ],
+        "idleFillPhases": 0,
+        "lookAheadPhases": 0,
+        "executionPhases": 2,
+        "hiddenComparisonRan": true,
+        "stabilityComparison": {
+          "comparable": true,
+          "orderChanged": false,
+          "selectedTotalEta": 24.971084763419892,
+          "alternativeTotalEta": 24.97108476343007,
+          "alternativeIsShorter": false
+        }
+      },
+      "flags": {
+        "feasible": true,
+        "capped": false,
+        "deadlineReached": null,
+        "staticDeadlineReached": false,
+        "allPhasesEvaluated": true,
+        "searchExhaustive": true
+      },
+      "work": {
+        "total": 0,
+        "probe": 0,
+        "dense": 0,
+        "byLabel": {}
+      },
+      "lp": {
+        "pivots": 2895,
+        "tableauRows": 176,
+        "work": 50425171,
+        "workOnControl": 0,
+        "refused": 0,
+        "interrupted": 0
+      },
+      "calls": {
+        "controls": 0,
+        "solveCore": 0,
+        "lpMaximize": 10,
+        "projectSchedule": 8,
+        "staticSchedule": 0,
+        "projectPhase": 2
+      },
+      "events": {},
+      "stopReasons": {},
+      "unitsPerMs": 500,
+      "denseUnitsPerMs": 100000,
+      "virtualMs": 0,
+      "nonDeterministic": {
+        "wallMs": 63.2,
+        "lpMs": 46.825,
+        "reportedMs": 63.188
+      }
+    }
+  ],
+  "workToObjective": [
+    {
+      "fixture": "items-7line",
+      "budgetMs": 20000,
+      "target": 744475.5911111111,
+      "reached": true,
+      "probes": 14,
+      "precision": 0.02,
+      "workLimit": 823602,
+      "lowerBound": 813043,
+      "objective": 744475.5911111111,
+      "work": {
+        "total": 823602,
+        "probe": 6743,
+        "dense": 816859
+      },
+      "controls": 1
+    },
+    {
+      "fixture": "items-share-margin-7line",
+      "budgetMs": 20000,
+      "target": 0.8609784675947567,
+      "reached": true,
+      "probes": 16,
+      "precision": 0.02,
+      "workLimit": 4321212,
+      "lowerBound": 4277118,
+      "objective": 0.8609784675947567,
+      "work": {
+        "total": 4321212,
+        "probe": 3026196,
+        "dense": 1295016
+      },
+      "controls": 1
+    },
+    {
+      "fixture": "items-8line",
+      "budgetMs": 20000,
+      "target": 820060.0685714287,
+      "reached": true,
+      "probes": 15,
+      "precision": 0.02,
+      "workLimit": 1476354,
+      "lowerBound": 1453985,
+      "objective": 820060.0685714287,
+      "work": {
+        "total": 1476354,
+        "probe": 16048,
+        "dense": 1460306
+      },
+      "controls": 1
+    },
+    {
+      "fixture": "items-10line",
+      "budgetMs": 20000,
+      "target": 901157.8311111111,
+      "reached": true,
+      "probes": 15,
+      "precision": 0.02,
+      "workLimit": 2261000,
+      "lowerBound": 2237200,
+      "objective": 901157.8311111111,
+      "work": {
+        "total": 2261000,
+        "probe": 64246,
+        "dense": 2196754
+      },
+      "controls": 1
+    },
+    {
+      "fixture": "credits-7line",
+      "budgetMs": 20000,
+      "target": 1.5024801354625407e+99,
+      "reached": true,
+      "probes": 15,
+      "precision": 0.02,
+      "workLimit": 2024925,
+      "lowerBound": 1997926,
+      "objective": 1.5024801354625407e+99,
+      "work": {
+        "total": 2023697,
+        "probe": 1120609,
+        "dense": 903088
+      },
+      "controls": 1
+    },
+    {
+      "fixture": "project-7line",
+      "budgetMs": 20000,
+      "target": 0.03341167563939722,
+      "reached": true,
+      "probes": 16,
+      "precision": 0.02,
+      "workLimit": 13388640,
+      "lowerBound": 13165496,
+      "objective": 0.03341167563939722,
+      "work": {
+        "total": 13388640,
+        "probe": 9085714,
+        "dense": 4302926
+      },
+      "controls": 1
+    },
+    {
+      "fixture": "project-seq-7line",
+      "budgetMs": 20000,
+      "target": 0.0361924783640555,
+      "reached": true,
+      "probes": 16,
+      "precision": 0.02,
+      "workLimit": 17521104,
+      "lowerBound": 17219016,
+      "objective": 0.0361924783640555,
+      "work": {
+        "total": 17521104,
+        "probe": 8140383,
+        "dense": 9380721
+      },
+      "controls": 1
+    },
+    {
+      "fixture": "project-split-7line",
+      "budgetMs": 20000,
+      "target": 0.040046317950307816,
+      "reached": false,
+      "probes": 1,
+      "note": "fixture builds no solve control, so no work limit applies to it"
+    }
+  ]
+}
