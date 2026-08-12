@@ -202,12 +202,14 @@ const INSTRUMENT = `
   solveCore=function(){hooks.count("solveCore");return rawSolveCore.apply(null,arguments);};
   // lpMaximize charges every dense unit in the solver and nothing else does, so metering it here
   // yields the dense/probe split without a per-checkpoint observer. The meter also stands in for a
-  // missing control: optimizeProjectTop builds one only in static line mode, so on the line-
-  // switching path lpMaximize is called with no control at all and its pivots were previously
-  // invisible — which is the path WS2's repeated near-identical LPs actually live on. Substituting
-  // a meter that always grants the checkpoint is behaviour-identical to passing nothing, because
-  // every charge site inside lpMaximize is guarded by \`control&&\`.
-  lpMaximize=function(c,A,b,control){
+  // missing control: a caller that passes none still gets its pivots counted, because every charge
+  // site inside lpMaximize is guarded by \`control&&\` and a meter that always grants the checkpoint
+  // is behaviour-identical to passing nothing.
+  //
+  // The trailing options argument selects the pivot rule and MUST be forwarded: swallowing it would
+  // run the bench against a different simplex than the app, which is the one thing a bench may never
+  // do. Same reason the meter is passed positionally rather than as a rebuilt argument list.
+  lpMaximize=function(c,A,b,control,opts){
     var real=control&&typeof control.checkpoint==="function"?control:null;
     var meter={__forgeSolveControl:true,checkpoint:function(label,cost){
       var before=real?real.work():0;
@@ -218,7 +220,7 @@ const INSTRUMENT = `
     }};
     hooks.count("lpMaximize");
     var at=hooks.clock();
-    var out=rawLp(c,A,b,meter);
+    var out=rawLp(c,A,b,meter,opts);
     hooks.lpDone(hooks.clock()-at,!!(out&&out.interrupted));
     return out;
   };
