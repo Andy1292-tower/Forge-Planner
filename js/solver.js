@@ -309,7 +309,12 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // Ceiling on the objective from the LP relaxation, in the same per-second units as best.score.
   // Declared here rather than read off `lp` because finishCoreResult runs before `lp` is
   // initialized on the baselineOnly path. Null until lpRelax returns a completed solve.
-  let lpBound=null;
+  //
+  // Two of them, because a margin solve optimizes a different problem and the strict relaxation does
+  // not bound it: a may-work plan need only cover (1-tol) of what it consumes, which is a wider
+  // feasible set and a higher optimum. marginBound comes from the same relaxation rebuilt over
+  // needFrac (see lpRelax) and is the only ceiling a margin result may quote.
+  let lpBound=null,marginBound=null;
   // Exogenous supply (per second) of each resource, added to the produced side. Craftable
   // materials use Lil' Forgie; mined resources use their own independent income budgets.
   // opts.supplyHr replaces both when the caller owns a narrower budget than the whole factory: the
@@ -648,12 +653,13 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     const deadlineReached=control.deadlineReached();if(deadlineReached)capped=true;
     let usesMargin=false;for(let r=0;r<R;r++)if(best.produced[r]<best.consumed[r]-1e-6)usesMargin=true;
     const forgie={};resources.forEach((r,i)=>forgie[r]=baseArr[i]*3600);
-    // The LP ceiling only bounds a strictly feasible optimum: lpRelax's resource rows use baseArr
-    // with no tolerance applied. This gates on the requested tolerance rather than the pass that
-    // happened to run last, because a budget that expires before the margin pass leaves a strict
-    // incumbent while the optimum the user asked for is still the relaxed one — which sits above
-    // the ceiling and would turn the reported gap into a claim the search cannot make.
-    const bound=(lpBound!=null&&tol===0)?lpBound:null;
+    // Each ceiling bounds its own problem, so which one is reported follows the tolerance the caller
+    // ASKED for rather than the pass that happened to run last: a budget that expires before the
+    // margin pass leaves a strict incumbent while the optimum the user asked for is still the
+    // relaxed one, which sits above the strict ceiling. The margin ceiling covers a strict incumbent
+    // too — every strictly feasible plan is feasible at any margin — so quoting it is honest
+    // whichever pass the clock stopped in. Null until the relaxation for that tolerance completes.
+    const bound=tol===0?lpBound:marginBound;
     return {best,sorted,lineJobs,resources,resIndex,R,N,tIdx,tol,capped,usesMargin,issues,forgie,bound,deadlineReached,
       feasible:best.score>1e-9,interrupted:workInterrupted,localLimitReached,ms:Math.max(0,control.elapsed()-(solveStarted-control.startedAt))};
   }
@@ -755,12 +761,28 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       for(const[r,a]of job.cons)consumed[r]-=a*sp;
     }
   }
-  // LP relaxation: let each line split its time fractionally across its jobs and maximize the
-  // min target ratio z. It yields (a) an upper bound on the integer optimum and (b) a rounded
-  // incumbent for the discrete search to refine. This is what lets the search FIND feasible plans
-  // when Gel (a vespium-bounded intermediate) is in the chain — the pure combinatorial DFS can
-  // miss them at scale, which the old line-reservation sweep used to paper over by decomposing.
-  function lpRelax(){
+  /* LP relaxation: let each line split its time fractionally across its jobs and maximize the
+   * min target ratio z. It yields (a) an upper bound on the integer optimum and (b) a rounded
+   * incumbent for the discrete search to refine. This is what lets the search FIND feasible plans
+   * when Gel (a vespium-bounded intermediate) is in the chain — the pure combinatorial DFS can
+   * miss them at scale, which the old line-reservation sweep used to paper over by decomposing.
+   *
+   * `need` is the per-resource fraction of its consumption a plan actually has to cover — the
+   * solver's own needFrac. Passing it scales each row's consumption exactly as the feasibility test
+   * scales it, so the relaxation becomes a relaxation of the MARGIN problem rather than of the
+   * strict one, and a may-work optimum gets a ceiling for the first time. Every integer plan the
+   * margin search may return satisfies these rows, so its z bounds that search.
+   *
+   * Two details the scaling has to respect. Mined rows carry 1 in needFrac and are therefore
+   * untouched: a mined budget is a hard burn rate, not a paper shortfall. And a target's row does
+   * double duty — it is that resource's balance AND the link that holds z under the plan's net
+   * output — so discounting it would let z rise on consumption the plan never has to make good.
+   * Each target therefore gets a second, strict row carrying the z coefficient while its relaxed row
+   * keeps only the feasibility half.
+   *
+   * Called with no argument every coefficient is the double it always was (`a*sp*1` is `a*sp`, and
+   * no strict row is emitted), so the strict relaxation is unchanged. */
+  function lpRelax(need){
     const offs=[];let nv=0;
     for(let i=0;i<N;i++){if(!keepGoing("lp-offset"))return {interrupted:true};offs.push(nv);nv+=lineJobs[i].length;}
     const zc=nv,n=nv+1,A=[],b=[];
@@ -768,14 +790,17 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     const tw={};targets.forEach((t,k)=>tw[tIdx[k]]=w[k]);
     for(let r=0;r<R;r++){
       if(!keepGoing("lp-resource-row"))return {interrupted:true};
-      const row=new Float64Array(n);
+      const nf=need?need[r]:1,tgt=tw[r];
+      const row=new Float64Array(n),strict=(nf!==1&&tgt!==undefined)?new Float64Array(n):null;
       for(let i=0;i<N;i++)for(let j=0;j<lineJobs[i].length;j++){
         if(!keepGoing("lp-job-coefficient"))return {interrupted:true};
-        const job=lineJobs[i][j],sp=spEff[i][j],dp=sorted[i].dp;let net=0;
-        for(const[rr,a]of job.prod)if(rr===r)net+=a*sp*dp;
-        for(const[rr,a]of job.cons)if(rr===r)net-=a*sp;
-        if(net)row[offs[i]+j]=-net;}
-      if(tw[r]!==undefined)row[zc]=tw[r];
+        const job=lineJobs[i][j],sp=spEff[i][j],dp=sorted[i].dp;let net=0,sn=0;
+        for(const[rr,a]of job.prod)if(rr===r){net+=a*sp*dp;if(strict)sn+=a*sp*dp;}
+        for(const[rr,a]of job.cons)if(rr===r){net-=a*sp*nf;if(strict)sn-=a*sp;}
+        if(net)row[offs[i]+j]=-net;
+        if(strict&&sn)strict[offs[i]+j]=-sn;}
+      if(strict){strict[zc]=tgt;A.push(strict);b.push(baseArr[r]);}
+      else if(tgt!==undefined)row[zc]=tgt;
       A.push(row);b.push(baseArr[r]);
     }
     const c=new Float64Array(n);c[zc]=1;
@@ -794,6 +819,19 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // An incomplete simplex leaves z short of a proven ceiling, so only a completed solve is kept.
   if(lp&&lp.complete&&Number.isFinite(lp.z))lpBound=lp.z;
   if(interrupted){capped=true;return finishCoreResult();}
+  /* The margin problem's ceiling, from the same relaxation over this solve's needFrac — which still
+   * holds the requested tolerance here, since the staged search below has not moved it yet.
+   *
+   * Solved at the root rather than lazily inside the margin stage because of WHEN a ceiling is worth
+   * quoting. The interface raises the gap notice only on a solve the clock cut short, and a solve
+   * the clock cut short is exactly the one that never reaches its margin stage: on the reference
+   * factory the strict pass consumes the whole budget and the relaxed pass never starts. A ceiling
+   * computed inside that pass would therefore exist only on the runs that had no use for it. */
+  if(tol>0&&N>0){
+    const mlp=lpRelax(needFrac);
+    if(mlp&&mlp.complete&&Number.isFinite(mlp.z))marginBound=mlp.z;
+    if(interrupted){capped=true;return finishCoreResult();}
+  }
   // Two-pass margin search for monotonicity (issue #60). A plan feasible with NO margin is feasible
   // at ANY margin with the same objective, so we solve strict (tol=0) first, then seed the relaxed
   // pass with that strict optimum — the margin result can only match or beat the no-margin result,
@@ -896,8 +934,10 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // feasibility cache — it tests the rows inline. Re-derive the cache from the empty plan it starts
   // and ends on, so the next caller of feasibleNow is not reading a verdict about another plan.
   produced.set(baseArr);consumed.fill(0);rescanFeasibility();
-  // LP z bounds the integer optimum; if the incumbent already reaches it, the search is done.
-  let stageExhaustive=!!(lp&&lp.complete&&curTol===0&&best.score>=lp.z-1e-6*Math.max(1,lp.z));
+  // LP z bounds this stage's integer optimum; if the incumbent already reaches it, the search is
+  // done and neither the DFS nor the second pass can add anything.
+  const ceiling=curTol===0?lpBound:marginBound;
+  let stageExhaustive=ceiling!=null&&best.score>=ceiling-1e-6*Math.max(1,ceiling);
   if(!stageExhaustive){dfs(0,0);stageExhaustive=!capped&&!interrupted;}
   // Second pass, on whatever budget the first one left. Everything above is untouched and runs to
   // exactly the same plan it always did; this only ever replaces that plan with one that scores
