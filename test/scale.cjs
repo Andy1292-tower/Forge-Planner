@@ -1,4 +1,7 @@
 "use strict";
+// Decimal is a global in the browser (js/decimal.js loads first); a direct eval() inherits
+// this module scope, so binding it here is what makes the evaluated sources resolve it.
+const Decimal = require("../js/decimal.js");
 /* Real-wall-clock scaling check (NOT frozen — measures actual solve time + cap behavior).
  *
  * Confirms that as line count grows past 7→8→10→12, solves stay bounded:
@@ -97,7 +100,7 @@ const runner = `
       out.push({N, name, ms:Math.round(ms), feasible:res&&res.feasible, capped:res&&!!res.capped,
         obj: res&&res.objective!=null?Number(res.objective.toPrecision(5)):null,
         batteryOut, mined, bestItem:res&&res.bestItem,
-        budgetVespHr:minedBudgetHr('Vespium',s), budgetHydraHr:minedBudgetHr('Hydracite',s), err});
+        budgetVespHr:minedBudgetHr('Vespium',s).toNumber(), budgetHydraHr:minedBudgetHr('Hydracite',s).toNumber(), err});
     });
   });
   // table

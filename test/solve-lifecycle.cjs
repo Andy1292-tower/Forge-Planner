@@ -253,7 +253,7 @@ function schemaDispatchHarness() {
     clearTimeout() {},
   };
   vm.createContext(context);
-  for (const relative of ["js/core.js", "js/fields.js", "js/state.js", "js/solve-service.js"]) {
+  for (const relative of ["js/decimal.js", "js/core.js", "js/fields.js", "js/state.js", "js/solve-service.js"]) {
     const file = path.join(root, relative);
     vm.runInContext(fs.readFileSync(file, "utf8"), context, { filename: file });
   }
@@ -264,7 +264,8 @@ function schemaDispatchHarness() {
     S.planStart = 1000;
     S.projects = [{
       id: "dispatch-project", name: "Dispatch project", on: true, prio: null,
-      from: 1, to: 1, done: 0, levels: [{ costs: [{ item: "Frames", qty: 1 }] }], _open: true
+      // A quantity in S is a Decimal, the same shape normalize() and the catalog path produce.
+      from: 1, to: 1, done: 0, levels: [{ costs: [{ item: "Frames", qty: toDec(1) }] }], _open: true
     }];
     solveService.request({
       mode: S.mode,
@@ -1699,7 +1700,7 @@ function lineCapPersistenceHarness() {
     solveService: { cancel() {} },
   };
   vm.createContext(context);
-  for (const file of ["catalog.js", "core.js", "fields.js", "state.js", "dom.js"]) {
+  for (const file of ["decimal.js", "catalog.js", "core.js", "fields.js", "state.js", "dom.js"]) {
     vm.runInContext(fs.readFileSync(path.join(root, "js", file), "utf8"), context, { filename: file });
   }
   const events = fs.readFileSync(path.join(root, "js", "events.js"), "utf8");
@@ -2177,7 +2178,7 @@ function stateHarness() {
     },
   };
   vm.createContext(context);
-  for (const file of ["js/core.js", "js/fields.js", "js/state.js"]) {
+  for (const file of ["js/decimal.js", "js/core.js", "js/fields.js", "js/state.js"]) {
     vm.runInContext(fs.readFileSync(path.join(root, file), "utf8"), context, { filename: file });
   }
   return {

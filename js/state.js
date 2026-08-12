@@ -38,6 +38,10 @@ function _scanStructure(root,errors){
       return;
     }
     if(value===null||typeof value!=="object")return;
+    /* A Decimal is a scalar in this schema — a quantity, no different from the number it replaced —
+       so it is a leaf, not a container. The live in-memory state holds them, and this scan runs over
+       that state on every save; without this it would report each one as "not a plain object". */
+    if(value instanceof Decimal)return;
     if(depth>STATE_LIMITS.maxDepth){_pushError(errors,path,"exceeds the object depth limit");return;}
     if(seen.has(value)){_pushError(errors,path,"must not contain circular references");return;}
     seen.add(value);nodes++;
@@ -64,6 +68,20 @@ function _number(value,rule,path,errors){
     else if(typeof value!=="number"||!Number.isFinite(value))_pushError(errors,path,"must be a finite number");
     else if(rule.type==="integer"&&!Number.isInteger(value))_pushError(errors,path,"must be an integer");
     else _pushError(errors,path,"must be between "+rule.min+" and "+rule.max);
+    return undefined;
+  }
+  return checked.value;
+}
+/* Quantities. A save carries them as canonical strings (a Decimal does not survive JSON), so this
+ * accepts the string, a legacy v1-v4 float, or an already-revived Decimal, and always yields a
+ * Decimal. There is no upper bound to enforce — see the field-rule note in fields.js — so the only
+ * rejections are "not a number at all" and "negative". */
+function _decimal(value,rule,path,errors){
+  const checked=validateFieldValue(rule,value);
+  if(!checked.valid){
+    if(value===null&&!rule.allowBlank)_pushError(errors,path,"must be a quantity");
+    else if(toDec(value)===null)_pushError(errors,path,"must be a finite quantity");
+    else _pushError(errors,path,"must be at least "+rule.min);
     return undefined;
   }
   return checked.value;
@@ -119,7 +137,7 @@ function validateAndMigrate(candidate){
       _pushError(errors,"schemaVersion","was written by a newer version of Forge Planner");
       return {ok:false,errors,sourceVersion};
     }
-    if(sourceVersion!==1&&sourceVersion!==2&&sourceVersion!==3&&sourceVersion!==CURRENT_SCHEMA_VERSION)return {ok:false,errors:["schemaVersion is not supported"],sourceVersion};
+    if(sourceVersion!==1&&sourceVersion!==2&&sourceVersion!==3&&sourceVersion!==4&&sourceVersion!==CURRENT_SCHEMA_VERSION)return {ok:false,errors:["schemaVersion is not supported"],sourceVersion};
   }else{
     const legacyShape=Array.isArray(candidate.lines)&&_plainObject(candidate.prodCost)&&_plainObject(candidate.targets);
     if(!legacyShape)return {ok:false,errors:["unversioned save does not match a known Forge Planner shape"],sourceVersion:0};
@@ -199,7 +217,7 @@ function validateAndMigrate(candidate){
         Object.keys(levelMap).forEach(level=>{if(!LEVELS.some(item=>String(item)===level))_pushError(errors,path+"."+level,"uses an unknown compression level");});
         LEVELS.forEach(level=>{
           if(versioned&&!_own(levelMap,String(level)))_pushError(errors,path+"."+level,"is required");
-          if(_own(levelMap,String(level)))out.prodCost[product][input][level]=_number(_readData(levelMap,String(level),path+"."+level,errors),FIELD_SCHEMA.recipeCost,path+"."+level,errors);
+          if(_own(levelMap,String(level)))out.prodCost[product][input][level]=_decimal(_readData(levelMap,String(level),path+"."+level,errors),FIELD_SCHEMA.recipeCost,path+"."+level,errors);
         });
       });
     });
@@ -210,7 +228,7 @@ function validateAndMigrate(candidate){
     const map=_object(_readData(candidate,key,key,errors),key,errors);if(!map)return;
     ALLITEMS.forEach(item=>{
       if(versioned&&!text&&!_own(map,item))_pushError(errors,key+"."+item,"is required");
-      if(_own(map,item))out[key][item]=text?_string(_readData(map,item,key+"."+item,errors),rule,key+"."+item,errors):_number(_readData(map,item,key+"."+item,errors),rule,key+"."+item,errors);
+      if(_own(map,item))out[key][item]=text?_string(_readData(map,item,key+"."+item,errors),rule,key+"."+item,errors):_decimal(_readData(map,item,key+"."+item,errors),rule,key+"."+item,errors);
     });
   };
   copyItemMap("sellPrice",FIELD_SCHEMA.sellPrice,false);
@@ -227,7 +245,9 @@ function validateAndMigrate(candidate){
   };
   // Fresh in-memory defaults are intentionally unversioned until the persistence boundary.
   // Recognize their complete nested source shape without treating v1-v3 nested impostors as legacy.
-  const currentMinedShape=sourceVersion===CURRENT_SCHEMA_VERSION||
+  // Nested mined sources arrived in v4 and are unchanged by v5 (which only restates quantities as
+  // strings), so both versions carry the current shape.
+  const currentMinedShape=sourceVersion>=4||
     (sourceVersion===0&&(hasNestedMinedMap("minedIncome")||hasNestedMinedMap("minedIncomeText")));
   if(currentMinedShape){
     if(sourceVersion===0){
@@ -246,7 +266,7 @@ function validateAndMigrate(candidate){
           if(!_own(resourceMap,source)){_pushError(errors,path,"is required");return;}
           out[key][resource][source]=text
             ?_string(_readData(resourceMap,source,path,errors),rule,path,errors)
-            :_number(_readData(resourceMap,source,path,errors),rule,path,errors);
+            :_decimal(_readData(resourceMap,source,path,errors),rule,path,errors);
         });
       });
     };
@@ -259,13 +279,13 @@ function validateAndMigrate(candidate){
         const path="minedIncome."+resource;
         if(versioned&&!_own(map,resource))_pushError(errors,path,"is required");
         if(!_own(map,resource))return;
-        const value=_number(_readData(map,resource,path,errors),FIELD_SCHEMA.minedIncome,path,errors);
+        const value=_decimal(_readData(map,resource,path,errors),FIELD_SCHEMA.minedIncome,path,errors);
         if(value===undefined)return;
         if(resource==="Vespium")out.minedIncome.Vespium.rigPerMin=value;
-        else out.minedIncome.Hydracite.resourcesTradingPerSec=value===null?null:value/60;
+        else out.minedIncome.Hydracite.resourcesTradingPerSec=value===null?null:value.div(60);
       });
     }else if(_own(candidate,"gelVesp")){
-      const value=_number(_readData(candidate,"gelVesp","gelVesp",errors),FIELD_SCHEMA.minedIncome,"gelVesp",errors);
+      const value=_decimal(_readData(candidate,"gelVesp","gelVesp",errors),FIELD_SCHEMA.minedIncome,"gelVesp",errors);
       if(value!==undefined)out.minedIncome.Vespium.rigPerMin=value;
     }
     if(_own(candidate,"minedIncomeText")){
@@ -368,7 +388,7 @@ function validateAndMigrate(candidate){
           if(versioned)["item","qty"].forEach(key=>{if(!_own(cost,key))_pushError(errors,costPath+"."+key,"is required");});
           copiedCosts.push({
             item:_enum(_readData(cost,"item",costPath+".item",errors),FIELD_SCHEMA.item,costPath+".item",errors),
-            qty:_number(_readData(cost,"qty",costPath+".qty",errors),FIELD_SCHEMA.projectQuantity,costPath+".qty",errors)
+            qty:_decimal(_readData(cost,"qty",costPath+".qty",errors),FIELD_SCHEMA.projectQuantity,costPath+".qty",errors)
           });
         });
         copiedLevels.push({costs:copiedCosts});

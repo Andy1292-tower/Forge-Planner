@@ -1,4 +1,7 @@
 "use strict";
+// Decimal is a global in the browser (js/decimal.js loads first); a direct eval() inherits
+// this module scope, so binding it here is what makes the evaluated sources resolve it.
+const Decimal = require("../js/decimal.js");
 /* Inventory-drawdown test (Node) — issue #73.
  *
  * Project plans must credit stock of INTERMEDIATE/raw materials, not just finished outputs.

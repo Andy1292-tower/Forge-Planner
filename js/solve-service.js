@@ -8,8 +8,35 @@
 function solveStateSnapshot(state){
   return JSON.parse(JSON.stringify(state||{}));
 }
+/* Reading a quantity here.
+ *
+ * A cached or transported quantity arrives in one of three shapes: a Decimal, the canonical string
+ * JSON leaves behind, or the prototype-less {mantissa, exponent} a structured clone leaves behind.
+ * core.js's toDec reads all three, and Number.isFinite reads none of them — which is why the cache
+ * guard below cannot test these fields the way it tests the ordinary float ones.
+ *
+ * The typeof guard is the same accommodation ALLITEMS gets in mergeShardResults: this file is also
+ * exercised in a realm holding only itself plus stubs (the isolated service realm in
+ * test/solve-lifecycle.cjs), where there is no core.js and no Decimal. Quantities there are plain
+ * numbers, so a plain-number comparator is all that has to work. */
+function readQuantity(value){
+  if(typeof toDec==="function")return toDec(value);
+  if(value===null||value===undefined||value==="")return null;
+  const flat=Number(value);
+  if(!Number.isFinite(flat))return null;
+  return {eq:other=>flat===Number(other),gt:other=>flat>Number(other),gte:other=>flat>=Number(other),
+    toString:()=>String(flat)};
+}
+const readQuantity0=value=>readQuantity(value)||readQuantity(0);
+function nonNegativeQuantity(value){const q=readQuantity(value);return q!==null&&q.gte(0);}
 function canonicalSolveJson(value){
   if(Array.isArray(value))return "["+value.map(canonicalSolveJson).join(",")+"]";
+  /* A quantity is a scalar, and its canonical string is the ONE form every source has to agree on.
+   * This walker builds JSON by hand, so it never triggers Decimal's toJSON — left alone it would
+   * expand a live Decimal into {"exponent":..,"mantissa":..} while the same value arriving from a
+   * save or a Worker (already a string) hashed differently. Two spellings of one factory would then
+   * miss each other in the solve cache. */
+  if(typeof Decimal==="function"&&value instanceof Decimal)return JSON.stringify(value.toString());
   if(value&&typeof value==="object"){
     return "{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+canonicalSolveJson(value[key])).join(",")+"}";
   }
@@ -128,22 +155,23 @@ function dailySolveResultValid(result,conditionKey){
     Object.prototype.toString.call(result.out)==="[object Object]";
   if(!Array.isArray(result.ranking)||result.ranking.length>100||
     (result.bestItem!==null&&typeof result.bestItem!=="string")||
-    !Number.isFinite(result.credits)||result.credits<0||!Number.isFinite(result.objective)||result.objective<0||
+    !nonNegativeQuantity(result.credits)||!nonNegativeQuantity(result.objective)||
     !Number.isFinite(result.tol)||typeof result.usesMargin!=="boolean"||typeof result.feasible!=="boolean"||
     typeof result.capped!=="boolean"||result.allCandidatesEvaluated!==true||
     typeof result.deadlineReached!=="boolean"||typeof result.searchExhaustive!=="boolean"||
     !Array.isArray(result.minedUsage)||Object.prototype.toString.call(result.resIndex)!=="[object Object]")return false;
   if(!condition.sellPrice||Object.prototype.toString.call(condition.sellPrice)!=="[object Object]")return false;
   const expectedPrices=new Map(Object.entries(condition.sellPrice)
-    .filter(([,price])=>Number.isFinite(price)&&price>0));
+    .map(([item,price])=>[item,readQuantity(price)])
+    .filter(([,price])=>price!==null&&price.gt(0)));
   if(result.ranking.length!==expectedPrices.size)return false;
   const rankedItems=[];
   const valid=result.ranking.every(candidate=>{
     if(!candidate||Object.prototype.toString.call(candidate)!=="[object Object]"||
       typeof candidate.item!=="string"||rankedItems.includes(candidate.item)||!expectedPrices.has(candidate.item)||
       (candidate.kind!=="raw"&&candidate.kind!=="product")||
-      !Number.isFinite(candidate.out)||candidate.out<0||candidate.price!==expectedPrices.get(candidate.item)||
-      !Number.isFinite(candidate.credits)||candidate.credits<0||
+      !Number.isFinite(candidate.out)||candidate.out<0||!readQuantity0(candidate.price).eq(expectedPrices.get(candidate.item))||
+      !nonNegativeQuantity(candidate.credits)||
       typeof candidate.feasible!=="boolean"||typeof candidate.usesMargin!=="boolean"||
       typeof candidate.capped!=="boolean"||candidate.evaluated!==true||!Number.isFinite(candidate.ms)||candidate.ms<0||
       !Array.isArray(candidate.plan)||!Array.isArray(candidate.balance)||!Array.isArray(candidate.minedUsage)||
@@ -272,13 +300,18 @@ function mergeShardResults(mode,entries){
   // The solver's own final order, applied to the union: evaluated first, then credits descending,
   // then catalog order. Restating it here rather than trusting the fragments is what makes the
   // merged ranking identical to the one a single Worker would have produced over the same plans.
+  /* Credits are Decimals, and a fragment reaches here across postMessage (structured clone strips
+   * the prototype) or out of the daily cache (JSON leaves a canonical string). toDec0 accepts both
+   * shapes, so the comparison is on values either way — `!==` on two Decimal objects would compare
+   * identities and report every pair as different. */
   ranking.sort((a,b)=>{
     const evaluated=Number(!!b.evaluated)-Number(!!a.evaluated);if(evaluated)return evaluated;
-    if(a.credits!==b.credits)return a.credits>b.credits?-1:1;
+    const ac=readQuantity0(a.credits),bc=readQuantity0(b.credits);
+    if(!ac.eq(bc))return ac.gt(bc)?-1:1;
     return at(a.item)-at(b.item);
   });
   const top=ranking.find(candidate=>candidate.evaluated);
-  const feasible=!!top&&top.credits>1e-9;
+  const feasible=!!top&&readQuantity0(top.credits).gt(1e-9);
   /* Conservative aggregation, as the design states it: a completeness claim holds only if every
    * shard makes it (AND), and "the clock ran out" holds if any shard hit it (OR). A shard that
    * finished its slice early says nothing about the shard that did not. */

@@ -1,4 +1,7 @@
 "use strict";
+// Decimal is a global in the browser (js/decimal.js loads first); a direct eval() inherits
+// this module scope, so binding it here is what makes the evaluated sources resolve it.
+const Decimal = require("../js/decimal.js");
 /* Project and Manual mode integration for independent mined-resource budgets. */
 const fs = require("fs");
 const path = require("path");
@@ -100,7 +103,8 @@ const runner = `
   const m=manualResult(),mb=m.minedBalances||[],v=mb.find(x=>x.resource==="Vespium"),h=mb.find(x=>x.resource==="Hydracite");
   check("manual tracks vespium",v&&v.consHr>0,"vesp="+(v&&v.consHr));
   check("manual tracks hydracite",h&&h.consHr>0,"hydra="+(h&&h.consHr));
-  check("manual budgets stay distinct",v&&h&&v.incomeHr===6e16&&h.incomeHr===6e10,JSON.stringify(mb));
+  // incomeHr is a Decimal (a late-game mined income outgrows a float64), so compare by value.
+  check("manual budgets stay distinct",v&&h&&v.incomeHr.eq(6e16)&&h.incomeHr.eq(6e10),JSON.stringify(mb));
   ["Wire","Gel"].forEach(input=>{
     const row=m.balance.find(x=>x.res===input);
     check("manual batteries consume "+input,row&&row.cons>0,"cons="+(row&&row.cons));

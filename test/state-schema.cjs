@@ -13,7 +13,7 @@ const context = vm.createContext({
   clearTimeout,
 });
 
-for (const file of ["js/catalog.js", "js/core.js", "js/fields.js", "js/state.js"]) {
+for (const file of ["js/decimal.js", "js/catalog.js", "js/core.js", "js/fields.js", "js/state.js"]) {
   const filename = path.join(ROOT, file);
   try {
     vm.runInContext(fs.readFileSync(filename, "utf8"), context, { filename });
@@ -78,7 +78,7 @@ const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
 
 test("exports a current schema and pure field descriptors", () => {
-  assert.equal(api("CURRENT_SCHEMA_VERSION"), 4);
+  assert.equal(api("CURRENT_SCHEMA_VERSION"), 5);
   assert.equal(api("LSKEY"), "forgePlannerState_v3");
   const schema = api("FIELD_SCHEMA");
   assert.equal(schema.dupe.type, "number");
@@ -118,7 +118,7 @@ test("strict v1 migration defaults Project line jobs without weakening old requi
   let result = api("validateAndMigrate")(v1);
   assert.equal(result.ok, true, JSON.stringify(result.errors));
   assert.equal(result.sourceVersion, 1);
-  assert.equal(result.state.schemaVersion, 4);
+  assert.equal(result.state.schemaVersion, 5);
   assert.equal(result.state.projectStability, "prefer-current");
 
   delete v1.targets;
@@ -135,7 +135,7 @@ test("older schemas migrate once to 10 seconds while current user choices remain
     const result = api("validateAndMigrate")(candidate);
     assert.equal(result.ok, true, JSON.stringify(result.errors));
     assert.equal(result.sourceVersion, sourceVersion);
-    assert.equal(result.state.schemaVersion, 4);
+    assert.equal(result.state.schemaVersion, 5);
     assert.equal(result.state.solveBudget, 10000);
   }
 
@@ -146,7 +146,7 @@ test("older schemas migrate once to 10 seconds while current user choices remain
   assert.equal(result.state.solveBudget, 2000);
   result = api("parseStoredState")(JSON.stringify(result.state));
   assert.equal(result.recovery, null);
-  assert.equal(result.state.schemaVersion, 4);
+  assert.equal(result.state.schemaVersion, 5);
   assert.equal(result.state.solveBudget, 2000);
 });
 
@@ -280,8 +280,12 @@ test("schema v4 validates every mined-source value and display leaf transactiona
 
   for (const [label, mutate, pathPattern] of [
     ["negative Rig", state => { state.minedIncome.Vespium.rigPerMin = -1; }, /minedIncome\.Vespium\.rigPerMin/i],
-    ["oversized Vespium Resources", state => { state.minedIncome.Vespium.resourcesTradingPerSec = 1e101; }, /minedIncome\.Vespium\.resourcesTradingPerSec/i],
-    ["nonnumeric Hydracite Resources", state => { state.minedIncome.Hydracite.resourcesTradingPerSec = "4"; }, /minedIncome\.Hydracite\.resourcesTradingPerSec/i],
+    // No magnitude ceiling on a quantity (issue #142) — 1e101 is now a legitimate mined income.
+    // What is still rejected is a value that is not a quantity at all.
+    ["non-numeric Vespium Resources", state => { state.minedIncome.Vespium.resourcesTradingPerSec = "lots"; }, /minedIncome\.Vespium\.resourcesTradingPerSec/i],
+    // "4" is now a legitimate persisted quantity — a save writes them as canonical strings — so
+    // the rejection case has to be a string that is not a number.
+    ["nonnumeric Hydracite Resources", state => { state.minedIncome.Hydracite.resourcesTradingPerSec = "four"; }, /minedIncome\.Hydracite\.resourcesTradingPerSec/i],
     ["wrong Vespium value container", state => { state.minedIncome.Vespium = []; }, /minedIncome\.Vespium.*plain object/i],
     ["wrong Hydracite text container", state => { state.minedIncomeText.Hydracite = 1; }, /minedIncomeText\.Hydracite.*plain object/i],
     ["oversized source text", state => { state.minedIncomeText.Vespium.rigPerMin = "x".repeat(129); }, /minedIncomeText\.Vespium\.rigPerMin.*length/i],
@@ -323,7 +327,7 @@ test("schema v3 scalar incomes migrate without changing hourly budgets or solve 
 
   assert.equal(result.ok, true, JSON.stringify(result.errors));
   assert.equal(result.sourceVersion, 3);
-  assert.equal(result.state.schemaVersion, 4);
+  assert.equal(result.state.schemaVersion, 5);
   assert.equal(result.state.solveBudget, 2345);
   assert.deepEqual(JSON.parse(JSON.stringify(result.state.minedIncome)), {
     Vespium: { rigPerMin: 120, resourcesTradingPerSec: null },
@@ -341,8 +345,8 @@ test("schema v3 scalar incomes migrate without changing hourly budgets or solve 
 test("schema v3 validates scalar mined incomes before conversion", () => {
   for (const [label, mutate, pathPattern] of [
     ["negative scalar", state => { state.minedIncome.Hydracite = -1; }, /minedIncome\.Hydracite/i],
-    ["nested value under v3", state => { state.minedIncome.Vespium = { rigPerMin: 2 }; }, /minedIncome\.Vespium.*finite number/i],
-    ["nonnumeric scalar", state => { state.minedIncome.Vespium = "120"; }, /minedIncome\.Vespium.*finite number/i],
+    ["nested value under v3", state => { state.minedIncome.Vespium = { rigPerMin: 2 }; }, /minedIncome\.Vespium.*finite quantity/i],
+    ["nonnumeric scalar", state => { state.minedIncome.Vespium = "onetwenty"; }, /minedIncome\.Vespium.*finite quantity/i],
     ["nonnumeric text", state => { state.minedIncomeText.Hydracite = 60; }, /minedIncomeText\.Hydracite.*string/i],
   ]) {
     const candidate = legacyVersionedState(3);
@@ -475,7 +479,8 @@ test("rejects negative and non-finite-like numeric values", () => {
   candidate.maxTurbo = -1;
   candidate.baseTime.Ingots = "Infinity";
   candidate.sellPrice.Frames = -5;
-  candidate.inventory.Ingots = 1e101;
+  // 1e101 is accepted now; a quantity that is not a number at all is not.
+  candidate.inventory.Ingots = "plenty";
   const result = api("validateAndMigrate")(candidate);
   assert.equal(result.ok, false);
   assert.match(result.errors.join(" "), /maxTurbo/i);
@@ -589,13 +594,15 @@ test("migrates retired Gel reservation fixture without retaining dead controls",
 test("migrates Gel income, project first flag, and fills later compression costs", () => {
   const result = api("validateAndMigrate")(fixture("legacy-gel-vesp-project-first.json"));
   assert.equal(result.ok, true, JSON.stringify(result.errors));
-  assert.equal(result.state.minedIncome.Vespium.rigPerMin, 7.25e18);
+  // Quantities are Decimals: compare their values, not their identities.
+  const qty = value => (value === null || value === undefined ? value : String(value));
+  assert.equal(qty(result.state.minedIncome.Vespium.rigPerMin), "7250000000000000000");
   assert.equal(result.state.minedIncome.Vespium.resourcesTradingPerSec, null);
   assert.equal(result.state.minedIncomeText.Vespium.rigPerMin, "7.25qu");
   assert.equal(result.state.minedIncomeText.Vespium.resourcesTradingPerSec, "");
   assert.equal(result.state.baseTime.Wire, 12345);
-  assert.equal(result.state.prodCost.Wire.Gel[4], 18);
-  assert.equal(result.state.prodCost.Wire.Gel[16384], api("defaults().prodCost.Wire.Gel[16384]"));
+  assert.equal(qty(result.state.prodCost.Wire.Gel[4]), "18");
+  assert.equal(qty(result.state.prodCost.Wire.Gel[16384]), qty(api("defaults().prodCost.Wire.Gel[16384]")));
   assert.equal(result.state.projects[0].prio, 1);
   assert.equal(Object.hasOwn(result.state.projects[0], "first"), false);
 });
@@ -685,7 +692,7 @@ test("successful boot upgrades the existing key and retains the exact previous-g
   assert.equal(result.recovery, null);
   assert.equal(storage.value("forgePlannerState_v3_previous_good"), legacyRaw);
   const upgraded = JSON.parse(storage.value("forgePlannerState_v3"));
-  assert.equal(upgraded.schemaVersion, 4);
+  assert.equal(upgraded.schemaVersion, 5);
   assert.equal(upgraded.solveBudget, 10000);
   assert.equal(upgraded.dupe, 17.25);
 });
@@ -714,7 +721,7 @@ test("v3 startup migrates in place while rotating exact primary bytes and preser
   const upgradedRaw = storage.value("forgePlannerState_v3");
   assert.notEqual(upgradedRaw, primaryRaw);
   const upgraded = JSON.parse(upgradedRaw);
-  assert.equal(upgraded.schemaVersion, 4);
+  assert.equal(upgraded.schemaVersion, 5);
   assert.equal(upgraded.solveBudget, 2345);
   assert.equal(upgraded.minedIncome.Vespium.rigPerMin, 120);
   assert.equal(upgraded.minedIncome.Hydracite.resourcesTradingPerSec, 1);
@@ -852,11 +859,13 @@ test("rejects representative numeric values beyond every live field family", () 
     ["margin", state => { state.margin = 21; }],
     ["solve budget integer", state => { state.solveBudget = 2345.5; }],
     ["base time", state => { state.baseTime.Ingots = 0; }],
-    ["recipe", state => { state.prodCost.Glass.Bits[1] = 1e101; }],
+    // Quantities carry no magnitude ceiling now (issue #142); what they still reject is a
+    // negative amount or a value that is not a quantity at all.
+    ["recipe", state => { state.prodCost.Glass.Bits[1] = -1; }],
     ["price", state => { state.sellPrice.Frames = -1; }],
-    ["Forgie", state => { state.forgie.Frames = 1e101; }],
+    ["Forgie", state => { state.forgie.Frames = -1; }],
     ["mined", state => { state.minedIncome.Hydracite.resourcesTradingPerSec = -1; }],
-    ["inventory", state => { state.inventory.Ingots = 1e101; }],
+    ["inventory", state => { state.inventory.Ingots = "heaps"; }],
     ["target", state => { state.targets.Frames.w = 1.5; }],
   ];
   for (const [label, mutate] of cases) {

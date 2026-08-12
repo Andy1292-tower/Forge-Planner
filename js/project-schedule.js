@@ -6,8 +6,28 @@
 (function(root){
   const own=(o,k)=>Object.prototype.hasOwnProperty.call(o||{},k);
   const finite=n=>typeof n==="number"&&Number.isFinite(n);
+  /* The quantity boundary. Demands, stocks and supplies reach this module as Decimals, but the
+   * ledger below is float64 and stays that way on purpose: its correctness rests on an error model
+   * built from float ULPs — `flow` bounds the rounding residue of a running sum, and stockTol scales
+   * Number.EPSILON against the magnitudes actually on the books. Those tolerances describe binary
+   * floating point specifically, so re-typing the ledger would mean redesigning them, not porting
+   * them.
+   *
+   * A quantity that will not fit a float64 therefore does not get silently truncated to Infinity —
+   * it returns NaN here and the caller rejects the phase with its ordinary malformed-input error.
+   * That is the one place in the planner where a large enough number is refused rather than carried,
+   * and it is ~1e300 above any project cost the game has today. */
+  const quantity=value=>{
+    if(value===null||value===undefined||value==="")return 0;
+    if(typeof value==="number")return value;
+    const flat=Number(value);
+    return Number.isFinite(flat)?flat:NaN;
+  };
   const record=value=>value!==null&&typeof value==="object"&&!Array.isArray(value);
   const copyMap=o=>Object.assign({},o||{});
+  // Free-supply rates arrive as Decimals; a supply too large for a float is one nothing can exhaust,
+  // so it saturates rather than being rejected the way a demand is.
+  const rateMap=o=>{const out={};Object.entries(o||{}).forEach(([k,v])=>{const n=quantity(v);out[k]=finite(n)?n:Number.MAX_VALUE;});return out;};
   const LIMITS={phases:512,lines:256,entries:256,consumptions:64};
   const malformed=(message,phaseIndex,extra)=>Object.assign({kind:"malformed",phaseIndex,message},extra||{});
   const copyContext=input=>{
@@ -16,7 +36,7 @@
       ordinaryResources:Array.from(new Set(c.ordinaryResources||[])),
       minedResources:Array.from(new Set(c.minedResources||[])),
       informationalResources:Array.from(new Set(c.informationalResources||[])),
-      forgieRates:copyMap(c.forgieRates),minedIncomeRates:copyMap(c.minedIncomeRates),
+      forgieRates:rateMap(c.forgieRates),minedIncomeRates:rateMap(c.minedIncomeRates),
       recipeDependencies:Object.fromEntries(Object.entries(c.recipeDependencies||{}).map(([k,v])=>[k,[...(v||[])]])),
       recipeDepth:copyMap(c.recipeDepth),preprodBits:copyMap(c.preprodBits),
       compressionInputScale:copyMap(c.compressionInputScale),
@@ -40,8 +60,9 @@
     const out={};
     for(const [resource,value] of Object.entries(raw)){
       if(!allowed.includes(resource))return {error:malformed(`${label} contains unknown resource ${resource}`,index,{resource})};
-      if(!finite(value)||value<0)return {error:malformed(`${label}.${resource} must be a finite nonnegative number`,index,{resource})};
-      out[resource]=value;
+      const amount=quantity(value);
+      if(!finite(amount)||amount<0)return {error:malformed(`${label}.${resource} must be a finite nonnegative number`,index,{resource})};
+      out[resource]=amount;
     }
     return {value:out};
   }
@@ -132,8 +153,8 @@
   }
   const inventoryCopy=(initial,c)=>{
     const out={};
-    c.ordinaryResources.forEach(r=>{const v=Number(initial&&initial[r]);out[r]=finite(v)?v:0;});
-    Object.entries(initial||{}).forEach(([r,v])=>{if(!own(out,r)&&finite(Number(v)))out[r]=Number(v);});
+    c.ordinaryResources.forEach(r=>{const v=quantity(initial&&initial[r]);out[r]=finite(v)?v:0;});
+    Object.entries(initial||{}).forEach(([r,v])=>{if(!own(out,r)&&finite(quantity(v)))out[r]=quantity(v);});
     return out;
   };
   const timeTol=(...values)=>Number.EPSILON*32*Math.max(1,...values.filter(finite).map(Math.abs));

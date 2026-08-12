@@ -535,9 +535,11 @@ function setPriceNeeded(on){
   if(next===priceNeeded)return;
   priceNeeded=next;renderInputState();
 }
+// How many of a quantity map's entries the player has actually filled in. Reads Decimals, so it
+// counts a sell price or a stock of any size rather than throwing on one.
 function countSet(map){
   if(!map)return 0;
-  return [...RAWS,...PRODUCTS].filter(it=>(num(map[it])||0)>0).length;
+  return [...RAWS,...PRODUCTS].filter(it=>toDec0(map[it]).gt(DEC_ZERO)).length;
 }
 function plural(n,word){return n+" "+word+(n===1?"":"s");}
 function renderInputState(){
@@ -574,7 +576,7 @@ function renderInputState(){
 
   // via minedBudgetHr so the badge keeps working as income sources are added —
   // each resource now sums several per-source rates rather than holding one number
-  const mined=MINED_RESOURCES.filter(r=>minedBudgetHr(r)>0);
+  const mined=MINED_RESOURCES.filter(r=>minedBudgetHr(r).gt(DEC_ZERO));
   seg("btnMined","stMined",mined.length>0,
     mined.length?mined.join(" · "):"No income set",
     mined.length>1?plural(mined.length,"income"):mined.length?mined[0]:"None set",
@@ -647,7 +649,10 @@ if(initialState.recovery)showStateRecovery(initialState.recovery.raw,initialStat
 function costRow(pi,li,ci,c){
   const projectName=(S.projects[pi]&&S.projects[pi].name)||`Project ${pi+1}`;
   const opts=ALLITEMS.map(it=>`<option value="${it}" ${it===c.item?"selected":""}>${it}</option>`).join("");
-  const txt=(c.qty!=null&&isFinite(c.qty))?formatGameNum(c.qty,4):"";
+  // toDec, not isFinite: isFinite coerces a Decimal through Number(), so a project cost past the
+  // float64 ceiling read as "not finite" and rendered the field blank — and committing that blank
+  // would have erased the value the state still held.
+  const txt=toDec(c.qty)!==null?formatGameNum(c.qty,4):"";
   const errorId=`field-project-${fieldDomToken(S.projects[pi]&&S.projects[pi].id||pi)}-quantity-${li}-${ci}-error`;
   return `<div class="cost-row">
     <select data-citem="${pi}_${li}_${ci}" aria-label="${htmlAttribute(projectName)} level ${li+1} item ${ci+1}">${opts}</select>
@@ -809,7 +814,7 @@ function addCatalogProject(catId){
   mutateState(st=>{st.projects.push({
       id:newId(),catId:src.catId,name:src.name,description:src.description||"",
       on:true,prio:null,from:1,to:src.levels.length||1,done:0,
-      levels:JSON.parse(JSON.stringify(src.levels)),_open:false
+      levels:catalogLevelsToState(src.levels),_open:false
     });
   });
   renderProjects();renderCatalog();save();scheduleSolve();

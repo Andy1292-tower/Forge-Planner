@@ -1,4 +1,9 @@
 "use strict";
+// Decimal is a global in the browser (js/decimal.js loads first); a direct eval() inherits
+// this module scope, so binding it here is what makes the evaluated sources resolve it.
+const Decimal = require("../js/decimal.js");
+// Project demands, stocks and pre-produced obligations are Decimals: compare them by value.
+const qtyEq = (got, want) => got !== null && got !== undefined && new Decimal(String(got)).eq(want);
 /* Sequenced / gated project-plan regression tests (Node).
  *
  * Covers the bugs that only show up once a project plan has MORE THAN ONE phase, which is why the
@@ -230,7 +235,7 @@ const runner = `
         .filter(input=>input.item==="Ingots").reduce((sum,input)=>sum+(input.hr||0)*(phase.eta||0),0),0),0);
     const ingotFeeder=(phase.plan||[]).some(line=>(line.entries||[]).some(entry=>entry.item==="Ingots"));
     record("L4: authoritative static plan keeps a feeder even when held intermediate covers its use",
-      r.scheduleValidation.ok===true && phase.invStart.Ingots===HELD && ingotFeeder===true &&
+      r.scheduleValidation.ok===true && qtyEq(phase.invStart.Ingots,HELD) && ingotFeeder===true &&
       ingotConsumption>0 && ingotConsumption<HELD,
       "replay="+r.scheduleValidation.ok+" held="+phase.invStart.Ingots+
       " consumed="+ingotConsumption+" feeder="+ingotFeeder);
@@ -368,8 +373,8 @@ const runner = `
     record("L1b: deadline refinement preserves the last replay-valid static incumbent",
       r.feasible===true && r.scheduleValidation.ok===true && r.allPhasesEvaluated===true &&
       phase.evaluated===true && phase.preProducedConverged===null &&
-      (phase.preProducedSolveDemand&&phase.preProducedSolveDemand.Bits)===800 &&
-      plannedPreProducedDemand(phase).Bits===1200 && bits===1200 && supply===1200,
+      qtyEq(phase.preProducedSolveDemand&&phase.preProducedSolveDemand.Bits,800) &&
+      qtyEq(plannedPreProducedDemand(phase).Bits,1200) && qtyEq(bits,1200) && supply===1200,
       "feasible=" + r.feasible + " replay=" + r.scheduleValidation.ok +
       " evaluated=" + r.allPhasesEvaluated + " converged=" + phase.preProducedConverged +
       " solveBits=" + (phase.preProducedSolveDemand&&phase.preProducedSolveDemand.Bits) +

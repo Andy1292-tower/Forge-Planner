@@ -1,4 +1,7 @@
 "use strict";
+// Decimal is a global in the browser (js/decimal.js loads first); a direct eval() inherits
+// this module scope, so binding it here is what makes the evaluated sources resolve it.
+const Decimal = require("../js/decimal.js");
 /* Lil' Forgie stats in project plan (issue #77).
  *
  * The project balance table now breaks out Forgie's passive supply into its own

@@ -1,4 +1,7 @@
 "use strict";
+// Decimal is a global in the browser (js/decimal.js loads first); a direct eval() inherits
+// this module scope, so binding it here is what makes the evaluated sources resolve it.
+const Decimal = require("../js/decimal.js");
 /* Manual-mode sustained (throttled) rates.
  *
  * A line only crafts while it holds materials, so an input that can't keep up doesn't leave the
@@ -36,7 +39,7 @@ globalThis.document = {
   querySelectorAll: () => []
 };
 
-const src = ["core.js", "fields.js", "dom.js", "project-schedule.js", "solver.js", "results.js", "manual.js"]
+const src = ["decimal.js", "core.js", "fields.js", "dom.js", "project-schedule.js", "solver.js", "results.js", "manual.js"]
   .map(f => fs.readFileSync(path.join(__dirname, "..", "js", f), "utf8")).join("\n;\n");
 
 const runner = `

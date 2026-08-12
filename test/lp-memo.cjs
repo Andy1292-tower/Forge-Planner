@@ -26,7 +26,7 @@ const vm = require("vm");
 const { materialize, fixtureById } = require("./perf/corpus.cjs");
 
 const ROOT = path.join(__dirname, "..");
-const SOURCES = ["js/catalog.js", "js/core.js", "js/fields.js", "js/state.js", "js/project-schedule.js", "js/solver.js"];
+const SOURCES = ["js/decimal.js", "js/catalog.js", "js/core.js", "js/fields.js", "js/state.js", "js/project-schedule.js", "js/solver.js"];
 
 let failures = 0;
 function check(name, ok, detail) {

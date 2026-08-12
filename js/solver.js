@@ -5,6 +5,10 @@
 const VESP="Vespium";
 // One correctness threshold for reconstructing project rates and executable LP plan entries.
 const LP_ASSIGN_EPS=1e-9;
+/* "More than anything in this problem can use", as a per-second float the search can carry. Kept a
+ * factor of 3600 below the float ceiling because every rate here is reported per hour, and an
+ * hourly figure of Infinity is exactly the em-dash issue #142 was about. */
+const UNBOUNDED_PER_SEC=Number.MAX_VALUE/3600;
 // A project-plan phase may credit an intermediate's leftover stock as free supply instead of
 // crafting it (issue #73). Left uncapped, that credit scales with the phase's own throughput
 // multiplier (z) exactly like an indefinitely-sustained production rate would, so a chronic (if
@@ -80,7 +84,7 @@ function relevantChain(targets){
 }
 function activeMinedResources(products){
   return [...new Set(products.map(p=>MINED_CRAFTS[p]&&MINED_CRAFTS[p].resource)
-    .filter(r=>r&&minedBudgetHr(r)>0))];
+    .filter(r=>r&&minedBudgetHr(r).gt(DEC_ZERO)))];
 }
 
 function craftTime(item,L){return (num(S.baseTime&&S.baseTime[item])||1)*Math.pow(1.5,Math.log2(L));}
@@ -131,13 +135,13 @@ function buildJobs(maxVal,resIndex,relRaws,relProds,targets,w){
     allowed.forEach(L=>{
       const tt=craftTime(P,L);if(!(tt>0))return;
       let ok=true;const cons=[];
-      ins.forEach(k=>{const c=S.prodCost[P][k][L];if(c==null||isNaN(c)||c<0){ok=false;}else cons.push([resIndex[k],c/tt]);});
+      ins.forEach(k=>{const c=recipeRate(S.prodCost[P][k][L],tt);if(c===null){ok=false;}else cons.push([resIndex[k],c]);});
       const mined=MINED_CRAFTS[P];
       if(mined){
         const r=mined.resource;
         if(resIndex[r]==null)return;
-        const c=minedCost(P,L)[r];
-        if(c==null||isNaN(c)||c<0)ok=false;else cons.push([resIndex[r],c/tt]);
+        const c=recipeRate(minedCost(P,L)[r],tt);
+        if(c===null)ok=false;else cons.push([resIndex[r],c]);
       }
       if(!ok)return;
       const rate=craftYield(P,L)/tt;const ti=targets.indexOf(P);
@@ -152,7 +156,36 @@ function buildJobs(maxVal,resIndex,relRaws,relProds,targets,w){
 
 function lineRows(){return S.lines.map((ln,i)=>({__i:i,max:ln.max,spx:ln.spx,turbo:ln.turbo}));}
 const sortedLines=()=>lineRows().map(ln=>({orig:ln.__i,max:ln.max,sp:lineSpeed(ln),dp:dupeMult()})).sort((a,b)=>a.max-b.max||a.sp-b.sp||a.dp-b.dp);
-const forgieHr=r=>num(S.forgie&&S.forgie[r])||0;
+// Lil' Forgie's free supply of a resource, per hour. A quantity, so a Decimal.
+const forgieHr=r=>toDec0(S.forgie&&S.forgie[r]);
+/* A free supply as the float64 rate the schedulers, the balance table and the flat job arrays all
+ * work in. A supply too large for a float is one nothing could exhaust, so it saturates at the
+ * largest finite double rather than becoming Infinity — "more than anything here can use" either
+ * way, but a number the arithmetic downstream can still carry. */
+const supplyRate=value=>{const flat=toDec0(value).toNumber();return Number.isFinite(flat)?flat:Number.MAX_VALUE;};
+/* A recipe coefficient is a Decimal; the job tables the search evaluates are Float64Arrays. This is
+ * the one conversion between them, and it is allowed to fail. A cost that will not fit a float64 is
+ * a craft no factory could ever feed, so that (item, level) is dropped exactly as a missing or
+ * negative cost is dropped — an unmakeable job, not a silent Infinity in the tableau. */
+function recipeRate(cost,seconds){
+  if(!(seconds>0))return null;
+  /* A cost that is already a plain number divides in float without ever touching a Decimal. That
+   * matters: converting and converting back re-rounds the mantissa, and these rates decide which
+   * compression step fits a budget. The fixed mined costs take this path. */
+  if(typeof cost==="number"){
+    if(!Number.isFinite(cost)||cost<0)return null;
+    const rate=cost/seconds;return Number.isFinite(rate)?rate:null;
+  }
+  const value=toDec(cost);
+  if(value===null||value.lt(DEC_ZERO))return null;
+  const flat=value.toNumber();
+  if(Number.isFinite(flat)){const rate=flat/seconds;return Number.isFinite(rate)?rate:null;}
+  // Only a cost no float64 could hold needs the Decimal division.
+  const rate=value.div(seconds).toNumber();
+  return Number.isFinite(rate)?rate:null;
+}
+// Whether a recipe has a usable cost for every input at this compression level.
+const hasRecipeCost=(item,inputs,L)=>inputs.every(k=>toDec(S.prodCost[item]&&S.prodCost[item][k]&&S.prodCost[item][k][L])!==null);
 
 /* One clock read per this many checkpoints. A search probe is a few hundred nanoseconds of typed-
  * array arithmetic and performance.now() is tens of nanoseconds of it, so sampling the clock on
@@ -339,16 +372,19 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // look-ahead filler may spend only what a solved phase leaves unused, so it hands in that spare
   // vector instead of the global incomes.
   const supplyOverride=opts.supplyHr&&typeof opts.supplyHr==="object"?opts.supplyHr:null;
-  const supplyHr=r=>supplyOverride
-    ?Math.max(0,Number(supplyOverride[r])||0)
-    :(isMinedResource(r)?minedBudgetHr(r):forgieHr(r));
-  const baseArr=Float64Array.from(resources.map(r=>supplyHr(r)/3600));
+  const supplyHr=r=>{
+    const value=supplyOverride?toDec(supplyOverride[r]):(isMinedResource(r)?minedBudgetHr(r):forgieHr(r));
+    return value!==null&&value.gt(DEC_ZERO)?value:DEC_ZERO;
+  };
+  // Per second, still a Decimal. A late-game Vespium rig income is 6e100/hr, so this is the one
+  // vector in the solve that genuinely needs the range; baseArr below is its float64 projection.
+  const supplyPerSec=resources.map(r=>decUnscale(supplyHr(r),3600));
 
   // data-availability check (cost only — time is computed from compression)
   const issues=[];
   relProds.forEach(P=>{
     const ins=RECIPE[P].inputs;
-    const any=LEVELS.some(L=>ins.every(k=>S.prodCost[P][k][L]!=null&&!isNaN(S.prodCost[P][k][L])));
+    const any=LEVELS.some(L=>hasRecipeCost(P,ins,L));
     if(!any)issues.push("No material cost entered for "+P+".");
   });
 
@@ -407,6 +443,53 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       for(const[r,a]of job.cons)if(okIdx(r)){consR[c]=r;consC[c]=a*sp;c++;}
     }
   }
+  /* ---- free supply, projected into float64 ------------------------------------------------------
+   *
+   * The search evaluates a plan in Float64Arrays (produced/consumed, seeded from baseArr), and it
+   * has to stay that way — it is the hot loop. But a free supply is a Decimal and can be enormous:
+   * measured on the reference late-game save, Vespium arrives at 6.0e100/hr against a factory that
+   * could burn at most 4.8e23/hr, a factor of 1.24e77. Written into a float64 that is at best
+   * meaningless (every production term added to it rounds away) and at worst Infinity.
+   *
+   * So a supply is capped at the most the factory could physically consume. This is not an
+   * approximation: consCeiling is a true upper bound — every line simultaneously running whichever
+   * job burns the most of that resource — so a supply above it cannot bind, and neither can the cap.
+   * The feasible set is identical, and what the arithmetic gains is every term staying in the same
+   * magnitude band as the rates it is compared against.
+   *
+   * `supplyUnbounded` records which supplies were capped, so the readout can say "not the
+   * constraint" instead of printing a number the plan never depended on. */
+  const consCeiling=new Float64Array(R);
+  for(let i=0;i<N;i++){
+    const perLine=new Float64Array(R);
+    for(let k=0;k<lineJobs[i].length;k++){
+      const slot=jobBase[i]+k;
+      for(let c=consOff[slot],e=consOff[slot+1];c<e;c++){
+        const r=consR[c];if(consC[c]>perLine[r])perLine[r]=consC[c];
+      }
+    }
+    for(let r=0;r<R;r++)consCeiling[r]+=perLine[r];
+  }
+  const supplyUnbounded=new Array(R).fill(false);
+  const baseArr=new Float64Array(R);
+  for(let r=0;r<R;r++){
+    const supply=supplyPerSec[r];
+    /* The cap applies to MINED resources only, and that restriction is the whole of its soundness.
+     * A mined resource is pure input — nothing produces it, and it can never be a target — so a
+     * supply above the most every line could burn cannot bind, and neither can the cap standing in
+     * for it. An ordinary item's supply is NOT safe to cap: its surplus is the answer. Capping
+     * Rods at what the factory consumes would report a Rods target as producing the consumption
+     * ceiling rather than the passive supply plus everything the lines make on top of it. */
+    const ceiling=isMinedResource(resources[r])?consCeiling[r]:0;
+    if(ceiling>0&&supply.gt(ceiling)){baseArr[r]=ceiling;supplyUnbounded[r]=true;continue;}
+    const flat=supply.toNumber();
+    if(Number.isFinite(flat)&&Number.isFinite(flat*3600)){baseArr[r]=flat;continue;}
+    /* Past what a float64 can carry once converted back to an hourly figure. Saturate below the
+     * ceiling by the 3600 that conversion multiplies by, so the reported per-hour rate stays finite
+     * instead of becoming the Infinity that reads as an em-dash. */
+    baseArr[r]=UNBOUNDED_PER_SEC;supplyUnbounded[r]=true;
+  }
+
   /* The reverse of prodR: every slot that produces a resource, grouped by resource and in ascending
    * slot order. repair asks "what could close THIS shortfall" of a handful of short rows rather than
    * pricing every job on every line, and this is the half of that question it cannot read off the
@@ -699,6 +782,11 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     const workInterrupted=control.isStopped();
     const deadlineReached=control.deadlineReached();if(deadlineReached)capped=true;
     let usesMargin=false;for(let r=0;r<R;r++)if(best.produced[r]<best.consumed[r]-1e-6)usesMargin=true;
+    /* baseArr, not the raw supply. The balance table derives line production as (total - forgie),
+     * where total was accumulated from baseArr — so reporting a larger figure here than the search
+     * actually used would drive that subtraction negative and misreport the plan. The two only
+     * differ for a supply the consCeiling cap trimmed, and those are the mined resources, which the
+     * balance excludes; supplyUnbounded is what says "not the constraint" for those. */
     const forgie={};resources.forEach((r,i)=>forgie[r]=baseArr[i]*3600);
     // Each ceiling bounds its own problem, so which one is reported follows the tolerance the caller
     // ASKED for rather than the pass that happened to run last: a budget that expires before the
@@ -774,9 +862,9 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     best={score:idleScore,choice:idleChoice.slice(),produced:produced.slice(),consumed:consumed.slice()};
     let baselineInc={sc:idleScore,ch:idleChoice.slice()};
     const baselineSeed=ch=>{const sc=localOpt(ch);if(sc!=null&&!interrupted&&(!baselineInc||sc>baselineInc.sc))baselineInc={sc,ch:ch.slice()};};
-    if(targets.length===1&&targets[0]===GEL&&resIndex[VESP]!=null&&minedBudgetHr(VESP)>0){
+    if(targets.length===1&&targets[0]===GEL&&resIndex[VESP]!=null&&minedBudgetHr(VESP).gt(DEC_ZERO)){
       const byOrig={};sorted.forEach((line,index)=>byOrig[line.orig]=index);
-      const loadout=gelSeedLoadout(lineRows(),minedBudgetHr(VESP),{checkpoint:keepGoing});
+      const loadout=gelSeedLoadout(lineRows(),supplyRate(minedBudgetHr(VESP)),{checkpoint:keepGoing});
       if(loadout.interrupted)interrupted=true;
       else{const gelChoice=new Array(N);for(let i=0;i<N;i++)gelChoice[i]=idleIdx(i);
         loadout.perLine.forEach(row=>{const i=byOrig[row.__i];if(i==null)return;
@@ -986,6 +1074,8 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       else if(tgt!==undefined)row[zc]=tgt;
       A.push(row);b.push(baseArr[r]);
     }
+    /* Nothing to project here: this relaxation's RHS is baseArr, which solveCore already capped at
+     * what the factory could physically consume, so it is finite float64 by construction. */
     const c=new Float64Array(n);c[zc]=1;
     const sol=lpMaximize(c,A,b,control);
     if(!sol.x)return null;
@@ -1058,7 +1148,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // Reservation-style seeds: dedicate the k best Gel-efficiency lines to Gel with a bounded
   // heuristic, and let localOpt fill the rest. This helper is seed-only: unlike the exact modal
   // capacity calculation, it makes no maximum claim and stays cheap across prefixes/candidates.
-  const gelBudgetHr=minedBudgetHr(VESP);
+  const gelBudgetHr=supplyRate(minedBudgetHr(VESP));
   if(!interrupted&&resIndex[VESP]!=null&&gelBudgetHr>0){
     const o2s={};sorted.forEach((s,i)=>o2s[s.orig]=i);
     const ranked=lineRows().sort((a,b)=>gelOutHr(b,b.max)-gelOutHr(a,a.max));
@@ -1382,7 +1472,9 @@ function idlePlan(){
   sortedLines().forEach(s=>{plan[s.orig]={line:s.orig+1,max:s.max,spx:s.sp,dup:(s.dp-1)*100,sp:s.sp,dp:s.dp,job:{kind:"idle",res:null,lvl:null,prod:[],cons:[]}};});
   return plan;
 }
-function creditsRefinementIsNondecreasing(prior,refined){return !!prior&&!!refined&&refined.credits>=prior.credits;}
+// toDec0 rather than a direct .gte: a candidate reaching this contract check may have crossed a
+// Worker or cache boundary, which leaves its credits as a plain object or a canonical string.
+function creditsRefinementIsNondecreasing(prior,refined){return !!prior&&!!refined&&toDec0(refined.credits).gte(toDec0(prior.credits));}
 // Dedicate every line to producing one raw material (raws have no inputs).
 function solveRaw(Rw,control){
   let total=0;const plan=[];const resIndex={[Rw]:0};
@@ -1397,7 +1489,7 @@ function solveRaw(Rw,control){
     if(bst)total+=bst.out*s.dp;
     plan[s.orig]={line:s.orig+1,max:s.max,spx:s.sp,dup:(s.dp-1)*100,sp:s.sp,dp:s.dp,job};
   }
-  const fHr=forgieHr(Rw);   // Lil' Forgie (+ any reserved) free supply of this raw
+  const fHr=supplyRate(forgieHr(Rw));   // Lil' Forgie (+ any reserved) free supply of this raw
   const lineOut=total*3600, out=lineOut+fHr;
   return {item:Rw,kind:"raw",out,plan,balance:[{res:Rw,prod:lineOut,forgie:fHr,cons:0}],resIndex,capped:false,feasible:out>1e-9,interrupted:false};
 }
@@ -1588,7 +1680,7 @@ function optimizeInner(timeBudget,testOptions,shard){
   // One shared control covers the complete comparison. Every item gets a finite deterministic
   // baseline in catalog order before any product receives deeper refinement.
   const control=makeSolveControl(credBudget,testOptions),t0=control.readNow();
-  const pricedAll=ALLITEMS.filter(item=>(num(S.sellPrice&&S.sellPrice[item])||0)>0);
+  const pricedAll=ALLITEMS.filter(item=>toDec0(S.sellPrice&&S.sellPrice[item]).gt(DEC_ZERO));
   /* Sharded here and nowhere deeper: the candidates share a control and a budget but nothing else —
    * no candidate reads another's plan — so a shard is simply a shorter catalog. Every rule below is
    * stated over `priced` and holds unchanged on a slice of it: the baseline pass is still complete
@@ -1603,33 +1695,33 @@ function optimizeInner(timeBudget,testOptions,shard){
   // Asked of the whole catalog, not of this shard: an empty slice means the pool out-numbered the
   // priced items, which is not something to tell the reader to go and fix.
   if(!pricedAll.length)issues.push("No sell prices entered. Open “Projects + Prices” → “Sell prices” and add at least one.");
-  const unevaluated=item=>({item,kind:RAWS.includes(item)?"raw":"product",out:0,price:num(S.sellPrice[item])||0,credits:0,
+  const unevaluated=item=>({item,kind:RAWS.includes(item)?"raw":"product",out:0,price:toDec0(S.sellPrice[item]),credits:DEC_ZERO,
     plan:null,balance:null,minedUsage:[],gelReserved:null,resIndex:{},feasible:false,usesMargin:false,capped:false,evaluated:false,ms:0});
   const fromCore=(item,sr,ms,cappedOverride)=>{
     const built=planFrom(sr),out=sr.feasible?(sr.best.produced[sr.resIndex[item]]-sr.best.consumed[sr.resIndex[item]])*3600:0;
-    const price=num(S.sellPrice[item])||0;
-    return {item,kind:"product",out,price,credits:out*price,plan:built.plan,balance:built.balance,minedUsage:built.minedUsage,
+    const price=toDec0(S.sellPrice[item]);
+    return {item,kind:"product",out,price,credits:price.times(out),plan:built.plan,balance:built.balance,minedUsage:built.minedUsage,
       gelReserved:built.gelReserved,resIndex:sr.resIndex,feasible:sr.feasible,usesMargin:!!sr.usesMargin,
       capped:cappedOverride==null?!!sr.capped:!!cappedOverride,evaluated:true,ms};
   };
   let baselineBroken=false;
   for(let pi=0;pi<priced.length;pi++){
-    const item=priced[pi],price=num(S.sellPrice[item])||0;
+    const item=priced[pi],price=toDec0(S.sellPrice[item]);
     if(baselineBroken||control.isStopped()||!control.checkpoint("credits-baseline-candidate")){
       baselineBroken=true;cand.push(unevaluated(item));continue;
     }
     control.event("baseline-start",{item});const start=control.readNow();let candidate=null;
     if(RAWS.includes(item)){
       const raw=solveRaw(item,control);
-      if(!raw.interrupted&&control.checkpoint("credits-baseline-complete"))candidate={item,kind:"raw",out:raw.out,price,credits:raw.out*price,
+      if(!raw.interrupted&&control.checkpoint("credits-baseline-complete"))candidate={item,kind:"raw",out:raw.out,price,credits:price.times(raw.out),
         plan:raw.plan,balance:raw.balance,minedUsage:[],gelReserved:null,resIndex:raw.resIndex,feasible:raw.feasible,
         usesMargin:false,capped:false,evaluated:true,ms:Math.max(0,control.readNow()-start)};
     }else{
       const ins=RECIPE[item].inputs;
-      const hasCost=LEVELS.some(L=>ins.every(k=>S.prodCost[item][k][L]!=null&&!isNaN(S.prodCost[item][k][L])));
+      const hasCost=LEVELS.some(L=>hasRecipeCost(item,ins,L));
       if(!hasCost){
         issues.push("No material cost entered for "+item+" — only passive output can be priced.");
-        if(control.checkpoint("credits-baseline-complete")){const out=forgieHr(item),resIndex={[item]:0};candidate={item,kind:"product",out,price,credits:out*price,
+        if(control.checkpoint("credits-baseline-complete")){const out=supplyRate(forgieHr(item)),resIndex={[item]:0};candidate={item,kind:"product",out,price,credits:price.times(out),
           plan:idlePlan(),balance:[{res:item,prod:0,forgie:out,cons:0}],minedUsage:[],gelReserved:null,resIndex,feasible:out>1e-9,
           usesMargin:false,capped:false,evaluated:true,ms:Math.max(0,control.readNow()-start)};}
       }else{
@@ -1645,7 +1737,7 @@ function optimizeInner(timeBudget,testOptions,shard){
 
   const order=new Map(ALLITEMS.map((item,index)=>[item,index]));
   const refinementOrder=()=>cand.filter(candidate=>candidate.kind==="product"&&candidate.evaluated&&candidate.capped)
-    .sort((a,b)=>a.credits===b.credits?order.get(a.item)-order.get(b.item):(a.credits>b.credits?-1:1));
+    .sort((a,b)=>a.credits.eq(b.credits)?order.get(a.item)-order.get(b.item):(a.credits.gt(b.credits)?-1:1));
   const refineCandidate=(prior,round,localDeadline)=>{
     if(!control.checkpoint("credits-refinement-candidate"))return false;
     control.event("refinement-start",{item:prior.item,round});const start=control.readNow();
@@ -1687,14 +1779,14 @@ function optimizeInner(timeBudget,testOptions,shard){
     }
   }
   cand.sort((a,b)=>{const evaluated=Number(b.evaluated)-Number(a.evaluated);if(evaluated)return evaluated;
-    if(a.credits!==b.credits)return a.credits>b.credits?-1:1;
+    if(!a.credits.eq(b.credits))return a.credits.gt(b.credits)?-1:1;
     return order.get(a.item)-order.get(b.item);});
   const allCandidatesEvaluated=cand.every(candidate=>candidate.evaluated);
   const deadlineReached=control.deadlineReached();
   const searchExhaustive=allCandidatesEvaluated&&cand.every(candidate=>!candidate.capped);
   const top=cand.find(candidate=>candidate.evaluated);
-  const feasible=!!top&&top.credits>1e-9;
-  return {empty:false,mode,issues,ranking:cand,bestItem:feasible?top.item:null,credits:feasible?top.credits:0,objective:feasible?top.credits:0,
+  const feasible=!!top&&top.credits.gt(1e-9);
+  return {empty:false,mode,issues,ranking:cand,bestItem:feasible?top.item:null,credits:feasible?top.credits:DEC_ZERO,objective:feasible?top.credits:DEC_ZERO,
     plan:feasible?top.plan:idlePlan(),balance:feasible?top.balance:[],minedUsage:feasible?top.minedUsage:[],gelReserved:feasible?top.gelReserved:null,resIndex:feasible?top.resIndex:{},
     tol:boundedPersistedField("margin",S.margin,0,0,20)/100,usesMargin:!!(feasible&&top.usesMargin),feasible,capped:!!(feasible&&top.capped),
     allCandidatesEvaluated,deadlineReached,searchExhaustive,ms:Math.max(0,control.elapsed()-(t0-control.startedAt))};
@@ -1875,7 +1967,7 @@ function gelLoadout(rows,vespBudgetHr){
 // Aggregate Vespium/hour from every declared source (0 if all are unset → Gel off).
 function gelVespBudgetHr(){return minedBudgetHr("Vespium");}
 function projectDemand(){
-  const gross={};ALLITEMS.forEach(it=>gross[it]=0);
+  const gross={};ALLITEMS.forEach(it=>gross[it]=DEC_ZERO);
   const perProject=[];
   (S.projects||[]).forEach(p=>{
     if(!p.on)return;
@@ -1887,23 +1979,23 @@ function projectDemand(){
     const done=Math.max(0,Math.min(to-from+1,Math.floor(num(p.done)||0)));
     const start=from-1+done;
     if(start>=to)return;   // project fully checked off — nothing left to craft
-    const sub={};ALLITEMS.forEach(it=>sub[it]=0);
+    const sub={};ALLITEMS.forEach(it=>sub[it]=DEC_ZERO);
     for(let i=start;i<to&&i<lv.length;i++){
-      (lv[i].costs||[]).forEach(c=>{const it=c.item,q=num(c.qty)||0;if(ALLITEMS.includes(it)&&q>0){sub[it]+=q;gross[it]+=q;}});
+      (lv[i].costs||[]).forEach(c=>{const it=c.item,q=toDec0(c.qty);if(ALLITEMS.includes(it)&&q.gt(DEC_ZERO)){sub[it]=sub[it].add(q);gross[it]=gross[it].add(q);}});
     }
     perProject.push({id:p.id||"",name:p.name||"Project",catId:p.catId||"",prio:(p.prio!=null?p.prio:null),from:start+1,to,levels:lv.length,sub});
   });
-  const inv={};ALLITEMS.forEach(it=>inv[it]=num(S.inventory&&S.inventory[it])||0);
+  const inv={};ALLITEMS.forEach(it=>inv[it]=toDec0(S.inventory&&S.inventory[it]));
   const net=projNetVec(gross,inv);
   return {gross,net,perProject};
 }
 // Which unavailable mined resources block this item or any product in its recipe chain?
 // Passive supply of the item itself bypasses its crafting chain.
 function chainMinedBlockers(item,seen){
-  if(forgieHr(item)>1e-9)return [];
+  if(forgieHr(item).gt(1e-9))return [];
   seen=seen||new Set();if(seen.has(item))return [];seen.add(item);
   const out=[],cfg=MINED_CRAFTS[item];
-  if(cfg&&minedBudgetHr(cfg.resource)<=0)out.push(cfg.resource);
+  if(cfg&&!minedBudgetHr(cfg.resource).gt(DEC_ZERO))out.push(cfg.resource);
   const rec=RECIPE[item];
   (rec&&rec.inputs||[]).forEach(k=>{
     if(PRODUCTS.includes(k))out.push(...chainMinedBlockers(k,new Set(seen)));
@@ -1986,6 +2078,39 @@ function makeLpMemo(){
   };
 }
 const LP_MAX_PIVOTS=20000;
+/* Project a Decimal right-hand side into the float64 the tableau is built from.
+ *
+ * Row equilibration was the obvious move here and it is the wrong one, which is worth recording.
+ * Dividing a row by its own largest entry does leave the feasible set untouched, and it does bound
+ * every entry to [-1,1] — but every tolerance in lpSimplexSolve is an ABSOLUTE constant (1e-9 to
+ * enter, 1e-12 on the ratio test). Scaling a row down moves its coefficients toward those constants
+ * rather than away, and on this tableau it pushed the z-column of an ordinary item row from ~1 to
+ * ~1e-8, close enough to the entering threshold to cost pivots and, on the project corpus, to leave
+ * Bland short of completion. Better conditioning on paper, worse arithmetic in practice.
+ *
+ * So the RHS is saturated instead of scaled, and only when it has to be. A supply that fits a
+ * float64 is passed through exactly, which is what keeps every plan that already solved identical.
+ * A supply that does not fit becomes MAX_VALUE — no finite alternative is more permissive, so this
+ * can never wrongly restrict the solve, and a supply that large could not have been binding anyway.
+ *
+ * The magnitude problem this leaves — a supply legitimately dwarfing its own row — is handled where
+ * it actually matters, by the consCeiling cap in solveCore, which bounds a free supply by what the
+ * factory could physically consume before it ever reaches an array. */
+/* A Decimal reduced to a tableau coefficient. Saturates at the largest finite double rather than
+ * overflowing to +/-Infinity: an infinite entry poisons the first pivot that touches its row
+ * (0 * Infinity is NaN), while a saturated one still says what the quantity meant — larger than
+ * anything else in the problem. */
+function finiteCoefficient(value){
+  const flat=value.toNumber();
+  if(Number.isFinite(flat))return flat;
+  return value.lt(DEC_ZERO)?-Number.MAX_VALUE:Number.MAX_VALUE;
+}
+function lpFiniteRhs(b){
+  for(let i=0;i<b.length;i++){
+    const supply=toDec0(b[i]).toNumber();
+    b[i]=Number.isFinite(supply)?supply:Number.MAX_VALUE;
+  }
+}
 /* Certify a finished speculative solve against the caller's UNTOUCHED (c,A,b), which is the only
  * data a bent tableau cannot have bent. x is the primal vertex and y the objective row's slack-
  * column entries — the duals of the <= rows — so primal feasibility, dual feasibility and equal
@@ -2122,10 +2247,17 @@ function buildScheduleLP(vars,lns,items,net,avail,D0){
   items.forEach(it=>{
     const row=new Array(n).fill(0);
     vars.forEach((v,vi)=>{if(v.item===it)row[vi]-=v.rate;v.cons.forEach(c=>{if(c.item===it)row[vi]+=c.perHr;});});
-    row[zCol]=((net[it]||0)-(avail&&avail[it]||0)*STOCK_SAFETY_FRAC)/D0;
+    // Demand net of drawable stock, normalized by D0 (the largest demand) so the z-column sits
+    // beside the rate coefficients rather than dwarfing them — the reason D0 exists.
+    /* toNumber() can overflow when the stock being drawn down is itself past the float ceiling, and
+     * an infinite coefficient turns the first pivot that touches this row into NaN. Saturating keeps
+     * the row's meaning — stock this far beyond the demand covers it outright — in a number the
+     * tableau can carry. lpFiniteRhs does the same for b; this is the matching guard for A. */
+    row[zCol]=finiteCoefficient(toDec0(net[it]).sub(toDec0(avail&&avail[it]).times(STOCK_SAFETY_FRAC)).div(D0));
     A.push(row);b.push(isMinedResource(it)?minedBudgetHr(it):forgieHr(it));
   });
   const c=new Array(n).fill(0);c[zCol]=1;
+  lpFiniteRhs(b);
   return {A,b,c,zCol,n};
 }
 /* One makespan LP solve. The memo is consulted at this level rather than inside lpMaximize so a hit
@@ -2170,15 +2302,23 @@ function projectSchedule(net,targets,avail,opts){
       LEVELS.filter(L=>L<=ln.max).forEach(L=>{
         if(RAWS.includes(it)){const t=craftTime(it,L);if(!(t>0))return;const es=effSpeed(ln.sp,t);vars.push({li,item:it,lvl:L,rate:(craftYield(it,L)/t)*es*ln.dp*3600,cons:[]});}
         else if(PRODUCTS.includes(it)){const ins=RECIPE[it].inputs;const tt=craftTime(it,L);if(!(tt>0))return;
-          if(!ins.every(k=>S.prodCost[it][k][L]!=null&&!isNaN(S.prodCost[it][k][L])))return;
-          const es=effSpeed(ln.sp,tt),cons=ins.map(k=>({item:k,perHr:(S.prodCost[it][k][L]/tt)*es*3600}));
+          if(!hasRecipeCost(it,ins,L))return;
+          const es=effSpeed(ln.sp,tt);
+          /* recipeRate returns null for a cost no float64 can hold, and null*es*3600 is 0 — which
+           * would schedule the craft as consuming nothing at all. Drop the level instead, exactly as
+           * a missing cost is dropped: a craft whose inputs cannot be counted cannot be planned. */
+          const perHr=ins.map(k=>recipeRate(S.prodCost[it][k][L],tt));
+          if(perHr.some(rate=>rate===null||!Number.isFinite(rate*es*3600)))return;
+          const cons=ins.map((k,ki)=>({item:k,perHr:perHr[ki]*es*3600}));
           const cfg=MINED_CRAFTS[it];
           if(cfg){if(!items.includes(cfg.resource))return;const c=minedCost(it,L)[cfg.resource];if(c==null||isNaN(c)||c<0)return;cons.push({item:cfg.resource,perHr:(c/tt)*es*3600});}
           vars.push({li,item:it,lvl:L,rate:(craftYield(it,L)/tt)*es*ln.dp*3600,cons});}
       });
     });
   });
-  const D0=Math.max(1,...targets.map(it=>net[it]||0));   // normalize demand to keep LP coeffs sane
+  // Normalize demand to keep the LP coefficients sane. A Decimal, because the demand it is taken
+  // from is one; the z-column division above lands back in float64.
+  const D0=targets.reduce((peak,it)=>{const q=toDec0(net[it]);return q.gt(peak)?q:peak;},DEC_ONE);
   // Free (unconstrained) solve — the makespan-optimal assignment, ignoring what ran last time.
   const free=buildScheduleLP(vars,lns,items,net,avail,D0);
   const zCol=free.zCol,n=free.n;
@@ -2230,7 +2370,9 @@ function projectSchedule(net,targets,avail,opts){
       }
     }
   }
-  const rate={};items.forEach(it=>rate[it]=forgieHr(it));
+  // Float, not Decimal: these accumulate production with += below, and a Decimal there would
+  // concatenate strings instead of adding. Rates are bounded by the lines, so a float always holds.
+  const rate={};items.forEach(it=>rate[it]=supplyRate(forgieHr(it)));
   vars.forEach((v,vi)=>{const yi=y[vi]||0;if(yi<=LP_ASSIGN_EPS)return;rate[v.item]+=v.rate*yi;v.cons.forEach(c=>{rate[c.item]=(rate[c.item]||0)-c.perHr*yi;});});
   const plan=lns.map(ln=>({line:ln.orig+1,max:ln.max,sp:ln.sp,dp:ln.dp,entries:[]}));
   vars.forEach((v,vi)=>{const yi=y[vi]||0;if(yi<=LP_ASSIGN_EPS)return;plan[v.li].entries.push({item:v.item,lvl:v.lvl,frac:yi,outHr:v.rate*yi,cons:v.cons.map(c=>({item:c.item,hr:c.perHr*yi}))});});
@@ -2323,7 +2465,7 @@ function solvePhaseFor(net,name,avail,stabilityPolicy,phaseKey,solveOptions){
   // Mined budgets are not craftable materials; their usage is displayed separately.
   // `stock` is the /hr an item is pulled from inventory (the deficit the LP left the drawdown term to cover);
   // in a project LP a shortfall is only ever legitimate stock drawdown, never a paper margin.
-  const balance=sch.items.filter(it=>!MINED_RESOURCES.includes(it)).map(it=>{const prod=prodHr[it]||0,cons=consHr[it]||0,f=forgieHr(it);
+  const balance=sch.items.filter(it=>!MINED_RESOURCES.includes(it)).map(it=>{const prod=prodHr[it]||0,cons=consHr[it]||0,f=supplyRate(forgieHr(it));
     return {res:it,prod,forgie:f,cons,stock:Math.max(0,cons-prod-f)};});
   // Flag items the plan is pressed up against the safety cap on — drawing stock down with ZERO
   // crafters assigned to replenish it, close enough to the STOCK_SAFETY_FRAC ceiling that the LP
@@ -2343,16 +2485,20 @@ function solvePhaseFor(net,name,avail,stabilityPolicy,phaseKey,solveOptions){
 // Frames/Wire Bits are an external, pre-produced prerequisite. Reserve them before ordinary direct
 // Bits demand; they never become a Project LP target and never earn a synthetic Bits line.
 function phasePreProducedDemand(sub,invMap){
-  const frames=Math.max(0,(sub.Frames||0)-((invMap&&invMap.Frames)||0));
-  const wire=Math.max(0,(sub.Wire||0)-((invMap&&invMap.Wire)||0));
-  const bits=PREPROD_BITS.Frames*frames+PREPROD_BITS.Wire*wire;
-  return bits>0?{Bits:bits}:{};
+  const frames=decClampLow(toDec0(sub.Frames).sub(toDec0(invMap&&invMap.Frames)));
+  const wire=decClampLow(toDec0(sub.Wire).sub(toDec0(invMap&&invMap.Wire)));
+  const bits=frames.times(PREPROD_BITS.Frames).add(wire.times(PREPROD_BITS.Wire));
+  return bits.gt(DEC_ZERO)?{Bits:bits}:{};
 }
 // Net ordinary demand for a project's level sum after reserving external pre-produced Bits.
+/* Project demand and stock are quantities, so these vectors are Decimals. The arithmetic here is
+   per item — twelve subtractions, not twelve per pivot — so carrying the range costs nothing that
+   matters, and a project costing more than a float64 can hold nets out exactly. */
 function projNetVec(sub,invMap,preProducedDemand){
-  const net={};ALLITEMS.forEach(it=>net[it]=Math.max(0,(sub[it]||0)-(invMap[it]||0)));
-  const pp=((preProducedDemand||phasePreProducedDemand(sub,invMap)).Bits||0),bitsLeft=Math.max(0,((invMap&&invMap.Bits)||0)-pp);
-  net.Bits=Math.max(0,(sub.Bits||0)-bitsLeft);
+  const net={};ALLITEMS.forEach(it=>net[it]=decClampLow(toDec0(sub[it]).sub(toDec0(invMap&&invMap[it]))));
+  const pp=toDec0((preProducedDemand||phasePreProducedDemand(sub,invMap)).Bits);
+  const bitsLeft=decClampLow(toDec0(invMap&&invMap.Bits).sub(pp));
+  net.Bits=decClampLow(toDec0(sub.Bits).sub(bitsLeft));
   return net;
 }
 // Stock available to DRAW DOWN for each item — the inventory left after covering the item's own
@@ -2360,9 +2506,9 @@ function projNetVec(sub,invMap,preProducedDemand){
 // cost (e.g. Ingots) this is its whole stock; that stock feeds its consumers so they aren't produced
 // from scratch (issue #73). External Bits are removed before direct Bits and recipe-feed availability.
 function projAvailVec(sub,invMap,preProducedDemand){
-  const av={};ALLITEMS.forEach(it=>av[it]=Math.max(0,((invMap&&invMap[it])||0)-(sub[it]||0)));
-  const pp=((preProducedDemand||phasePreProducedDemand(sub,invMap)).Bits||0);
-  av.Bits=Math.max(0,((invMap&&invMap.Bits)||0)-pp-(sub.Bits||0));
+  const av={};ALLITEMS.forEach(it=>av[it]=decClampLow(toDec0(invMap&&invMap[it]).sub(toDec0(sub[it]))));
+  const pp=toDec0((preProducedDemand||phasePreProducedDemand(sub,invMap)).Bits);
+  av.Bits=decClampLow(toDec0(invMap&&invMap.Bits).sub(pp).sub(toDec0(sub.Bits)));
   return av;
 }
 // Assign each project an "unlock layer": 0 if it depends on no in-list unlock, else
@@ -2604,8 +2750,8 @@ function idleWorkControl(runOptions){
 // A feasible phase meets every one of those rates, so each entry is non-negative by construction.
 function phaseSpareSupplyHr(ph){
   const spare={};
-  ALLITEMS.forEach(it=>spare[it]=forgieHr(it));
-  MINED_RESOURCES.forEach(r=>{if(spare[r]==null)spare[r]=minedBudgetHr(r);});
+  ALLITEMS.forEach(it=>spare[it]=supplyRate(forgieHr(it)));
+  MINED_RESOURCES.forEach(r=>{if(spare[r]==null)spare[r]=supplyRate(minedBudgetHr(r));});
   (ph.plan||[]).forEach(row=>(row.entries||[]).forEach(entry=>{
     spare[entry.item]=(spare[entry.item]||0)+(entry.outHr||0);
     (entry.cons||[]).forEach(input=>{spare[input.item]=(spare[input.item]||0)-(input.hr||0);});
@@ -2621,8 +2767,13 @@ function fillerEntry(line,item,lvl){
   const es=effSpeed(line.sp,tt),cons=[];
   if(PRODUCTS.includes(item)){
     const ins=RECIPE[item].inputs;
-    if(!ins.every(k=>S.prodCost[item][k][lvl]!=null&&!isNaN(S.prodCost[item][k][lvl])))return null;
-    ins.forEach(k=>cons.push({item:k,hr:(S.prodCost[item][k][lvl]/tt)*es*3600}));
+    if(!hasRecipeCost(item,ins,lvl))return null;
+    // Same null-is-not-zero rule as the schedule LP above: an uncountable cost is an unmakeable job.
+    for(const k of ins){
+      const perSec=recipeRate(S.prodCost[item][k][lvl],tt);
+      if(perSec===null||!Number.isFinite(perSec*es*3600))return null;
+      cons.push({item:k,hr:perSec*es*3600});
+    }
     const cfg=MINED_CRAFTS[item];
     if(cfg){const cost=minedCost(item,lvl)[cfg.resource];if(cost==null||isNaN(cost)||cost<0)return null;
       cons.push({item:cfg.resource,hr:(cost/tt)*es*3600});}
@@ -2682,7 +2833,7 @@ function refreshPhaseReadouts(ph){
     prodHr[entry.item]=(prodHr[entry.item]||0)+(entry.outHr||0);
     (entry.cons||[]).forEach(input=>{consHr[input.item]=(consHr[input.item]||0)+(input.hr||0);});}));
   ph.balance=ph.items.filter(it=>!MINED_RESOURCES.includes(it)).map(it=>{
-    const prod=prodHr[it]||0,cons=consHr[it]||0,forgie=forgieHr(it);
+    const prod=prodHr[it]||0,cons=consHr[it]||0,forgie=supplyRate(forgieHr(it));
     return {res:it,prod,forgie,cons,stock:Math.max(0,cons-prod-forgie)};});
   ph.minedUsage=minedUsageFromProjectPlan(ph.plan);
 }
@@ -2776,7 +2927,7 @@ function adoptPhasePreProduced(ph){
 // output, less every line's inputs. The same quantity solvePhaseFor reads off the scheduler,
 // re-derived here because a fill changes the plan after that read.
 function phasePlanRatesHr(ph){
-  const rate={};ALLITEMS.forEach(item=>{rate[item]=forgieHr(item);});
+  const rate={};ALLITEMS.forEach(item=>{rate[item]=supplyRate(forgieHr(item));});
   (ph.plan||[]).forEach(row=>(row.entries||[]).forEach(entry=>{
     if(rate[entry.item]!=null)rate[entry.item]+=entry.outHr||0;
     (entry.cons||[]).forEach(input=>{if(rate[input.item]!=null)rate[input.item]-=input.hr||0;});
@@ -2878,8 +3029,8 @@ function fillIdleLinesAhead(ph,laterProjects,inventory,context,control,deadline)
     const net=projNetVec(project.sub,after);
     const items=ALLITEMS.filter(it=>net[it]>1e-9);
     if(!items.length)continue;
-    const D0=Math.max(1,...items.map(it=>net[it]||0));
-    const weights=items.map(it=>Math.max(1e-12,(net[it]||0)/D0));
+    const D0=items.reduce((peak,it)=>{const q=toDec0(net[it]);return q.gt(peak)?q:peak;},DEC_ONE);
+    const weights=items.map(it=>Math.max(1e-12,toDec0(net[it]).div(D0).toNumber()));
     const picks=idleLineFillPicks(idleRows,items,weights,spare,control,
       Math.min(allowance(),LOOKAHEAD_ATTEMPT_WORK),deadline);
     if(!picks.length)continue;
@@ -2939,7 +3090,7 @@ function putIdleLinesToWork(ph,laterProjects,inventory,context,runOptions,phaseI
 function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
   const layer=unlockLayers(perProject);
   const maxL=perProject.length?Math.max.apply(null,layer):0;
-  const invStart=()=>{const o={};ALLITEMS.forEach(it=>o[it]=num(S.inventory&&S.inventory[it])||0);return o;};
+  const invStart=()=>{const o={};ALLITEMS.forEach(it=>o[it]=toDec0(S.inventory&&S.inventory[it]));return o;};
   const context=projectScheduleContext(),executionPhases=[];
   let exactInventory=invStart(),scheduleBlocked=null;
   const solveBudgetFailure=()=>({kind:"solve-budget",time:0,deficit:0,
@@ -2998,7 +3149,7 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
     // Single combined phase when nothing is gated, or when the user has turned unlock gating
     // off (projectGate===false) to craft the whole list at once, ignoring unlock waves.
     if(maxL===0||S.projectGate===false){
-      const sumSub={};ALLITEMS.forEach(it=>sumSub[it]=perProject.reduce((s,p)=>s+(p.sub[it]||0),0));
+      const sumSub={};ALLITEMS.forEach(it=>sumSub[it]=perProject.reduce((s,p)=>s.add(toDec0(p.sub[it])),DEC_ZERO));
       const inv0=invStart();
       const combKey=perProject.length>1?perProject.map(p=>p.id).sort().join("+"):perProject[0].id;
       const ph=solveExecutableProjectPhase(sumSub,perProject.length>1?"All projects":perProject[0].name,inv0,stabilityPolicy,combKey,runOptions);
@@ -3014,7 +3165,7 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
     const waves=[];
     for(let L=0;L<=maxL;L++){const members=perProject.filter((_,i)=>layer[i]===L);if(members.length)waves.push(members);}
     waves.forEach((members,index)=>{
-      const sumSub={};ALLITEMS.forEach(it=>sumSub[it]=members.reduce((s,p)=>s+(p.sub[it]||0),0));
+      const sumSub={};ALLITEMS.forEach(it=>sumSub[it]=members.reduce((s,p)=>s.add(toDec0(p.sub[it])),DEC_ZERO));
       const inv0=Object.assign({},exactInventory);
       const ph=solveExecutableProjectPhase(sumSub,members.map(m=>m.name).join(" + "),exactInventory,stabilityPolicy,members.map(m=>m.id).sort().join("+"),slicedRunOptions(index,waves.length));
       ph.semanticIndex=phases.length;ph.members=members.map(m=>m.name);ph.demandSub=sumSub;ph.wave=phases.length+1;ph.invStart=inv0;
@@ -3094,8 +3245,8 @@ function projectScheduleContext(){
     const ds=(deps[it]||[]).filter(x=>ALLITEMS.includes(x));return depth[it]=ds.length?1+Math.max(...ds.map(x=>visit(x,next))):0;};
   ALLITEMS.forEach(it=>visit(it,new Set()));
   const forgieRates={},minedIncomeRates={};
-  ALLITEMS.forEach(it=>forgieRates[it]=forgieHr(it));
-  MINED_RESOURCES.forEach(r=>minedIncomeRates[r]=minedBudgetHr(r));
+  ALLITEMS.forEach(it=>forgieRates[it]=supplyRate(forgieHr(it)));
+  MINED_RESOURCES.forEach(r=>minedIncomeRates[r]=supplyRate(minedBudgetHr(r)));
   const compressionInputScale={};LEVELS.forEach(L=>compressionInputScale[L]=Math.pow(3,Math.log2(L))/L);
   return {ordinaryResources:[...ALLITEMS],minedResources:[...MINED_RESOURCES],informationalResources:["Rocks"],
     forgieRates,minedIncomeRates,recipeDependencies:deps,recipeDepth:depth,preprodBits:Object.assign({},PREPROD_BITS),
@@ -3118,7 +3269,7 @@ function solveProjectRun(seq,net,perProject,stabilityPolicy,runOptions){
   phases.forEach((ph,i)=>{ph.semanticIndex=i;ph.kind="project";});
   const workEta=phases.reduce((s,ph)=>s+ph.eta,0);
   const lpFeasible=phases.length>0&&phases.every(ph=>ph.feasible);
-  const initialInventory={};ALLITEMS.forEach(it=>initialInventory[it]=num(S.inventory&&S.inventory[it])||0);
+  const initialInventory={};ALLITEMS.forEach(it=>initialInventory[it]=toDec0(S.inventory&&S.inventory[it]));
   const context=projectScheduleContext(),executionPhases=builtPhases.executionPhases;
   const validation=replayProjectSchedule(executionPhases,initialInventory,context);
   if(builtPhases.scheduleBlocked){validation.ok=false;validation.firstFailure=builtPhases.scheduleBlocked;}

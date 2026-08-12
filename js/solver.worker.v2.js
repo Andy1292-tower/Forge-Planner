@@ -5,7 +5,7 @@
  *
  * The Worker imports the same field/schema boundary as the page; no unvalidated snapshot can
  * become the solver's global state. */
-importScripts("core.js", "fields.js", "state.js", "project-schedule.js", "solver.js");
+importScripts("decimal.js", "core.js", "fields.js", "state.js", "project-schedule.js", "solver.js");
 
 /* A shard descriptor names which slice of one request this Worker was handed. It is its own
  * top-level field rather than a widened reqId or budget because both of those are pinned to
@@ -70,8 +70,14 @@ self.onmessage = function (e) {
     const res = optimize(undefined, attributed);
     if (res && typeof getLineStability === "function") res.__stab = getLineStability();
     if (res && typeof getSoloMaxCache === "function") res.__solo = getSoloMaxCache();
-    if(attributed===null)self.postMessage({ reqId, generation, mode, stateRevision, res });
-    else self.postMessage({ reqId, generation, mode, stateRevision, shard: attributed, res });
+    /* Serialised, not posted live. A result carries quantities — credits, project demand, stock —
+     * and those are Decimals; a decimal.js instance owns a `constructor` property, so structured
+     * clone rejects it outright rather than flattening it. JSON is the boundary the rest of this
+     * exchange already uses (the state arrives the same way), and it turns each quantity into the
+     * canonical string toDec reads back on the page. */
+    const payload = JSON.parse(JSON.stringify(res));
+    if(attributed===null)self.postMessage({ reqId, generation, mode, stateRevision, res: payload });
+    else self.postMessage({ reqId, generation, mode, stateRevision, shard: attributed, res: payload });
   } catch (err) {
     const message=err&&typeof err.message==="string"?err.message:String(err);
     const stack=err&&typeof err.stack==="string"?err.stack:"";

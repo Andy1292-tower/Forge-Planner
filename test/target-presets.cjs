@@ -1,4 +1,7 @@
 "use strict";
+// Decimal is a global in the browser (js/decimal.js loads first); a direct eval() inherits
+// this module scope, so binding it here is what makes the evaluated sources resolve it.
+const Decimal = require("../js/decimal.js");
 /* Saved output sets: named presets of the Max items/hr output checkboxes and their priorities,
  * plus the Uncheck all control that clears them in one step.
  *
@@ -37,7 +40,7 @@ globalThis.document={
 globalThis.localStorage={getItem:()=>null,setItem:()=>{}};
 globalThis.performance={now:()=>0};
 
-const src=["catalog.js","core.js","fields.js","state.js","dom.js","render.js","solve-service.js"]
+const src=["decimal.js", "catalog.js","core.js","fields.js","state.js","dom.js","render.js","solve-service.js"]
   .map(f=>fs.readFileSync(path.join(__dirname,"..","js",f),"utf8")).join("\n;\n");
 
 const runner=`

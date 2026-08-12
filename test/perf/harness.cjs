@@ -95,10 +95,11 @@ const { materialize } = require("./corpus.cjs");
 const ROOT = path.join(__dirname, "..", "..");
 
 /* catalog.js first: core.js normalize() rehydrates a project's levels from PROJECT_CATALOG when it
- * carries a catId, and the reference save does. The remaining five are exactly the Worker's
+ * carries a catId, and the reference save does. The remaining six are exactly the Worker's
  * importScripts list, so the realm below is the one the app actually solves in. */
 const SOURCES = [
   "js/catalog.js",
+  "js/decimal.js",
   "js/core.js",
   "js/fields.js",
   "js/state.js",
@@ -419,6 +420,18 @@ function createSolverContext() {
   return { context, loadState, resetRun, resetStability, solve, snapshot };
 }
 
+/* The objective as the plain number a comparison sorts on. In Credits it is a quantity — a Decimal,
+ * because a late-game sell price outgrows a float64 — so Number.isFinite would read every one of
+ * them as "not a number" and record a flat 0. Number() goes through the Decimal's own valueOf, and a
+ * value past the float ceiling saturates rather than becoming Infinity, which keeps the baseline's
+ * "every run carries a finite objective" contract true at any magnitude. */
+function objectiveScalar(value) {
+  if (value === null || value === undefined) return 0;
+  const flat = Number(value);
+  if (Number.isFinite(flat)) return flat;
+  return Number.isNaN(flat) ? 0 : Number.MAX_VALUE;
+}
+
 /* Every mode returns an objective where higher is better. The summary keeps the fields a later PR
  * would actually diff; the contract flags live in flagsOf. */
 function summarize(mode, result) {
@@ -546,7 +559,7 @@ function runOnce(fixture, options) {
     budgetMs,
     seedRuns,
     lines: loaded.lines,
-    objective: Number.isFinite(result && result.objective) ? result.objective : 0,
+    objective: objectiveScalar(result && result.objective),
     result: summarize(fixture.mode, result),
     flags: flagsOf(fixture.mode, result),
     work: { total: snap.work.total, probe: snap.work.probe, dense: snap.work.dense, byLabel: snap.work.byLabel },

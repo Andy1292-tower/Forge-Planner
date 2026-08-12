@@ -1,4 +1,7 @@
 "use strict";
+// Decimal is a global in the browser (js/decimal.js loads first); a direct eval() inherits
+// this module scope, so binding it here is what makes the evaluated sources resolve it.
+const Decimal = require("../js/decimal.js");
 /* Optimality gap reporting.
  *
  * The LP relaxation already proves a ceiling on the objective. Items results carry it as `bound`
@@ -22,7 +25,7 @@ globalThis.localStorage = { getItem: () => null, setItem: () => {} };
 globalThis.document = { getElementById: () => ({ innerHTML: "", textContent: "" }) };
 
 const ROOT = path.join(__dirname, "..");
-const src = ["js/core.js", "js/fields.js", "js/project-schedule.js", "js/solver.js"]
+const src = ["js/decimal.js", "js/core.js", "js/fields.js", "js/project-schedule.js", "js/solver.js"]
   .map(file => fs.readFileSync(path.join(ROOT, file), "utf8")).join("\n");
 
 const runner = `

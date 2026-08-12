@@ -1,4 +1,7 @@
 "use strict";
+// Decimal is a global in the browser (js/decimal.js loads first); a direct eval() inherits
+// this module scope, so binding it here is what makes the evaluated sources resolve it.
+const Decimal = require("../js/decimal.js");
 /* Credits result ownership and player-facing confidence contract. */
 const fs=require("fs"),path=require("path"),nativeNow=require("perf_hooks").performance.now.bind(require("perf_hooks").performance);
 
@@ -7,7 +10,7 @@ globalThis.localStorage={getItem:()=>null,setItem:()=>{}};
 globalThis.document={getElementById:()=>new El()};
 globalThis.performance={now:()=>0};globalThis.__nativeNow=nativeNow;
 
-const src=["core.js","fields.js","state.js","project-schedule.js","solver.js","results.js","manual.js"]
+const src=["decimal.js", "core.js","fields.js","state.js","project-schedule.js","solver.js","results.js","manual.js"]
   .map(file=>fs.readFileSync(path.join(__dirname,"..","js",file),"utf8")).join("\n;\n");
 const indexHtml=fs.readFileSync(path.join(__dirname,"..","index.html"),"utf8");
 
@@ -181,9 +184,9 @@ const runner=`
     return JSON.parse(JSON.stringify(state));
   }
   const migratedCredits=validateAndMigrate(creditsSchemaV1State());
-  check("save-derived schema-v1 state migrates once to schema v4 and 10 seconds",
-    migratedCredits.ok&&migratedCredits.sourceVersion===1&&CURRENT_SCHEMA_VERSION===4&&
-      migratedCredits.state.schemaVersion===4&&migratedCredits.state.solveBudget===10000,
+  check("save-derived schema-v1 state migrates once to the current schema and 10 seconds",
+    migratedCredits.ok&&migratedCredits.sourceVersion===1&&CURRENT_SCHEMA_VERSION===5&&
+      migratedCredits.state.schemaVersion===5&&migratedCredits.state.solveBudget===10000,
     "ok="+migratedCredits.ok+", source="+migratedCredits.sourceVersion+
       ", schema="+(migratedCredits.state&&migratedCredits.state.schemaVersion)+
       ", budget="+(migratedCredits.state&&migratedCredits.state.solveBudget)+
@@ -370,7 +373,7 @@ const runner=`
   const passiveOnly=optimizeInner(200,{now:()=>0,workLimit:100000});
   const passiveGlass=passiveOnly.ranking.find(candidate=>candidate.item==="Glass");
   check("missing craft costs retain the executable passive-output baseline",
-    passiveOnly.bestItem==="Glass"&&passiveOnly.credits===1000&&passiveGlass.out===1000&&passiveGlass.feasible&&
+    passiveOnly.bestItem==="Glass"&&passiveOnly.credits.eq(1000)&&passiveGlass.out===1000&&passiveGlass.feasible&&
       passiveGlass.plan.every(row=>row.job.kind==="idle")&&!passiveGlass.capped&&passiveOnly.searchExhaustive,
     "best="+passiveOnly.bestItem+", credits="+passiveOnly.credits+", capped="+(passiveGlass&&passiveGlass.capped));
   S=stateFor(["Frames"]);S.forgie.Plates=0;S.forgie.Frames=0;
@@ -420,7 +423,8 @@ const runner=`
   S.forgie.Ingots=1024-ingotsOut;S.forgie.Bits=1024-bitsOut;S.forgie.Concrete=1024-concreteOut;
   S.sellPrice.Ingots=1;S.sellPrice.Bits=1;S.sellPrice.Concrete=1;
   const tied=optimizeInner(200,{now:()=>0,workLimit:100000});
-  check("bit-exact equal-credit ties follow explicit catalog order",tied.ranking.slice(0,3).every(candidate=>candidate.credits===1024)&&
+  // Credits are Decimals now, so an exact tie is .eq, not ===.
+  check("bit-exact equal-credit ties follow explicit catalog order",tied.ranking.slice(0,3).every(candidate=>candidate.credits.eq(1024))&&
     tied.ranking[0].item==="Ingots"&&tied.ranking[1].item==="Bits"&&tied.ranking[2].item==="Concrete",
     tied.ranking.map(candidate=>candidate.item+":"+candidate.credits).join(","));
   S.sellPrice.Bits=1+0.75e-12;S.sellPrice.Concrete=1+1.5e-12;
