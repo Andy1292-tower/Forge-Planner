@@ -780,9 +780,28 @@ test("a Worker that dies after every delivery stops being rebuilt without ever b
   assert.equal(status.workerFailures, 0, "the idle disposal path rates nothing");
   assert.equal(status.retryInMs, 0, "and arms no backoff");
   assert.equal(status.poolTripped, true);
-  assert.equal(status.poolEnabled, false);
   assert.equal(status.fallbackActive, true, "solving continues on the main thread, which the notice now states truthfully");
   assert.equal(harness.elements.solveFallback.hidden, false);
+
+  /* The same Worker on a pooled page. poolEnabled reading false means something only here — on the
+   * page above the switch was off before the first solve — so this is what shows the tripwire turns
+   * the pool off rather than the switch having been off all along. */
+  const pooled = pooledHarness({ hardwareConcurrency: 8 });
+  assert.equal(pooled.status().poolEnabled, true);
+  for (let revision = 1; revision <= 40; revision += 1) {
+    const before = pooled.workers.length;
+    pooled.callRequest(request("items", revision, `Y${revision}`), () => {});
+    if (pooled.workers.length === before) continue;
+    const worker = pooled.workers[pooled.workers.length - 1];
+    worker.emitMessage(workerResponse(worker, { res: { mode: "items", marker: `Y${revision}` } }));
+    worker.emitError("died after delivering");
+  }
+  const pooledStatus = pooled.status();
+  assert.equal(pooled.workers.length, 8, "four slots buy four more rebuilds than one slot does, not unlimited ones");
+  assert.equal(pooledStatus.poolUnratedDisposals, 8);
+  assert.equal(pooledStatus.workerFailures, 0);
+  assert.equal(pooledStatus.poolTripped, true);
+  assert.equal(pooledStatus.poolEnabled, false);
 });
 
 test("fifty-five supersedes on a pooled page pay for every construction", () => {
