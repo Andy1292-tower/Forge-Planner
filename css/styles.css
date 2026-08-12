@@ -712,6 +712,10 @@ footer a:hover,.contrib-help a:hover{text-decoration:underline}
 .proj-inline-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--line);min-width:0;max-width:100%}
 .proj-inline-range{display:flex;align-items:center;gap:4px;white-space:nowrap;min-width:0}
 .proj-inline-range input{width:46px;max-width:46px}
+/* "Mark complete" and "Reopen" are the same button under two labels, and the row is a flex line: let
+   it size to its text and checking off the last level drags the stepper sideways, right as the
+   reader is still pressing it. Hold the wider label's width for both. */
+.proj-inline-row [data-spcomplete]{min-width:11.5em;text-align:center}
 .proj-inline-errors{display:flex;flex:1 0 100%;max-width:100%;min-width:0;flex-direction:column;gap:3px}
 .proj-mini{font-size:10.5px;color:var(--ink3);letter-spacing:.3px}
 .proj-add-lvl{font-size:10.5px;padding:5px 9px}

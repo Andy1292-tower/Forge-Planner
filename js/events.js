@@ -89,17 +89,35 @@ function commitFieldDraft(input,rule,previousValue,mutator){
 // recompute once. Any actual repaint (resimulate, mode switch, …) clears the stale UI.
 // The bar names what was changed, so a plan left stale is still legible after a tab switch;
 // batching two kinds of edit before resimulating names both.
-const STALE_CAUSES={lines:"crafter line inputs",projects:"project selection"};
+const STALE_CAUSES={lines:"crafter line inputs",projects:"project selection",progress:"project completion"};
 const staleCauses=new Set();
+// "a", "a and b", "a, b and c" — three kinds of edit can now be batched before one Resimulate, and
+// "a and b and c" reads like a stutter.
+function staleCauseText(){
+  const named=[...staleCauses].map(c=>STALE_CAUSES[c]);
+  return named.length<3?named.join(" and "):named.slice(0,-1).join(", ")+" and "+named[named.length-1];
+}
 function showStale(){
   const on=staleCauses.size>0;
   const bar=document.getElementById("staleBar");
+  const res=document.getElementById("results");
   if(bar){
     const msg=bar.querySelector&&bar.querySelector(".stale-msg");
-    if(msg&&on)msg.textContent=`Plan out of date — ${[...staleCauses].map(c=>STALE_CAUSES[c]).join(" and ")} changed. Press Resimulate to update it.`;
+    if(msg&&on)msg.textContent=`Plan out of date — ${staleCauseText()} changed. Press Resimulate to update it.`;
+    // The bar sits above the plan, so raising or retiring it reflows everything below by its height.
+    // The controls that raise it are pressed in runs — four levels checked off is four presses — and
+    // the second press has to find the button where the first one left it. When the bar's own row is
+    // off-screen above, take the reflow back out of the scroll offset; a reader who can actually see
+    // the bar arrive sees it arrive, and nothing is moved under them.
+    const anchor=res&&res.getBoundingClientRect?res:null;
+    const topBefore=anchor?anchor.getBoundingClientRect().top:0;
     bar.hidden=!on;
+    if(anchor&&topBefore<0&&typeof window!=="undefined"&&window.scrollBy){
+      const shift=anchor.getBoundingClientRect().top-topBefore;
+      if(shift)window.scrollBy(0,shift);
+    }
   }
-  const res=document.getElementById("results");if(res)res.classList.toggle("stale",on);
+  if(res)res.classList.toggle("stale",on);
 }
 function clearStaleUI(){staleCauses.clear();showStale();}
 function markStale(cause){clearTimeout(renderT);renderT=null;persistNow();staleCauses.add(STALE_CAUSES[cause]?cause:"lines");showStale();}
@@ -109,6 +127,15 @@ function markStale(cause){clearTimeout(renderT);renderT=null;persistNow();staleC
 function commitProjectInclusion(mutator){
   mutateState(mutator);
   if(S.mode==="project")markStale("projects");else save();
+}
+// Checking levels off is the same batched edit one step further in. Bringing a project from three
+// levels done to seven is four presses of one button, and each intermediate count is a plan nobody
+// asked to see. Worse, the panel offering those presses is rendered inside #results, so solving
+// between them rebuilds the button under the pointer. Deferring means the row has to repaint itself
+// (refreshProjInlineRow) — the count and the stepper's ends move, the plan waits for Resimulate.
+function commitProjectProgress(mutator){
+  mutateState(mutator);
+  if(S.mode==="project")markStale("progress");else save();
 }
 // The mirror of the above, for the Outputs card. Nothing in it is read by every mode, and the card
 // is not mode-gated, so without a guard a tick would spend the whole solve budget re-deriving a plan
@@ -1002,15 +1029,14 @@ function itemTier(it,seen){
 // Issue #69: let the user set a project complete or change its levels without leaving this page.
 // Reuses the same fields the Projects tab and Progress tracker edit (on / from / to / done), so all
 // three views stay in sync. Completion = every level in the from→to span checked off (done=span).
-function stepsProjControls(){
-  const active=(S.projects||[]).filter(p=>(p.levels||[]).length);
-  if(!active.length)return "";
-  const rows=active.map(p=>{
-    const {from,to,span}=projSpan(p),done=projDone(p),complete=done>=span;
-    const name=p.name||"Project";
-    const badge=complete?' <span class="pill craft" style="font-size:9px">done</span>':"";
-    const ids=projectFieldIds(p,"inline-project"),fromRule=projectRangeRule(p,"from"),toRule=projectRangeRule(p,"to");
-    return `<div class="proj-inline-row">
+// One row, its own function: a completion press defers its solve, so the row is the only thing that
+// repaints, and it has to repaint from the template that built it rather than a hand-patched copy.
+function projInlineRowHtml(p){
+  const {from,to,span}=projSpan(p),done=projDone(p),complete=done>=span;
+  const name=p.name||"Project";
+  const badge=complete?' <span class="pill craft" style="font-size:9px">done</span>':"";
+  const ids=projectFieldIds(p,"inline-project"),fromRule=projectRangeRule(p,"from"),toRule=projectRangeRule(p,"to");
+  return `<div class="proj-inline-row">
       <input type="checkbox" data-spon="${htmlAttribute(p.id)}" ${p.on?"checked":""} aria-label="Include ${htmlAttribute(name)} in the plan" title="Include ${htmlAttribute(name)} in the plan">
       <span style="flex:1 1 130px;min-width:110px;${complete?"color:var(--ink3)":""}">${htmlText(name)}${badge}</span>
       <span class="proj-mini proj-inline-range">lv <input type="number" ${htmlFieldInputAttributes(fromRule)} data-spfrom="${htmlAttribute(p.id)}" value="${from}" data-field-error="${ids.from}" aria-label="${htmlAttribute(name)} starting level"> → <input type="number" ${htmlFieldInputAttributes(toRule)} data-spto="${htmlAttribute(p.id)}" value="${to}" data-field-error="${ids.to}" aria-label="${htmlAttribute(name)} ending level"></span>
@@ -1022,9 +1048,40 @@ function stepsProjControls(){
       <button class="btn ghost" style="padding:2px 9px;font-size:11px" data-spcomplete="${htmlAttribute(p.id)}" aria-label="${complete?"Reopen":"Mark"} ${htmlAttribute(name)} ${complete?"project":"complete"}">${complete?"Reopen":"Mark complete"}</button>
       <div class="proj-inline-errors"><div class="field-error" id="${ids.from}" aria-live="polite" aria-atomic="true"></div><div class="field-error" id="${ids.to}" aria-live="polite" aria-atomic="true"></div></div>
     </div>`;
-  }).join("");
+}
+function stepsProjControls(){
+  const active=(S.projects||[]).filter(p=>(p.levels||[]).length);
+  if(!active.length)return "";
   // Rows only — the caller (renderProjectResults) wraps these in a collapsible <details> panel.
-  return rows;
+  return active.map(p=>projInlineRowHtml(p)).join("");
+}
+// Swap one row for a freshly rendered one, then put the keyboard back where the press left it. A
+// press that disables its own button (the last level checked off, or the first unchecked) hands
+// focus to the other end of the stepper, which by then is necessarily enabled: a span is at least
+// one level, so both ends cannot be disabled at once.
+function refreshProjInlineRow(row,p,focusOrder){
+  if(!row||!row.parentNode||!p)return null;
+  const holder=document.createElement("div");
+  holder.innerHTML=projInlineRowHtml(p);
+  const next=holder.firstElementChild;
+  if(!next)return null;
+  row.replaceWith(next);
+  for(const sel of focusOrder||[]){
+    const target=next.querySelector(sel);
+    if(target&&!target.disabled){target.focus();break;}
+  }
+  return next;
+}
+// The stepper and the Mark complete / Reopen toggle, sharing one path so the deferred solve and the
+// row repaint cannot drift apart. resolve() reads the current count and the span and returns the new
+// count; the clamp is applied here, so no caller can push done outside its from→to span.
+function commitProjInlineDone(button,attr,resolve,focusOrder){
+  const pid=button.getAttribute(attr),p=stepsProj(pid);
+  if(!p)return;
+  commitProjectProgress(()=>{const {span}=projSpan(p);p.done=Math.max(0,Math.min(span,Math.floor(resolve(projDone(p),span))));});
+  // Persisting adopts a validated clone of the state, so the row is drawn from the project as it
+  // reads back after the commit — not from the object the click resolved.
+  refreshProjInlineRow(button.closest(".proj-inline-row"),stepsProj(pid)||p,focusOrder);
 }
 // "Bricks", "Bricks and Concrete", "Bricks, Concrete and Rods" — a readable list of item names.
 function itemListText(items){
@@ -1172,13 +1229,14 @@ document.getElementById("results").addEventListener("click",e=>{
   if(sm){const k=sm.getAttribute("data-paneltoggle"),willOpen=!(sm.parentElement&&sm.parentElement.open);
     if(k==="adjust")_projAdjustOpen=willOpen;else if(k==="breakdown")_breakdownOpen=willOpen;return;}
   // Granular +1/−1 level completion (issue #87 item 3) — clamped to the from→to span, reusing the
-  // projSpan/projDone helpers the tracker and solver read, so every view stays in sync.
+  // projSpan/projDone helpers the tracker and solver read, so every view stays in sync. Like the
+  // on/off tick above, a press only repaints its own row and marks the plan stale: checking off four
+  // levels is four presses, and the Resimulate bar plans the result once, at the count you meant.
   const inc=cl("[data-spinc]"),dec=cl("[data-spdec]");
-  if(inc||dec){const p=stepsProj((inc||dec).getAttribute(inc?"data-spinc":"data-spdec"));if(!p)return;
-    mutateState(()=>{const {span}=projSpan(p);p.done=Math.max(0,Math.min(span,projDone(p)+(inc?1:-1)));});save();doSolve();return;}
+  if(inc||dec){commitProjInlineDone(inc||dec,inc?"data-spinc":"data-spdec",done=>done+(inc?1:-1),
+    inc?["[data-spinc]","[data-spdec]"]:["[data-spdec]","[data-spinc]"]);return;}
   const cbtn=cl("[data-spcomplete]");
-  if(cbtn){const p=stepsProj(cbtn.getAttribute("data-spcomplete"));if(!p)return;
-    mutateState(()=>{const {span}=projSpan(p);p.done=projDone(p)>=span?0:span;});save();doSolve();return;}   // toggle done/reopen
+  if(cbtn){commitProjInlineDone(cbtn,"data-spcomplete",(done,span)=>done>=span?0:span,["[data-spcomplete]"]);return;}   // toggle done/reopen
   if(cl("#btnCopyManual")){copyPlanToManual(_lastItemsCreditsRes);return;}
   if(cl("#manualUpdate")){if(S.manualActiveId)updateManualPreset(S.manualActiveId);return;}
   if(cl("#manualSaveNew")){const name=(prompt("Name this setup:","")||"").trim();if(name)saveManualPreset(name);return;}
