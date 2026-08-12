@@ -1755,7 +1755,15 @@ function schedulerHarness(options = {}) {
   const staleMessage = { textContent: "" };
   const staleBar = { hidden: true, querySelector: () => staleMessage };
   const resultsClasses = new Set();
-  const resultsElement = { classList: { toggle(name, on) { if (on) resultsClasses.add(name);else resultsClasses.delete(name); } } };
+  // A layout just real enough to see the reflow: the bar sits above #results, so showing it pushes
+  // #results down by its height, and scrolling down by n lifts every viewport-relative top by n.
+  const STALE_BAR_HEIGHT = 78;
+  let resultsTop = options.resultsTop === undefined ? -800 : options.resultsTop;
+  const scrolls = [];
+  const resultsElement = {
+    classList: { toggle(name, on) { if (on) resultsClasses.add(name);else resultsClasses.delete(name); } },
+    getBoundingClientRect() { return { top: resultsTop + (staleBar.hidden ? 0 : STALE_BAR_HEIGHT) }; },
+  };
   const context = {
     console,
     stateRevision: 1,
@@ -1778,6 +1786,7 @@ function schedulerHarness(options = {}) {
     },
     window: {
       addEventListener(type, callback) { windowListeners.set(type, callback); },
+      scrollBy(x, y) { scrolls.push(y);resultsTop -= y; },
     },
     save() {
       saves += 1;
@@ -1835,7 +1844,10 @@ function schedulerHarness(options = {}) {
     markStale(cause) { vm.runInContext(`markStale(${JSON.stringify(cause)})`, context); },
     clearStaleUI() { vm.runInContext("clearStaleUI()", context); },
     toggleProject(on) { vm.runInContext(`commitProjectInclusion(st=>{st.projectOn=${on === true};})`, context); },
+    markLevelsDone(count) { vm.runInContext(`commitProjectProgress(st=>{st.projectDone=${Number(count)};})`, context); },
     staleBar() { return { hidden: staleBar.hidden, message: staleMessage.textContent, dimmed: resultsClasses.has("stale") }; },
+    planTop() { return resultsElement.getBoundingClientRect().top; },
+    scrolls() { return scrolls.slice(); },
     commitResultMutation(mutator) {
       context.__mutator = mutator;
       context.__syncControls = () => { controlsSynced += 1; };
@@ -2125,6 +2137,80 @@ test("the stale bar names every kind of edit batched into one Resimulate", () =>
   harness.markStale("projects");
   assert.equal(harness.staleBar().message,
     "Plan out of date — project selection changed. Press Resimulate to update it.");
+
+  // Three causes read as a list, not a chain of "and"s.
+  harness.markStale();
+  harness.markStale("progress");
+  assert.equal(harness.staleBar().message,
+    "Plan out of date — project selection, crafter line inputs and project completion changed. Press Resimulate to update it.");
+});
+
+test("checking levels off costs one deferred solve, not one per press", () => {
+  const harness = schedulerHarness({ mode: "project" });
+  for (let done = 1;done <= 4;done++) harness.markLevelsDone(done);
+  harness.advance(600);   // no timer is pending: like a tick, the batch only resolves on Resimulate
+
+  assert.deepEqual(harness.counts(), { saves: 4, renders: 0, requests: 0, cancels: 0 });
+  assert.equal(harness.state().projectDone, 4, "every press is accepted immediately");
+  assert.equal(harness.storedState().projectDone, 4, "every press persists immediately");
+  assert.deepEqual(harness.staleBar(), {
+    hidden: false,
+    message: "Plan out of date — project completion changed. Press Resimulate to update it.",
+    dimmed: true,
+  });
+
+  harness.doSolve();   // what Resimulate runs
+  assert.deepEqual(harness.counts(), { saves: 4, renders: 1, requests: 0, cancels: 0 });
+
+  // The panel that offers those presses is inside #results, so the wiring is the whole fix: a solve
+  // from this handler rebuilds the button mid-press.
+  const source = fs.readFileSync(path.join(root, "js", "events.js"), "utf8");
+  const clickStart = source.indexOf('document.getElementById("results").addEventListener("click"');
+  const clickEnd = source.indexOf('document.addEventListener("visibilitychange"', clickStart);
+  assert.ok(clickStart >= 0 && clickEnd > clickStart, "the #results click handler remains extractable");
+  const handler = source.slice(clickStart, clickEnd);
+  for (const attr of ["data-spinc", "data-spdec", "data-spcomplete"]) {
+    assert.match(handler, new RegExp(`commitProjInlineDone\\([^;]*${attr}`),
+      `${attr} presses defer their solve through the shared path`);
+  }
+  assert.doesNotMatch(handler, /doSolve\(/, "no control inside the plan re-solves the plan under the pointer");
+});
+
+test("raising the stale bar leaves the pressed control where the reader aimed", () => {
+  // Scrolled down to the panel: the bar's own row is off-screen above, so its arrival must not walk
+  // the plan out from under a run of presses.
+  const harness = schedulerHarness({ mode: "project", resultsTop: -800 });
+  const before = harness.planTop();
+  harness.markLevelsDone(1);
+  assert.equal(harness.staleBar().hidden, false);
+  assert.deepEqual(harness.scrolls(), [78], "the reflow comes back out of the scroll offset");
+  assert.equal(harness.planTop(), before, "the plan does not move on screen");
+
+  harness.markLevelsDone(2);
+  assert.deepEqual(harness.scrolls(), [78], "a bar already up reflows nothing, so nothing is compensated");
+  assert.equal(harness.planTop(), before);
+
+  harness.clearStaleUI();   // what a repaint does
+  assert.deepEqual(harness.scrolls(), [78, -78], "retiring the bar is compensated on the same terms");
+  assert.equal(harness.planTop(), before);
+});
+
+test("a reader who can see the bar arrive is not scrolled", () => {
+  const harness = schedulerHarness({ mode: "project", resultsTop: 120 });
+  harness.markLevelsDone(1);
+  assert.equal(harness.staleBar().hidden, false);
+  assert.deepEqual(harness.scrolls(), [], "content the reader is looking at is left alone");
+  assert.equal(harness.planTop(), 198, "the bar takes its space in view, as it always has");
+});
+
+test("checking a level off outside Project plan persists quietly", () => {
+  const harness = schedulerHarness({ mode: "items" });
+  harness.markLevelsDone(2);
+  harness.advance(600);
+
+  assert.deepEqual(harness.counts(), { saves: 1, renders: 0, requests: 0, cancels: 0 });
+  assert.equal(harness.state().projectDone, 2);
+  assert.deepEqual(harness.staleBar(), { hidden: true, message: "", dimmed: false });
 });
 
 test("opening Progress never invokes the synchronous Project optimizer", () => {
@@ -2201,6 +2287,115 @@ test("the mutation hook advances revision immediately while persistence does not
 
   assert.equal(harness.api("save()"), true);
   assert.equal(harness.api("stateRevision"), before + 1);
+});
+
+// The inline "Adjust project levels & completion" panel is rendered into #results, so a press that
+// solved would rebuild the button being pressed. Deferring the solve makes the row responsible for
+// showing the edit: these cover what the user sees between the press and the Resimulate.
+function inlineProjectRowHarness() {
+  const source = fs.readFileSync(path.join(root, "js", "events.js"), "utf8");
+  const spanStart = source.indexOf("function projSpan(p){");
+  const spanEnd = source.indexOf("function renderProgressSummary(", spanStart);
+  const rowStart = source.indexOf("function projInlineRowHtml(p){");
+  const rowEnd = source.indexOf("function itemListText(items){", rowStart);
+  assert.ok(spanStart >= 0 && spanEnd > spanStart, "the level-span clamps remain extractable");
+  assert.ok(rowStart >= 0 && rowEnd > rowStart, "the inline project row remains extractable");
+
+  const state = { projects: [] };
+  const focused = [];
+  const commits = [];
+  // Enough of an element to answer what refreshProjInlineRow asks of one: which button carries an
+  // attribute, and whether the press just disabled it.
+  const elementFor = html => ({
+    html,
+    querySelector(selector) {
+      const attr = selector.replace(/[[\]]/g, "");
+      const tag = (html.match(new RegExp(`<button[^>]*\\b${attr}=[^>]*>`)) || [""])[0];
+      if (!tag) return null;
+      return { disabled: /\sdisabled(?=[\s>])/.test(tag), focus() { focused.push(attr); } };
+    },
+  });
+  const documentStub = {
+    createElement() {
+      return { innerHTML: "", get firstElementChild() { return this.innerHTML.trim() ? elementFor(this.innerHTML) : null; } };
+    },
+  };
+  const api = Function(
+    "S", "document", "num", "htmlAttribute", "htmlText", "htmlFieldInputAttributes",
+    "projectFieldIds", "projectRangeRule", "stepsProj", "commitProjectProgress",
+    `${source.slice(spanStart, spanEnd)}${source.slice(rowStart, rowEnd)}
+     return {projInlineRowHtml,stepsProjControls,refreshProjInlineRow,commitProjInlineDone};`
+  )(
+    state, documentStub, Number, String, String, () => "",
+    () => ({ from: "from-err", to: "to-err" }), () => ({}),
+    pid => state.projects.find(p => p.id === pid),
+    mutator => { commits.push("deferred"); mutator(state); }
+  );
+
+  let rendered = null;
+  const press = (attr, resolve, focusOrder) => {
+    const row = { parentNode: {}, replaceWith(next) { rendered = next;row.parentNode = null; } };
+    const button = { getAttribute: () => "p1", closest: () => row };
+    api.commitProjInlineDone(button, attr, resolve, focusOrder);
+    row.parentNode = {};   // the panel keeps the replacement in the tree; the next press replaces that
+    return rendered && rendered.html;
+  };
+  return {
+    setProject(p) { state.projects = [p];rendered = null; },
+    row() { return api.projInlineRowHtml(state.projects[0]); },
+    controls() { return api.stepsProjControls(); },
+    done() { return state.projects[0].done; },
+    commits() { return commits.length; },
+    focused() { return focused.slice(); },
+    increment() { return press("data-spinc", done => done + 1, ["[data-spinc]", "[data-spdec]"]); },
+    decrement() { return press("data-spdec", done => done - 1, ["[data-spdec]", "[data-spinc]"]); },
+    toggleComplete() { return press("data-spcomplete", (done, span) => done >= span ? 0 : span, ["[data-spcomplete]"]); },
+  };
+}
+
+test("each level press repaints its own row, so a deferred plan is not left lying about the count", () => {
+  const harness = inlineProjectRowHarness();
+  harness.setProject({ id: "p1", name: "Alpha", on: true, from: 1, to: 4, done: 0, levels: [{}, {}, {}, {}] });
+
+  assert.match(harness.row(), /0\/4/);
+  assert.match(harness.increment(), /1\/4/, "the count moves without a solve");
+  assert.match(harness.increment(), /2\/4/);
+  assert.equal(harness.done(), 2);
+  assert.equal(harness.commits(), 2, "every press commits through the deferred path");
+  assert.deepEqual(harness.focused(), ["data-spinc", "data-spinc"], "the stepper keeps the keyboard");
+});
+
+test("the stepper's ends disable and hand over focus at the span's boundaries", () => {
+  const harness = inlineProjectRowHarness();
+  harness.setProject({ id: "p1", name: "Alpha", on: true, from: 1, to: 2, done: 1, levels: [{}, {}] });
+
+  const filled = harness.increment();
+  assert.match(filled, /2\/2/);
+  assert.match(filled, /<button[^>]*data-spinc=[^>]*\sdisabled/, "nothing is left to check off");
+  assert.doesNotMatch(filled, /<button[^>]*data-spdec=[^>]*\sdisabled/);
+  assert.match(filled, />Reopen</, "a full span reads as complete");
+  assert.match(filled, /pill craft/);
+  assert.deepEqual(harness.focused(), ["data-spdec"], "a press that disables its own button hands focus to the other end");
+
+  const emptied = harness.toggleComplete();
+  assert.match(emptied, /0\/2/, "Reopen clears the span");
+  assert.match(emptied, />Mark complete</);
+  assert.match(emptied, /<button[^>]*data-spdec=[^>]*\sdisabled/);
+  assert.match(harness.decrement(), /0\/2/, "the clamp holds even where the disabled end is bypassed");
+  assert.equal(harness.done(), 0);
+});
+
+test("the inline panel clamps completion to the from→to span it shows", () => {
+  const harness = inlineProjectRowHarness();
+  harness.setProject({ id: "p1", name: "Alpha", on: true, from: 2, to: 3, done: 5, levels: [{}, {}, {}, {}] });
+
+  // done is stored past the span; projDone clamps on read, so the first press cannot climb past it.
+  assert.match(harness.row(), /2\/2/);
+  assert.match(harness.increment(), /2\/2/);
+  assert.equal(harness.done(), 2, "the clamp is written back, not just displayed");
+  assert.match(harness.decrement(), /1\/2/);
+  assert.match(harness.toggleComplete(), /2\/2/);
+  assert.equal(harness.controls(), harness.row(), "the panel and a repainted row come off one template");
 });
 
 let failed = 0;
