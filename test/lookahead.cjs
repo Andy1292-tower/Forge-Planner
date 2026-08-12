@@ -144,11 +144,11 @@ const runner = `
   build([A()]);
   const aloneEta = optimize().eta;
   // ...and with the fill suppressed, the phase it banks for must be strictly longer.
-  const realFill = fillIdleLinesAhead;
-  fillIdleLinesAhead = function(){};
+  const realFill = putIdleLinesToWork;
+  putIdleLinesToWork = function(){};
   build([A(), B()]);
   const unfilled = optimize();
-  fillIdleLinesAhead = realFill;
+  putIdleLinesToWork = realFill;
   const unfilledGel = phaseNamed(unfilled, "Gel run"), unfilledBrick = phaseNamed(unfilled, "Brick run");
 
   record("sequenced static: banking costs the phase doing it nothing",
@@ -183,12 +183,59 @@ const runner = `
       " levels=" + fillers.map(f => f.entry.item + "@" + f.entry.lvl).join(","));
   }
 
+  /* ------------------------------------------------- 3. work THIS phase's own demand ---- */
+  // One project, two materials. Gel is hard-capped by the Vespium income — one line can work on it
+  // and no arrangement of the others changes that — while the Bricks order is small enough that one
+  // line clears it with time to spare. Demand weighting balances the rest, so the lines left over are
+  // genuinely spare: nothing they do shortens the phase, and the search idles them. Bricks is still
+  // this project's own shopping list, and building it is strictly better than standing there. There
+  // is no later project here at all: this is the one-combined-phase case, where banking ahead has
+  // never had anything to offer.
+  const M = () => project("m", "Mixed run", [["Gel", 10], ["Bricks", 20]], 1);
+  build([M()]);
+  const mixed = optimize();
+  const mixedPhase = phaseNamed(mixed, "Mixed run");
+  putIdleLinesToWork = function(){};
+  build([M()]);
+  const parkedRun = optimize();
+  putIdleLinesToWork = realFill;
+  const parkedPhase = phaseNamed(parkedRun, "Mixed run");
+  const idleOn = ph => ((ph && ph.plan) || []).filter(p => !p.entries || !p.entries.length).map(p => "#" + p.line);
+
+  record("one combined phase: lines it cannot use are put on its own remaining demand",
+    idleOn(parkedPhase).length > 0 && idleOn(mixedPhase).length < idleOn(parkedPhase).length &&
+    !!mixedPhase.idleFill && mixedPhase.idleFill.items.indexOf("Bricks") >= 0,
+    "parked=" + idleOn(parkedPhase).join(",") + " worked=" + idleOn(mixedPhase).join(",") +
+    " idleFill=" + JSON.stringify(mixedPhase.idleFill || null) + " jobs=" + jobsOn(mixedPhase).join(" "));
+  record("one combined phase: working the idle lines never costs the phase time",
+    mixedPhase.eta <= parkedPhase.eta + 1e-9 * Math.max(1, parkedPhase.eta),
+    "parked=" + parkedPhase.eta.toFixed(6) + "h worked=" + mixedPhase.eta.toFixed(6) + "h");
+  record("one combined phase: the worked schedule still replays",
+    mixed.feasible === true && mixed.scheduleValidation.ok === true,
+    "feasible=" + mixed.feasible + " replay=" + mixed.scheduleValidation.ok +
+    " failure=" + JSON.stringify(mixed.scheduleValidation.firstFailure || null));
+  record("one combined phase: no line the phase itself needed was taken",
+    jobsOn(parkedPhase).every(job => jobsOn(mixedPhase).indexOf(job) >= 0),
+    "parked=" + jobsOn(parkedPhase).join(" ") + " | worked=" + jobsOn(mixedPhase).join(" "));
+  record("one combined phase: the material those lines went to arrives faster",
+    (mixedPhase.rate.Bricks || 0) > (parkedPhase.rate.Bricks || 0) + 1e-9,
+    "Bricks/hr " + (parkedPhase.rate.Bricks || 0).toFixed(1) + " -> " + (mixedPhase.rate.Bricks || 0).toFixed(1));
+
+  // The pass only ever hands out work that exists. A project whose one material is already capped
+  // leaves its spare lines alone rather than inventing a job for them.
+  build([A()]);
+  const gelOnly = optimize();
+  const gelOnlyPhase = phaseNamed(gelOnly, "Gel run");
+  record("nothing free to do leaves the lines honestly idle",
+    !!gelOnlyPhase && idleOn(gelOnlyPhase).length > 0 && !gelOnlyPhase.idleFill,
+    "idle=" + idleOn(gelOnlyPhase).join(",") + " idleFill=" + JSON.stringify(gelOnlyPhase && gelOnlyPhase.idleFill || null));
+
   /* ------------------------------------------------------------------------- guards ---- */
   build([A(), B()], {lineMode: "split"});
   const split = optimize();
-  record("line switching never banks ahead",
-    (split.phases || []).every(p => !p.lookAhead),
-    "phases=" + (split.phases || []).map(p => p.name + ":" + (p.lookAhead ? "filled" : "-")).join(" "));
+  record("line switching never fills a line, ahead or otherwise",
+    (split.phases || []).every(p => !p.lookAhead && !p.idleFill),
+    "phases=" + (split.phases || []).map(p => p.name + ":" + (p.lookAhead || p.idleFill ? "filled" : "-")).join(" "));
 
   build([A(), B()], {seq: false});
   const together = optimize();

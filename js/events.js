@@ -1021,6 +1021,12 @@ function stepsProjControls(){
   // Rows only — the caller (renderProjectResults) wraps these in a collapsible <details> panel.
   return rows;
 }
+// "Bricks", "Bricks and Concrete", "Bricks, Concrete and Rods" — a readable list of item names.
+function itemListText(items){
+  const names=(items||[]).map(htmlText);
+  if(names.length<2)return names.join("");
+  return names.slice(0,-1).join(", ")+" and "+names[names.length-1];
+}
 // Build the step-by-step plan HTML — the main Project-mode panel (was a modal body). Pure: returns the
 // intro + phase cards for a solved project result and lets renderProjectResults own the DOM and the
 // surrounding controls. Returns "" when there's no plan yet.
@@ -1062,8 +1068,12 @@ function stepPlanHtml(res){
       h+=`<div class="notice info" style="font-size:11px;margin:4px 0 6px">${supply} before starting. Same-phase production cannot satisfy this prerequisite.</div></div>`;return;
     }
     if(!lines.length){h+=`<div class="proj-mini" style="padding:2px 0">No line activity.</div></div>`;return;}
+    if(ph.idleFill&&(ph.idleFill.lines||[]).length){
+      const many=ph.idleFill.lines.length>1;
+      h+=`<div class="notice info" style="font-size:11px;margin:4px 0 6px"><b>Spare lines put to work.</b> Line${many?"s":""} ${ph.idleFill.lines.map(line=>"#"+line).join(", ")} ${many?"were":"was"} left with nothing that finishes this phase sooner, so ${many?"they are":"it is"} building more of what it still needs — ${itemListText(ph.idleFill.items)} — out of what the other lines leave spare${ph.idleFill.shortened?", which shortened this phase":". The phase's duration is unchanged"}.</div>`;
+    }
     if(ph.lookAhead&&(ph.lookAhead.lines||[]).length)
-      h+=`<div class="notice info" style="font-size:11px;margin:4px 0 6px"><b>Banking ahead.</b> Line${ph.lookAhead.lines.length===1?"":"s"} ${ph.lookAhead.lines.map(line=>"#"+line).join(", ")} ${ph.lookAhead.lines.length===1?"has":"have"} nothing to do for this project, so ${ph.lookAhead.lines.length===1?"it is":"they are"} making ${(ph.lookAhead.items||[]).map(htmlText).join(" and ")} for <b>${htmlText(ph.lookAhead.name||"a later project")}</b>. This phase's duration is unchanged.</div>`;
+      h+=`<div class="notice info" style="font-size:11px;margin:4px 0 6px"><b>Banking ahead.</b> Line${ph.lookAhead.lines.length===1?"":"s"} ${ph.lookAhead.lines.map(line=>"#"+line).join(", ")} ${ph.lookAhead.lines.length===1?"has":"have"} nothing to do for this project, so ${ph.lookAhead.lines.length===1?"it is":"they are"} making ${itemListText(ph.lookAhead.items)} for <b>${htmlText(ph.lookAhead.name||"a later project")}</b>. This phase's duration is unchanged.</div>`;
     const onHandAt=(item,elapsed)=>{const matches=allBoundaries.filter(b=>b.phaseIndex===i&&b.kind==="switch"&&Math.abs((b.phaseTime||0)-elapsed)<1e-7);
       const boundary=matches[matches.length-1];return boundary&&boundary.inventory?boundary.inventory[item]:null;};
     h+=`<ol class="step-list">`;
@@ -1078,10 +1088,13 @@ function stepPlanHtml(res){
         return `${verb} <b>${s.item}</b> @${compressionLabel(s.lvl)}${s.frac>=0.999?" (whole phase)":` for ~${fmtDuration(s.frac*ph.eta)}`}${mined}${tag}${stock}`;
       });
       const segHtml=parts.map((p,idx)=>`<div class="step-seg">${idx===0?'<span class="step-then">→</span>':'<span class="step-then">then</span>'} ${p}</div>`).join('');
-      // A look-ahead line makes nothing this phase needs — say whose materials it is banking, or it
-      // reads as a stray job (see the "banking ahead" note above the list).
+      // A filled line is not part of what makes the phase's own clock — say so, or it reads as a
+      // stray job (see the notes above the list). Banking names whose materials it is making; a
+      // spare line working this phase's list says it is spare, so nobody waits on it.
       const ahead=ph.lookAhead&&(ph.lookAhead.lines||[]).indexOf(L.line)>=0
-        ?` <span class="proj-mini">· banking for <b>${htmlText(ph.lookAhead.name||"a later project")}</b></span>`:"";
+        ?` <span class="proj-mini">· banking for <b>${htmlText(ph.lookAhead.name||"a later project")}</b></span>`
+        :ph.idleFill&&(ph.idleFill.lines||[]).indexOf(L.line)>=0
+        ?` <span class="proj-mini">· spare capacity</span>`:"";
       h+=`<li><span class="mono" style="color:var(--amber)">Line #${L.line}</span> <span class="proj-mini">(${compressionLabel(L.max)} cap)</span>${ahead}${segHtml}</li>`;
     });
     h+=`</ol>${minedUsageNote(ph.minedUsage||[])}</div>`;
