@@ -253,6 +253,15 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // (strict tol=0, then the user's margin) so its result is monotone in margin — see the staged
   // search at the bottom of solveCore (issue #60).
   let curTol=tol;
+  // needFrac per resource, materialized instead of recomputed: it is read once per resource inside
+  // three of the hottest loops in the solver (the feasibility test, the DFS leaf test and the DFS
+  // suffix prune), and its only inputs are the resource's mined-ness — fixed for the solve — and
+  // curTol, which changes exactly three times. Mined rows never get the margin: their budget is a
+  // hard burn rate, not a paper shortfall. Written only through setCurTol so the two can never
+  // disagree.
+  const needFrac=new Float64Array(R),minedRow=resources.map(isMinedResource);
+  const setCurTol=value=>{curTol=value;const relaxed=1-curTol;for(let r=0;r<R;r++)needFrac[r]=minedRow[r]?1:relaxed;};
+  setCurTol(tol);
   // Ceiling on the objective from the LP relaxation, in the same per-second units as best.score.
   // Declared here rather than read off `lp` because finishCoreResult runs before `lp` is
   // initialized on the baselineOnly path. Null until lpRelax returns a completed solve.
@@ -299,6 +308,39 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   for(let r=0;r<R;r++)for(let i=N-1;i>=0;i--){let m=0;lineJobs[i].forEach(j=>{for(const[rr,a]of j.prod)if(rr===r)m=Math.max(m,a*sorted[i].sp*sorted[i].dp);});maxProd[r][i]=maxProd[r][i+1]+m;}
 
   const produced=new Float64Array(R), consumed=new Float64Array(R);
+  /* Every (line, job) pair's production and consumption, flattened into typed arrays and pre-scaled
+   * by that line's speed and duplication. The coefficients are the same doubles the per-job loops
+   * computed — a*sp*dp and a*sp, in the same association — so nothing downstream shifts by an ulp;
+   * what goes away is the megabyte of array-of-array destructuring the search did per evaluation.
+   * A pair's entries live at [prodOff[slot], prodOff[slot+1]) for slot = jobBase[i]+k.
+   *
+   * A cons entry whose resource is outside the chain is dropped rather than folded into row 0: it
+   * carries an undefined index, so the loops this replaces charged it to a property hanging off the
+   * typed array that no r<R read ever saw. Int32Array would coerce that to 0 and charge the burn to
+   * a real resource. */
+  const jobBase=new Int32Array(N+1);
+  for(let i=0;i<N;i++)jobBase[i+1]=jobBase[i]+lineJobs[i].length;
+  const slots=jobBase[N];
+  const prodOff=new Int32Array(slots+1),consOff=new Int32Array(slots+1);
+  const okIdx=r=>Number.isInteger(r)&&r>=0&&r<R;
+  for(let i=0;i<N;i++)for(let k=0;k<lineJobs[i].length;k++){
+    const job=lineJobs[i][k],slot=jobBase[i]+k;let np=0,nc=0;
+    for(const[r]of job.prod)if(okIdx(r))np++;
+    for(const[r]of job.cons)if(okIdx(r))nc++;
+    prodOff[slot+1]=np;consOff[slot+1]=nc;
+  }
+  for(let s=0;s<slots;s++){prodOff[s+1]+=prodOff[s];consOff[s+1]+=consOff[s];}
+  const prodR=new Int32Array(prodOff[slots]),prodC=new Float64Array(prodOff[slots]);
+  const consR=new Int32Array(consOff[slots]),consC=new Float64Array(consOff[slots]);
+  for(let i=0;i<N;i++){
+    const dp=sorted[i].dp;
+    for(let k=0;k<lineJobs[i].length;k++){
+      const job=lineJobs[i][k],sp=spEff[i][k],slot=jobBase[i]+k;
+      let p=prodOff[slot],c=consOff[slot];
+      for(const[r,a]of job.prod)if(okIdx(r)){prodR[p]=r;prodC[p]=a*sp*dp;p++;}
+      for(const[r,a]of job.cons)if(okIdx(r)){consR[c]=r;consC[c]=a*sp;c++;}
+    }
+  }
   const choice=new Array(N).fill(0);
   let best={score:0,choice:new Array(N).fill(0),produced:new Float64Array(R),consumed:new Float64Array(R)};
   const EPS=1e-9;
@@ -319,13 +361,14 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // shortfall until the plan balances. Seeds `best`, so the DFS prunes from the start.
   function evalChoice(ch){
     produced.set(baseArr);consumed.fill(0);
-    for(let i=0;i<N;i++){const job=lineJobs[i][ch[i]],sp=spEff[i][ch[i]],dp=sorted[i].dp;for(const[r,a]of job.prod)produced[r]+=a*sp*dp;for(const[r,a]of job.cons)consumed[r]+=a*sp;}
+    for(let i=0;i<N;i++){const slot=jobBase[i]+ch[i];
+      for(let p=prodOff[slot],e=prodOff[slot+1];p<e;p++)produced[prodR[p]]+=prodC[p];
+      for(let c=consOff[slot],e=consOff[slot+1];c<e;c++)consumed[consR[c]]+=consC[c];}
   }
   const totalDeficit=()=>{let D=0;for(let r=0;r<R;r++){const d=consumed[r]-produced[r];if(d>0)D+=d;}return D;};
   const idleIdx=i=>{const k=lineJobs[i].findIndex(j=>j.kind==="idle");return k<0?0:k;};
   function bestJobFor(i,res){let bj=-1,bg=0;lineJobs[i].forEach((job,k)=>{for(const[r,a]of job.prod)if(r===res){const g=a*sorted[i].sp*sorted[i].dp;if(g>bg){bg=g;bj=k;}}});return bj;}
-  const needFrac=r=>isMinedResource(resources[r])?1:(1-curTol);
-  const feasibleNow=()=>{for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac(r)-1e-7)return false;return true;};
+  const feasibleNow=()=>{for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac[r]-1e-7)return false;return true;};
   // Shared weighted floor: the smallest output-to-weight ratio across the targets.
   const scoreNow=()=>{let sc=Infinity;for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]];sc=Math.min(sc,net/w[k]);}return sc;};
   // Chain members the plan has to make but nothing scores — the feeders behind the single target.
@@ -532,7 +575,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // seeds, ILS and DFS. Reaching the local cap keeps the valid idle/best-completed lower bound;
   // only the shared absolute deadline discards the partial candidate and leaves later rows unevaluated.
   if(opts.baselineOnly){
-    curTol=tol;capped=true;
+    setCurTol(tol);capped=true;
     if(!keepGoing("baseline-product-start"))return finishCoreResult();
     const idleChoice=new Array(N);for(let i=0;i<N;i++)idleChoice[i]=idleIdx(i);
     evalChoice(idleChoice);const idleScore=feasibleNow()?scoreNow():0;
@@ -564,14 +607,14 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     const _n=control.readNow();if(_n-tLastGain>convergeWindow)capped=true;
     if(capped)return;
     if(i===N){
-      for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac(r)-1e-7)return;
+      for(let r=0;r<R;r++)if(produced[r]<consumed[r]*needFrac[r]-1e-7)return;
       let sc=Infinity;
       for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]];sc=Math.min(sc,net/w[k]);}
       if(sc>best.score+EPS){best={score:sc,choice:choice.slice(),produced:produced.slice(),consumed:consumed.slice()};tLastGain=control.readNow();}
       return;
     }
     // feasibility prune: any resource whose current shortfall can't be covered by remaining lines kills this branch
-    for(let r=0;r<R;r++)if(produced[r]+maxProd[r][i]<consumed[r]*needFrac(r)-1e-7)return;
+    for(let r=0;r<R;r++)if(produced[r]+maxProd[r][i]<consumed[r]*needFrac[r]-1e-7)return;
     // max-min upper bound: best achievable min-over-targets if remaining lines max-produce each target
     let ub=Infinity;
     for(let k=0;k<targets.length;k++){const net=produced[tIdx[k]]-consumed[tIdx[k]]+SP[k][i];ub=Math.min(ub,net/w[k]);}
@@ -638,7 +681,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   let carry=choiceFromPlan(opts.initialPlan),finalExhaustive=false;
   for(let si=0;si<stages.length;si++){
   if(!keepGoing("margin-stage"))break;
-  curTol=stages[si];capped=false;tLastGain=control.readNow();
+  setCurTol(stages[si]);capped=false;tLastGain=control.readNow();
   let inc=null;
   const trySeed=ch=>{if(!ch||interrupted||!keepGoing("seed-start"))return false;const c=ch.slice();const sc=localOpt(c);
     if(sc!=null&&!interrupted&&(!inc||sc>inc.sc)){inc={sc,ch:c.slice()};tLastGain=control.readNow();}return !interrupted;};
