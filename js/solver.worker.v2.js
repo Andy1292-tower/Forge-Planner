@@ -46,15 +46,11 @@ self.onmessage = function (e) {
     if(mode!==checked.state.mode)throw new Error("Worker mode does not match the validated state");
     if(budget!==undefined&&budget!==checked.state.solveBudget)throw new Error("Worker budget does not match the validated state");
     if(stab!==null&&stab!==undefined){
-      const stabilityErrors=[];
-      if(!_plainObject(stab))stabilityErrors.push("stability cache must be a plain object");
-      else _scanStructure(stab,stabilityErrors);
+      const stabilityErrors=workerCacheErrors(stab,"stab");
       if(stabilityErrors.length)throw new Error("Worker stability cache rejected: "+stabilityErrors.join("; "));
     }
     if(solo!==null&&solo!==undefined){
-      const soloErrors=[];
-      if(!_plainObject(solo))soloErrors.push("share ceiling cache must be a plain object");
-      else _scanStructure(solo,soloErrors);
+      const soloErrors=workerCacheErrors(solo,"solo");
       if(soloErrors.length)throw new Error("Worker share ceiling cache rejected: "+soloErrors.join("; "));
     }
     commitState(checked.state);       // rebind the lexical S the solver closes over

@@ -30,11 +30,19 @@ function _readData(object,key,path,errors){
   }
   return descriptor.value;
 }
-function _scanStructure(root,errors){
+/* `options` adapts the scan to a payload that is not persisted state: `path` names the root in the
+   messages, and `maxStringLength` raises the string cap for callers whose strings are signatures
+   this code builds rather than text a user typed. Every other limit — depth, node count, array and
+   key counts, accessors, cycles, plain objects only — is why this scan exists and is not settable. */
+function _scanStructure(root,errors,options){
+  const settings=options||{};
+  const maxString=Number.isInteger(settings.maxStringLength)&&settings.maxStringLength>0
+    ?settings.maxStringLength:STATE_LIMITS.maxStringLength;
+  const rootPath=typeof settings.path==="string"&&settings.path?settings.path:"state";
   const seen=new WeakSet();let nodes=0;
   const visit=(value,path,depth)=>{
     if(typeof value==="string"){
-      if(value.length>STATE_LIMITS.maxStringLength)_pushError(errors,path,"exceeds the global string length limit");
+      if(value.length>maxString)_pushError(errors,path,"exceeds the global string length limit");
       return;
     }
     if(value===null||typeof value!=="object")return;
@@ -55,11 +63,22 @@ function _scanStructure(root,errors){
     const keys=Object.keys(value);
     if(keys.length>STATE_LIMITS.maxObjectKeys){_pushError(errors,path,"exceeds the object key limit");return;}
     keys.forEach(key=>{
-      if(key.length>STATE_LIMITS.maxStringLength)_pushError(errors,path,"contains an oversized key");
+      if(key.length>maxString)_pushError(errors,path,"contains an oversized key");
       visit(_readData(value,key,path+"."+key,errors),path+"."+key,depth+1);
     });
   };
-  visit(root,"state",0);
+  visit(root,rootPath,0);
+}
+/* The Worker-resident caches — line stability, share ceilings — cross the same wire as the state and
+   earn the same structural scan, but they are not state. Their strings are signatures: the share
+   ceilings are keyed by a canonical serialization of the whole factory, which on a real save runs to
+   several kilobytes and grows with the catalog. Held to the field limit that bounds user-typed text,
+   a perfectly good cache is rejected and every solve after the first one fails with it. */
+function workerCacheErrors(cache,label){
+  const errors=[];
+  if(!_plainObject(cache))errors.push(label+" must be a plain object");
+  else _scanStructure(cache,errors,{path:label,maxStringLength:STATE_LIMITS.maxSignatureLength});
+  return errors;
 }
 function _number(value,rule,path,errors){
   const checked=validateFieldValue(rule,value);
