@@ -21,6 +21,8 @@ const Decimal = require("../js/decimal.js");
  *    deadlineReached OR;
  *  - the share-ceiling cache round-trips through an accessor pair, coerces what it is handed, and
  *    scatters across shards;
+ *  - its key spells a quantity as a scalar, and the key a real factory produces passes the Worker's
+ *    own boundary check rather than being rejected as an oversized state string;
  *  - __solo never reaches the delivered result, because deliver() persists it.
  *
  * Usage: node test/shard-merge.cjs
@@ -235,6 +237,37 @@ const runner = `
     eq(typeof soloMaxKey(undefined),"string","a missing state must not throw");
   });
 
+  check("a quantity is a scalar in the ceiling key, not a container",()=>{
+    /* canonicalShareKey builds JSON by hand and so never reaches Decimal's toJSON. Left to descend
+     * into the instance it spells one quantity as that instance's own properties, which pins the key
+     * to decimal.js's internal representation and multiplies the length of every quantity it names. */
+    const live=normalize(defaults());
+    const key=soloMaxKey(live);
+    ok(key.indexOf("constructor")<0,"the key must not carry a Decimal's own properties");
+    ok(key.indexOf('"d":[')<0,"the key must not carry a Decimal's internal digits");
+    // One factory, whether its quantities are live or the canonical strings a round trip leaves
+    // behind. Two spellings that keyed differently would recalibrate every ceiling on every solve.
+    eq(soloMaxKey(JSON.parse(JSON.stringify(live))),key,"a quantity and its canonical string must key alike");
+  });
+
+  check("the ceiling cache a real factory produces survives the Worker's boundary check",()=>{
+    /* What the main thread posts back on the second solve is the factory serialized. STATE_LIMITS
+     * .maxStringLength bounds text a user typed into a field; a signature is neither, and holding
+     * one to it rejected the cache and failed every solve after the first. */
+    const warm={key:soloMaxKey(normalize(defaults())),values:{Plates:1234.5,Rods:99}};
+    ok(warm.key.length>STATE_LIMITS.maxStringLength,
+      "a real factory's key must outgrow the field limit or this proves nothing: "+warm.key.length);
+    deepEq(workerCacheErrors(warm,"solo"),[],"the Worker must accept the cache its own solve produced");
+    // Bounded still, and structurally checked still: the field limit is the only thing that moved.
+    eq(workerCacheErrors({key:"x".repeat(STATE_LIMITS.maxSignatureLength+1),values:{}},"solo").length,1,
+      "a signature past the signature cap must still be rejected");
+    eq(workerCacheErrors("nope","solo").join("; "),"solo must be a plain object","a non-object must still be rejected");
+    const cyclic={key:"k",values:{}};cyclic.values.self=cyclic;
+    ok(workerCacheErrors(cyclic,"solo").length>0,"a cycle must still be rejected");
+    ok(workerCacheErrors({key:"k",values:{Plates:{get bad(){return 1;}}}},"solo").length>0,
+      "an accessor must still be rejected");
+  });
+
   check("a seeded ceiling cache is reused, and a mismatched one is discarded",()=>{
     resetSoloMaxCache();
     const cold=solveShare(undefined);
@@ -293,6 +326,8 @@ const runner = `
     ok(deleteAt>0&&deliverAt>deleteAt,"__solo must be deleted before deliver, not after");
     ok(/res\\.__solo\\s*=\\s*getSoloMaxCache\\(\\)/.test(WORKER_SOURCE),"the Worker must return its ceilings");
     ok(/setSoloMaxCache\\(solo\\s*\\|\\|\\s*null\\)/.test(WORKER_SOURCE),"the Worker must seed from the posted cache");
+    ok(/workerCacheErrors\\(solo,"solo"\\)/.test(WORKER_SOURCE),"the Worker must check the posted cache as a cache, not as state");
+    ok(/workerCacheErrors\\(stab,"stab"\\)/.test(WORKER_SOURCE),"and the stability cache the same way");
     ok(/optimize\\(undefined,\\s*attributed\\)/.test(WORKER_SOURCE),"the Worker must pass the validated descriptor");
   });
 

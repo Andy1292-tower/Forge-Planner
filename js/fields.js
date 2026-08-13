@@ -29,7 +29,12 @@ const STATE_LIMITS=Object.freeze({
   maxTotalLevels:4096,
   maxTotalCosts:32768,
   maxPresets:128,
-  maxStringLength:2048
+  maxStringLength:2048,
+  /* Signatures, not text. The Worker-resident caches are keyed by a canonical serialization of the
+   * factory, so their strings scale with the catalog rather than with what a user can type, and the
+   * field limit above rejects one the moment a save is more than a toy. Still a bound — a signature
+   * is derived from a state that maxBytes already caps — just one drawn where these strings live. */
+  maxSignatureLength:65536
 });
 
 const _FIELD_DEFAULTS=defaults();

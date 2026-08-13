@@ -1551,6 +1551,12 @@ function soloMaxKey(state){
   });
 }
 function canonicalShareKey(value){
+  /* A quantity is a scalar here, exactly as it is to canonicalSolveJson and to the state scan. This
+   * walker builds JSON by hand and so never reaches Decimal's toJSON; left alone it descends into
+   * the instance and spells one number as {"constructor":undefined,"d":[..],"e":..,"s":..}, which
+   * pins the key to decimal.js's internal representation and inflates a real factory's key past
+   * three times the length of the values it describes. */
+  if(typeof Decimal==="function"&&value instanceof Decimal)return JSON.stringify(value.toString());
   if(Array.isArray(value))return "["+value.map(canonicalShareKey).join(",")+"]";
   if(value&&typeof value==="object"){
     return "{"+Object.keys(value).sort().map(k=>JSON.stringify(k)+":"+canonicalShareKey(value[k])).join(",")+"}";
