@@ -160,13 +160,18 @@ for (const fixture of FIXTURES) {
       : first.work.total !== second.work.total ? "work " + first.work.total + " vs " + second.work.total
       : "metrics documents differ somewhere outside nonDeterministic");
 
-  // Every dense unit in the solver is charged inside lpMaximize. On the line-switching path that is
-  // the ONLY thing charged, so a run whose LP work is not on a control is a run the user's solve-time
-  // setting cannot bound — which is what this asserts, not merely that pivots were counted.
+  // Every dense unit in the solver is charged inside lpMaximize, so a run whose LP work is not on a
+  // control is a run the user's solve-time setting cannot bound — which is what this asserts, not
+  // merely that pivots were counted.
+  //
+  // Line switching is no longer dense-only. When its own plan carries a warm-up it also searches the
+  // no-switch assignment (issue #150), and that search charges probe work. What still has to hold is
+  // that NOTHING escapes the run control: the harness only records work it observes through a
+  // control, so any probe work here is bounded work, and the LP totals must still reconcile exactly.
   if (denseOnly) {
     check(fixture.id + " charges every pivot it runs to a real solve control",
       first.calls.lpMaximize > 0 && first.lp.pivots > 0 && first.lp.work > 0 &&
-      first.lp.workOnControl === first.lp.work && first.work.probe === 0,
+      first.lp.workOnControl === first.lp.work,
       "LPs=" + first.calls.lpMaximize + " pivots=" + first.lp.pivots + " units=" + first.lp.work +
       " onControl=" + first.lp.workOnControl + " probe=" + first.work.probe);
   }

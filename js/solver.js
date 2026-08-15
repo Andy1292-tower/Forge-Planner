@@ -2551,10 +2551,18 @@ function unlockLayers(perProject){
   for(let i=0;i<n;i++)calc(i,{});
   return layer;
 }
+/* Which line plan a RUN is solving, which is not always the one the user selected. Line switching
+ * runs a second, non-switching candidate when its own plan needs a warm-up (see optimizeProjectTop),
+ * and that candidate has to reach every site below without mutating S — the state object is shared
+ * with the rest of the app and a solve that edited it would leave the setting changed behind it. */
+function runIsStatic(runOptions){
+  const override=runOptions&&runOptions.lineMode;
+  return override?override==="static":S.projLineMode==="static";
+}
 function solveProjectBuffer(deficit,_inventory,info,runOptions){
   const signature=Object.keys(deficit).sort().map(it=>it+":"+deficit[it].toPrecision(12)).join("|");
   const warm=solvePhaseFor(deficit,"Warm-up: "+Object.keys(deficit).join(" + "),{},false,"warmup:"+(info&&info.depth||0)+":"+signature,
-    {static:S.projLineMode==="static",control:runOptions&&runOptions.staticControl,
+    {static:runIsStatic(runOptions),control:runOptions&&runOptions.staticControl,
       scheduleControl:runOptions&&runOptions.scheduleControl,lpMemo:runOptions&&runOptions.lpMemo,
       localDeadline:runOptions&&runOptions.staticPhaseDeadline});
   warm.kind="warmup";warm.demandSub={};return warm;
@@ -2590,7 +2598,7 @@ function retainReplaySafeFixedPointIncumbent(incumbent,candidate,sub,inv,solvedW
 }
 function solveExecutableProjectPhase(sub,name,inv,stabilityPolicy,phaseKey,runOptions){
   const initialPre=phasePreProducedDemand(sub,inv);
-  const isStatic=S.projLineMode==="static";
+  const isStatic=runIsStatic(runOptions);
   const bitsKey=demand=>{
     const value=Number((demand&&demand.Bits)||0);
     return Number.isFinite(value)?value.toPrecision(15):String(value);
@@ -3075,7 +3083,7 @@ function fillIdleLinesAhead(ph,laterProjects,inventory,context,control,deadline)
 // to starve. The phases are built in order, so a middle phase whose clock ran out keeps its parked
 // lines rather than take the budget its successors need to produce any assignment at all.
 function putIdleLinesToWork(ph,laterProjects,inventory,context,runOptions,phaseIndex,phaseCount){
-  if(S.projLineMode!=="static"||!ph||ph.feasible!==true||!(ph.eta>0))return;
+  if(!runIsStatic(runOptions)||!ph||ph.feasible!==true||!(ph.eta>0))return;
   // A phase whose search was cut short is the one most likely to be holding a parked line, and its
   // plan is a replayed, feasible plan like any other — so it is filled like any other. Only a phase
   // that never received an assignment at all is skipped: there is nothing there to fill around.
@@ -3194,7 +3202,7 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
   // in Line switching, the run control that now bounds every other LP in the run. In Set & forget
   // the control belongs to the discrete search and these estimates stay off it, as they always have.
   const estimateOptions={scheduleControl:runOptions&&runOptions.scheduleControl,lpMemo:runOptions&&runOptions.lpMemo};
-  const cost=perProject.map(p=>{const netDemand=projNetVec(p.sub,invInit),avail=S.projLineMode==="static"?{}:projAvailVec(p.sub,invInit);
+  const cost=perProject.map(p=>{const netDemand=projNetVec(p.sub,invInit),avail=runIsStatic(runOptions)?{}:projAvailVec(p.sub,invInit);
     const ph=solvePhaseFor(netDemand,p.name,avail,false,null,estimateOptions);return ph.feasible?ph.eta:Infinity;});
   const order=perProject.map((p,i)=>({p,i})).sort((a,b)=>{
     if(layer[a.i]!==layer[b.i])return layer[a.i]-layer[b.i];   // unlock precedence (hard)
@@ -3374,15 +3382,56 @@ function optimizeProjectTop(testOptions){
       ?{budget:Math.max(projectBudget*STATIC_FILL_TIME_SHARE,STATIC_FILL_TIME_FLOOR),options:testOptions,control:null}
       :null};
   const selectedPolicy={readStability:projectStability==="prefer-current",rememberStability:true,stabilityCache:cacheSnapshot};
-  const selected=solveProjectRun(seq,net,perProject,selectedPolicy,runOptions);selected.gross=gross;
+  let selected=solveProjectRun(seq,net,perProject,selectedPolicy,runOptions);selected.gross=gross;
   let stabilityComparison=null;
   if(projectStability==="prefer-current"&&selected.phases.some(ph=>ph.stabilized===true)){
     const alternative=solveProjectRun(seq,net,perProject,{readStability:false,rememberStability:false,stabilityCache:{}},runOptions);
     stabilityComparison=stabilityComparisonSummary(selected,alternative);
   }
+  /* ---------- Line switching: the candidate the makespan LP cannot see ----------
+   * The schedule LP balances a phase in AVERAGE rates: an entry holding a line for fraction f of the
+   * phase contributes its output over the whole phase, so the LP prices it at outHr. Execution is
+   * time-ordered — that entry runs alone for f of the phase, at outHr/f — and a job handed a small
+   * enough fraction therefore consumes its inputs many times faster than the plan replenishes them.
+   * The replay catches it and buildExecutableProjectSchedule prepends a warm-up to stock up first.
+   *
+   * That warm-up is real time the user waits, and `eta` counts it, but the LP that chose the plan
+   * never saw it: it optimises `workEta` alone and reports itself exhaustive the moment the tableau
+   * is optimal, with the run's budget almost untouched. So a phase can be handed a plan whose 8.5 h
+   * of work carries 3.9 h of warm-up in front of it while a slower-on-paper plan needing none would
+   * have finished the lot sooner.
+   *
+   * An assignment that never switches is the one shape immune to this: every entry runs the whole
+   * phase, so its average rate IS its instantaneous rate and no warm-up can be induced. It is also
+   * an ordinary point of the LP's own feasible region — one entry per line at frac 1 — which makes
+   * it a candidate Line switching is entitled to return, not a different mode leaking in. Solving
+   * for it costs the budget the LP left unspent, and only a complete run that REPLAYS and comes out
+   * strictly shorter is taken, so this can lower the answer and never raise it.
+   *
+   * Set & forget searches these assignments already, which is why it can beat Line switching on a
+   * factory with enough stock to tempt the LP into a fraction it cannot execute (issue #150). With
+   * the candidate in hand the two modes are ordered again by construction: Line switching considers
+   * everything Set & forget does, so it can never come out slower. */
+  let staticSearchControl=staticControl;
+  if(!isStatic&&projectRunExecutable(selected)&&selected.warmupEta>0){
+    staticSearchControl=projectControl;
+    // scheduleControl stays on the run control: the candidate solves its phases through the discrete
+    // search, but the ordering estimates around it are split-mode LPs like any other and must remain
+    // bounded by the user's solve-time setting rather than running off the books.
+    const heldOptions=Object.assign({},runOptions,{lineMode:"static",staticControl:projectControl,
+      idleWork:{budget:Math.max(projectBudget*STATIC_FILL_TIME_SHARE,STATIC_FILL_TIME_FLOOR),options:testOptions,control:null}});
+    const held=solveProjectRun(seq,net,perProject,selectedPolicy,heldOptions);
+    if(projectRunExecutable(held)&&held.eta<selected.eta-etaCompareEpsilon(selected.eta,held.eta)){
+      held.gross=gross;held.noSwitchFallback=true;
+      delete selected._stabilityUpdates;
+      // The plan being returned switches no line, so the prefer-current comparison — which is a
+      // statement about which line kept which job across an edit — has nothing left to describe.
+      selected=held;stabilityComparison=null;
+    }
+  }
   if(projectRunExecutable(selected))commitLineStabilityUpdates(selected._stabilityUpdates,cacheSnapshot);
   delete selected._stabilityUpdates;
-  selected.staticDeadlineReached=staticControl?staticControl.deadlineReached():false;
+  selected.staticDeadlineReached=staticSearchControl?staticSearchControl.deadlineReached():false;
   selected.projectStability=projectStability;selected.stabilityComparison=stabilityComparison;selected.ms=performance.now()-t0;
   return selected;
 }
