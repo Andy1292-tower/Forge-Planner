@@ -311,7 +311,9 @@ function renderProjectResults(res,el,stat){
   // is dropped; the step-plan intro below already tells you how to run it.
   html+=projectForgieNote(res);
   html+=projectStabilityHtml(res);
-  if(scheduleExecutable&&res.projLineMode==="static"&&
+  if(scheduleExecutable&&res.noSwitchFallback===true)
+    html+=`<div class="notice info" style="font-size:11.5px"><b>This plan never switches a line.</b> Every schedule found that did switch needed a longer startup warm-up than it saved, so <b>Line switching</b> returned the one-job-per-line assignment — the best plan it found is one you can set and leave alone.</div>`;
+  if(scheduleExecutable&&(res.projLineMode==="static"||res.noSwitchFallback===true)&&
     (res.capped===true||res.searchExhaustive===false||res.staticDeadlineReached===true))
     html+=`<div class="notice info" style="font-size:11.5px"><b>Executable plan found.</b> The listed instructions passed exact replay, but the Set &amp; forget assignment search was bounded and may not be the shortest plan.</div>`;
   const heldFeeders=scheduleExecutable?staticHeldFeederItems(res):[];

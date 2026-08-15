@@ -125,16 +125,21 @@ function realm() {
 /* Count what is PRESENTED to the memo (solveScheduleLP) against what is actually SOLVED
  * (lpMaximize), and digest every presentation so the distinct-tableau count is a fact about the run
  * rather than about the memo. Disabling the memo has to leave both counts and the plan alone
- * except for the solves the memo removed. */
+ * except for the solves the memo removed.
+ *
+ * `solved` counts only the lpMaximize calls reached THROUGH a presentation. A line-switching run
+ * also solves the no-switch candidate when its own plan carries a warm-up (issue #150), and that
+ * candidate's discrete search calls lpMaximize directly — never through solveScheduleLP, so the memo
+ * neither sees nor could dedupe those. Counting them here would measure the search, not the memo. */
 const INSTRUMENT = `
 (function(){
-  var rawSolve=solveScheduleLP,rawLp=lpMaximize;
+  var rawSolve=solveScheduleLP,rawLp=lpMaximize,presenting=0;
   __probe={presented:0,solved:0,digests:[]};
   solveScheduleLP=function(part,control,memo){
     __probe.presented++;__probe.digests.push(lpTableauDigest(part.c,part.A,part.b));
-    return rawSolve(part,control,memo);
+    presenting++;try{return rawSolve(part,control,memo);}finally{presenting--;}
   };
-  lpMaximize=function(c,A,b,control,opts){__probe.solved++;return rawLp(c,A,b,control,opts);};
+  lpMaximize=function(c,A,b,control,opts){if(presenting>0)__probe.solved++;return rawLp(c,A,b,control,opts);};
   if(__disableMemo)makeLpMemo=function(){return null;};
 })();
 `;
