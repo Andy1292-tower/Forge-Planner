@@ -228,6 +228,14 @@ button.btn.ghost{background:transparent}
   display:inline-flex;align-items:center;gap:4px;line-height:1.2;flex-wrap:wrap}
 .globals .fl > input{min-height:var(--target)}
 
+/* The card's two actions share the row under the table. The basis is the width of the longer
+   label, so the pair breaks to a line each before either button is narrow enough to wrap its
+   own text — a two-line button inside a 44px row is the one outcome worth spending a break on. */
+.line-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.line-actions .btn{flex:1 1 145px;justify-content:center}
+.line-actions .btn:disabled{opacity:.45;cursor:not-allowed;border-color:var(--line);color:var(--ink3);
+  background:transparent;filter:none;box-shadow:none;transform:none}
+
 /* Crafter lines table. Labels and help buttons live in the header row, so adding a
    line costs one 44px row instead of a card carrying its own copy of every label. */
 .ltable{width:100%;border-collapse:collapse}

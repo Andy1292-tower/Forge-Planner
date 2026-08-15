@@ -72,7 +72,10 @@
             <div class="fl"><span><label for="dupe">dupe %</label> <button type="button" class="tip tip-ic" style="--tip-img:url('../assets/dupe.jpg')" aria-label="Help for duplication chance" aria-describedby="dupeHelp">?<span class="tip-text" id="dupeHelp" role="tooltip">Duplication chance — average % of crafts that drop a free duplicate. Adds output without spending extra material. Global to every crafter; leave 0 if you don't have dupe bonuses.</span></button></span><input type="number" min="0" max="100" step="any" inputmode="decimal" id="dupe" placeholder="0" aria-describedby="dupeHelp" data-field-error="field-dupe-error"><div class="field-error" id="field-dupe-error" aria-live="polite" aria-atomic="true"></div></div>
           </div>
           <div id="lines"></div>
-          <button class="btn ghost" id="btnAddLine" style="width:100%;justify-content:center;margin-top:4px">+ Add line</button>
+          <div class="line-actions">
+            <button class="btn ghost" id="btnAddLine">+ Add line</button>
+            <button class="btn ghost" id="btnMaxTurbo" disabled title="Write each line's projected speed into its speed × and its stacks up to the maximum — what the crafter units read once you are at full turbo">Apply max turbo</button>
+          </div>
         </div>
       </div>
 

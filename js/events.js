@@ -178,6 +178,24 @@ document.getElementById("lines").addEventListener("click",e=>{
 document.getElementById("btnAddLine").addEventListener("click",()=>{
   commitLineStructureEdit(st=>{st.lines.push({max:512,spx:1,turbo:0});syncManual(st);},true);
 });
+// The inverse of the projection the line table displays: each line's entered reading becomes the
+// speed it was already being solved at (lineSpeed), and its stacks become the global maximum. The
+// plan does not move — lineSpeed() reads the same speed out of either form — so this is not a
+// retune but a transcription, one press instead of re-typing every crafter's new ×NN.NN the moment
+// those stacks are actually held.
+function applyMaxTurboToLines(state){
+  const stacks=Math.max(0,num(state.maxTurbo)||0);
+  state.lines.forEach(line=>{
+    // A projection the speed field could not hold leaves its line alone: writing a substitute under
+    // raised stacks would quietly slow that crafter instead of restating it.
+    const speed=displayedLineSpeed(line);
+    if(!validateFieldValue(FIELD_SCHEMA.lineSpeed,speed).valid)return;
+    line.spx=speed;line.turbo=stacks;
+  });
+}
+document.getElementById("btnMaxTurbo").addEventListener("click",()=>{
+  commitLineStructureEdit(st=>{applyMaxTurboToLines(st);},true);
+});
 
 document.getElementById("margin").addEventListener("input",e=>{
   const result=commitFieldDraft(e.target,FIELD_SCHEMA.margin,S.margin,(st,value)=>{st.margin=value;});

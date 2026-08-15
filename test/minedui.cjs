@@ -14,6 +14,7 @@ globalThis.document={
   activeElement:null,
   getElementById:id=>(els[id]||(els[id]=new El())),
   createElement:()=>new El(),
+  querySelector:()=>null,
   querySelectorAll:()=>[]
 };
 globalThis.localStorage={getItem:()=>null,setItem:()=>{}};
@@ -52,6 +53,20 @@ const runner=`
   check("the selected option stays bare so the closed control cannot show a level",/value="16384" selected>16\\.38k×<\\/option>/.test(lineMarkup),lineMarkup);
   // 12 characters is what this column absorbs for free; a longer tag takes pixels off speed and turbo
   check("no option label outgrows the column's free width",[...lineMarkup.matchAll(/<option[^>]*>([^<]*)<\\/option>/g)].every(m=>m[1].length<=12),lineMarkup);
+  // "Apply max turbo" writes each projected speed into the field it hangs under, so it is offered
+  // while a row still carries a projection and dead when the table already reads its own numbers.
+  const maxTurboBtn=()=>document.getElementById("btnMaxTurbo");
+  S.maxTurbo=250;S.lines=[{max:512,spx:49.38,turbo:0},{max:512,spx:60,turbo:250},{max:512,spx:42.87,turbo:0}];renderLines();
+  check("the max-turbo button is live while a line still shows a projection",maxTurboBtn().disabled===false,"disabled="+maxTurboBtn().disabled);
+  // 42.87 projects to 150.045. The note promises what the button will write, so both round it down —
+  // test/solve-lifecycle.cjs holds the rewritten field to the number promised here.
+  const projMarkup=document.getElementById("lines").children[document.getElementById("lines").children.length-1].innerHTML;
+  check("the projection note promises exactly what the button writes",/→ ×150\\.04</.test(projMarkup)&&!/150\\.05/.test(projMarkup),(projMarkup.match(/→ ×[\\d.,]+/g)||[]).join(" "));
+  S.lines=[{max:512,spx:172.83,turbo:250},{max:512,spx:60,turbo:250}];renderLines();
+  check("the max-turbo button goes dead once every line reads its own projection",maxTurboBtn().disabled===true,"disabled="+maxTurboBtn().disabled);
+  S.lines[0].turbo=100;refreshLineNotes();
+  check("a line typed back below the cap revives the button without a table rebuild",maxTurboBtn().disabled===false,"disabled="+maxTurboBtn().disabled);
+  check("the card offers the button beside Add line",/id="btnMaxTurbo"/.test(indexHtml)&&/class="line-actions"/.test(indexHtml),"markup="+indexHtml.includes("btnMaxTurbo"));
   const batteryCard=prodCard("Batteries").innerHTML;
   check("Battery recipe copy explains batch output and per-craft costs",/5 × compression/.test(batteryCard)&&/costs? (?:below )?(?:remain|are) per craft/i.test(batteryCard),batteryCard);
   check("Hydracite card discloses the Battery batch",/Batteries[^<]*5 × compression|5 × compression[^<]*Batteries/.test(indexHtml),"batch copy="+indexHtml.includes("5 × compression"));

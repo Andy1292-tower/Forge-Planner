@@ -5824,6 +5824,10 @@ const PROJECT_CATALOG=[
             "qty": 90000
           },
           {
+            "item": "Plates",
+            "qty": 9000
+          },
+          {
             "item": "Frames",
             "qty": 270
           }
