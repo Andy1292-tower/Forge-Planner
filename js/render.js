@@ -13,6 +13,15 @@ function tipHtml(id,label,text,className="",style=""){
   return `<button type="button" class="tip${className?" "+className:""}"${style?` style="${style}"`:""} aria-label="Help for ${label}" aria-describedby="${id}">?<span class="tip-text" id="${id}" role="tooltip">${text}</span></button>`;
 }
 function lineLevelText(L){return "level "+compressionLevel(L);}
+// A line is being projected whenever its stacks differ from the global maximum — the condition the
+// per-row note is drawn under, and the only one under which "Apply max turbo" has anything to
+// write. Once every line is at the cap the projection is the reading, so the button goes dead
+// rather than offering a press that cannot change a field.
+function syncMaxTurboButton(){
+  const button=document.getElementById("btnMaxTurbo");if(!button)return;
+  const mx=num(S.maxTurbo)||0;
+  button.disabled=!S.lines.some(ln=>(num(ln.turbo)||0)!==mx);
+}
 // Levels belong in the open list, but a closed <select> mirrors its selected option's text
 // and this picker is far too narrow for one. So the selected option — and only it — stays
 // bare, which makes it structurally impossible for a level to reach the table; the caption
@@ -41,7 +50,7 @@ function renderLines(){
     return `<tr class="line-row">
       <td class="col-n"><span class="tag mono">#${i+1}</span></td>
       <td class="col-cap" data-label="Max compression"><select data-line="${i}" aria-label="Line ${i+1} max compression" aria-describedby="linesCapHelp ${levelNote}">${opts}</select><div class="line-lvl mono" id="${levelNote}">${lineLevelText(ln.max)}</div></td>
-      <td class="col-spx" data-label="Speed \u00d7"><input type="number" ${htmlFieldInputAttributes(FIELD_SCHEMA.lineSpeed)} placeholder="1" value="${ln.spx??1}" data-spx="${i}" aria-describedby="linesSpeedHelp" data-field-error="${speedError}" aria-label="Line ${i+1} currently displayed speed multiplier">${isProjected(ln)?`<div class="line-proj mono" title="Projected speed at ${fmt(mx,0)} turbo stacks">\u2192 \u00d7${fmt(lineSpeed(ln),2)}</div>`:""}</td>
+      <td class="col-spx" data-label="Speed \u00d7"><input type="number" ${htmlFieldInputAttributes(FIELD_SCHEMA.lineSpeed)} placeholder="1" value="${ln.spx??1}" data-spx="${i}" aria-describedby="linesSpeedHelp" data-field-error="${speedError}" aria-label="Line ${i+1} currently displayed speed multiplier">${isProjected(ln)?`<div class="line-proj mono" title="Projected speed at ${fmt(mx,0)} turbo stacks">\u2192 \u00d7${fmt(displayedLineSpeed(ln),2)}</div>`:""}</td>
       <td class="col-turbo" data-label="Turbo stacks"><input type="number" ${htmlFieldInputAttributes(FIELD_SCHEMA.turbo)} placeholder="0" value="${ln.turbo??0}" data-turbo="${i}" aria-describedby="linesTurboHelp" data-field-error="${turboError}" aria-label="Line ${i+1} current turbo stacks"></td>
       <td class="col-x"><button class="iconbtn" data-del="${i}" title="${TIPS.del}" aria-label="Remove crafter line ${i+1}">\u00d7</button></td>
     </tr>
@@ -58,12 +67,14 @@ function renderLines(){
     </tr></thead><tbody>${rows}</tbody>`;
   box.appendChild(table);
   document.getElementById("lineCount").textContent=S.lines.length+" line"+(S.lines.length>1?"s":"");
+  syncMaxTurboButton();
 }
 // Live-update the per-row notes (projected speed, compression level) when the fields
 // they read change, without rebuilding the line inputs \u2014 a rebuild would steal focus
 // from the field being typed into or from the select that was just picked.
 function refreshLineNotes(){
   const mx=num(S.maxTurbo)||0;
+  syncMaxTurboButton();
   const table=document.querySelector("#lines .ltable");if(!table)return;
   table.querySelectorAll("tbody tr.line-row").forEach((row,i)=>{
     const ln=S.lines[i];if(!ln)return;
@@ -74,7 +85,7 @@ function refreshLineNotes(){
     const cell=row.querySelector(".col-spx");if(!cell)return;
     let note=cell.querySelector(".line-proj");
     if((num(ln.turbo)||0)!==mx){
-      const txt=`\u2192 \u00d7${fmt(lineSpeed(ln),2)}`;
+      const txt=`\u2192 \u00d7${fmt(displayedLineSpeed(ln),2)}`;
       if(!note){note=document.createElement("div");note.className="line-proj mono";cell.appendChild(note);}
       note.textContent=txt;
       note.title=`Projected speed at ${fmt(mx,0)} turbo stacks`;

@@ -102,6 +102,10 @@ function lineSpeed(row){
   const mx=Math.max(0,num(S.maxTurbo)||0);
   return (disp/(1+cur/100))*(1+mx/100);
 }
+// The crafter unit reads its total as ×NN.NN, so that is the precision the projection is shown at
+// and the precision "Apply max turbo" writes back into the speed field. One rounding, shared by the
+// note and the button that replaces it, is what keeps the two from disagreeing by a hundredth.
+function displayedLineSpeed(row){return Math.round(lineSpeed(row)*100)/100;}
 // Duplication chance (%), entered once and global to every crafter — the average %
 // of crafts that drop a free duplicate. dupeMult() is the output multiplier.
 function dupeChance(){return Math.max(0,num(S.dupe)||0);}

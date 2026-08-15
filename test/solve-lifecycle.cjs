@@ -1711,8 +1711,13 @@ function lineCapPersistenceHarness() {
 
   return {
     addLine() { element("btnAddLine").emit("click"); },
+    applyMaxTurbo() { element("btnMaxTurbo").emit("click"); },
     removeLine(index) { element("lines").emit("click", { dataset: { del: String(index) } }); },
     changeCap(index, value) { element("lines").emit("change", { dataset: { line: String(index) }, value: String(value) }); },
+    // The global stacks field is wired below this harness's slice of events.js, so it is set the way
+    // an accepted edit would leave it rather than by dispatching an event no listener here owns.
+    setMaxTurbo(value) { vm.runInContext(`mutateState(st=>{st.maxTurbo=${JSON.stringify(value)};});save();`, context); },
+    lineSpeeds() { return JSON.parse(vm.runInContext("JSON.stringify(S.lines.map(lineSpeed))", context)); },
     inputLine(source, index, value) {
       const target = new EventElement();
       target.dataset[source] = String(index);
@@ -1901,6 +1906,51 @@ test("line-cap edits clamp Manual state before the complete multi-line build per
   assert.deepEqual(stored.raw.lines, state.lines);
   assert.deepEqual(stored.raw.manual, state.manual);
   assert.equal(stored.recovery, null);
+});
+
+test("the max-turbo button transcribes each projected speed without moving the speed it stands for", () => {
+  const harness = lineCapPersistenceHarness();
+  harness.setMaxTurbo(250);
+  harness.inputLine("spx", 0, 49.38);
+  harness.inputLine("turbo", 0, 0);
+  harness.inputLine("spx", 1, 60);
+  harness.inputLine("turbo", 1, 250);
+  const before = harness.lineSpeeds();
+
+  harness.applyMaxTurbo();
+
+  const state = harness.state();
+  assert.equal(state.lines[0].spx, 172.83, "49.38 at no stacks reads ×172.83 at 250 of them");
+  assert.equal(state.lines[0].turbo, 250);
+  assert.equal(state.lines[1].spx, 60, "a line already at the cap has nothing to transcribe");
+  assert.equal(state.lines[1].turbo, 250);
+  // 42.87 projects to 150.045, which the table's note and this rewrite must round the same way —
+  // test/minedui.cjs holds the note to the number written here.
+  assert.equal(state.lines[4].spx, 150.04, "the field must not contradict the note it replaces");
+  harness.lineSpeeds().forEach((speed, index) => {
+    assert.ok(Math.abs(speed - before[index]) <= 5e-3,
+      `line ${index} was retuned rather than restated: ${before[index]} -> ${speed}`);
+  });
+  assert.deepEqual(harness.stored().raw.lines, state.lines);
+  assert.equal(harness.stored().recovery, null);
+});
+
+test("a projected speed the speed field could not hold leaves its line exactly as entered", () => {
+  const harness = lineCapPersistenceHarness();
+  harness.setMaxTurbo(1e6);
+  harness.inputLine("spx", 0, 1e9);
+  harness.inputLine("turbo", 0, 0);
+  harness.inputLine("spx", 1, 40);
+  harness.inputLine("turbo", 1, 0);
+
+  harness.applyMaxTurbo();
+
+  const state = harness.state();
+  assert.equal(state.lines[0].spx, 1e9, "1e9 projected over 1e6 stacks is past the field's own ceiling");
+  assert.equal(state.lines[0].turbo, 0, "raising the stacks without the speed would slow that crafter");
+  assert.equal(state.lines[1].spx, 400040, "a line whose projection fits is transcribed as usual");
+  assert.equal(state.lines[1].turbo, 1e6);
+  assert.equal(harness.stored().recovery, null, "the rewrite must leave a state the schema still accepts");
 });
 
 test("line structure and cap edits repaint synchronously while Manual mode is already selected", () => {
