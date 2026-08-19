@@ -15,6 +15,7 @@ const tests = [
   "test/feeder-plateau.cjs",
   "test/field-validation.cjs",
   "test/forgieproject.cjs",
+  "test/free-headroom.cjs",
   "test/gate.cjs",
   "test/gel-loadout-exact.cjs",
   "test/inventory.cjs",
