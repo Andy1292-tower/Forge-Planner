@@ -145,6 +145,51 @@ const runner = `
       " final=" + (seqRes.scheduleValidation.finalInventory.Bits||0));
   }
 
+  /* ---- H3: a tolerated negative balance is not stock to carry into the next phase ----------
+   * A replay accepts a balance dipping below zero while it stays inside stockTol, whose relative
+   * term scales with the phase's CUMULATIVE gross throughput rather than with the balance itself —
+   * so at late-game quantities the residue it tolerates reaches ~1e-7. A sequenced run hands one
+   * phase's final inventory to the next as its starting stock, and there that residue arrives as a
+   * real debt: the next phase's prerequisite deficit comes out LARGER than the demand it is
+   * measured against, canonicalizePhase refuses the synthesized supply phase (its own tolerance
+   * carries no flow term, so it will not accept what the replay just did), the builder is left with
+   * no phase to push, and the eta sum read undefined — "Cannot read properties of undefined
+   * (reading 'eta')" (issue #154).
+   * All three of the reporter's conditions are needed. Line switching balances every resource to LP
+   * equality, so the end balance lands on zero and floating error tips it under; Set & forget
+   * assigns whole-phase jobs that overshoot and end positive, which is why that mode worked. And
+   * only a sequenced multi-phase run carries inventory between builds at all — one combined phase
+   * starts from S.inventory, which is never negative.
+   * What this pins is the crash, not a particular plan: this factory is blocked in every mode, and
+   * being told so is the correct outcome. */
+  {
+    const H3_LINES = [{max:16,spx:8.7,turbo:0},{max:2,spx:6.8,turbo:0},{max:16,spx:6.9,turbo:0},{max:8,spx:6.1,turbo:0}];
+    const H3_PROJECTS = () => [P("p0","P0",[["Glass",645843937]],1),
+                               P("p1","P1",[["Frames",1646]],2),
+                               P("p2","P2",[["Wire",391359]],3)];
+    let split = null, threw = null;
+    try {
+      split = run(H3_PROJECTS(), {lines:H3_LINES, projLineMode:"split", projectSeq:true,
+        projectGate:true, solveBudget:20000, inventory:{Rods:"687155743", Gel:"126907"}});
+    } catch (err) { threw = err; }
+    record("H3: a sequenced Line-switching plan survives a balance that lands on zero",
+      threw === null && !!split,
+      threw ? ("threw " + threw.message) : ("eta=" + (split.eta||0).toFixed(3) + "h phases=" + split.phases.length));
+
+    const exec = (split && split.executionPhases) || [];
+    record("H3: every phase the builder emitted is a real phase with a finite eta",
+      !!split && exec.length > 0 && exec.every(ph => ph && Number.isFinite(Number(ph.eta||0))) &&
+      Number.isFinite(Number(split.eta)),
+      "exec=" + exec.length + " eta=" + (split ? split.eta : "n/a") +
+      " undefinedAt=" + JSON.stringify(exec.map((ph,i)=>ph?null:i).filter(i=>i!==null)));
+
+    const negStarts = exec.map((ph,i) => Object.entries((ph&&ph.invStart)||{})
+      .filter(([,v]) => Number(v) < 0).map(([r,v]) => "#"+i+" "+r+"="+v)).reduce((a,b)=>a.concat(b), []);
+    record("H3: no phase is handed a negative balance as starting stock",
+      !!split && negStarts.length === 0,
+      negStarts.length ? negStarts.join(", ") : "all " + exec.length + " phases start at or above zero");
+  }
+
   /* ---- H2: a project inventory already covers is DONE, not blocked -------------------------
    * 100 Bricks wanted against 100k Bricks held: nothing left to craft. That has to read as a free,
    * instant, feasible phase that sorts FIRST — not a red "(blocked — see notes)" costing Infinity
