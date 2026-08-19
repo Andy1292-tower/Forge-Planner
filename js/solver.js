@@ -292,6 +292,8 @@ function makeLocalDeadlineControl(root,localDeadline,onLimit){
 // closed instead of left on the margin as a phantom "may-work" plan.
 function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   const opts=options||{},rootControl=opts.control&&opts.control.__forgeSolveControl?opts.control:makeSolveControl(timeBudget,opts);
+  // Opt-in: spend leftover line capacity on surplus of a non-binding target (see finishCoreResult).
+  const spendFreeHeadroom=!!opts.spendFreeHeadroom;
   let localLimitReached=false;
   const localDeadline=Number(opts.localDeadline);
   const control=Number.isFinite(localDeadline)
@@ -768,7 +770,35 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     }
     return dropped;
   }
-  // Adopt a score-preserving rewrite of the incumbent (balance pass, dead-line pass) as the new best.
+  // Tie-break: among plans that match the optimal objective, prefer the one that makes the most
+  // total target output. The objective is a max-min, so only the WEAKEST target's rate counts —
+  // once a target sits above that floor every further unit of it is worth exactly zero, and since
+  // every acceptance test in the search is a strict improvement, no move ever reaches for it. A
+  // line carrying a target the plan already has covered therefore keeps whatever level the search
+  // last happened to leave it at, which is how a plan reports 2048x on an 8192x line while every
+  // other line runs at its own cap. Holding the score fixed, hill-climb single-line switches that
+  // raise the summed weighted output, so free headroom gets spent rather than reported as a
+  // smaller craft the user can see is free.
+  // Deficit is held at the figure it came in at, not tracked downward: minDeficitAtScore has already
+  // balanced this plan, and a bigger craft paid for out of the 1.5% margin would hand back the
+  // phantom "may-work" gap it just closed. One line's margin use can move to another, the total
+  // cannot grow. One pass, uncharged and uninterruptible for the same reason as dropDeadLines: it
+  // is one evaluation per line per job, and the plan most likely to be sitting on unspent headroom
+  // is the one whose clock ran out mid-search, so it has to run on the interrupted path too.
+  function maxTargetOutputAtScore(ch,targetScore){
+    evalChoice(ch);
+    const totalOut=()=>{let t=0;for(let k=0;k<targets.length;k++)t+=(produced[tIdx[k]]-consumed[tIdx[k]])/w[k];return t;};
+    const curD=totalDeficit();
+    let curT=totalOut(),raised=false;
+    for(let i=0;i<N;i++){const old=ch[i],js=lineJobs[i];let bk=old,bT=curT;
+      for(let k=0;k<js.length;k++){if(k===old)continue;
+        beginMove();applyMove(i,old,k);
+        if(feasibleNow()&&scoreNow()>=targetScore-EPS&&totalDeficit()<=curD+1e-9){const t=totalOut();if(t>bT+1e-9){bT=t;bk=k;}}
+        revertMove();}
+      if(bk!==old){ch[i]=bk;beginMove();applyMove(i,old,bk);curT=bT;raised=true;}}
+    return raised;
+  }
+  // Adopt a score-preserving rewrite of the incumbent (balance, dead-line and headroom passes) as the new best.
   const adoptChoice=ch=>{evalChoice(ch);best={score:scoreNow(),choice:ch.slice(),produced:produced.slice(),consumed:consumed.slice()};};
   let _rng=0x2545f491>>>0;const rnd=()=>{_rng^=_rng<<13;_rng^=_rng>>>17;_rng^=_rng<<5;_rng>>>=0;return _rng/4294967296;};
   function finishCoreResult(){
@@ -776,6 +806,17 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     if(N>0&&best.score>EPS){
       const trimmed=best.choice.slice();
       if(dropDeadLines(trimmed,best.score))adoptChoice(trimmed);
+      // Items plans only, and after the trim rather than before it. Spending the headroom first
+      // inflates a target far enough that a line still carrying it reads as droppable, and the trim
+      // then idles that line — ending with both less output and an empty crafter. A project plan is
+      // opted out because putIdleLinesToWork already owns its spare lines and knows something this
+      // pass does not: a project needs a fixed quantity, so surplus past the order is worth nothing
+      // while the same line banking the NEXT phase's material is worth real time. Two mechanisms
+      // bidding for the same lines would just take that choice away from the one that can see it.
+      if(spendFreeHeadroom){
+        const filled=best.choice.slice();
+        if(maxTargetOutputAtScore(filled,best.score))adoptChoice(filled);
+      }
     }
     // Distinguish a failed in-work checkpoint from the deadline first being observed while the
     // completed result is serialized. The latter remains valid, but is capped and stops later work.
@@ -1652,7 +1693,7 @@ function optimizeInner(timeBudget,testOptions,shard){
     const mix=mixWeights(targets,itemControl,itemsBudget,shard);
     const w=mix.weights;
     const rc=relevantChain(targets);
-    const sr=solveCore(targets,w,rc.prods,rc.raws,itemsBudget,{control:itemControl});
+    const sr=solveCore(targets,w,rc.prods,rc.raws,itemsBudget,{control:itemControl,spendFreeHeadroom:true});
     const {plan,balance,minedUsage,gelReserved}=planFrom(sr);
     const out={};targets.forEach((t,k)=>{out[t]=sr.feasible?(sr.best.produced[sr.tIdx[k]]-sr.best.consumed[sr.tIdx[k]])*3600:0;});
     // The objective is the shared weighted floor: the smallest output-to-weight ratio. Reporting it
