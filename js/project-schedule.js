@@ -151,10 +151,22 @@
     }
     return {phases:out};
   }
+  /* Stock floors at zero on the way in. A replay accepts a balance that dips below zero while it
+   * stays inside stockTol, whose relative term scales with the phase's CUMULATIVE gross throughput
+   * rather than with the balance itself — so at late-game quantities the residue it tolerates
+   * reaches ~1e-7. Sequenced runs hand one phase's finalInventory to the next as its starting
+   * stock, and that residue arrives as a real debt: the next phase's prerequisite deficit comes out
+   * larger than the demand it is measured against, the synthesized prerequisite phase then fails
+   * canonicalizePhase's "externalSupply cannot exceed its prerequisiteDemand total" check (whose
+   * own tolerance has no flow term and so will not accept what the replay just did), and the run
+   * has no schedule. Line switching is where it shows: it balances every resource to LP equality,
+   * so residues land on zero and tip negative, where Set & forget's whole-phase jobs overshoot and
+   * end positive. Floating noise is not stock, and neither is a debt. */
   const inventoryCopy=(initial,c)=>{
     const out={};
-    c.ordinaryResources.forEach(r=>{const v=quantity(initial&&initial[r]);out[r]=finite(v)?v:0;});
-    Object.entries(initial||{}).forEach(([r,v])=>{if(!own(out,r)&&finite(quantity(v)))out[r]=quantity(v);});
+    const atLeastZero=v=>finite(v)?Math.max(0,v):0;
+    c.ordinaryResources.forEach(r=>{out[r]=atLeastZero(quantity(initial&&initial[r]));});
+    Object.entries(initial||{}).forEach(([r,v])=>{if(!own(out,r)&&finite(quantity(v)))out[r]=atLeastZero(quantity(v));});
     return out;
   };
   const timeTol=(...values)=>Number.EPSILON*32*Math.max(1,...values.filter(finite).map(Math.abs));
@@ -343,7 +355,12 @@
           const prereq={kind:"prerequisite",name:`External ${warmTrial.firstFailure.resource} prerequisite`,eta:0,plan:[],
             externalSupply:{[warmTrial.firstFailure.resource]:warmTrial.firstFailure.deficit},
             prerequisiteDemand:copyMap(warmTrial.phases[0]&&warmTrial.phases[0].preProducedDemand),demandSub:{},preProducedDemand:{},invStart:copyMap(inv)};
-          const supplied=replayProjectSchedule([prereq],inv,c);Object.assign(inv,supplied.finalInventory);execution.push(supplied.phases[0]);
+          const supplied=replayProjectSchedule([prereq],inv,c);
+          // canonicalizePhase can refuse the phase this synthesizes, and it reports that by handing
+          // back no phases at all. Pushing phases[0] unchecked puts undefined in the execution list,
+          // where the eta sum reads it as a crash instead of the blocked plan it is.
+          if(!supplied.phases[0]){blocking=supplied.firstFailure||{kind:"malformed",message:"Prerequisite supply phase was rejected"};return false;}
+          Object.assign(inv,supplied.finalInventory);execution.push(supplied.phases[0]);
           warm.invStart=copyMap(inv);warmTrial=replayProjectSchedule([warm],inv,c);
         }
         if(!warmTrial.ok){
@@ -373,6 +390,7 @@
             externalSupply:{[replay.firstFailure.resource]:replay.firstFailure.deficit},prerequisiteDemand:copyMap(phase.preProducedDemand),
             demandSub:{},preProducedDemand:{},invStart:copyMap(inv)};
           const supplied=replayProjectSchedule([prerequisite],inv,c);
+          if(!supplied.phases[0]){blocking=supplied.firstFailure||{kind:"malformed",message:"Prerequisite supply phase was rejected"};break;}
           Object.assign(inv,supplied.finalInventory);execution.push(supplied.phases[0]);phase.invStart=copyMap(inv);
           replay=replayProjectSchedule([phase],inv,c);
         }
@@ -388,6 +406,7 @@
             externalSupply:{[replay.firstFailure.resource]:replay.firstFailure.deficit},prerequisiteDemand:copyMap(phase.preProducedDemand),
             demandSub:{},preProducedDemand:{},invStart:copyMap(inv)};
           const supplied=replayProjectSchedule([prerequisite],inv,c);
+          if(!supplied.phases[0]){blocking=supplied.firstFailure||{kind:"malformed",message:"Prerequisite supply phase was rejected"};break;}
           Object.assign(inv,supplied.finalInventory);execution.push(supplied.phases[0]);phase.invStart=copyMap(inv);
           replay=replayProjectSchedule([phase],inv,c);
         }
