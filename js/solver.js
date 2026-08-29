@@ -2521,9 +2521,16 @@ function solvePhaseFor(net,name,avail,stabilityPolicy,phaseKey,solveOptions){
   // would draw down MORE if it were allowed to (issue #80: "no Crafters set to Ingots, yet the plan
   // needs them"). A comfortably ample stock (issue #73's case) draws far less than its cap and
   // isn't flagged — only a plan that's genuinely running an item at its structural limit is.
+  /* Only stock the USER ENTERED can run out on them. In a sequenced or gated plan `avail` is the
+   * running carry — surplus an earlier phase of this same plan produced — and a phase living off
+   * that carry is not at risk: the executable replay proves the carry covers it, and the plan
+   * rebuilds it. Flagging carry made the notice claim the plan was "spending down your current
+   * inventory" on a save whose every inventory field was 0, which cannot happen. */
+  const enteredStock=(S&&S.inventory)||{};
   const atRisk=balance.filter(b=>{
     const av=(avail&&avail[b.res])||0;
     if(av<=1e-6||b.prod>1e-6)return false;
+    if(!(Number(toDec0(enteredStock[b.res]))>1e-6))return false;
     const used=b.stock*eta;   // total units of this item's stock the phase draws down
     return used>=STOCK_SAFETY_FRAC*av*0.98;
   }).map(b=>b.res);

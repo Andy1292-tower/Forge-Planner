@@ -79,6 +79,27 @@ const runner = `
       ph.feasible && (!b || b.stock<=1e-6) && (!ph.atRisk || ph.atRisk.length===0),
       "feasible="+ph.feasible+" stock="+(b&&b.stock)+" atRisk="+JSON.stringify(ph.atRisk)); }
 
+  /* Only ENTERED stock can run out on someone.
+   * A sequenced or gated plan calls solvePhaseFor with avail = the RUNNING CARRY — surplus an
+   * earlier phase of this same plan produced — not with what the user typed into Inventory. The
+   * drawdown arithmetic cannot tell the two apart, so a plan living off its own carry was reported
+   * as "spending down your current inventory" to a reader whose every inventory field was 0, with
+   * "once it runs out you'll need dedicated crafters" attached. It cannot run out: nothing was on
+   * hand, and the plan rebuilds what it spends. Same phase, same avail, same drawdown; the only
+   * difference is whether the stock is the reader's to lose. */
+  { const s = base(); s.forgie.Ingots = 700000;
+    s.inventory = Object.assign({}, s.inventory, {Ingots:1000, Rods:90000});
+    normalize(s); syncManual(s); S = s;
+    const demand = projNetVec({Rods:2000000}, {}, {Bits:0});
+    const carry = {Ingots:1000};
+    const entered = solvePhaseFor(demand, "entered", carry, false, "k-entered", {});
+    S = (function(){ const z = base(); z.forgie.Ingots = 700000;
+      normalize(z); syncManual(z); return z; })();
+    const carried = solvePhaseFor(demand, "carried", carry, false, "k-carried", {});
+    record("the same drawdown off CARRIED surplus is not flagged",
+      (entered.atRisk||[]).indexOf("Ingots") >= 0 && (carried.atRisk||[]).length === 0,
+      "entered="+JSON.stringify(entered.atRisk)+" carried="+JSON.stringify(carried.atRisk)); }
+
   __emit(JSON.stringify(results));
 })();
 `;
