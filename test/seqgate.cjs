@@ -190,6 +190,24 @@ const runner = `
       negStarts.length ? negStarts.join(", ") : "all " + exec.length + " phases start at or above zero");
   }
 
+  /* ---- H4: a tolerated negative balance must not MANUFACTURE demand ------------------------
+   * The other half of H3. Flooring stock on the way INTO the schedule module does not stop the
+   * residue leaving through finalInventory, and the sequenced solver reads that map directly:
+   * projNetVec computes sub - inv, so a debt does not merely fail to help, it becomes demand.
+   * A -7.45e-9 Concrete balance made the net +7.45e-9 for a project whose Concrete cost is zero,
+   * which cleared solvePhaseFor's flat 1e-9 demand floor and made Concrete a phase target. The LP
+   * had no net rate left to give a target it was already balancing to equality, so the plan
+   * published "Can't sustainably produce: Concrete" against a factory producing 9,076,608/hr of
+   * it — and the verdict flipped on a single completed project level, because moving the
+   * subtraction by one float ULP is all it takes. */
+  {
+    const debt = projNetVec({Concrete:0}, {Concrete:-7.450580596923828e-9}, {Bits:0});
+    const held = projNetVec({Concrete:100}, {Concrete:40}, {Bits:0});
+    record("H4: a negative carried balance is not demand",
+      Number(debt.Concrete) === 0 && Number(held.Concrete) === 60,
+      "debt=" + String(debt.Concrete) + " (want 0), covered=" + String(held.Concrete) + " (want 60)");
+  }
+
   /* ---- H2: a project inventory already covers is DONE, not blocked -------------------------
    * 100 Bricks wanted against 100k Bricks held: nothing left to craft. That has to read as a free,
    * instant, feasible phase that sorts FIRST — not a red "(blocked — see notes)" costing Infinity

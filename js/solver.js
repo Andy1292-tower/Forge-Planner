@@ -2541,8 +2541,19 @@ function phasePreProducedDemand(sub,invMap){
 /* Project demand and stock are quantities, so these vectors are Decimals. The arithmetic here is
    per item — twelve subtractions, not twelve per pivot — so carrying the range costs nothing that
    matters, and a project costing more than a float64 can hold nets out exactly. */
+/* Carried stock floors at zero before it becomes demand. A replay accepts a balance that dips below
+ * zero while it stays inside stockTol (issue #154 floored that residue on the way INTO the schedule
+ * module; it still leaves through `finalInventory`, which the sequenced solver reads directly). Here
+ * a debt does not merely fail to help — subtracting it MANUFACTURES demand: a -7.45e-9 Concrete
+ * balance made `sub - inv` = +7.45e-9 for a project whose Concrete cost is 0, which cleared the flat
+ * 1e-9 floor below, made Concrete a phase target the LP had no net rate left to give, and published
+ * "Can't sustainably produce: Concrete" against a factory producing 9,076,608/hr of it. The verdict
+ * flipped on one completed project level, because moving the subtraction by one float ULP is all it
+ * takes. Floored at the point of use rather than at `finalInventory` on purpose: the Bits carry
+ * feeds the pre-produced fixed point, whose own clamp already handles this, and flooring the map
+ * wholesale stops that fixed point converging. */
 function projNetVec(sub,invMap,preProducedDemand){
-  const net={};ALLITEMS.forEach(it=>net[it]=decClampLow(toDec0(sub[it]).sub(toDec0(invMap&&invMap[it]))));
+  const net={};ALLITEMS.forEach(it=>net[it]=decClampLow(toDec0(sub[it]).sub(decClampLow(toDec0(invMap&&invMap[it])))));
   const pp=toDec0((preProducedDemand||phasePreProducedDemand(sub,invMap)).Bits);
   const bitsLeft=decClampLow(toDec0(invMap&&invMap.Bits).sub(pp));
   net.Bits=decClampLow(toDec0(sub.Bits).sub(bitsLeft));
