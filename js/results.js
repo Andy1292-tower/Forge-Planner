@@ -333,7 +333,7 @@ function renderProjectResults(res,el,stat){
     const detail=f.kind==="solve-budget"
       ?"The time limit was reached before every static phase received a usable assignment."
       :f.kind==="mined-rate"
-      ?`${htmlText(f.resource||"Mined resource")} exceeds its instantaneous income by <b>${disp(f.excess||0)}/hr</b>${when}.`
+      ?`This phase draws more ${htmlText(f.resource||"mined resource")} than it earns back — <b>${disp(f.excess||0)}/hr</b> over your income${when}, which no stockpile replenishes.`
       :`${htmlText(f.resource||"A required resource")} is short by <b>${disp(f.deficit||0)}</b>${when}.`;
     html+=`<div class="notice warn"><b>Executable schedule blocked:</b> ${detail} ${htmlText(f.message||"")}</div>`;
   }
