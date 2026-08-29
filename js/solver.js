@@ -17,6 +17,8 @@ const UNBOUNDED_PER_SEC=Number.MAX_VALUE/3600;
 // replenish it (issue #80). Reserving a margin forces the LP to keep some real production whenever
 // stock alone can't be trusted to cover the gap, rather than banking on exhausting it to the unit.
 const STOCK_SAFETY_FRAC=0.9;
+// Relative window the pre-produced Bits fixed point calls settled (see its use below).
+const PREPROD_CONVERGE_REL=1e-9;
 // Line-assignment stability (issue #87 item 5). The makespan LP is rebuilt from scratch each solve
 // with no memory of the previous assignment, and LP optima are frequently near-tied at the margin —
 // so a small, unrelated edit can flip which physical line lands on which (item,level) for negligible
@@ -2689,7 +2691,15 @@ function solveExecutableProjectPhase(sub,name,inv,stabilityPolicy,phaseKey,runOp
       const next=plannedPreProducedDemand(ph),a=solvedWith.Bits||0,b=next.Bits||0;
       if(isStatic)incumbent=retainReplaySafeFixedPointIncumbent(incumbent,ph,sub,inv,solvedWith,next);
       pre=next;
-      if(Math.abs(a-b)<=1e-8+Number.EPSILON*32*Math.max(1,Math.abs(a),Math.abs(b)))
+      /* The obligation is a Bits COUNT reached through a long float chain — line rates, compression
+       * input scales, a phase ETA — so like every other running sum in the planner its residue
+       * scales with the arithmetic that built it, not with an ULP of the result. A 32-ULP window is
+       * that ULP: on a 3,322,281-Bit obligation it allows 2.4e-8 while the passes alternate by
+       * 3.2e-7 (434 ULPs), so the fixed point read a settled plan as a 2-cycle and reported the
+       * whole plan blocked over a third of a millionth of one Bit. A relative floor sizes the
+       * window to the obligation; a genuine flip between two assignments moves whole Bits, which is
+       * ten orders above it. */
+      if(Math.abs(a-b)<=1e-8+PREPROD_CONVERGE_REL*Math.max(1,Math.abs(a),Math.abs(b)))
         return {phase:ph,solvedWith,pre,converged:true,incumbent,
           observedMaxCompressions:[...observedMaxCompressions]};
       const key=bitsKey(pre);
