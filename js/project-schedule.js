@@ -214,6 +214,16 @@
       }
       boundaries.push({time:phaseStart,phaseTime:0,phaseIndex,kind:Object.keys(reserved).length?"prerequisite":"phase-start",
         inventory:copyMap(inv),minedRates:{},reserved});
+      /* Mined income banks. Vespium and Hydracite accrue into a stockpile the player spends at
+       * will, so a craft that draws faster than income while it runs is executable as long as the
+       * bank covers the burst — which is what the Project LP already assumes when it sizes a
+       * mined-consuming job by its share of the phase. Capping the ACTIVE rate instead measured a
+       * quantity neither model owns: a job held to income on average was rejected for running at
+       * income/frac while it ran, so any part-time mined craft blocked the schedule no matter how
+       * large the income was: a 0.0796-frac Batteries job drawing exactly its Hydracite income
+       * was reported 12.56x over cap, and raising the income 1000x kept it over. The draw is
+       * accumulated across the phase's slices and settled against the phase's own accrual below. */
+      const minedDrawn={};
       const times=[0,phase.eta];
       phase.plan.forEach(line=>line.entries.forEach(entry=>{times.push(entry.start,entry.end);}));
       times.sort((a,b)=>a-b);
@@ -244,11 +254,7 @@
             else if(!c.informationalResources.includes(cons.item))addRate(cons.item,-rate);
           }
         });
-        for(const resource of c.minedResources){
-          const use=minedRates[resource]||0,cap=Math.max(0,Number(c.minedIncomeRates[resource])||0),excess=use-cap;
-          if(excess>stockTol(c,use,cap))firstFailure=failureEarlier(firstFailure,{kind:"mined-rate",phaseIndex,resource,
-            time:phaseStart+from,boundaryTime:phaseStart+to,rate:use,cap,excess,message:`${resource} use exceeds income by ${excess}/hr`});
-        }
+        for(const resource of c.minedResources)minedDrawn[resource]=(minedDrawn[resource]||0)+(minedRates[resource]||0)*dt;
         for(const resource of c.ordinaryResources){
           const before=inv[resource]||0,rate=ordinaryRates[resource]||0,after=before+rate*dt;
           inv[resource]=after;charge(resource,(ordinaryGross[resource]||0)*dt);
@@ -263,6 +269,20 @@
         }
         boundaries.push({time:phaseStart+to,phaseTime:to,phaseIndex,kind:"switch",inventory:copyMap(inv),
           ordinaryRates:copyMap(ordinaryRates),minedRates:copyMap(minedRates),active});
+      }
+      /* Settle each mined bank over the phase. A phase may out-draw its income at any instant; what
+       * it may not do is out-draw the income the phase itself earns, because that is a deficit no
+       * bank refills — the plan would need a stockpile it never builds back. `rate` and `excess`
+       * stay per-hour so the reader compares them against the income they entered. */
+      for(const resource of c.minedResources){
+        const drawn=minedDrawn[resource]||0,cap=Math.max(0,Number(c.minedIncomeRates[resource])||0);
+        const accrued=cap*phase.eta,overdraw=drawn-accrued;
+        if(overdraw>stockTol(c,drawn,accrued)){
+          const span=phase.eta>0?phase.eta:1;
+          firstFailure=failureEarlier(firstFailure,{kind:"mined-rate",phaseIndex,resource,
+            time:phaseStart,boundaryTime:phaseStart+phase.eta,rate:drawn/span,cap,excess:overdraw/span,drawn,accrued,
+            message:`${resource} use exceeds income by ${overdraw/span}/hr`});
+        }
       }
       if(phase.kind==="project"){
         const inventoryBeforeDebit=copyMap(inv),demandDebit={};

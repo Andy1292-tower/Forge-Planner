@@ -17,6 +17,8 @@ const UNBOUNDED_PER_SEC=Number.MAX_VALUE/3600;
 // replenish it (issue #80). Reserving a margin forces the LP to keep some real production whenever
 // stock alone can't be trusted to cover the gap, rather than banking on exhausting it to the unit.
 const STOCK_SAFETY_FRAC=0.9;
+// Relative window the pre-produced Bits fixed point calls settled (see its use below).
+const PREPROD_CONVERGE_REL=1e-9;
 // Line-assignment stability (issue #87 item 5). The makespan LP is rebuilt from scratch each solve
 // with no memory of the previous assignment, and LP optima are frequently near-tied at the margin —
 // so a small, unrelated edit can flip which physical line lands on which (item,level) for negligible
@@ -2519,9 +2521,16 @@ function solvePhaseFor(net,name,avail,stabilityPolicy,phaseKey,solveOptions){
   // would draw down MORE if it were allowed to (issue #80: "no Crafters set to Ingots, yet the plan
   // needs them"). A comfortably ample stock (issue #73's case) draws far less than its cap and
   // isn't flagged — only a plan that's genuinely running an item at its structural limit is.
+  /* Only stock the USER ENTERED can run out on them. In a sequenced or gated plan `avail` is the
+   * running carry — surplus an earlier phase of this same plan produced — and a phase living off
+   * that carry is not at risk: the executable replay proves the carry covers it, and the plan
+   * rebuilds it. Flagging carry made the notice claim the plan was "spending down your current
+   * inventory" on a save whose every inventory field was 0, which cannot happen. */
+  const enteredStock=(S&&S.inventory)||{};
   const atRisk=balance.filter(b=>{
     const av=(avail&&avail[b.res])||0;
     if(av<=1e-6||b.prod>1e-6)return false;
+    if(!(Number(toDec0(enteredStock[b.res]))>1e-6))return false;
     const used=b.stock*eta;   // total units of this item's stock the phase draws down
     return used>=STOCK_SAFETY_FRAC*av*0.98;
   }).map(b=>b.res);
@@ -2541,8 +2550,19 @@ function phasePreProducedDemand(sub,invMap){
 /* Project demand and stock are quantities, so these vectors are Decimals. The arithmetic here is
    per item — twelve subtractions, not twelve per pivot — so carrying the range costs nothing that
    matters, and a project costing more than a float64 can hold nets out exactly. */
+/* Carried stock floors at zero before it becomes demand. A replay accepts a balance that dips below
+ * zero while it stays inside stockTol (issue #154 floored that residue on the way INTO the schedule
+ * module; it still leaves through `finalInventory`, which the sequenced solver reads directly). Here
+ * a debt does not merely fail to help — subtracting it MANUFACTURES demand: a -7.45e-9 Concrete
+ * balance made `sub - inv` = +7.45e-9 for a project whose Concrete cost is 0, which cleared the flat
+ * 1e-9 floor below, made Concrete a phase target the LP had no net rate left to give, and published
+ * "Can't sustainably produce: Concrete" against a factory producing 9,076,608/hr of it. The verdict
+ * flipped on one completed project level, because moving the subtraction by one float ULP is all it
+ * takes. Floored at the point of use rather than at `finalInventory` on purpose: the Bits carry
+ * feeds the pre-produced fixed point, whose own clamp already handles this, and flooring the map
+ * wholesale stops that fixed point converging. */
 function projNetVec(sub,invMap,preProducedDemand){
-  const net={};ALLITEMS.forEach(it=>net[it]=decClampLow(toDec0(sub[it]).sub(toDec0(invMap&&invMap[it]))));
+  const net={};ALLITEMS.forEach(it=>net[it]=decClampLow(toDec0(sub[it]).sub(decClampLow(toDec0(invMap&&invMap[it])))));
   const pp=toDec0((preProducedDemand||phasePreProducedDemand(sub,invMap)).Bits);
   const bitsLeft=decClampLow(toDec0(invMap&&invMap.Bits).sub(pp));
   net.Bits=decClampLow(toDec0(sub.Bits).sub(bitsLeft));
@@ -2678,7 +2698,15 @@ function solveExecutableProjectPhase(sub,name,inv,stabilityPolicy,phaseKey,runOp
       const next=plannedPreProducedDemand(ph),a=solvedWith.Bits||0,b=next.Bits||0;
       if(isStatic)incumbent=retainReplaySafeFixedPointIncumbent(incumbent,ph,sub,inv,solvedWith,next);
       pre=next;
-      if(Math.abs(a-b)<=1e-8+Number.EPSILON*32*Math.max(1,Math.abs(a),Math.abs(b)))
+      /* The obligation is a Bits COUNT reached through a long float chain — line rates, compression
+       * input scales, a phase ETA — so like every other running sum in the planner its residue
+       * scales with the arithmetic that built it, not with an ULP of the result. A 32-ULP window is
+       * that ULP: on a 3,322,281-Bit obligation it allows 2.4e-8 while the passes alternate by
+       * 3.2e-7 (434 ULPs), so the fixed point read a settled plan as a 2-cycle and reported the
+       * whole plan blocked over a third of a millionth of one Bit. A relative floor sizes the
+       * window to the obligation; a genuine flip between two assignments moves whole Bits, which is
+       * ten orders above it. */
+      if(Math.abs(a-b)<=1e-8+PREPROD_CONVERGE_REL*Math.max(1,Math.abs(a),Math.abs(b)))
         return {phase:ph,solvedWith,pre,converged:true,incumbent,
           observedMaxCompressions:[...observedMaxCompressions]};
       const key=bitsKey(pre);

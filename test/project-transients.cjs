@@ -208,10 +208,19 @@ const runner = `
   ]};
   assert.equal(replayProjectSchedule([feedBits],{},ctx()).ok,true,"recipe-feed Bits remain ordinary/craftable");
 
+  /* Mined income banks, so what is capped is the draw over the phase, not the rate while the job
+   * runs. An entry's cons.hr is already the phase-averaged rate, so this half-time job draws 5/hr
+   * and 10/hr while active: under a 6/hr income it is executable, and capping the active rate
+   * instead rejected it — which blocked every part-time mined craft no matter how large the income
+   * was, because the LP always sizes such a job to spend exactly its budget. */
   const mined={kind:"project",eta:1,demandSub:{B:1},plan:[{line:1,entries:[{item:"B",lvl:1,frac:.5,outHr:1,cons:[{item:"Vespium",hr:5}]}]}]};
-  const minedBlocked=replayProjectSchedule([mined],{},ctx({minedIncomeRates:{Vespium:6}}));
+  const minedBurst=replayProjectSchedule([mined],{},ctx({minedIncomeRates:{Vespium:6}}));
+  assert.equal(minedBurst.ok,true,"a burst above income is executable while the phase draw stays under it");
+  const minedExact=replayProjectSchedule([mined],{},ctx({minedIncomeRates:{Vespium:5}}));
+  assert.equal(minedExact.ok,true,"a job sized to spend exactly its income over the phase is executable");
+  const minedBlocked=replayProjectSchedule([mined],{},ctx({minedIncomeRates:{Vespium:2}}));
   assert.equal(minedBlocked.ok,false);assert.equal(minedBlocked.firstFailure.kind,"mined-rate");
-  assert.ok(Math.abs(minedBlocked.firstFailure.excess-4)<1e-9,"active mined rate, not phase average, is capped");
+  assert.ok(Math.abs(minedBlocked.firstFailure.excess-3)<1e-9,"the phase draw, not the active rate, is capped");
   const bothMined={kind:"warmup",eta:1,plan:[
     {line:1,entries:[{item:"A",lvl:1,frac:1,outHr:1,cons:[{item:"Vespium",hr:9}]}]},
     {line:2,entries:[{item:"B",lvl:1,frac:1,outHr:1,cons:[{item:"Hydracite",hr:8}]}]}
