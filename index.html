@@ -181,7 +181,7 @@
       </div>
 
       <section id="inputsInventoryPanel" role="tabpanel" aria-labelledby="inputsInventoryTab">
-        <div class="price-grp first">Current inventory — subtracted from total demand</div>
+        <div class="price-grp first">Current inventory — crafted stock is subtracted from project demand; held <b>Hydracite</b> is spent on Batteries. Worthless Rocks and Vespium are recorded only.</div>
         <div id="invRows"></div>
       </section>
 
@@ -236,15 +236,21 @@
     <div class="modal-b" data-dialog-body>
       <p class="help mined-intro">Enter each mined income independently. Rates accept game notation such as <b>500t</b>, <b>7.25qu</b>, or <b>3b</b>. Per-minute cost figures use your fastest current line that reaches each compression; an em dash means no current line reaches it.</p>
       <div class="mined-grid">
+        <section class="mined-card" aria-labelledby="minedRocksTitle">
+          <div class="mined-card-head">
+            <div><h4 id="minedRocksTitle">Worthless Rocks</h4><p>Set the mined Worthless Rocks income shown on your stat block.</p></div>
+            <span class="mined-badge">Sellable</span>
+          </div>
+          <div class="fl mined-income"><label for="minedRocksTrading">Mined Worthless Rocks (/sec)</label><input type="text" inputmode="text" id="minedRocksTrading" data-mined-resource="Rocks" data-mined-source="resourcesTradingPerSec" placeholder="e.g. 7.25qu" autocomplete="off" aria-label="Mined Worthless Rocks per second" data-field-error="field-mined-rocks-trading-error"><div class="field-error" id="field-mined-rocks-trading-error" aria-live="polite" aria-atomic="true"></div></div>
+          <div class="mined-breakdown" id="minedRocksSummary"></div>
+          <div class="notice info mined-summary">Rocks are never a budgeted craft input — the Rocks figure beside Vespium below is informational. Give Rocks a price under <b>Sell prices</b> and this income is ranked against every crafted item in <b>Max credits/hr</b>.</div>
+        </section>
         <section class="mined-card" aria-labelledby="minedVespiumTitle">
           <div class="mined-card-head">
             <div><h4 id="minedVespiumTitle">Vespium → Gel</h4><p>Set the mined Vespium budget that Gel-producing lines can spend.</p></div>
             <span class="mined-badge">Gel supply</span>
           </div>
-          <div class="mined-income-stack">
-            <div class="fl mined-income"><span><label for="minedVespiumRig">Vespium Rig production (/min)</label> <button type="button" class="tip" aria-label="Help for Vespium Rig production" aria-describedby="vespiumHelp">?<span class="tip-text" id="vespiumHelp" role="tooltip">Start with the Vespium shown per minute by your rigs. Duo Affinity 9 can materially change actual production, so adjust this source if your measured rate differs.</span></button></span><input type="text" inputmode="text" id="minedVespiumRig" data-mined-resource="Vespium" data-mined-source="rigPerMin" placeholder="e.g. 500t" autocomplete="off" aria-label="Vespium Rig production per minute" data-field-error="field-mined-vespium-rig-error"><div class="field-error" id="field-mined-vespium-rig-error" aria-live="polite" aria-atomic="true"></div></div>
-            <div class="fl mined-income"><label for="minedVespiumTrading">Mined Vespium (/sec)</label><input type="text" inputmode="text" id="minedVespiumTrading" data-mined-resource="Vespium" data-mined-source="resourcesTradingPerSec" placeholder="e.g. 2.5t" autocomplete="off" aria-label="Mined Vespium per second" data-field-error="field-mined-vespium-trading-error"><div class="field-error" id="field-mined-vespium-trading-error" aria-live="polite" aria-atomic="true"></div></div>
-          </div>
+          <div class="fl mined-income"><span><label for="minedVespiumTrading">Mined Vespium (/sec)</label> <button type="button" class="tip" aria-label="Help for mined Vespium" aria-describedby="vespiumHelp">?<span class="tip-text" id="vespiumHelp" role="tooltip">The per-second Vespium figure from your in-game stat block. It already includes what your rigs mine, so enter it as shown and do not add rig production on top. Duo Affinity 9 can materially change actual production, so adjust this if your measured rate differs.</span></button></span><input type="text" inputmode="text" id="minedVespiumTrading" data-mined-resource="Vespium" data-mined-source="resourcesTradingPerSec" placeholder="e.g. 2.5t" autocomplete="off" aria-label="Mined Vespium per second" data-field-error="field-mined-vespium-trading-error"><div class="field-error" id="field-mined-vespium-trading-error" aria-live="polite" aria-atomic="true"></div></div>
           <div class="mined-breakdown" id="minedVespiumBreakdown"></div>
           <div class="mined-capacity" id="minedVespiumSummary"></div>
           <div id="minedGelLoadout"></div>

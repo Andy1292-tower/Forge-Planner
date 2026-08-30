@@ -78,7 +78,7 @@ const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
 
 test("exports a current schema and pure field descriptors", () => {
-  assert.equal(api("CURRENT_SCHEMA_VERSION"), 5);
+  assert.equal(api("CURRENT_SCHEMA_VERSION"), 6);
   assert.equal(api("LSKEY"), "forgePlannerState_v3");
   const schema = api("FIELD_SCHEMA");
   assert.equal(schema.dupe.type, "number");
@@ -118,7 +118,7 @@ test("strict v1 migration defaults Project line jobs without weakening old requi
   let result = api("validateAndMigrate")(v1);
   assert.equal(result.ok, true, JSON.stringify(result.errors));
   assert.equal(result.sourceVersion, 1);
-  assert.equal(result.state.schemaVersion, 5);
+  assert.equal(result.state.schemaVersion, 6);
   assert.equal(result.state.projectStability, "prefer-current");
 
   delete v1.targets;
@@ -135,7 +135,7 @@ test("older schemas migrate once to 10 seconds while current user choices remain
     const result = api("validateAndMigrate")(candidate);
     assert.equal(result.ok, true, JSON.stringify(result.errors));
     assert.equal(result.sourceVersion, sourceVersion);
-    assert.equal(result.state.schemaVersion, 5);
+    assert.equal(result.state.schemaVersion, 6);
     assert.equal(result.state.solveBudget, 10000);
   }
 
@@ -146,7 +146,7 @@ test("older schemas migrate once to 10 seconds while current user choices remain
   assert.equal(result.state.solveBudget, 2000);
   result = api("parseStoredState")(JSON.stringify(result.state));
   assert.equal(result.recovery, null);
-  assert.equal(result.state.schemaVersion, 5);
+  assert.equal(result.state.schemaVersion, 6);
   assert.equal(result.state.solveBudget, 2000);
 });
 
@@ -248,8 +248,29 @@ test("schema v4 accepts only the complete nested mined-source shape", () => {
   let result = api("validateAndMigrate")(complete);
   assert.equal(result.ok, true, JSON.stringify(result.errors));
   assert.equal(result.sourceVersion, 4);
-  assert.deepEqual(JSON.parse(JSON.stringify(result.state.minedIncome)), complete.minedIncome);
-  assert.deepEqual(JSON.parse(JSON.stringify(result.state.minedIncomeText)), complete.minedIncomeText);
+  /* A v4 save carrying BOTH figures drops the rig: the per-second stat block already includes rig
+     output, so keeping the rig would count it twice. Rocks arrives blank, having had no income to
+     record before v6. */
+  assert.deepEqual(JSON.parse(JSON.stringify(result.state.minedIncome)), {
+    Rocks: { resourcesTradingPerSec: null },
+    Vespium: { resourcesTradingPerSec: "3" },
+    Hydracite: { resourcesTradingPerSec: "4" },
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(result.state.minedIncomeText)), {
+    Rocks: { resourcesTradingPerSec: "" },
+    Vespium: { resourcesTradingPerSec: "3" },
+    Hydracite: { resourcesTradingPerSec: "4" },
+  });
+
+  // A v4 save carrying ONLY the rig has no other record of its Vespium income, so the rig converts
+  // to the per-second source it is now entered in rather than being discarded.
+  const rigOnly = sourceAwareV4State();
+  rigOnly.minedIncome.Vespium.rigPerMin = 120;
+  rigOnly.minedIncomeText.Vespium.rigPerMin = "120";
+  const rigOnlyResult = api("validateAndMigrate")(rigOnly);
+  assert.equal(rigOnlyResult.ok, true, JSON.stringify(rigOnlyResult.errors));
+  assert.equal(rigOnlyResult.state.minedIncome.Vespium.resourcesTradingPerSec * 3600, 7200);
+  assert.equal(Object.hasOwn(rigOnlyResult.state.minedIncome.Vespium, "rigPerMin"), false);
 
   for (const [label, mutate, pathPattern] of [
     ["Vespium Rig value", state => { delete state.minedIncome.Vespium.rigPerMin; }, /minedIncome\.Vespium\.rigPerMin.*required/i],
@@ -301,12 +322,12 @@ test("schema v4 validates every mined-source value and display leaf transactiona
 });
 
 test("unversioned nested defaults require both complete source maps", () => {
-  const complete = sourceAwareV4State();
+  const complete = currentState();
   delete complete.schemaVersion;
   let result = api("validateAndMigrate")(complete);
   assert.equal(result.ok, true, JSON.stringify(result.errors));
 
-  const missingTextMap = sourceAwareV4State();
+  const missingTextMap = currentState();
   delete missingTextMap.schemaVersion;
   delete missingTextMap.minedIncomeText;
   const before = JSON.stringify(missingTextMap);
@@ -327,17 +348,22 @@ test("schema v3 scalar incomes migrate without changing hourly budgets or solve 
 
   assert.equal(result.ok, true, JSON.stringify(result.errors));
   assert.equal(result.sourceVersion, 3);
-  assert.equal(result.state.schemaVersion, 5);
+  assert.equal(result.state.schemaVersion, 6);
   assert.equal(result.state.solveBudget, 2345);
+  // Both v3 scalars were per-minute figures and both now land on the per-second source, so the
+  // hourly budgets they described come back unchanged. Their saved text read in per-minute units,
+  // so it is re-derived rather than shown against a field it no longer describes.
   assert.deepEqual(JSON.parse(JSON.stringify(result.state.minedIncome)), {
-    Vespium: { rigPerMin: 120, resourcesTradingPerSec: null },
+    Rocks: { resourcesTradingPerSec: null },
+    Vespium: { resourcesTradingPerSec: 2 },
     Hydracite: { resourcesTradingPerSec: 1 },
   });
   assert.deepEqual(JSON.parse(JSON.stringify(result.state.minedIncomeText)), {
-    Vespium: { rigPerMin: "120.0", resourcesTradingPerSec: "" },
+    Rocks: { resourcesTradingPerSec: "" },
+    Vespium: { resourcesTradingPerSec: "2" },
     Hydracite: { resourcesTradingPerSec: "1" },
   });
-  assert.equal(result.state.minedIncome.Vespium.rigPerMin * 60, 7200);
+  assert.equal(result.state.minedIncome.Vespium.resourcesTradingPerSec * 3600, 7200);
   assert.equal(result.state.minedIncome.Hydracite.resourcesTradingPerSec * 3600, 3600);
   assert.equal(JSON.stringify(candidate), before, "migration must not mutate the v3 caller object");
 });
@@ -587,7 +613,7 @@ test("migrates retired Gel reservation fixture without retaining dead controls",
   assert.equal(result.state.lines[0].max, 1024);
   assert.equal(Object.hasOwn(result.state, "gelLines"), false);
   assert.equal(Object.hasOwn(result.state, "gelComp"), false);
-  assert.equal(result.state.minedIncome.Vespium?.rigPerMin, null);
+  assert.equal(Object.hasOwn(result.state.minedIncome.Vespium, "rigPerMin"), false);
   assert.equal(result.state.minedIncome.Vespium?.resourcesTradingPerSec, null);
 });
 
@@ -596,10 +622,11 @@ test("migrates Gel income, project first flag, and fills later compression costs
   assert.equal(result.ok, true, JSON.stringify(result.errors));
   // Quantities are Decimals: compare their values, not their identities.
   const qty = value => (value === null || value === undefined ? value : String(value));
-  assert.equal(qty(result.state.minedIncome.Vespium.rigPerMin), "7250000000000000000");
-  assert.equal(result.state.minedIncome.Vespium.resourcesTradingPerSec, null);
-  assert.equal(result.state.minedIncomeText.Vespium.rigPerMin, "7.25qu");
-  assert.equal(result.state.minedIncomeText.Vespium.resourcesTradingPerSec, "");
+  // The legacy scalar was a per-minute rig figure; it carries over as the per-second source at the
+  // same hourly budget, and its per-minute display text does not follow it onto a per-second field.
+  assert.equal(qty(api("minedBudgetHr")("Vespium", result.state)), "435000000000000000000");
+  assert.equal(Object.hasOwn(result.state.minedIncome.Vespium, "rigPerMin"), false);
+  assert.notEqual(result.state.minedIncomeText.Vespium.resourcesTradingPerSec, "7.25qu");
   assert.equal(result.state.baseTime.Wire, 12345);
   assert.equal(qty(result.state.prodCost.Wire.Gel[4]), "18");
   assert.equal(qty(result.state.prodCost.Wire.Gel[16384]), qty(api("defaults().prodCost.Wire.Gel[16384]")));
@@ -692,7 +719,7 @@ test("successful boot upgrades the existing key and retains the exact previous-g
   assert.equal(result.recovery, null);
   assert.equal(storage.value("forgePlannerState_v3_previous_good"), legacyRaw);
   const upgraded = JSON.parse(storage.value("forgePlannerState_v3"));
-  assert.equal(upgraded.schemaVersion, 5);
+  assert.equal(upgraded.schemaVersion, 6);
   assert.equal(upgraded.solveBudget, 10000);
   assert.equal(upgraded.dupe, 17.25);
 });
@@ -721,9 +748,9 @@ test("v3 startup migrates in place while rotating exact primary bytes and preser
   const upgradedRaw = storage.value("forgePlannerState_v3");
   assert.notEqual(upgradedRaw, primaryRaw);
   const upgraded = JSON.parse(upgradedRaw);
-  assert.equal(upgraded.schemaVersion, 5);
+  assert.equal(upgraded.schemaVersion, 6);
   assert.equal(upgraded.solveBudget, 2345);
-  assert.equal(upgraded.minedIncome.Vespium.rigPerMin, 120);
+  assert.equal(upgraded.minedIncome.Vespium.resourcesTradingPerSec, 2);
   assert.equal(upgraded.minedIncome.Hydracite.resourcesTradingPerSec, 1);
   assert.equal(storage.value("forgePlannerState_v4"), null);
   assert.equal(storage.value("forgePlannerState_v4_previous_good"), null);
@@ -832,7 +859,7 @@ test("accepts every numeric descriptor boundary including an exact 60000 ms budg
   candidate.prodCost.Glass.Bits[1] = 1e100;
   candidate.sellPrice.Frames = 1e100;
   candidate.forgie.Frames = 0;
-  candidate.minedIncome.Vespium.rigPerMin = 1e100;
+  candidate.minedIncome.Vespium.resourcesTradingPerSec = 1e100;
   candidate.inventory.Ingots = 0;
   candidate.targets.Frames.w = 9;
   candidate.projects = [{

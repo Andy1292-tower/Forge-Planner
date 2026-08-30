@@ -24,20 +24,26 @@ const runner=`
 (function(){
   let fail=0;const check=(n,ok,d)=>{console.log((ok?"ok   ":"FAIL ")+n+" ["+d+"]");if(!ok)fail++;};
   S=defaults();
-  S.minedIncome={Vespium:{rigPerMin:2,resourcesTradingPerSec:3},Hydracite:{resourcesTradingPerSec:4}};
-  S.minedIncomeText={Vespium:{rigPerMin:"2",resourcesTradingPerSec:"3"},Hydracite:{resourcesTradingPerSec:"4"}};
+  S.minedIncome={Rocks:{resourcesTradingPerSec:5},Vespium:{resourcesTradingPerSec:3},Hydracite:{resourcesTradingPerSec:4}};
+  S.minedIncomeText={Rocks:{resourcesTradingPerSec:"5"},Vespium:{resourcesTradingPerSec:"3"},Hydracite:{resourcesTradingPerSec:"4"}};
   renderMinedResources();
   const gelSummary=document.getElementById("minedVespiumSummary");
-  check("three source controls use the approved player-facing units",
-    /<label for="minedVespiumRig">Vespium Rig production \\(\\/min\\)<\\/label>/.test(indexHtml)&&
+  check("every source control uses the approved per-second player-facing unit",
+    /<label for="minedRocksTrading">Mined Worthless Rocks \\(\\/sec\\)<\\/label>/.test(indexHtml)&&
     /<label for="minedVespiumTrading">Mined Vespium \\(\\/sec\\)<\\/label>/.test(indexHtml)&&
     /<label for="minedHydraciteTrading">Mined Hydracite \\(\\/sec\\)<\\/label>/.test(indexHtml),
-    "rig="+indexHtml.includes("minedVespiumRig")+", vespTrading="+indexHtml.includes("minedVespiumTrading")+", hydraTrading="+indexHtml.includes("minedHydraciteTrading"));
-  check("vesp Rig draft is preserved",document.getElementById("minedVespiumRig").value==="2",document.getElementById("minedVespiumRig").value);
+    "rocksTrading="+indexHtml.includes("minedRocksTrading")+", vespTrading="+indexHtml.includes("minedVespiumTrading")+", hydraTrading="+indexHtml.includes("minedHydraciteTrading"));
+  // The rig source double-counted the per-second stat block, so no control may offer it back.
+  check("the retired Vespium rig source is gone from the markup",
+    !indexHtml.includes("minedVespiumRig")&&!indexHtml.includes("rigPerMin"),
+    "rig="+indexHtml.includes("minedVespiumRig")+", source="+indexHtml.includes("rigPerMin"));
+  check("mined Rocks draft is preserved",document.getElementById("minedRocksTrading").value==="5",document.getElementById("minedRocksTrading").value);
   check("mined Vespium draft is preserved",document.getElementById("minedVespiumTrading").value==="3",document.getElementById("minedVespiumTrading").value);
   check("mined Hydracite draft is preserved",document.getElementById("minedHydraciteTrading").value==="4",document.getElementById("minedHydraciteTrading").value);
   const breakdown=document.getElementById("minedVespiumBreakdown").textContent;
-  check("vesp summary exposes the additive source conversion",breakdown.includes("120")&&breakdown.includes("10.8k")&&breakdown.includes("10.92k"),breakdown);
+  check("vesp summary converts per second to an hourly total",breakdown.includes("3")&&breakdown.includes("10.8k"),breakdown);
+  const rocksSummary=document.getElementById("minedRocksSummary").textContent;
+  check("rocks summary converts per second to an hourly total",rocksSummary.includes("5")&&rocksSummary.includes("18k"),rocksSummary);
   const hydraSummary=document.getElementById("minedHydraciteSummary").textContent;
   check("hydra summary converts per second to an hourly total",hydraSummary.includes("4")&&hydraSummary.includes("14.4k"),hydraSummary);
   check("gel summary uses the combined hourly budget",/Gel\\/hr/.test(gelSummary.textContent||gelSummary.innerHTML),gelSummary.textContent||gelSummary.innerHTML);

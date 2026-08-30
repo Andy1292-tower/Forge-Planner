@@ -14,7 +14,7 @@
  * CONFIGURATION fields ("number"/"integer") keep their ranges. Line speed, turbo, duplication %,
  * margin, base craft time and the solve budget describe machinery with a fixed physical ceiling,
  * and a float64 will always hold them. */
-const CURRENT_SCHEMA_VERSION=5;
+const CURRENT_SCHEMA_VERSION=6;
 const CURRENT_BASE_TIME_REVISION=2;
 const STATE_LIMITS=Object.freeze({
   maxBytes:2*1024*1024,

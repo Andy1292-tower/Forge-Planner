@@ -637,6 +637,7 @@ footer a:hover,.contrib-help a:hover{text-decoration:underline}
 .price-row .pnm .ty.raw{background:rgba(120,128,138,.14);color:var(--ink2);border:1px solid var(--line2)}
 .price-row .pnm .ty.pr{background:rgba(63,182,160,.13);color:var(--teal);border:1px solid var(--teal-d)}
 .price-row .pnm .ty.fin{background:rgba(210,129,58,.14);color:var(--amber);border:1px solid var(--copper-d)}
+.price-row .pnm .ty.mined{background:rgba(120,128,138,.14);color:var(--ink2);border:1px solid var(--line2)}
 .price-grp{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink3);margin:14px 0 4px;font-weight:600}
 .price-grp.first{margin-top:0}
 

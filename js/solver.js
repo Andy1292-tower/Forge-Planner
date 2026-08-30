@@ -84,9 +84,18 @@ function relevantChain(targets){
   relP.forEach(P=>RECIPE[P].inputs.forEach(k=>{if(RAWS.includes(k))relR.add(k);}));
   return {prods:[...relP],raws:[...relR]};
 }
-function activeMinedResources(products){
+/* A mined resource is available to a solve when its income is positive, or — in a Project plan,
+   which asks for a finite demand rather than a sustained rate — when held stock can be drawn down
+   for it. `stock` is omitted by the Items and Credits paths, where a one-off stockpile says nothing
+   about the hourly rate they solve for. */
+function minedResourceAvailable(resource,stock){
+  if(!resource)return false;
+  if(minedBudgetHr(resource).gt(DEC_ZERO))return true;
+  return toDec0(stock&&stock[resource]).gt(DEC_ZERO);
+}
+function activeMinedResources(products,stock){
   return [...new Set(products.map(p=>MINED_CRAFTS[p]&&MINED_CRAFTS[p].resource)
-    .filter(r=>r&&minedBudgetHr(r).gt(DEC_ZERO)))];
+    .filter(r=>minedResourceAvailable(r,stock)))];
 }
 
 function craftTime(item,L){return (num(S.baseTime&&S.baseTime[item])||1)*Math.pow(1.5,Math.log2(L));}
@@ -1729,7 +1738,7 @@ function optimizeInner(timeBudget,testOptions,shard){
   // One shared control covers the complete comparison. Every item gets a finite deterministic
   // baseline in catalog order before any product receives deeper refinement.
   const control=makeSolveControl(credBudget,testOptions),t0=control.readNow();
-  const pricedAll=ALLITEMS.filter(item=>toDec0(S.sellPrice&&S.sellPrice[item]).gt(DEC_ZERO));
+  const pricedAll=PRICEABLE_ITEMS.filter(item=>toDec0(S.sellPrice&&S.sellPrice[item]).gt(DEC_ZERO));
   /* Sharded here and nowhere deeper: the candidates share a control and a budget but nothing else —
    * no candidate reads another's plan — so a shard is simply a shorter catalog. Every rule below is
    * stated over `priced` and holds unchanged on a slice of it: the baseline pass is still complete
@@ -1744,7 +1753,7 @@ function optimizeInner(timeBudget,testOptions,shard){
   // Asked of the whole catalog, not of this shard: an empty slice means the pool out-numbered the
   // priced items, which is not something to tell the reader to go and fix.
   if(!pricedAll.length)issues.push("No sell prices entered. Open “Projects + Prices” → “Sell prices” and add at least one.");
-  const unevaluated=item=>({item,kind:RAWS.includes(item)?"raw":"product",out:0,price:toDec0(S.sellPrice[item]),credits:DEC_ZERO,
+  const unevaluated=item=>({item,kind:SELLABLE_MINED.includes(item)?"mined":RAWS.includes(item)?"raw":"product",out:0,price:toDec0(S.sellPrice[item]),credits:DEC_ZERO,
     plan:null,balance:null,minedUsage:[],gelReserved:null,resIndex:{},feasible:false,usesMargin:false,capped:false,evaluated:false,ms:0});
   const fromCore=(item,sr,ms,cappedOverride)=>{
     const built=planFrom(sr),out=sr.feasible?(sr.best.produced[sr.resIndex[item]]-sr.best.consumed[sr.resIndex[item]])*3600:0;
@@ -1760,7 +1769,16 @@ function optimizeInner(timeBudget,testOptions,shard){
       baselineBroken=true;cand.push(unevaluated(item));continue;
     }
     control.event("baseline-start",{item});const start=control.readNow();let candidate=null;
-    if(RAWS.includes(item)){
+    /* A mined resource is sold straight off the income — no line makes it, so there is no factory
+       plan to search and nothing to refine. Its whole-factory answer is its income rate, which is
+       what lets it rank against the crafted items on the same credits/hr axis: dedicating the
+       factory to Wire earns nothing extra from Vespium that selling the Vespium would not. */
+    if(SELLABLE_MINED.includes(item)){
+      const out=supplyRate(minedBudgetHr(item));
+      candidate={item,kind:"mined",out,price,credits:price.times(out),
+        plan:idlePlan(),balance:[],minedUsage:[],gelReserved:null,resIndex:{},feasible:out>1e-9,
+        usesMargin:false,capped:false,evaluated:true,ms:Math.max(0,control.readNow()-start)};
+    }else if(RAWS.includes(item)){
       const raw=solveRaw(item,control);
       if(!raw.interrupted&&control.checkpoint("credits-baseline-complete"))candidate={item,kind:"raw",out:raw.out,price,credits:price.times(raw.out),
         plan:raw.plan,balance:raw.balance,minedUsage:[],gelReserved:null,resIndex:raw.resIndex,feasible:raw.feasible,
@@ -1784,7 +1802,7 @@ function optimizeInner(timeBudget,testOptions,shard){
     cand.push(candidate);control.event("baseline-complete",{item});
   }
 
-  const order=new Map(ALLITEMS.map((item,index)=>[item,index]));
+  const order=new Map(PRICEABLE_ITEMS.map((item,index)=>[item,index]));
   const refinementOrder=()=>cand.filter(candidate=>candidate.kind==="product"&&candidate.evaluated&&candidate.capped)
     .sort((a,b)=>a.credits.eq(b.credits)?order.get(a.item)-order.get(b.item):(a.credits.gt(b.credits)?-1:1));
   const refineCandidate=(prior,round,localDeadline)=>{
@@ -2040,14 +2058,14 @@ function projectDemand(){
 }
 // Which unavailable mined resources block this item or any product in its recipe chain?
 // Passive supply of the item itself bypasses its crafting chain.
-function chainMinedBlockers(item,seen){
+function chainMinedBlockers(item,seen,stock){
   if(forgieHr(item).gt(1e-9))return [];
   seen=seen||new Set();if(seen.has(item))return [];seen.add(item);
   const out=[],cfg=MINED_CRAFTS[item];
-  if(cfg&&!minedBudgetHr(cfg.resource).gt(DEC_ZERO))out.push(cfg.resource);
+  if(cfg&&!minedResourceAvailable(cfg.resource,stock))out.push(cfg.resource);
   const rec=RECIPE[item];
   (rec&&rec.inputs||[]).forEach(k=>{
-    if(PRODUCTS.includes(k))out.push(...chainMinedBlockers(k,new Set(seen)));
+    if(PRODUCTS.includes(k))out.push(...chainMinedBlockers(k,new Set(seen),stock));
   });
   return [...new Set(out)];
 }
@@ -2449,7 +2467,7 @@ function projectSchedule(net,targets,avail,opts){
   // Every mined craft is a normal LP job with its ordinary recipe inputs plus its own mined input.
   // Active mined resources join independently as constrained supplies from the user's incomes.
   const products=[...new Set([...rc.prods,...prodT])];
-  const mined=activeMinedResources(products);
+  const mined=activeMinedResources(products,avail);
   const items=[...new Set([...rc.raws,...rawT,...products,...mined])];
   const itemIdx={};items.forEach((it,i)=>itemIdx[it]=i);
   // jobs: one variable per (line,item,level<=cap). Letting the LP pick the level finds the true
@@ -2593,7 +2611,7 @@ function staticSchedule(net,targets,control,maxCompression,localDeadline){
 function solvePhaseFor(net,name,avail,stabilityPolicy,phaseKey,solveOptions){
   const demandItems=ALLITEMS.filter(it=>net[it]>1e-9);
   const blockedMined={};
-  demandItems.forEach(it=>{const blockers=chainMinedBlockers(it);if(blockers.length)blockedMined[it]=blockers;});
+  demandItems.forEach(it=>{const blockers=chainMinedBlockers(it,null,avail);if(blockers.length)blockedMined[it]=blockers;});
   const unsat=Object.keys(blockedMined);   // legacy item-level blocker list
   const targets=demandItems.filter(it=>!blockedMined[it]);
   if(targets.length===0)
@@ -2686,12 +2704,27 @@ function projNetVec(sub,invMap,preProducedDemand){
   net.Bits=decClampLow(toDec0(sub.Bits).sub(bitsLeft));
   return net;
 }
+/* The stock a Project run starts from. Mined stock joins the carried inventory so a phase can spend
+   it: the LP reads it through projAvailVec and the replay settles it as a bank. Nothing else in the
+   phase machinery reads a mined key, so the wider map is inert everywhere it is not wanted.
+
+   ONE definition, because the phase builder and the run's own replay must start from the same
+   stock — a replay given a narrower map than the LP solved against rejects the plan the LP just
+   found, reporting a mined overdraw against a bank it was never told about. */
+function projectInitialInventory(){
+  const o={};
+  ALLITEMS.forEach(it=>o[it]=toDec0(S.inventory&&S.inventory[it]));
+  SPENDABLE_MINED_STOCK.forEach(r=>o[r]=toDec0(S.inventory&&S.inventory[r]));
+  return o;
+}
 // Stock available to DRAW DOWN for each item — the inventory left after covering the item's own
 // direct project demand (projNetVec already nets that). For a raw/intermediate that's never a direct
 // cost (e.g. Ingots) this is its whole stock; that stock feeds its consumers so they aren't produced
 // from scratch (issue #73). External Bits are removed before direct Bits and recipe-feed availability.
 function projAvailVec(sub,invMap,preProducedDemand){
   const av={};ALLITEMS.forEach(it=>av[it]=decClampLow(toDec0(invMap&&invMap[it]).sub(toDec0(sub[it]))));
+  // No project level costs a mined resource, so held mined stock is drawable in full.
+  SPENDABLE_MINED_STOCK.forEach(r=>av[r]=decClampLow(toDec0(invMap&&invMap[r])));
   const pp=toDec0((preProducedDemand||phasePreProducedDemand(sub,invMap)).Bits);
   av.Bits=decClampLow(toDec0(invMap&&invMap.Bits).sub(pp).sub(toDec0(sub.Bits)));
   return av;
@@ -3291,7 +3324,7 @@ function putIdleLinesToWork(ph,laterProjects,inventory,context,runOptions,phaseI
 function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
   const layer=unlockLayers(perProject);
   const maxL=perProject.length?Math.max.apply(null,layer):0;
-  const invStart=()=>{const o={};ALLITEMS.forEach(it=>o[it]=toDec0(S.inventory&&S.inventory[it]));return o;};
+  const invStart=projectInitialInventory;
   const context=projectScheduleContext(),executionPhases=[];
   let exactInventory=invStart(),scheduleBlocked=null;
   const solveBudgetFailure=()=>({kind:"solve-budget",time:0,deficit:0,
@@ -3450,6 +3483,7 @@ function projectScheduleContext(){
   MINED_RESOURCES.forEach(r=>minedIncomeRates[r]=supplyRate(minedBudgetHr(r)));
   const compressionInputScale={};LEVELS.forEach(L=>compressionInputScale[L]=Math.pow(3,Math.log2(L))/L);
   return {ordinaryResources:[...ALLITEMS],minedResources:[...MINED_RESOURCES],informationalResources:["Rocks"],
+    minedStockResources:[...SPENDABLE_MINED_STOCK],
     forgieRates,minedIncomeRates,recipeDependencies:deps,recipeDepth:depth,preprodBits:Object.assign({},PREPROD_BITS),
     compressionInputScale,
     assignmentEpsilon:LP_ASSIGN_EPS,stockTolerance:{absolute:1e-8,relative:Number.EPSILON*32}};
@@ -3470,7 +3504,7 @@ function solveProjectRun(seq,net,perProject,stabilityPolicy,runOptions){
   phases.forEach((ph,i)=>{ph.semanticIndex=i;ph.kind="project";});
   const workEta=phases.reduce((s,ph)=>s+ph.eta,0);
   const lpFeasible=phases.length>0&&phases.every(ph=>ph.feasible);
-  const initialInventory={};ALLITEMS.forEach(it=>initialInventory[it]=toDec0(S.inventory&&S.inventory[it]));
+  const initialInventory=projectInitialInventory();
   const context=projectScheduleContext(),executionPhases=builtPhases.executionPhases;
   const validation=replayProjectSchedule(executionPhases,initialInventory,context);
   if(builtPhases.scheduleBlocked){validation.ok=false;validation.firstFailure=builtPhases.scheduleBlocked;}

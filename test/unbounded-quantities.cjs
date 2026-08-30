@@ -173,7 +173,7 @@ function nonFinite(value, at, found, depth) {
   vm.runInContext(`
     S = normalize(defaults());
     S.mode = "credits";
-    setMinedIncome("Vespium", "rigPerMin", "1e99");
+    setMinedIncome("Vespium", "resourcesTradingPerSec", "1e99");
     S.priceText.Batteries = ${JSON.stringify(typed)};
     S.sellPrice.Batteries = parseGameNum(${JSON.stringify(typed)});
     // Price something the default factory can actually make, so the credits below are a real number
@@ -185,8 +185,8 @@ function nonFinite(value, at, found, depth) {
   const saved = api("validateAndMigrate")(api("S"));
   check("the save accepts a quantity past the float64 ceiling",
     saved.ok, (saved.errors || []).join("; ") || "ok");
-  check("the save is schema v5 and writes the quantity as its canonical string",
-    saved.state.schemaVersion === 5 && saved.state.sellPrice.Batteries instanceof Dec,
+  check("the save is schema v6 and writes the quantity as its canonical string",
+    saved.state.schemaVersion === 6 && saved.state.sellPrice.Batteries instanceof Dec,
     "schema=" + saved.state.schemaVersion);
 
   // localStorage: JSON is the wire, and decimal.js supplies toJSON.
@@ -242,7 +242,11 @@ function nonFinite(value, at, found, depth) {
   legacy.priceText.Frames = "1.25n";
   legacy.forgie.Ingots = 345500000;
   legacy.inventory.Bits = 1390000000;
-  legacy.minedIncome.Vespium.rigPerMin = 1e99;
+  // A genuine v4 mined shape: the rig source, its display text, and no Rocks income.
+  legacy.minedIncome = { Vespium: { rigPerMin: 1e99, resourcesTradingPerSec: null },
+    Hydracite: { resourcesTradingPerSec: null } };
+  legacy.minedIncomeText = { Vespium: { rigPerMin: "1e99", resourcesTradingPerSec: "" },
+    Hydracite: { resourcesTradingPerSec: "" } };
   Object.keys(legacy.prodCost).forEach(product => Object.keys(legacy.prodCost[product]).forEach(input =>
     Object.keys(legacy.prodCost[product][input]).forEach(level => {
       legacy.prodCost[product][input][level] = Number(legacy.prodCost[product][input][level]);
@@ -250,12 +254,12 @@ function nonFinite(value, at, found, depth) {
 
   const migrated = api("validateAndMigrate")(legacy);
   check("a v4 save migrates without error", migrated.ok, (migrated.errors || []).slice(0, 4).join("; ") || "ok");
-  check("v4 migrates to v5", migrated.state.schemaVersion === 5, String(migrated.state.schemaVersion));
+  check("v4 migrates to v6", migrated.state.schemaVersion === 6, String(migrated.state.schemaVersion));
   check("v4 float quantities become exact quantities",
     migrated.state.sellPrice.Frames.eq(new Dec("1.25e30")) &&
     migrated.state.forgie.Ingots.eq(345500000) &&
     migrated.state.inventory.Bits.eq(1390000000) &&
-    migrated.state.minedIncome.Vespium.rigPerMin.eq(new Dec("1e99")),
+    migrated.state.minedIncome.Vespium.resourcesTradingPerSec.eq(new Dec("1e99").div(60)),
     String(migrated.state.sellPrice.Frames));
   check("v4 display text is carried across untouched",
     migrated.state.priceText.Frames === "1.25n", migrated.state.priceText.Frames);
@@ -273,7 +277,7 @@ function nonFinite(value, at, found, depth) {
     const state = JSON.parse(JSON.stringify(fixture));
     state.mode = "items";
     state.solveBudget = 400;
-    state.minedIncome.Vespium.rigPerMin = income;
+    state.minedIncome.Vespium.resourcesTradingPerSec = income;
     context.__FIXTURE = state;
     vm.runInContext("S = normalize(__FIXTURE);", context);
     const result = api("optimize")();

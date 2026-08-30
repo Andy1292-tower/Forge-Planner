@@ -42,7 +42,7 @@ const runner = `
     const s=defaults();
     s.mode="items";s.solveBudget=4000;s.dupe=0;s.margin=0;s.maxTurbo=0;
     s.lines=JSON.parse(JSON.stringify(LINES));
-    s.minedIncome.Vespium.rigPerMin=1e30;      // Gel limited by line time, not by Vespium
+    s.minedIncome.Vespium.resourcesTradingPerSec=1e30/60;      // Gel limited by line time, not by Vespium
     [...RAWS,...PRODUCTS].forEach(it=>s.targets[it]={on:false,w:1,share:50});
     return s;
   }

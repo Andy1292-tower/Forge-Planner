@@ -119,8 +119,8 @@ const runner = `
 
   // ---- a mined-income budget throttles its craft like any other input ----
   // Gel costs 5e14 Vespium per craft, so a flat-out line burns 1.8e18/hr. Half that income halves
-  // the line. (rigPerMin is per minute — 1.5e16/min is 9e17/hr.)
-  S=rig(["Gel"]);S.minedIncome.Vespium.rigPerMin=1.5e16;syncManual(S);
+  // the line. (the income is per second — 2.5e14/sec is 9e17/hr.)
+  S=rig(["Gel"]);S.minedIncome.Vespium.resourcesTradingPerSec=2.5e14;syncManual(S);
   r=manualResult();
   close("mined income throttles the craft",dutyOf(r,0),0.5);
   close("sustained Gel follows the budget",r.sustained.lineProd.Gel,1800);

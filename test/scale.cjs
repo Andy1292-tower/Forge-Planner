@@ -36,7 +36,7 @@ const runner = `
 
   const VESP_BUDGET=5e23,HYDRA_BUDGET=5e20;
   const setMined=(s,vesp=VESP_BUDGET,hydra=HYDRA_BUDGET)=>{
-    s.minedIncome.Vespium.rigPerMin=vesp;
+    s.minedIncome.Vespium.resourcesTradingPerSec=vesp/60;
     s.minedIncome.Hydracite.resourcesTradingPerSec=hydra/60;
   };
   const prepBattery=(s,hydra=HYDRA_BUDGET)=>{
@@ -52,7 +52,7 @@ const runner = `
     'credits.Batteries': s => { s.mode='credits'; s.sellPrice.Batteries=5000; prepBattery(s); },
     'project.Batteries': s => { s.mode='project'; prepBattery(s);
       s.projects=[{id:'battery',name:'Battery scale',catId:'',on:true,from:1,to:1,done:0,prio:null,levels:[{costs:[{item:'Batteries',qty:250}]}]}]; },
-    'items.Batteries.noHydracite': s => { s.mode='items'; on(s,['Batteries']); prepBattery(s,0); s.minedIncome.Vespium.rigPerMin=1e40; },
+    'items.Batteries.noHydracite': s => { s.mode='items'; on(s,['Batteries']); prepBattery(s,0); s.minedIncome.Vespium.resourcesTradingPerSec=1e40/60; },
   };
   function minedTelemetry(res){
     const rows=res&&Array.isArray(res.minedUsage)?res.minedUsage:
@@ -180,7 +180,7 @@ const runner = `
   function frozenGelBudgetRun(mode,solveBudget){
     const s=base();s.mode=mode;s.dupe=0;s.maxTurbo=0;s.margin=0;
     s.lines=[{max:1,spx:6,turbo:0},{max:1,spx:4,turbo:0},{max:1,spx:4,turbo:0}];
-    s.minedIncome.Vespium.rigPerMin=4498594189315839/60;s.solveBudget=solveBudget;
+    s.minedIncome.Vespium.resourcesTradingPerSec=4498594189315839/3600;s.solveBudget=solveBudget;
     PRODUCTS.forEach(product=>s.targets[product]={on:mode==='items'&&product==='Gel',w:1});
     [...RAWS,...PRODUCTS].forEach(item=>s.sellPrice[item]=null);if(mode==='credits')s.sellPrice.Gel=1;
     normalize(s);syncManual(s);S=s;

@@ -156,7 +156,7 @@ function validateAndMigrate(candidate){
       _pushError(errors,"schemaVersion","was written by a newer version of Forge Planner");
       return {ok:false,errors,sourceVersion};
     }
-    if(sourceVersion!==1&&sourceVersion!==2&&sourceVersion!==3&&sourceVersion!==4&&sourceVersion!==CURRENT_SCHEMA_VERSION)return {ok:false,errors:["schemaVersion is not supported"],sourceVersion};
+    if(sourceVersion!==1&&sourceVersion!==2&&sourceVersion!==3&&sourceVersion!==4&&sourceVersion!==5&&sourceVersion!==CURRENT_SCHEMA_VERSION)return {ok:false,errors:["schemaVersion is not supported"],sourceVersion};
   }else{
     const legacyShape=Array.isArray(candidate.lines)&&_plainObject(candidate.prodCost)&&_plainObject(candidate.targets);
     if(!legacyShape)return {ok:false,errors:["unversioned save does not match a known Forge Planner shape"],sourceVersion:0};
@@ -242,20 +242,23 @@ function validateAndMigrate(candidate){
     });
   }
 
-  const copyItemMap=(key,rule,text)=>{
+  /* `keys` is what the map may carry; only ALLITEMS is ever demanded. The mined entries — sell
+     prices for Rocks and Vespium, inventory for those two plus Hydracite — arrived in v6, so a v5
+     save legitimately lacks them and keeps its default blank rather than failing validation. */
+  const copyItemMap=(key,rule,text,keys)=>{
     if(!_own(candidate,key))return;
     const map=_object(_readData(candidate,key,key,errors),key,errors);if(!map)return;
-    ALLITEMS.forEach(item=>{
-      if(versioned&&!text&&!_own(map,item))_pushError(errors,key+"."+item,"is required");
+    (keys||ALLITEMS).forEach(item=>{
+      if(versioned&&!text&&!_own(map,item)&&ALLITEMS.includes(item))_pushError(errors,key+"."+item,"is required");
       if(_own(map,item))out[key][item]=text?_string(_readData(map,item,key+"."+item,errors),rule,key+"."+item,errors):_decimal(_readData(map,item,key+"."+item,errors),rule,key+"."+item,errors);
     });
   };
-  copyItemMap("sellPrice",FIELD_SCHEMA.sellPrice,false);
-  copyItemMap("priceText",FIELD_SCHEMA.displayText,true);
+  copyItemMap("sellPrice",FIELD_SCHEMA.sellPrice,false,PRICEABLE_ITEMS);
+  copyItemMap("priceText",FIELD_SCHEMA.displayText,true,PRICEABLE_ITEMS);
   copyItemMap("forgie",FIELD_SCHEMA.forgie,false);
   copyItemMap("forgieText",FIELD_SCHEMA.displayText,true);
-  copyItemMap("inventory",FIELD_SCHEMA.inventory,false);
-  copyItemMap("inventoryText",FIELD_SCHEMA.displayText,true);
+  copyItemMap("inventory",FIELD_SCHEMA.inventory,false,INVENTORY_ITEMS);
+  copyItemMap("inventoryText",FIELD_SCHEMA.displayText,true,INVENTORY_ITEMS);
 
   const hasNestedMinedMap=key=>{
     if(!_own(candidate,key))return false;
@@ -268,6 +271,15 @@ function validateAndMigrate(candidate){
   // strings), so both versions carry the current shape.
   const currentMinedShape=sourceVersion>=4||
     (sourceVersion===0&&(hasNestedMinedMap("minedIncome")||hasNestedMinedMap("minedIncomeText")));
+  /* v4 and v5 nest the retired Vespium rig source and carry no Rocks income at all. Both are read
+     where the save actually put them and reconciled below, so validation demands exactly the keys
+     the writing version was required to produce. */
+  const legacyNestedSources=sourceVersion>0&&sourceVersion<6;
+  const nestedMinedResources=legacyNestedSources?["Vespium","Hydracite"]:MINED_INCOME_RESOURCES;
+  const nestedMinedSources=resource=>legacyNestedSources
+    ?(resource==="Vespium"?["rigPerMin","resourcesTradingPerSec"]:["resourcesTradingPerSec"])
+    :Object.keys(MINED_INCOME_SOURCES[resource]||{});
+  const retiredRig={value:undefined};
   if(currentMinedShape){
     if(sourceVersion===0){
       if(!_own(candidate,"minedIncome"))_pushError(errors,"minedIncome","is required for nested mined sources");
@@ -276,22 +288,29 @@ function validateAndMigrate(candidate){
     const copySourceMap=(key,rule,text)=>{
       if(!_own(candidate,key))return;
       const map=_object(_readData(candidate,key,key,errors),key,errors);if(!map)return;
-      MINED_RESOURCES.forEach(resource=>{
+      nestedMinedResources.forEach(resource=>{
         const resourcePath=key+"."+resource;
         if(!_own(map,resource)){_pushError(errors,resourcePath,"is required");return;}
         const resourceMap=_object(_readData(map,resource,resourcePath,errors),resourcePath,errors);if(!resourceMap)return;
-        Object.keys(MINED_INCOME_SOURCES[resource]).forEach(source=>{
+        nestedMinedSources(resource).forEach(source=>{
           const path=resourcePath+"."+source;
           if(!_own(resourceMap,source)){_pushError(errors,path,"is required");return;}
-          out[key][resource][source]=text
+          const value=text
             ?_string(_readData(resourceMap,source,path,errors),rule,path,errors)
             :_decimal(_readData(resourceMap,source,path,errors),rule,path,errors);
+          // The rig is validated so a malformed one is still reported, then held aside rather than
+          // written: `out` has no home for a source this version does not have.
+          if(source==="rigPerMin"){if(!text)retiredRig.value=value;return;}
+          out[key][resource][source]=value;
         });
       });
     };
     copySourceMap("minedIncome",FIELD_SCHEMA.minedIncome,false);
     copySourceMap("minedIncomeText",FIELD_SCHEMA.displayText,true);
   }else{
+    /* v1-v3 stored one scalar per resource. Vespium's was the rig figure and Hydracite's a
+       per-minute rate; both are now per-second sources, and the saved display text reads in
+       per-minute units, so it is dropped and every field re-derived from the converted number. */
     if(_own(candidate,"minedIncome")){
       const map=_object(_readData(candidate,"minedIncome","minedIncome",errors),"minedIncome",errors);
       if(map)MINED_RESOURCES.forEach(resource=>{
@@ -300,28 +319,37 @@ function validateAndMigrate(candidate){
         if(!_own(map,resource))return;
         const value=_decimal(_readData(map,resource,path,errors),FIELD_SCHEMA.minedIncome,path,errors);
         if(value===undefined)return;
-        if(resource==="Vespium")out.minedIncome.Vespium.rigPerMin=value;
-        else out.minedIncome.Hydracite.resourcesTradingPerSec=value===null?null:value.div(60);
+        out.minedIncome[resource].resourcesTradingPerSec=value===null?null:value.div(60);
       });
     }else if(_own(candidate,"gelVesp")){
       const value=_decimal(_readData(candidate,"gelVesp","gelVesp",errors),FIELD_SCHEMA.minedIncome,"gelVesp",errors);
-      if(value!==undefined)out.minedIncome.Vespium.rigPerMin=value;
+      if(value!==undefined&&value!==null)out.minedIncome.Vespium.resourcesTradingPerSec=value.div(60);
     }
+    // Read for validation only: a per-minute string cannot be shown against a per-second field.
     if(_own(candidate,"minedIncomeText")){
       const map=_object(_readData(candidate,"minedIncomeText","minedIncomeText",errors),"minedIncomeText",errors);
       if(map)MINED_RESOURCES.forEach(resource=>{
         const path="minedIncomeText."+resource;
         if(versioned&&!_own(map,resource))_pushError(errors,path,"is required");
         if(!_own(map,resource))return;
-        const text=_string(_readData(map,resource,path,errors),FIELD_SCHEMA.displayText,path,errors);
-        if(resource==="Vespium"&&text!==undefined)out.minedIncomeText.Vespium.rigPerMin=text;
+        _string(_readData(map,resource,path,errors),FIELD_SCHEMA.displayText,path,errors);
       });
     }else if(_own(candidate,"gelVespText")){
-      const text=_string(_readData(candidate,"gelVespText","gelVespText",errors),FIELD_SCHEMA.displayText,"gelVespText",errors);
-      if(text!==undefined)out.minedIncomeText.Vespium.rigPerMin=text;
+      _string(_readData(candidate,"gelVespText","gelVespText",errors),FIELD_SCHEMA.displayText,"gelVespText",errors);
     }
-    out.minedIncomeText.Hydracite.resourcesTradingPerSec=
-      formatFieldValue(FIELD_SCHEMA.minedIncome,out.minedIncome.Hydracite.resourcesTradingPerSec);
+    MINED_INCOME_RESOURCES.forEach(resource=>{
+      out.minedIncomeText[resource].resourcesTradingPerSec=
+        formatFieldValue(FIELD_SCHEMA.minedIncome,out.minedIncome[resource].resourcesTradingPerSec);
+    });
+  }
+  /* The in-game per-second stat block already includes rig output, so a save carrying both figures
+     drops the rig rather than counting it twice. A save carrying only the rig has no other record of
+     its Vespium income, so that figure is converted rather than discarded — and its text with it,
+     since the rig was entered per minute. */
+  if(retiredRig.value!=null&&retiredRig.value.gt(DEC_ZERO)&&out.minedIncome.Vespium.resourcesTradingPerSec==null){
+    out.minedIncome.Vespium.resourcesTradingPerSec=retiredRig.value.div(60);
+    out.minedIncomeText.Vespium.resourcesTradingPerSec=
+      formatFieldValue(FIELD_SCHEMA.minedIncome,out.minedIncome.Vespium.resourcesTradingPerSec);
   }
 
   const rawTargets=_readData(candidate,"targets","targets",errors),targets=_object(rawTargets,"targets",errors);

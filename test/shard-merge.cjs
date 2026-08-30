@@ -208,7 +208,7 @@ const runner = `
     const s=defaults();
     s.mode="items";s.targetMode="share";s.solveBudget=400;s.margin=0;s.dupe=0;s.maxTurbo=0;
     s.lines=[{max:32,spx:35,turbo:0},{max:16,spx:30,turbo:0},{max:8,spx:25,turbo:0}];
-    s.minedIncome.Vespium.rigPerMin=1e30;
+    s.minedIncome.Vespium.resourcesTradingPerSec=1e30/60;
     [...RAWS,...PRODUCTS].forEach(item=>{s.targets[item]={on:false,w:1,share:50};});
     SHARE_TARGETS.forEach(item=>{s.targets[item]={on:true,w:1,share:50};});
     normalize(s);syncManual(s);

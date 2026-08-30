@@ -18,19 +18,19 @@ class Target{
   querySelectorAll(){return [];}
 }
 const btn=new Target("btnMined"),close=new Target("minedClose"),done=new Target("minedDone");
-const vespRig=new Target("minedVespiumRig"),vespTrading=new Target("minedVespiumTrading");
+const rocksTrading=new Target("minedRocksTrading"),vespTrading=new Target("minedVespiumTrading");
 const hydraTrading=new Target("minedHydraciteTrading"),dialog=new Target("minedDialog");
-vespRig.dataset.minedResource="Vespium";vespRig.dataset.minedSource="rigPerMin";
+rocksTrading.dataset.minedResource="Rocks";rocksTrading.dataset.minedSource="resourcesTradingPerSec";
 vespTrading.dataset.minedResource="Vespium";vespTrading.dataset.minedSource="resourcesTradingPerSec";
 hydraTrading.dataset.minedResource="Hydracite";hydraTrading.dataset.minedSource="resourcesTradingPerSec";
 const modal=new Target("minedModal");modal.hidden=true;
-const focusables=[close,vespRig,vespTrading,hydraTrading,done];
+const focusables=[close,rocksTrading,vespTrading,hydraTrading,done];
 modal.querySelector=sel=>sel.includes("[role=\"dialog\"]")||sel.includes("[role='dialog']")?dialog:null;
 modal.querySelectorAll=()=>focusables;
 dialog.querySelectorAll=()=>focusables;
 close.closest=done.closest=sel=>sel==="[data-dialog-close]"?close:null;
 const els={btnMined:btn,minedModal:modal,minedClose:close,minedDone:done,
-  minedVespiumRig:vespRig,minedVespiumTrading:vespTrading,minedHydraciteTrading:hydraTrading};
+  minedRocksTrading:rocksTrading,minedVespiumTrading:vespTrading,minedHydraciteTrading:hydraTrading};
 const doc=new Target("document");doc.activeElement=null;doc.getElementById=id=>els[id]||new Target(id);
 doc.querySelector=sel=>sel==="#minedModal .modal"?dialog:null;
 doc.body={children:[],classList:{toggle(){}}};
@@ -51,7 +51,7 @@ function open(){btn.focus();btn.dispatch("click");}
 function expectRestore(name,closeAction){open();closeAction();check(name,modal.hidden&&document.activeElement===btn,"hidden="+modal.hidden+", focus="+(document.activeElement&&document.activeElement.id));}
 
 open();
-check("opening Mined resources focuses Vespium Rig income",document.activeElement===vespRig,"focus="+(document.activeElement&&document.activeElement.id));
+check("opening Mined resources focuses the first mined income",document.activeElement===rocksTrading,"focus="+(document.activeElement&&document.activeElement.id));
 done.focus();let ev=doc.dispatch("keydown",{key:"Tab"});
 check("Tab wraps within Mined resources",ev.defaultPrevented&&document.activeElement===close,"focus="+(document.activeElement&&document.activeElement.id));
 close.focus();ev=doc.dispatch("keydown",{key:"Tab",shiftKey:true});

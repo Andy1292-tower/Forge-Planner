@@ -15,8 +15,8 @@ function solveStateSnapshot(state){
  * core.js's toDec reads all three, and Number.isFinite reads none of them — which is why the cache
  * guard below cannot test these fields the way it tests the ordinary float ones.
  *
- * The typeof guard is the same accommodation ALLITEMS gets in mergeShardResults: this file is also
- * exercised in a realm holding only itself plus stubs (the isolated service realm in
+ * The typeof guard is the same accommodation PRICEABLE_ITEMS gets in mergeShardResults: this file
+ * is also exercised in a realm holding only itself plus stubs (the isolated service realm in
  * test/solve-lifecycle.cjs), where there is no core.js and no Decimal. Quantities there are plain
  * numbers, so a plain-number comparator is all that has to work. */
 function readQuantity(value){
@@ -54,7 +54,7 @@ function solveStateKey(state){
 /* Items and Credits solves can consume the full user budget even when nothing relevant changed.
  * Keep a small, separate daily cache keyed only by the inputs each mode actually reads. It never
  * enters the save/export schema, and every storage failure falls through to an ordinary solve. */
-const DAILY_SOLVE_CACHE_VERSION=4;
+const DAILY_SOLVE_CACHE_VERSION=5;
 // Retain the original storage key; the version invalidates pre-Credits records safely.
 const DAILY_SOLVE_CACHE_STORAGE_KEY="forgePlannerMaxItemsCache_v1";
 const DAILY_SOLVE_CACHE_AGE_MS=24*60*60*1000;
@@ -286,7 +286,7 @@ function mergeShardResults(mode,entries){
   const first=ordered[0].res;
   if(mode!=="credits")return first;      // only Credits fans out today; anything else is shard 0's
   if(ordered.some(entry=>entry.res.empty===true))return first;
-  const catalogOrder=new Map((typeof ALLITEMS!=="undefined"?ALLITEMS:[]).map((item,index)=>[item,index]));
+  const catalogOrder=new Map((typeof PRICEABLE_ITEMS!=="undefined"?PRICEABLE_ITEMS:[]).map((item,index)=>[item,index]));
   const at=item=>catalogOrder.has(item)?catalogOrder.get(item):Number.MAX_SAFE_INTEGER;
   const ranking=[],seen=new Set(),issues=[];
   for(const entry of ordered){

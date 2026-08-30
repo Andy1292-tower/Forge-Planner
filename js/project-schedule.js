@@ -35,6 +35,10 @@
     return {
       ordinaryResources:Array.from(new Set(c.ordinaryResources||[])),
       minedResources:Array.from(new Set(c.minedResources||[])),
+      /* Mined resources whose CARRIED STOCK a phase may spend on top of its income. Absent from a
+         context, no mined bank exists and every phase is held to its own accrual, which is what
+         every caller predating held mined stock expects. */
+      minedStockResources:Array.from(new Set(c.minedStockResources||[])),
       informationalResources:Array.from(new Set(c.informationalResources||[])),
       forgieRates:rateMap(c.forgieRates),minedIncomeRates:rateMap(c.minedIncomeRates),
       recipeDependencies:Object.fromEntries(Object.entries(c.recipeDependencies||{}).map(([k,v])=>[k,[...(v||[])]])),
@@ -271,17 +275,25 @@
           ordinaryRates:copyMap(ordinaryRates),minedRates:copyMap(minedRates),active});
       }
       /* Settle each mined bank over the phase. A phase may out-draw its income at any instant; what
-       * it may not do is out-draw the income the phase itself earns, because that is a deficit no
-       * bank refills — the plan would need a stockpile it never builds back. `rate` and `excess`
-       * stay per-hour so the reader compares them against the income they entered. */
+       * it may not do is out-draw the income the phase itself earns PLUS whatever held stock is
+       * still in the bank, because beyond that is a deficit nothing refills — the plan would need a
+       * stockpile it never builds back. Held stock is finite and spends once: what a phase takes
+       * from it is gone for every phase behind it, which is why the bank is carried in `inv` rather
+       * than recomputed per phase. `rate` and `excess` stay per-hour so the reader compares them
+       * against the income they entered. */
       for(const resource of c.minedResources){
         const drawn=minedDrawn[resource]||0,cap=Math.max(0,Number(c.minedIncomeRates[resource])||0);
-        const accrued=cap*phase.eta,overdraw=drawn-accrued;
-        if(overdraw>stockTol(c,drawn,accrued)){
+        const banked=c.minedStockResources.includes(resource)?Math.max(0,Number(inv[resource])||0):0;
+        const accrued=cap*phase.eta,overdraw=drawn-accrued-banked;
+        if(overdraw>stockTol(c,drawn,accrued,banked)){
           const span=phase.eta>0?phase.eta:1;
           firstFailure=failureEarlier(firstFailure,{kind:"mined-rate",phaseIndex,resource,
-            time:phaseStart,boundaryTime:phaseStart+phase.eta,rate:drawn/span,cap,excess:overdraw/span,drawn,accrued,
-            message:`${resource} use exceeds income by ${overdraw/span}/hr`});
+            time:phaseStart,boundaryTime:phaseStart+phase.eta,rate:drawn/span,cap,excess:overdraw/span,drawn,accrued,banked,
+            message:`${resource} use exceeds income and held stock by ${overdraw/span}/hr`});
+        }
+        if(banked>0){
+          const fromBank=Math.max(0,Math.min(banked,drawn-accrued));
+          inv[resource]=banked-fromBank;charge(resource,fromBank);
         }
       }
       if(phase.kind==="project"){
