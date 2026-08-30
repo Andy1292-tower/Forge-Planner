@@ -337,7 +337,8 @@ function maxItemsState(overrides = {}) {
     prodCost: { Frames: { Rods: { 1: 2 } } },
     forgie: { Frames: 3 },
     minedIncome: {
-      Vespium: { rigPerMin: 7, resourcesTradingPerSec: 0 },
+      Rocks: { resourcesTradingPerSec: 5 },
+      Vespium: { resourcesTradingPerSec: 7 },
       Hydracite: { resourcesTradingPerSec: 11 },
     },
     sellPrice: { Frames: 123 },
@@ -582,8 +583,9 @@ test("Items cache misses projected input changes and expired records", () => {
     ["base time", state => ({ ...state, baseTime: { Frames: 309 } })],
     ["production cost", state => ({ ...state, prodCost: { Frames: { Rods: { 1: 3 } } } })],
     ["Lil' Forgie production", state => ({ ...state, forgie: { Frames: 4 } })],
-    ["Vespium Rig income", state => ({ ...state, minedIncome: {
-      Vespium: { ...state.minedIncome.Vespium, rigPerMin: 8 },
+    ["Worthless Rocks income", state => ({ ...state, minedIncome: {
+      Rocks: { resourcesTradingPerSec: 8 },
+      Vespium: { ...state.minedIncome.Vespium },
       Hydracite: { ...state.minedIncome.Hydracite },
     } })],
     ["Vespium Resources and Trading income", state => ({ ...state, minedIncome: {
@@ -615,36 +617,41 @@ test("Items cache misses projected input changes and expired records", () => {
   assert.equal(expired.workers.length, 1, "a record exactly 24 hours old must dispatch a Worker");
 });
 
-test("daily cache version 4 rejects version 3 bytes and keys each raw mined source", () => {
+test("daily cache version 5 rejects version 4 bytes and keys each raw mined source", () => {
   const storage = new Map();
   const original = maxItemsState({ minedIncome: {
-    Vespium: { rigPerMin: 2, resourcesTradingPerSec: 3 },
+    Rocks: { resourcesTradingPerSec: 5 },
+    Vespium: { resourcesTradingPerSec: 3 },
     Hydracite: { resourcesTradingPerSec: 4 },
   } });
   primeItemsCache(storage, original);
   const cacheKey = [...storage.keys()][0];
   const persisted = JSON.parse(storage.get(cacheKey));
-  assert.equal(persisted.version, 4);
-  assert.ok(persisted.entries.every(entry => entry.version === 4));
+  assert.equal(persisted.version, 5);
+  assert.ok(persisted.entries.every(entry => entry.version === 5));
 
   const stale = JSON.parse(JSON.stringify(persisted));
-  stale.version = 3;
-  stale.entries.forEach(entry => { entry.version = 3; });
+  stale.version = 4;
+  stale.entries.forEach(entry => { entry.version = 4; });
   storage.set(cacheKey, JSON.stringify(stale));
   const staleHarness = lifecycleHarness({ storage });
   staleHarness.callRequest({ mode: "items", stateRevision: 2, budget: original.solveBudget, stateSnapshot: original }, () => {});
-  assert.equal(staleHarness.workers.length, 1, "a version-3 cache predates the mix mode and must not satisfy an Items solve");
+  assert.equal(staleHarness.workers.length, 1, "a version-4 cache predates the mined-source change and must not satisfy an Items solve");
 
-  const equalAggregateStorage = new Map();
-  primeItemsCache(equalAggregateStorage, original);
-  const equalAggregate = maxItemsState({ minedIncome: {
-    Vespium: { rigPerMin: 182, resourcesTradingPerSec: 0 },
+  /* Every declared mined income is part of the cache identity, including one no Items plan can
+     consume: Rocks is never a budgeted craft input, but it is priced and ranked in Credits, so a
+     record keyed without it would serve one ranking for two different factories. */
+  const rocksOnlyStorage = new Map();
+  primeItemsCache(rocksOnlyStorage, original);
+  const rocksOnly = maxItemsState({ minedIncome: {
+    Rocks: { resourcesTradingPerSec: 6 },
+    Vespium: { resourcesTradingPerSec: 3 },
     Hydracite: { resourcesTradingPerSec: 4 },
   } });
-  const equalAggregateHarness = lifecycleHarness({ storage: equalAggregateStorage });
-  equalAggregateHarness.callRequest({ mode: "items", stateRevision: 2, budget: equalAggregate.solveBudget, stateSnapshot: equalAggregate }, () => {});
-  assert.equal(equalAggregateHarness.workers.length, 1,
-    "equal hourly Vespium totals from different raw sources must have distinct cache identity");
+  const rocksOnlyHarness = lifecycleHarness({ storage: rocksOnlyStorage });
+  rocksOnlyHarness.callRequest({ mode: "items", stateRevision: 2, budget: rocksOnly.solveBudget, stateSnapshot: rocksOnly }, () => {});
+  assert.equal(rocksOnlyHarness.workers.length, 1,
+    "a changed Worthless Rocks income must have distinct cache identity");
 });
 
 test("mode isolation, forceFresh, and malformed daily-cache bytes fail open to a Worker", () => {

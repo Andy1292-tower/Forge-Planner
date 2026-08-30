@@ -29,14 +29,14 @@ const runner=`
   S=defaults();S.dupe=0;S.maxTurbo=0;
   S.lines=Array.from({length:6},(_,i)=>({max:512,spx:50-i,turbo:0}));
   ["100n","1d","1e36"].forEach(income=>{
-    setMinedIncome("Vespium","rigPerMin",income);
+    setMinedIncome("Vespium","resourcesTradingPerSec",income);
     document.getElementById("minedVespiumSummary").textContent="Gel/hr capacity: 0";
     document.getElementById("minedGelLoadout").innerHTML="income too low";
     let hugeBudgetError=null;
     try{renderMinedResources();}catch(error){hugeBudgetError=error;}
     const hugeCapacity=document.getElementById("minedVespiumSummary").textContent;
     const hugeLoadout=document.getElementById("minedGelLoadout").innerHTML;
-    check(income+" Rig income renders a multi-line Gel capacity without overflowing",
+    check(income+" mined income renders a multi-line Gel capacity without overflowing",
       !hugeBudgetError&&hugeCapacity==="Gel/hr capacity: 4.27k"&&
         !hugeLoadout.includes("income too low")&&hugeLoadout.includes("#6")&&hugeLoadout.includes("512×"),
       "error="+(hugeBudgetError&&hugeBudgetError.message)+", capacity="+hugeCapacity+", loadout="+hugeLoadout);
@@ -46,13 +46,13 @@ const runner=`
   S=defaults();S.dupe=0;S.maxTurbo=0;
   const counterLines=[{max:1,spx:6,turbo:0},{max:1,spx:4,turbo:0},{max:1,spx:4,turbo:0}];
   S.lines=counterLines.concat(Array.from({length:9},()=>({max:1,spx:100,turbo:0})));
-  S.minedIncome.Vespium.rigPerMin=exactBudget/60;S.minedIncomeText.Vespium.rigPerMin=String(exactBudget/60);
+  S.minedIncome.Vespium.resourcesTradingPerSec=exactBudget/3600;S.minedIncomeText.Vespium.resourcesTradingPerSec=String(exactBudget/3600);
   const renderExact=gelLoadout,renderSeed=gelSeedLoadout;
   let renderExactCalls=0,renderSeedCalls=0;
   gelLoadout=function(){renderExactCalls++;return renderExact.apply(null,arguments);};
   gelSeedLoadout=function(){renderSeedCalls++;return renderSeed.apply(null,arguments);};
   renderMinedResources();
-  const minedInput=document.getElementById("minedVespiumRig");
+  const minedInput=document.getElementById("minedVespiumTrading");
   // No max attribute: a quantity field carries no magnitude ceiling (issue #142), so emitting one
   // would let the browser's own validation reject a value the parser accepts. Length still bounds it.
   check("mined inputs receive descriptor-derived range and draft limits",
@@ -86,7 +86,7 @@ const runner=`
   gelLoadout=renderExact;gelSeedLoadout=renderSeed;
 
   S=defaults();S.mode="items";S.dupe=50;S.lines=[{max:1,spx:1,turbo:0}];
-  PRODUCTS.forEach(p=>S.targets[p]={on:p==="Gel",w:1});S.minedIncome.Vespium.rigPerMin=1e30;
+  PRODUCTS.forEach(p=>S.targets[p]={on:p==="Gel",w:1});S.minedIncome.Vespium.resourcesTradingPerSec=1e30/60;
   let result=optimize(),el=new El(),stat=new El();renderSolveResult(result,el,stat);
   const gelLine=result.plan.find(p=>p.job&&p.job.res==="Gel"),itemRocks=1e23/3201*3600;
   check("items Gel plan row renders real Rocks consumption",el.innerHTML.includes(disp(itemRocks)+" Rocks"),el.innerHTML);
@@ -95,7 +95,7 @@ const runner=`
   check("informational Rocks is not described as a solver budget",idleNote.includes("Gel / Vespium")&&!idleNote.includes("Gel / Rocks"),idleNote);
 
   S=defaults();S.mode="project";S.dupe=50;S.lines=Array.from({length:5},(_,i)=>({max:i<2?16:4,spx:10-i,turbo:0}));
-  S.minedIncome.Vespium.rigPerMin=1e30;S.projects=[{id:"gel",name:"Gel render",catId:"",on:true,from:1,to:1,done:0,prio:null,
+  S.minedIncome.Vespium.resourcesTradingPerSec=1e30/60;S.projects=[{id:"gel",name:"Gel render",catId:"",on:true,from:1,to:1,done:0,prio:null,
     levels:[{costs:[{item:"Gel",qty:100}]}]}];
   result=optimize();const phase=result.phases[0];let projectRocks=0;
   phase.plan.forEach(p=>(p.entries||[]).forEach(e=>{if(e.item!=="Gel")return;const tier=Math.log2(e.lvl),t=3201*Math.pow(1.5,tier),cost=1e23*Math.pow(3,tier);
@@ -107,17 +107,17 @@ const runner=`
 
   S=defaults();S.dupe=0;S.lines=[{max:1,spx:1,turbo:0},{max:1,spx:1,turbo:0}];
   S.manual=[{job:"Gel",lvl:1,sell:false},{job:"Ingots",lvl:1,sell:false}];syncManual(S);
-  S.minedIncome.Vespium.rigPerMin=1e15;S.forgie.Ingots=123;
+  S.minedIncome.Vespium.resourcesTradingPerSec=1e15/60;S.forgie.Ingots=123;
   el=new El();stat=new El();renderManual(el,stat);
   check("Manual gives mined income its own column",el.innerHTML.includes('<th class="num">Mined income</th>'),el.innerHTML);
   check("Manual keeps Forgie in Passive",el.innerHTML.includes('<th class="num">Passive</th>')&&el.innerHTML.includes(disp(123)),el.innerHTML);
   check("Manual no longer labels mined income as a line arrow",!el.innerHTML.includes("income →"),el.innerHTML);
-  S.minedIncome.Vespium.rigPerMin=0;el=new El();stat=new El();renderManual(el,stat);
+  S.minedIncome.Vespium.resourcesTradingPerSec=0;el=new El();stat=new El();renderManual(el,stat);
   check("Manual keeps the mined-income column at zero income",el.innerHTML.includes('<th class="num">Mined income</th>'),el.innerHTML);
 
   S=defaults();S.dupe=0;S.maxTurbo=0;S.lines=[{max:1,spx:1,turbo:0}];
   S.manual=[{job:"Batteries",lvl:1,sell:false}];syncManual(S);
-  S.minedIncome.Vespium.rigPerMin=1e100;S.minedIncome.Hydracite.resourcesTradingPerSec=1e100;
+  S.minedIncome.Vespium.resourcesTradingPerSec=1e100;S.minedIncome.Hydracite.resourcesTradingPerSec=1e100;
   const manualBattery=manualResult(),batteryJob=manualBattery.plan[0].job,batterySeconds=1034274.56;
   check("Manual Battery output uses the five-unit base batch",
     Math.abs(batteryJob.prod[0][1]-5/batterySeconds)<1e-18,

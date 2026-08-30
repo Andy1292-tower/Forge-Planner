@@ -73,7 +73,7 @@ const runner = `
     const s=defaults();
     s.mode="items";s.solveBudget=budget;s.dupe=12;s.margin=0;s.maxTurbo=0;
     s.lines=JSON.parse(JSON.stringify(lines));
-    s.minedIncome.Vespium.rigPerMin=1e24;
+    s.minedIncome.Vespium.resourcesTradingPerSec=1e24/60;
     s.minedIncome.Hydracite.resourcesTradingPerSec=1e18;
     RAWS.forEach(r=>{s.forgie[r]=1e18;});
     [...RAWS,...PRODUCTS].forEach(it=>{s.targets[it]={on:!!on[it],w:on[it]||1,share:50};});

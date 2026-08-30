@@ -15,16 +15,41 @@ const MINED_CRAFTS={
   Gel:{resource:"Vespium",baseCosts:{Vespium:5e14},informationalCosts:{Rocks:1e23}},
   Batteries:{resource:"Hydracite",baseCosts:{Hydracite:5e12},informationalCosts:{}}
 };
+/* Mined resources the solver BUDGETS: a craft may not draw more of one than the income supplies.
+   Rocks is deliberately absent — Gel's Rocks cost stays informational (see MINED_CRAFTS), so Rocks
+   carries an income and a sell price without ever gating a craft. */
 const MINED_RESOURCES=["Vespium","Hydracite"];
+/* Mined resources the player declares an income for. A superset of MINED_RESOURCES: Rocks is mined
+   and sellable but never budgeted. In-game display order — Rocks first, as on the stat block. */
+const MINED_INCOME_RESOURCES=["Rocks","Vespium","Hydracite"];
+/* The in-game stat block reports every mined resource per second, and that figure already includes
+   rig output. A separate rig-per-minute source therefore double-counted the rigs and is gone. */
 const MINED_INCOME_SOURCES=Object.freeze({
+  Rocks:Object.freeze({
+    resourcesTradingPerSec:Object.freeze({perHourMultiplier:3600})
+  }),
   Vespium:Object.freeze({
-    rigPerMin:Object.freeze({perHourMultiplier:60}),
     resourcesTradingPerSec:Object.freeze({perHourMultiplier:3600})
   }),
   Hydracite:Object.freeze({
     resourcesTradingPerSec:Object.freeze({perHourMultiplier:3600})
   })
 });
+// Mined resources the player can put a price on, and so rank against the crafted items in Credits.
+const SELLABLE_MINED=["Rocks","Vespium"];
+// Everything Credits compares head to head, and everything the Sell prices tab collects a price for.
+const PRICEABLE_ITEMS=[...RAWS,...PRODUCTS,...SELLABLE_MINED];
+// Mined stock the player already holds. Hydracite is spendable on Batteries; Rocks and Vespium are
+// recorded for completeness and are not drawn down by any craft.
+const INVENTORY_MINED=["Rocks","Vespium","Hydracite"];
+/* Mined stock a Project plan may DRAW DOWN on top of its income, which lets a phase out-draw the
+   income while the bank lasts and so finish sooner. Held stock is a quantity, not a rate, so this is
+   meaningful only against the finite demand of a Project plan — Items and Credits solve for a
+   sustained hourly rate, which a one-off stockpile cannot raise. */
+const SPENDABLE_MINED_STOCK=["Hydracite"];
+// Display names. Internal keys stay short so they match MINED_CRAFTS and the existing saved state.
+const MINED_DISPLAY_NAMES=Object.freeze({Rocks:"Worthless Rocks"});
+function minedDisplayName(resource){return MINED_DISPLAY_NAMES[resource]||resource;}
 function compressionLabel(L){return Number(L)===16384?"16.38k×":String(L)+"×";}
 // The in-game upgrade level behind a multiplier: level 0 is 1× and each level doubles it,
 // so the top tier (16384×) is level 14.
@@ -90,6 +115,15 @@ const UNLOCK_MATERIALS=Object.keys(UNLOCKS).map(k=>UNLOCKS[k]);   // ["Frames","
 const PROJECT_PREREQS={"gel-refinery":["vescas-workshop-mk2"]};
 /* ---- project-mode + shopping-list helpers (additive; match live's existing inline behavior) ---- */
 const ALLITEMS=[...RAWS,...PRODUCTS];
+// Inventory records mined stock alongside crafted stock, so its key set is wider than ALLITEMS.
+const INVENTORY_ITEMS=[...ALLITEMS,...INVENTORY_MINED];
+/* ---- in-game item groupings and orders ----
+   The two craftable families and their order are the game's own, so the planner's lists can be read
+   straight down against the screen they came from. Together they partition ALLITEMS. */
+const SILICATE_CRAFTABLES=["Bits","Concrete","Glass","Bricks","Reinforced Concrete","Gel","Batteries"];
+const VESPIUM_CRAFTABLES=["Ingots","Plates","Rods","Frames","Wire"];
+// Lil' Forgie lists his own production in one flat run, in the order his screen shows it.
+const FORGIE_ITEM_ORDER=["Bits","Concrete","Glass","Bricks","Ingots","Plates","Rods","Frames","Gel","Wire","Reinforced Concrete","Batteries"];
 const MIN_CRAFT_S=1;
 function effSpeed(sp,ct){return Math.min(sp,(ct||Infinity)/MIN_CRAFT_S);}
 // Final max crafting speed for a line. The user enters the speed × they currently see
@@ -136,7 +170,23 @@ function defaults(){
     Batteries:{Wire:c(500),Gel:c(100000)}
   };
   const baseTime={Ingots:10,Bits:6.178,Concrete:9.273,Glass:92.68,Bricks:108.2,Plates:30.89,Rods:46.34,Frames:308.9,Gel:3201,Wire:5400.8,"Reinforced Concrete":355531.88,Batteries:1034274.56};
-  const nulls=()=>{const o={};[...RAWS,...PRODUCTS].forEach(it=>o[it]=null);return o;};
+  const nulls=(keys)=>{const o={};(keys||[...RAWS,...PRODUCTS]).forEach(it=>o[it]=null);return o;};
+  const blankSources=()=>{
+    const o={};
+    MINED_INCOME_RESOURCES.forEach(resource=>{
+      o[resource]={};
+      Object.keys(MINED_INCOME_SOURCES[resource]).forEach(source=>{o[resource][source]=null;});
+    });
+    return o;
+  };
+  const blankSourceText=()=>{
+    const o={};
+    MINED_INCOME_RESOURCES.forEach(resource=>{
+      o[resource]={};
+      Object.keys(MINED_INCOME_SOURCES[resource]).forEach(source=>{o[resource][source]="";});
+    });
+    return o;
+  };
   const tg={};PRODUCTS.forEach(p=>tg[p]={on:p==="Frames",w:1,share:50});RAWS.forEach(r=>tg[r]={on:false,w:1,share:50});
   return {
     lines:[
@@ -148,18 +198,12 @@ function defaults(){
     ],
     maxTurbo:0,dupe:12.40,
     prodCost,baseTime,margin:0,mode:"items",solveBudget:10000,
-    sellPrice:nulls(),priceText:{},
+    sellPrice:nulls(PRICEABLE_ITEMS),priceText:{},
     forgie:nulls(),forgieText:{},
-    minedIncome:{
-      Vespium:{rigPerMin:null,resourcesTradingPerSec:null},
-      Hydracite:{resourcesTradingPerSec:null}
-    },
-    minedIncomeText:{
-      Vespium:{rigPerMin:"",resourcesTradingPerSec:""},
-      Hydracite:{resourcesTradingPerSec:""}
-    },
+    minedIncome:blankSources(),
+    minedIncomeText:blankSourceText(),
     targets:tg,targetMode:"ratio",targetSaved:[],targetActiveId:null,
-    projects:[],inventory:nulls(),inventoryText:{},projectSeq:true,projectGate:true,projectStability:"prefer-current",projLineMode:"split",
+    projects:[],inventory:nulls(INVENTORY_ITEMS),inventoryText:{},projectSeq:true,projectGate:true,projectStability:"prefer-current",projLineMode:"split",
     planStart:null,
     manual:[],manualSaved:[],manualActiveId:null
   };
@@ -244,7 +288,7 @@ function normalize(st){
      the one place a persisted string / legacy float becomes the Decimal the rest of the app holds.
      A value that will not parse becomes null ("not entered"), never a silent zero. */
   if(!st.sellPrice)st.sellPrice={};
-  [...RAWS,...PRODUCTS].forEach(it=>{st.sellPrice[it]=toDec(st.sellPrice[it]);});
+  PRICEABLE_ITEMS.forEach(it=>{st.sellPrice[it]=toDec(st.sellPrice[it]);});
   if(!st.priceText)st.priceText={};
   if(!st.forgie)st.forgie={};
   [...RAWS,...PRODUCTS].forEach(it=>{st.forgie[it]=toDec(st.forgie[it]);});
@@ -279,36 +323,48 @@ function normalize(st){
   if(!st.minedIncome||typeof st.minedIncome!=="object"||Array.isArray(st.minedIncome))st.minedIncome={};
   if(!st.minedIncomeText||typeof st.minedIncomeText!=="object"||Array.isArray(st.minedIncomeText))st.minedIncomeText={};
   const legacyVesp=Object.prototype.hasOwnProperty.call(st.minedIncome,"Vespium")?st.minedIncome.Vespium:st.gelVesp;
-  const legacyVespText=Object.prototype.hasOwnProperty.call(st.minedIncomeText,"Vespium")?st.minedIncomeText.Vespium:st.gelVespText;
-  MINED_RESOURCES.forEach(resource=>{
+  MINED_INCOME_RESOURCES.forEach(resource=>{
     const sources=MINED_INCOME_SOURCES[resource],rawResource=st.minedIncome[resource],textResource=st.minedIncomeText[resource];
     const rawMap=rawResource&&typeof rawResource==="object"&&!Array.isArray(rawResource)?rawResource:{};
     const textMap=textResource&&typeof textResource==="object"&&!Array.isArray(textResource)?textResource:{};
     const legacyRaw=resource==="Vespium"?legacyVesp:rawResource;
-    const legacyText=resource==="Vespium"?legacyVespText:textResource;
-    const legacySource=resource==="Vespium"?"rigPerMin":"resourcesTradingPerSec";
     const normalized={},normalizedText={};
     Object.keys(sources).forEach(source=>{
       let raw=Object.prototype.hasOwnProperty.call(rawMap,source)?rawMap[source]:undefined;
-      if(raw===undefined&&source===legacySource&&(!rawResource||typeof rawResource!=="object")){
+      let text=Object.prototype.hasOwnProperty.call(textMap,source)?textMap[source]:undefined;
+      /* Both retired per-minute sources land here as a per-second rate. A build that predates the
+         nested source maps stored one scalar per resource: Vespium's was the rig figure, Hydracite's
+         a per-minute rate. Their saved text reads in per-minute units, so it is dropped and the
+         field re-derived from the converted number. */
+      if(raw===undefined&&source==="resourcesTradingPerSec"&&(!rawResource||typeof rawResource!=="object")){
         const legacy=toDec(legacyRaw);
-        raw=resource==="Hydracite"&&legacy!==null?legacy.div(60):legacyRaw;
+        if(legacy!==null){raw=legacy.div(60);text=undefined;}
+      }
+      /* The rig source itself. The per-second stat block already includes rig output, so a build
+         carrying both drops the rig rather than adding it twice; a build carrying only the rig has
+         no other record of its Vespium income, so that figure is converted rather than discarded. */
+      if(resource==="Vespium"&&source==="resourcesTradingPerSec"&&toDec(raw)===null&&
+         Object.prototype.hasOwnProperty.call(rawMap,"rigPerMin")){
+        const rig=toDec(rawMap.rigPerMin);
+        if(rig!==null&&rig.gt(DEC_ZERO)){raw=rig.div(60);text=undefined;}
       }
       const value=toDec(raw);
       normalized[source]=value!==null&&value.gte(DEC_ZERO)?value:null;
-      let text=Object.prototype.hasOwnProperty.call(textMap,source)?textMap[source]:undefined;
-      if(text===undefined&&source===legacySource&&resource==="Vespium"&&typeof legacyText==="string")text=legacyText;
       normalizedText[source]=typeof text==="string"?text:(normalized[source]!==null?normalized[source].toString():"");
     });
     st.minedIncome[resource]=normalized;st.minedIncomeText[resource]=normalizedText;
   });
+  // Resources that no longer carry an income, and the retired rig source, must not survive a
+  // round-trip through persistence — a stale key would fail the schema it is no longer part of.
+  Object.keys(st.minedIncome).forEach(resource=>{if(!MINED_INCOME_SOURCES[resource])delete st.minedIncome[resource];});
+  Object.keys(st.minedIncomeText).forEach(resource=>{if(!MINED_INCOME_SOURCES[resource])delete st.minedIncomeText[resource];});
   delete st.gelVesp;delete st.gelVespText;
   delete st.gelLines;delete st.gelComp;
   if(st.mode!=="credits"&&st.mode!=="items"&&st.mode!=="project"&&st.mode!=="manual")st.mode="items";
   if(!Array.isArray(st.projects))st.projects=[];
   st.projects.forEach(p=>{if(!p.id)p.id="p"+Math.random().toString(36).slice(2,9);if(typeof p.name!=="string")p.name="Project";p.on=p.on!==false;if(p.prio!=null){const _pr=Math.floor(Number(p.prio));p.prio=_pr>=1?_pr:null;}else p.prio=p.first?1:null;delete p.first;if(p.catId&&typeof PROJECT_CATALOG!=="undefined"&&Array.isArray(PROJECT_CATALOG)){const _src=PROJECT_CATALOG.find(c=>c.catId===p.catId);if(_src){p.levels=catalogLevelsToState(_src.levels);p.name=_src.name;p.description=_src.description||"";}}if(!Array.isArray(p.levels)||p.levels.length===0)p.levels=[{costs:[]}];p.levels.forEach(L=>{if(!Array.isArray(L.costs))L.costs=[];L.costs.forEach(c=>{if(!RAWS.includes(c.item)&&!PRODUCTS.includes(c.item))c.item=PRODUCTS[0];const _q=toDec(c.qty);c.qty=_q!==null&&_q.gte(DEC_ZERO)?_q:null;});});p.from=Math.max(1,Math.min(p.levels.length,Math.floor(Number(p.from)||1)));p.to=Math.max(p.from,Math.min(p.levels.length,Math.floor(Number(p.to)||p.levels.length)));p.done=Math.max(0,Math.min(p.to-p.from+1,Math.floor(Number(p.done)||0)));});
   if(!st.inventory)st.inventory={};
-  ALLITEMS.forEach(it=>{st.inventory[it]=toDec(st.inventory[it]);});
+  INVENTORY_ITEMS.forEach(it=>{st.inventory[it]=toDec(st.inventory[it]);});
   if(!st.inventoryText)st.inventoryText={};
   if(typeof st.projectSeq!=="boolean")st.projectSeq=true;
   if(typeof st.projectGate!=="boolean")st.projectGate=true;

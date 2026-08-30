@@ -406,34 +406,43 @@ document.getElementById("modesw").addEventListener("click",e=>{
 
 /* ---------- sell prices ---------- */
 function itemTypeTag(it){
+  if(MINED_INCOME_SOURCES[it])return domElement("span","ty mined","mined");
   const kind=KIND[it]==="raw"?["raw","raw"]:KIND[it]==="fin"?["fin","assembly"]:["pr","craft"];
   return domElement("span","ty "+kind[0],kind[1]);
 }
-function renderItemValueRows(box,textMap,numberMap,dataName,placeholder,rule){
+/* `groups` is an ordered list of {label, items}. A group with no label runs its items on with no
+   heading, which is what the flat Lil' Forgie list is. Items are named by their in-game display
+   name; the data attribute keeps the internal key, so the input handlers are unchanged. */
+function renderItemValueRows(box,textMap,numberMap,dataName,placeholder,rule,groups){
   const nodes=[];
-  const addGroup=(label,items,first)=>{
-    nodes.push(domElement("div","price-grp"+(first?" first":""),label));
-    items.forEach(it=>{
+  (groups||[]).forEach((group,gi)=>{
+    if(group.label)nodes.push(domElement("div","price-grp"+(gi===0?" first":""),group.label));
+    group.items.forEach(it=>{
       const row=domElement("div","price-row");
       const name=domElement("div","pnm");
-      name.append(itemTypeTag(it),document.createTextNode(it));
+      const label=typeof minedDisplayName==="function"?minedDisplayName(it):it;
+      name.append(itemTypeTag(it),document.createTextNode(label));
       const value=numberMap[it];
       const text=textMap[it]!=null?textMap[it]:(value!=null?formatGameNum(value,4):"");
-      const accessibleName=dataName==="price"?`${it} sell price per unit`
-        :dataName==="forgie"?`${it} Lil' Forgie production per hour`
-        :`${it} current inventory`;
+      const accessibleName=dataName==="price"?`${label} sell price per unit`
+        :dataName==="forgie"?`${label} Lil' Forgie production per hour`
+        :`${label} current inventory`;
       const errorId=`field-${fieldDomToken(dataName)}-${fieldDomToken(it)}-error`;
       row.append(name,domTextInput(dataName,it,text,{placeholder,inputMode:rule.inputMode,accessibleName,rule,errorId}),domFieldError(errorId));
       nodes.push(row);
     });
-  };
-  addGroup("Finished & crafted",PRODUCTS,true);
-  addGroup("Raw materials",RAWS,false);
+  });
   box.replaceChildren(...nodes);
 }
+// The two craftable families as the game groups them, used by Sell prices and by Inventory.
+const CRAFTABLE_VALUE_GROUPS=[
+  {label:"Silicate craftables",items:SILICATE_CRAFTABLES},
+  {label:"Vespium craftables",items:VESPIUM_CRAFTABLES}
+];
 function renderPrices(){
   const box=document.getElementById("priceRows");
-  renderItemValueRows(box,S.priceText,S.sellPrice,"price","—",FIELD_SCHEMA.sellPrice);
+  renderItemValueRows(box,S.priceText,S.sellPrice,"price","—",FIELD_SCHEMA.sellPrice,
+    [{label:"Mined",items:SELLABLE_MINED},...CRAFTABLE_VALUE_GROUPS]);
 }
 const INPUT_TABS=Object.freeze({
   inventory:{tab:"inputsInventoryTab",panel:"inputsInventoryPanel",clear:"projInvClear",initial:()=>document.querySelector("#invRows input")},
@@ -496,7 +505,7 @@ inputsTabs.addEventListener("keydown",event=>{
 });
 document.getElementById("priceClear").addEventListener("click",()=>{
   if(!confirm("Clear all sell prices?"))return;
-  mutateState(st=>{[...RAWS,...PRODUCTS].forEach(it=>{st.sellPrice[it]=null;st.priceText[it]="";});});
+  mutateState(st=>{PRICEABLE_ITEMS.forEach(it=>{st.sellPrice[it]=null;st.priceText[it]="";});});
   renderPrices();save();scheduleSolve();
 });
 document.getElementById("priceRows").addEventListener("input",e=>{
@@ -508,7 +517,7 @@ document.getElementById("priceRows").addEventListener("input",e=>{
 /* ---------- Lil' Forgie supply modal ---------- */
 function renderForgie(){
   const box=document.getElementById("forgieRows");
-  renderItemValueRows(box,S.forgieText,S.forgie,"forgie","—",FIELD_SCHEMA.forgie);
+  renderItemValueRows(box,S.forgieText,S.forgie,"forgie","—",FIELD_SCHEMA.forgie,[{items:FORGIE_ITEM_ORDER}]);
 }
 const forgieDialog=dialogController.register({root:document.getElementById("forgieModal"),panel:document.querySelector("#forgieModal .modal"),opener:document.getElementById("btnForgie"),initialFocus:()=>document.querySelector("#forgieRows input"),onOpen:renderForgie});
 function openForgie(invoker){forgieDialog.open(invoker);}
@@ -526,7 +535,7 @@ document.getElementById("forgieRows").addEventListener("input",e=>{
 
 /* ---------- mined resources modal ---------- */
 const btnMined=document.getElementById("btnMined");
-const minedDialog=dialogController.register({root:document.getElementById("minedModal"),panel:document.querySelector("#minedModal .modal"),opener:btnMined,initialFocus:()=>document.getElementById("minedVespiumRig"),onOpen:renderMinedResources});
+const minedDialog=dialogController.register({root:document.getElementById("minedModal"),panel:document.querySelector("#minedModal .modal"),opener:btnMined,initialFocus:()=>document.getElementById("minedRocksTrading"),onOpen:renderMinedResources});
 function openMined(invoker){minedDialog.open(invoker);}
 function closeMined(){minedDialog.close();}
 document.getElementById("minedModal").addEventListener("input",e=>{
@@ -582,9 +591,9 @@ function setPriceNeeded(on){
 }
 // How many of a quantity map's entries the player has actually filled in. Reads Decimals, so it
 // counts a sell price or a stock of any size rather than throwing on one.
-function countSet(map){
+function countSet(map,keys){
   if(!map)return 0;
-  return [...RAWS,...PRODUCTS].filter(it=>toDec0(map[it]).gt(DEC_ZERO)).length;
+  return (keys||ALLITEMS).filter(it=>toDec0(map[it]).gt(DEC_ZERO)).length;
 }
 function plural(n,word){return n+" "+word+(n===1?"":"s");}
 function renderInputState(){
@@ -600,7 +609,7 @@ function renderInputState(){
   };
 
   const projects=(S.projects||[]).filter(p=>p.on&&(p.levels||[]).length).length;
-  const prices=countSet(S.sellPrice),stock=countSet(S.inventory);
+  const prices=countSet(S.sellPrice,PRICEABLE_ITEMS),stock=countSet(S.inventory,INVENTORY_ITEMS);
   const parts=[],spoken=[];
   if(projects){parts.push(plural(projects,"project"));spoken.push(plural(projects,"project")+" selected");}
   if(priceNeeded){parts.push('<span class="rail-warn">no sell prices</span>');spoken.push("no sell prices set");}
@@ -619,9 +628,10 @@ function renderInputState(){
     forgie?plural(forgie,"item"):"None set",
     "Lil' Forgie supply — "+(forgie?plural(forgie,"item")+" supplied":"nothing set"));
 
-  // via minedBudgetHr so the badge keeps working as income sources are added —
-  // each resource now sums several per-source rates rather than holding one number
-  const mined=MINED_RESOURCES.filter(r=>minedBudgetHr(r).gt(DEC_ZERO));
+  // Via minedBudgetHr so the badge keeps working as income sources are added. Every mined resource
+  // the player declares an income for is named, including Rocks, which no craft budgets but which
+  // Max credits/hr ranks — the modal collects it, so the badge has to report it.
+  const mined=MINED_INCOME_RESOURCES.filter(r=>minedBudgetHr(r).gt(DEC_ZERO)).map(minedDisplayName);
   seg("btnMined","stMined",mined.length>0,
     mined.length?mined.join(" · "):"No income set",
     mined.length>1?plural(mined.length,"income"):mined.length?mined[0]:"None set",
@@ -824,7 +834,8 @@ function projCard(p,pi){
 }
 function renderInv(){
   const box=document.getElementById("invRows");
-  renderItemValueRows(box,S.inventoryText,S.inventory,"inv","0",FIELD_SCHEMA.inventory);
+  renderItemValueRows(box,S.inventoryText,S.inventory,"inv","0",FIELD_SCHEMA.inventory,
+    [...CRAFTABLE_VALUE_GROUPS,{label:"Mined",items:INVENTORY_MINED}]);
 }
 function setProjectStabilityPolicy(value){
   if(value!=="prefer-current"&&value!=="reoptimize")return false;
@@ -900,7 +911,7 @@ document.getElementById("projClear").addEventListener("click",()=>{
 });
 document.getElementById("projInvClear").addEventListener("click",()=>{
   if(!confirm("Clear all inventory amounts?"))return;
-  mutateState(st=>{ALLITEMS.forEach(it=>{st.inventory[it]=null;st.inventoryText[it]="";});});
+  mutateState(st=>{INVENTORY_ITEMS.forEach(it=>{st.inventory[it]=null;st.inventoryText[it]="";});});
   renderInv();save();scheduleSolve();
 });
 document.getElementById("projList").addEventListener("click",e=>{

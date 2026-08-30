@@ -19,7 +19,7 @@ const runner = `
   let fail=0;
   const check=(name,ok,detail)=>{console.log((ok?"ok   ":"FAIL ")+name+" ["+detail+"]");if(!ok)fail++;};
   const consumes=(res,input)=>!!(res.balance||[]).find(x=>x.res===input&&x.cons>0);
-  const setVesp=(s,value)=>{s.minedIncome.Vespium.rigPerMin=value;};
+  const setVesp=(s,value)=>{s.minedIncome.Vespium.resourcesTradingPerSec=value/60;};
   const setHydraPerMin=(s,value)=>{s.minedIncome.Hydracite.resourcesTradingPerSec=value/60;};
   function base(){
     const s=defaults();s.dupe=0;s.margin=0;s.mode="items";

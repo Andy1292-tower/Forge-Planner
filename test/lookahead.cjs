@@ -102,7 +102,7 @@ const runner = `
   // on arrival, and Idle is the only honest thing to report.
   noDeadLines("Gel against a small Vespium income", ["Gel"], [1],
     [{max:4,spx:5},{max:4,spx:4.5},{max:2,spx:4},{max:2,spx:3.5}],
-    s => { s.minedIncome.Vespium.rigPerMin = 5e13; });
+    s => { s.minedIncome.Vespium.resourcesTradingPerSec = 5e13/60; });
 
   /* ------------------------------------------------------- 2. sequenced look-ahead fill ---- */
   // Project A is Gel, hard-capped by a small Vespium income, so exactly one line can work on it and
@@ -116,7 +116,7 @@ const runner = `
     s.projectSeq = !(opts && opts.seq === false);
     s.projectGate = false;
     s.lines = LINES.map(l => ({max:l.max, spx:l.spx, turbo:0}));
-    s.minedIncome.Vespium.rigPerMin = 5e13;
+    s.minedIncome.Vespium.resourcesTradingPerSec = 5e13/60;
     Object.assign(s.forgie, {Concrete:5e8, Ingots:5e8, Bits:5e8});
     s.projects = projects;
     normalize(s); syncManual(s); S = s;

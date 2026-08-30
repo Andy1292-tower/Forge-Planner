@@ -211,11 +211,12 @@ function renderTargetPresetBar(){
 /* ---------- RENDER: mined resources ---------- */
 const GEL_EXACT_UI_MAX_LINES=12;
 const MINED_INCOME_INPUT_IDS=Object.freeze({
-  Vespium:Object.freeze({rigPerMin:"minedVespiumRig",resourcesTradingPerSec:"minedVespiumTrading"}),
+  Rocks:Object.freeze({resourcesTradingPerSec:"minedRocksTrading"}),
+  Vespium:Object.freeze({resourcesTradingPerSec:"minedVespiumTrading"}),
   Hydracite:Object.freeze({resourcesTradingPerSec:"minedHydraciteTrading"})
 });
 function renderMinedResources(){
-  MINED_RESOURCES.forEach(resource=>{
+  MINED_INCOME_RESOURCES.forEach(resource=>{
     Object.keys(MINED_INCOME_SOURCES[resource]||{}).forEach(source=>{
       const inp=document.getElementById(MINED_INCOME_INPUT_IDS[resource]&&MINED_INCOME_INPUT_IDS[resource][source]);
       if(!inp)return;
@@ -223,16 +224,24 @@ function renderMinedResources(){
       if(document.activeElement!==inp)inp.value=(S.minedIncomeText[resource]&&S.minedIncomeText[resource][source])||"";
     });
   });
+  // Every mined income now reads the same way: one per-second figure and the hourly total it makes.
+  // A sellable resource adds what that hourly total is worth, which is the same number Credits ranks
+  // it on — so the modal and the ranking table can never disagree about what selling it earns.
+  const minedTotalNodeIds={Rocks:"minedRocksSummary",Vespium:"minedVespiumBreakdown",Hydracite:"minedHydraciteSummary"};
+  MINED_INCOME_RESOURCES.forEach(resource=>{
+    const node=document.getElementById(minedTotalNodeIds[resource]);if(!node)return;
+    const perSec=toDec0(S.minedIncome[resource]&&S.minedIncome[resource].resourcesTradingPerSec);
+    const perHr=supplyRate(minedBudgetHr(resource));
+    let text=`Mined: ${disp(perSec)}/sec → ${disp(perHr)} ${minedDisplayName(resource)}/hr total`;
+    if(SELLABLE_MINED.includes(resource)){
+      const price=toDec0(S.sellPrice&&S.sellPrice[resource]);
+      text+=price.gt(DEC_ZERO)
+        ? ` · at ${disp(price)}/unit that is ${disp(price.times(perHr))} max credits/hr`
+        : " · add a sell price under Sell prices to rank it in Max credits/hr";
+    }
+    node.textContent=text;
+  });
   const vespHr=supplyRate(minedBudgetHr("Vespium"));
-  const vespRig=toDec0(S.minedIncome.Vespium.rigPerMin);
-  const vespTrading=toDec0(S.minedIncome.Vespium.resourcesTradingPerSec);
-  const vespRigHr=decScale(decClampLow(vespRig),60),vespTradingHr=decScale(decClampLow(vespTrading),3600);
-  const vespBreakdown=document.getElementById("minedVespiumBreakdown");
-  if(vespBreakdown)vespBreakdown.textContent=`Rig: ${disp(vespRig)}/min → ${disp(vespRigHr)}/hr + Mined: ${disp(vespTrading)}/sec → ${disp(vespTradingHr)}/hr = ${disp(vespHr)} Vespium/hr total`;
-  const hydraTrading=toDec0(S.minedIncome.Hydracite.resourcesTradingPerSec);
-  const hydraHr=supplyRate(minedBudgetHr("Hydracite"));
-  const hydraSummary=document.getElementById("minedHydraciteSummary");
-  if(hydraSummary)hydraSummary.textContent=`Mined: ${disp(hydraTrading)}/sec → ${disp(hydraHr)} Hydracite/hr total`;
   const rows=lineRows(),exact=rows.length<=GEL_EXACT_UI_MAX_LINES;
   // Exact multiple-choice capacity is responsive through the gameplay-scale 12-line boundary.
   // Larger compatible saves use the bounded solver seed with explicitly estimated copy.

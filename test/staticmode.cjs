@@ -319,7 +319,7 @@ const runner = `
     s.projLineMode = (opts && opts.lineMode) || "static";
     s.lines = lines.map(l => ({max:l.max, spx:l.spx, turbo:0}));
     const mined=(opts && opts.minedIncome) || {};
-    if(Object.prototype.hasOwnProperty.call(mined,"Vespium"))s.minedIncome.Vespium.rigPerMin=mined.Vespium;
+    if(Object.prototype.hasOwnProperty.call(mined,"Vespium"))s.minedIncome.Vespium.resourcesTradingPerSec=mined.Vespium/60;
     if(Object.prototype.hasOwnProperty.call(mined,"Hydracite"))
       s.minedIncome.Hydracite.resourcesTradingPerSec=mined.Hydracite==null?mined.Hydracite:mined.Hydracite/60;
     Object.assign(s.forgie,(opts && opts.forgie) || {});

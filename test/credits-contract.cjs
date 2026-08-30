@@ -28,7 +28,7 @@ const runner=`
 (function(){
   let fail=0;
   const check=(name,ok,detail)=>{console.log((ok?"ok   ":"FAIL ")+name+" ["+detail+"]");if(!ok)fail++;};
-  const setVespRig=(state,value)=>{state.minedIncome.Vespium.rigPerMin=value;};
+  const setVespRig=(state,value)=>{state.minedIncome.Vespium.resourcesTradingPerSec=value/60;};
   const setHydraPerMin=(state,value)=>{state.minedIncome.Hydracite.resourcesTradingPerSec=value/60;};
   check("persistent planner labels make no unqualified optimality promise",
     indexHtml.includes("Crafting production-line planner · enter your stats, compare crafter setups")&&
@@ -185,8 +185,8 @@ const runner=`
   }
   const migratedCredits=validateAndMigrate(creditsSchemaV1State());
   check("save-derived schema-v1 state migrates once to the current schema and 10 seconds",
-    migratedCredits.ok&&migratedCredits.sourceVersion===1&&CURRENT_SCHEMA_VERSION===5&&
-      migratedCredits.state.schemaVersion===5&&migratedCredits.state.solveBudget===10000,
+    migratedCredits.ok&&migratedCredits.sourceVersion===1&&CURRENT_SCHEMA_VERSION===6&&
+      migratedCredits.state.schemaVersion===6&&migratedCredits.state.solveBudget===10000,
     "ok="+migratedCredits.ok+", source="+migratedCredits.sourceVersion+
       ", schema="+(migratedCredits.state&&migratedCredits.state.schemaVersion)+
       ", budget="+(migratedCredits.state&&migratedCredits.state.solveBudget)+

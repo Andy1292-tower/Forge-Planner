@@ -514,7 +514,7 @@ function renderSolveResult(res,el,stat,solveKey,metadata){
   // metric cards
   html+=`<div class="metrics">`;
   if(res.mode==="credits"){
-    html+=`<div class="metric"><div class="l">Best — sell ${res.bestItem||"—"}</div>
+    html+=`<div class="metric"><div class="l">Best — sell ${res.bestItem?minedDisplayName(res.bestItem):"—"}</div>
       <div class="v">${disp(res.credits||0)}</div><div class="u">credits per hour</div></div>`;
   }else{
     // Every output shares one weighted floor, so exactly one of them is holding the rest down.
@@ -544,7 +544,7 @@ function renderSolveResult(res,el,stat,solveKey,metadata){
           `<span style="color:var(--ink3);font-size:10.5px"> — ${c.capped?"no plan found in bounded search":"no sustainable plan"}</span>`);
       const outCell=c.evaluated===false?"—":disp(c.out),creditsCell=c.evaluated===false?"—":disp(c.credits);
       html+=`<tr${win?' style="background:rgba(210,129,58,.10)"':''}>
-        <td>${win?'★ ':''}${c.item}${note}</td>
+        <td>${win?'★ ':''}${minedDisplayName(c.item)}${note}</td>
         <td class="num">${outCell}</td>
         <td class="num mono" style="color:var(--ink2)">${c.price>0?disp(c.price):"—"}</td>
         <td class="num" style="color:${win?'var(--amber)':'var(--ink)'};font-weight:${win?'700':'400'}">${creditsCell}</td></tr>`;

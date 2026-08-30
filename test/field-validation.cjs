@@ -39,9 +39,9 @@ test("creates deterministic collision-free DOM tokens for distinct input strings
 
 test("owns distinct numeric descriptors and the complete persisted ranges", () => {
   const schema = api("FIELD_SCHEMA");
-  assert.equal(schema.schemaVersion.defaultValue, 5);
-  assert.equal(schema.schemaVersion.min, 5);
-  assert.equal(schema.schemaVersion.max, 5);
+  assert.equal(schema.schemaVersion.defaultValue, 6);
+  assert.equal(schema.schemaVersion.min, 6);
+  assert.equal(schema.schemaVersion.max, 6);
   // Configuration keeps its ranges — every one of these describes machinery with a fixed physical
   // ceiling that a float64 will always hold.
   const expected = {
@@ -229,11 +229,13 @@ test("state value validation rejects every representative numeric boundary trans
     const state = api("normalize(defaults())");
     state.schemaVersion = api("CURRENT_SCHEMA_VERSION");
     state.minedIncome = {
-      Vespium: { rigPerMin: null, resourcesTradingPerSec: null },
+      Rocks: { resourcesTradingPerSec: null },
+      Vespium: { resourcesTradingPerSec: null },
       Hydracite: { resourcesTradingPerSec: null },
     };
     state.minedIncomeText = {
-      Vespium: { rigPerMin: "", resourcesTradingPerSec: "" },
+      Rocks: { resourcesTradingPerSec: "" },
+      Vespium: { resourcesTradingPerSec: "" },
       Hydracite: { resourcesTradingPerSec: "" },
     };
     return state;
@@ -249,7 +251,7 @@ test("state value validation rejects every representative numeric boundary trans
     state => { state.prodCost.Glass.Bits[1] = -1; },
     state => { state.sellPrice.Frames = "not a number"; },
     state => { state.forgie.Frames = -1; },
-    state => { state.minedIncome.Vespium.rigPerMin = {}; },
+    state => { state.minedIncome.Vespium.resourcesTradingPerSec = {}; },
     state => { state.inventory.Ingots = -1; },
     state => { state.targets.Frames.w = 1.5; },
   ];

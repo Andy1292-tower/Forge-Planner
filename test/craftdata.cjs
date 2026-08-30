@@ -26,21 +26,24 @@ const runner=`
   eq("64× is level 6",compressionLevel(64),6);
   eq("16384× is the top level",compressionLevel(16384),LEVELS.length-1);
   eq("every tier maps to its index",LEVELS.every((L,i)=>compressionLevel(L)===i),true);
-  eq("default Vespium Rig income is blank",d.minedIncome.Vespium?.rigPerMin,null);
+  eq("default Worthless Rocks income is blank",d.minedIncome.Rocks?.resourcesTradingPerSec,null);
   eq("default Vespium Resources & Trading income is blank",d.minedIncome.Vespium?.resourcesTradingPerSec,null);
+  eq("the retired Vespium rig source is not in the default shape",Object.prototype.hasOwnProperty.call(d.minedIncome.Vespium,"rigPerMin"),false);
   eq("default Hydracite Resources & Trading income is blank",d.minedIncome.Hydracite?.resourcesTradingPerSec,null);
-  eq("default Vespium Rig text is blank",d.minedIncomeText.Vespium?.rigPerMin,"");
+  eq("default Worthless Rocks text is blank",d.minedIncomeText.Rocks?.resourcesTradingPerSec,"");
   eq("default Vespium Resources & Trading text is blank",d.minedIncomeText.Vespium?.resourcesTradingPerSec,"");
   eq("default Hydracite Resources & Trading text is blank",d.minedIncomeText.Hydracite?.resourcesTradingPerSec,"");
   const sourceState={minedIncome:{
-    Vespium:{rigPerMin:2,resourcesTradingPerSec:3},
+    Rocks:{resourcesTradingPerSec:5},
+    Vespium:{resourcesTradingPerSec:3},
     Hydracite:{resourcesTradingPerSec:4}
   }};
   // A mined budget is a Decimal (a late-game Vespium income is ~1e100/hr), so compare its value.
   const budget=(resource)=>minedBudgetHr(resource,sourceState).toNumber();
-  eq("Vespium sources aggregate to an hourly budget",budget("Vespium"),10920);
+  eq("Vespium seconds aggregate to an hourly budget",budget("Vespium"),10800);
   eq("Hydracite seconds aggregate to an hourly budget",budget("Hydracite"),14400);
-  eq("unknown mined resources have no budget",budget("Rocks"),0);
+  eq("Worthless Rocks seconds aggregate to an hourly budget",budget("Rocks"),18000);
+  eq("unknown mined resources have no budget",budget("Ingots"),0);
   eq("battery yield 1x",typeof craftYield==="function"?craftYield("Batteries",1):undefined,5);
   eq("battery yield 2x",typeof craftYield==="function"?craftYield("Batteries",2):undefined,10);
   eq("battery yield 4x",typeof craftYield==="function"?craftYield("Batteries",4):undefined,20);
@@ -64,19 +67,21 @@ const runner=`
     near("reinforced time scale "+L,craftTime("Reinforced Concrete",L),355531.88*Math.pow(1.5,i));
     near("battery time scale "+L,craftTime("Batteries",L),1034274.56*Math.pow(1.5,i));
   });
-  setMinedIncome("Vespium","rigPerMin","7.25qu");
+  setMinedIncome("Rocks","resourcesTradingPerSec","7.25qu");
   setMinedIncome("Vespium","resourcesTradingPerSec","3");
   setMinedIncome("Hydracite","resourcesTradingPerSec","-1");
-  eq("game notation parsed into the selected source",S.minedIncome.Vespium?.rigPerMin,7.25e18);
-  eq("second Vespium source parsed independently",S.minedIncome.Vespium?.resourcesTradingPerSec,3);
+  eq("game notation parsed into the selected source",S.minedIncome.Rocks?.resourcesTradingPerSec,7.25e18);
+  eq("second mined source parsed independently",S.minedIncome.Vespium?.resourcesTradingPerSec,3);
   eq("negative mined income is off",S.minedIncome.Hydracite?.resourcesTradingPerSec,null);
-  eq("sibling source edit leaves Vespium Rig intact",S.minedIncome.Vespium?.rigPerMin,7.25e18);
+  eq("sibling source edit leaves Worthless Rocks intact",S.minedIncome.Rocks?.resourcesTradingPerSec,7.25e18);
   const legacy=defaults();delete legacy.minedIncome;delete legacy.minedIncomeText;
   legacy.gelVesp=7250000000000000000;legacy.gelVespText="7.25qu";
   legacy.baseTime.Wire=12345;legacy.prodCost.Wire.Gel[4]=999;
   normalize(legacy);
-  eq("legacy vesp value",legacy.minedIncome.Vespium?.rigPerMin,7250000000000000000);
-  eq("legacy vesp text",legacy.minedIncomeText.Vespium?.rigPerMin,"7.25qu");
+  // The legacy scalar was the rig figure, read per minute; it survives as the per-second source it
+  // is now entered in, so the same Vespium/hr budget comes back out.
+  eq("legacy vesp value carries over at the same hourly budget",minedBudgetHr("Vespium",legacy).toString(),"435000000000000000000");
+  eq("legacy per-minute text is not shown against a per-second field",legacy.minedIncomeText.Vespium?.resourcesTradingPerSec==="7.25qu",false);
   eq("custom base time preserved",legacy.baseTime.Wire,12345);
   eq("custom recipe cost preserved",legacy.prodCost.Wire.Gel[4],999);
   eq("new Hydracite source blank",legacy.minedIncome.Hydracite?.resourcesTradingPerSec,null);
