@@ -25,6 +25,7 @@ const Decimal = require("../js/decimal.js");
 const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
+const { virtualClock } = require("./virtual-clock.cjs");
 
 const ROOT = path.join(__dirname, "..");
 const SOURCES = [
@@ -118,7 +119,12 @@ function nonFinite(value, at, found, depth) {
         if (S.sellPrice[item]) S.sellPrice[item] = S.sellPrice[item].times(new Decimal("1e" + __EXP));
       });
     `, context);
-    const result = api("optimize")();
+    /* On the virtual clock, so the ranking this asserts is a function of the fixture and not of how
+     * much search the machine got through in 400 real ms. Run on the wall clock it passes alone and
+     * fails with the suite in parallel: Credits is anytime, and a starved refinement settles on a
+     * different winner. The magnitudes under test here do not depend on the budget at all. */
+    const clock = virtualClock();
+    const result = api("optimize")({ now: clock.now, onCheckpoint: clock.onCheckpoint });
     const bad = nonFinite(result, "res", [], 0);
     const credits = result.credits;
     check("prices x1e" + exponent + ": the solve produces no non-finite value",

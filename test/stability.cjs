@@ -34,6 +34,7 @@ const solverSrc = fs.readFileSync(path.join(__dirname, "..", "js", "solver.js"),
 
 const runner = `
 (function(){
+  const SOLVE={workLimit:__workLimit};
   const LINES=[
     {max:512,spx:50.0,turbo:0},{max:512,spx:49.5,turbo:0},
     {max:256,spx:48.0,turbo:0},{max:256,spx:47.0,turbo:0},{max:128,spx:46.0,turbo:0}];
@@ -46,7 +47,7 @@ const runner = `
   function dom(r){ const ph=r.phases[0]; const m={};
     (ph.plan||[]).forEach(p=>{ const e=(p.entries||[])[0]; m[p.line]= e?(e.item+"@"+e.lvl):"idle"; }); return m; }
   function run(lines,frames){ let s=base(lines); s.projects=proj(frames); normalize(s); syncManual(s); S=s;
-    const r=optimize(),p0=r.phases[0]; return {dom:dom(r), z:p0.z, eta:r.eta, stab:!!p0.stabilized,
+    const r=optimize(SOLVE),p0=r.phases[0]; return {dom:dom(r), z:p0.z, eta:r.eta, stab:!!p0.stabilized,
       feasible:r.feasible, phases:r.phases.length, zFree:p0.zFree, zPin:p0.zPin,
       preConsistent:r.phases.every(p=>{const actual=(plannedPreProducedDemand(p).Bits||0),reserved=(p.preProducedDemand&&p.preProducedDemand.Bits)||0,
         solvedWith=(p.preProducedSolveDemand&&p.preProducedSolveDemand.Bits)||0,tol=1e-8+Number.EPSILON*32*Math.max(1,actual,reserved,solvedWith);
@@ -112,8 +113,8 @@ const runner = `
       {id:"x",name:"Alpha",catId:"",on:true,from:1,to:1,done:0,prio:null,levels:[{costs:[{item:"Bricks",qty:qA||3000},{item:"Glass",qty:1500}]}]},
       {id:"y",name:"Beta",catId:"",on:true,from:1,to:1,done:0,prio:null,levels:[{costs:[{item:"Rods",qty:2500},{item:"Plates",qty:2000}]}]}];
     normalize(s); syncManual(s); return s; }
-  resetLineStability(); S=seqState(3000); const s1=optimize();
-  S=seqState(3200); const s2=optimize();   // small perturbation, stability engaged for both phases
+  resetLineStability(); S=seqState(3000); const s1=optimize(SOLVE);
+  S=seqState(3200); const s2=optimize(SOLVE);   // small perturbation, stability engaged for both phases
   rec("multi-phase: both phases present and feasible under stability",
     s1.phases.length===2 && s2.phases.length===2 && s2.phases.every(p=>p.feasible) && isFinite(s2.eta) && s2.eta>0,
     "phases="+s2.phases.length+" feasible="+s2.phases.map(p=>p.feasible).join(",")+" eta="+s2.eta.toFixed(4));
@@ -138,7 +139,7 @@ const runner = `
       {id:"p1",name:"New project",catId:"",on:true,from:1,to:1,done:0,prio:1,levels:[{costs:[{item:"Frames",qty:100},{item:"Bricks",qty:4000}]}]},
       {id:"p2",name:"New project",catId:"",on:true,from:1,to:1,done:0,prio:2,levels:[{costs:[{item:"Frames",qty:4000},{item:"Bricks",qty:100}]}]}];
     normalize(s); syncManual(s); return s; }
-  resetLineStability(); S=twoProj(); const col=optimize();
+  resetLineStability(); S=twoProj(); const col=optimize(SOLVE);
   rec("same-named projects don't share a cache slot (keyed by id)",
     Object.keys(getLineStability()).length===2 && col.phases[1] && col.phases[1].stabilized===false,
     "keys="+Object.keys(getLineStability()).length+" phaseB_firstSolveStabilized="+(col.phases[1]&&col.phases[1].stabilized));
@@ -158,5 +159,18 @@ globalThis.__emit = (str) => {
   process.exit(fail ? 1 : 0);
 };
 
+/* Every solve here runs with performance.now() frozen at 0, which is what makes the assignments
+ * reproducible — no deadline can fire, so nothing depends on the machine. Left at that alone the
+ * anytime search also runs to EXHAUSTION: one solve consumed 190 million checkpoints and this file
+ * took 302 s, a third of the whole suite, to assert twelve things about a cache.
+ *
+ * A work cap keeps the determinism and drops the exhaustion, because it is a count rather than a
+ * clock. The number is not tuned to make the file pass: the reported values plateau well below it.
+ * Measured on this fixture, every limit from 3M through 32M and the uncapped run print BYTE-IDENTICAL
+ * output; only 2M falls short, and it fails loudly (the stability cache never gets populated, so the
+ * same-named-projects check reports keys=0) rather than quietly asserting less. 8M sits 2.7x above
+ * where the plateau starts and runs in 16 s. If a change here ever needs a bigger cap, raise it —
+ * a limit that has to come DOWN to keep the file green is the signal that something regressed. */
+const __workLimit = 8_000_000;
 // eslint-disable-next-line no-eval
 eval(coreSrc + "\n;\n" + projectSrc + "\n;\n" + solverSrc + "\n;\n" + runner);

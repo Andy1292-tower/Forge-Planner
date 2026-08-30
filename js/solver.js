@@ -2286,6 +2286,115 @@ function lpMaximize(c,A,b,control,opts){
   }
   return lpSimplexSolve(c,A,b,control,false);
 }
+/* ---- diagonal equilibration -------------------------------------------------------------------
+ *
+ * Every tolerance in the simplex above is ABSOLUTE — 1e-9 for a reduced cost, for a pivot element,
+ * for a basic variable that went negative. That is only sound while the tableau's entries sit in
+ * one magnitude band, and a late-game Project LP is nowhere near it: a Batteries craft burns Gel at
+ * 5.5e23/hr in the same matrix as a Glass row carrying 4.7e-3, and a Vespium rig income puts 6e100
+ * in b. Once a pivot divides a row through by an element 1e23 across from its neighbours, entries
+ * that genuinely matter land under 1e-9 and read as structural zeros. The ratio test then finds no
+ * eligible row and the solve reports UNBOUNDED — for a problem in which every job variable is
+ * bounded by its own line row, so the true feasible region is a bounded polytope and z always has
+ * a finite maximum. That is the failure this removes: the scaled solve on the reference save reaches
+ * the optimum in a tenth of the pivots the unscaled one spends before claiming no answer exists.
+ *
+ * Scaling row i by R[i] and column j by C[j] leaves the same LP: dividing a row through by R[i]
+ * (with its own b[i]) is an equivalence, and x[j] = x'[j]·C[j] recovers the caller's vertex with
+ * c[j]·C[j] holding the objective equal. Both factors are rounded to POWERS OF TWO, so every scaled
+ * entry only has its exponent shifted and stays EXACT: the simplex solves the caller's problem, not
+ * a rounded copy of it.
+ *
+ * It engages only on a tableau that needs it, and that restriction is deliberate rather than
+ * cautious. These LPs have alternate optima — z is unique, the vertex is not — and BOTH callers read
+ * the vertex: the makespan LP hands it to the line assignment and the reported ETA, the relaxation
+ * inside solveCore hands it to the roundings that seed the whole local search. Rescaling a tableau
+ * the simplex already handles exactly would move plans that are not wrong, for no gain, so a
+ * well-conditioned tableau takes the identical path it always did and only one whose spread has
+ * outgrown the absolute tolerances is rewritten.
+ *
+ * The threshold is that tolerance's own arithmetic, not a taste. A pivot divides a row by its pivot
+ * element, so two entries a factor F apart can land a factor F apart from where they started; with
+ * float64 carrying ~1e16 of relative precision and the loop testing against an absolute 1e-9, a
+ * spread beyond ~1e12 is where a meaningful coefficient can cross that line and read as a structural
+ * zero. Below it the unscaled tableau is sound and is left alone.
+ *
+ * Two passes of geometric-mean equilibration; a third measured no further narrowing on the captured
+ * corpus. A row or column of all zeros has no scale and is left alone. */
+const LP_SCALE_PASSES=2;
+const LP_SCALE_SPREAD=1e12;
+/* The spread the simplex actually has to survive: the widest magnitude gap between any two nonzero
+ * entries of [A|b]. b belongs in it — a 6e100 rig income sits in the same ratio tests as a line
+ * row's 1.0, and is the single largest outlier on the reference save. */
+function lpNeedsScaling(A,b){
+  let lo=Infinity,hi=0;
+  for(let i=0;i<A.length;i++){
+    const row=A[i];
+    for(let j=0;j<row.length;j++){const a=Math.abs(row[j]);if(a>0){if(a<lo)lo=a;if(a>hi)hi=a;}}
+    const rhs=Math.abs(b[i]);if(rhs>0){if(rhs<lo)lo=rhs;if(rhs>hi)hi=rhs;}
+  }
+  return hi>0&&lo<Infinity&&hi/lo>LP_SCALE_SPREAD;
+}
+function lpPow2(magnitude){
+  if(!(magnitude>0)||!Number.isFinite(magnitude))return 1;
+  // Clamped well inside the float64 exponent range so a scale factor can never itself overflow the
+  // entry it divides into a subnormal, where the exactness this relies on stops holding.
+  const e=Math.max(-512,Math.min(512,Math.round(Math.log2(magnitude))));
+  return e===0?1:Math.pow(2,e);
+}
+function lpEquilibrate(c,A,b){
+  const m=A.length,n=c.length;
+  if(!m||!n)return null;
+  const rows=A.map(row=>Float64Array.from(row)),colScale=new Float64Array(n).fill(1);
+  let scaled=false;
+  for(let pass=0;pass<LP_SCALE_PASSES;pass++){
+    for(let i=0;i<m;i++){
+      const row=rows[i];let lo=Infinity,hi=0;
+      for(let j=0;j<n;j++){const a=Math.abs(row[j]);if(a>0){if(a<lo)lo=a;if(a>hi)hi=a;}}
+      if(!(hi>0))continue;
+      const s=lpPow2(Math.sqrt(lo)*Math.sqrt(hi));
+      if(s===1)continue;
+      for(let j=0;j<n;j++)row[j]/=s;
+      b[i]/=s;scaled=true;
+    }
+    for(let j=0;j<n;j++){
+      let lo=Infinity,hi=0;
+      for(let i=0;i<m;i++){const a=Math.abs(rows[i][j]);if(a>0){if(a<lo)lo=a;if(a>hi)hi=a;}}
+      if(!(hi>0))continue;
+      const s=lpPow2(Math.sqrt(lo)*Math.sqrt(hi));
+      if(s===1)continue;
+      for(let i=0;i<m;i++)rows[i][j]/=s;
+      colScale[j]/=s;scaled=true;
+    }
+  }
+  if(!scaled)return null;
+  return {A:rows,b,c:Float64Array.from(c,(v,j)=>v*colScale[j]),colScale};
+}
+/* Solve (c,A,b) on an equilibrated copy when it needs one, and hand back the caller's own vertex.
+ *
+ * Only the makespan LP routes through here, and that is the point: it is the one whose RHS carries a
+ * raw mined income (6e100 from a Vespium rig) straight into the tableau. solveCore's relaxation
+ * takes its RHS from baseArr, which is already capped at what the factory could physically consume,
+ * so it is finite and banded by construction — and its vertex seeds the entire local search, so
+ * rescaling it would move plans that were never wrong. lpMaximize stays a pure router for it.
+ *
+ * The caller's arrays are never touched: the memo above keys on them, and lpCertifyOptimal's whole
+ * value is re-deriving optimality from data no pivot has been near. Certifying the scaled problem
+ * certifies this one — they differ by an exact diagonal change of variables. */
+function lpMaximizeScaled(c,A,b,control,opts){
+  const scale=lpNeedsScaling(A,b)?lpEquilibrate(c,A.map(row=>Array.from(row)),Array.from(b)):null;
+  if(!scale)return lpMaximize(c,A,b,control,opts);
+  // Charged like the dense row work it is, against the label the pivots already bill: a scaling pass
+  // that spends its arithmetic off the books makes the run's own accounting a lie exactly as a free
+  // pivot would, and a pass costs the same row sweep a pivot does.
+  if(control&&!control.checkpoint("lp-pivot",Math.max(1,LP_SCALE_PASSES*2*A.length*c.length)))
+    return {x:null,interrupted:true,complete:false};
+  const sol=lpMaximize(scale.c,scale.A,scale.b,control,opts);
+  if(!sol.x)return sol;
+  const x=new Float64Array(c.length);
+  for(let j=0;j<c.length;j++)x[j]=(sol.x[j]||0)*scale.colScale[j];
+  return {...sol,x};
+}
 // Assemble the makespan LP (A x <= b, maximize c·x) from a job-variable list. Split out of
 // projectSchedule so the stability pass (issue #87 item 5) can rebuild it over a pinned subset of the
 // jobs. Returns the tableau plus the z-column index and total width.
@@ -2315,7 +2424,7 @@ function buildScheduleLP(vars,lns,items,net,avail,D0){
  * ran out, not what the tableau evaluates to. */
 function solveScheduleLP(part,control,memo){
   if(memo){const hit=memo.lookup(part.c,part.A,part.b);if(hit)return hit;}
-  const sol=lpMaximize(part.c,part.A,part.b,control);
+  const sol=lpMaximizeScaled(part.c,part.A,part.b,control);
   if(memo&&!sol.interrupted)memo.store(part.c,part.A,part.b,sol);
   return sol;
 }
@@ -2379,7 +2488,16 @@ function projectSchedule(net,targets,avail,opts){
   if(freeSolution.interrupted)
     return {rate:{},plan:[],items:[],z:0,stabilized:false,zFree:null,zPin:null,stabilityKey:null,stabilityUpdate:null,
       evaluated:false,capped:true,interrupted:true,searchExhaustive:false};
-  let y=freeSolution.x||new Float64Array(n);
+  /* No vertex at all. Every job variable is bounded by its own line row, so this LP's feasible
+   * region is a bounded polytope and an unbounded claim is arithmetic that came apart, never a fact
+   * about the factory. Substituting an all-zero assignment — which is what reading `.x` through a
+   * fallback used to do — published that as a plan with no jobs, no throughput, and an EMPTY blocked
+   * list: "this cannot be built", naming nothing, for a factory Set & forget schedules fine. It is
+   * no more a verdict than a clock that ran out, so it reports none. */
+  if(!freeSolution.x)
+    return {rate:{},plan:[],items:[],z:0,stabilized:false,zFree:null,zPin:null,stabilityKey:null,stabilityUpdate:null,
+      evaluated:false,capped:true,interrupted:true,searchExhaustive:false};
+  let y=freeSolution.x;
   const zFree=y[zCol]||0;
   // Tier-2 hysteresis (issue #87 item 5): keep last solve's per-line jobs unless the free solve beats
   // a pinned re-solve by more than HYST_FRAC of throughput. Only final visible semantic phases opt in;
