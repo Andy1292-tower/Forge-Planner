@@ -16,9 +16,26 @@ const coreSrc = fs.readFileSync(path.join(root, "js", "core.js"), "utf8");
 const scheduleSrc = fs.readFileSync(path.join(root, "js", "project-schedule.js"), "utf8");
 const solverSrc = fs.readFileSync(path.join(root, "js", "solver.js"), "utf8");
 
+/* performance.now() is frozen at 0 above, which is what makes the pinned figures below
+ * reproducible — no deadline can fire, so nothing here depends on the machine. Left at that alone
+ * the anytime search also runs to EXHAUSTION, and this file cost 239 s, a quarter of the suite.
+ *
+ * A work cap keeps the determinism and drops the exhaustion, because it is a count and not a clock.
+ * It changes nothing this file asserts: the six pinned figures were measured at caps of 2M, 4M, 8M
+ * and 16M and against the uncapped run, and every one of them came back BIT-IDENTICAL to 17
+ * significant digits (selectedTotalEta 0.66597502488563465, alternativeTotalEta 0.68465831629687190).
+ * The plateau starts at 2M — 1M and below genuinely differ — so 8M sits 4x above the floor.
+ *
+ * Note what those pins are: the PLAN's ETA in factory-hours, not the solver's runtime, and recorded
+ * output rather than independently derived values. The guarantee the feature actually makes is
+ * HYST_FRAC (5%); pinning selectedThroughputLossPct to 2.6304 +/- 0.001 is far tighter than that, so
+ * a legitimate solver improvement will break these six lines without anything being wrong. If that
+ * happens, re-deriving the contract is the better fix than re-recording the numbers. */
+const __workLimit = 8_000_000;
 const runner = `
 (function(){
   const checks=[];
+  const SOLVE={workLimit:__workLimit};
   function check(name,fn){try{fn();checks.push({name,ok:true});}catch(error){checks.push({name,ok:false,error:error&&error.message||String(error)});}}
   const LINES=[
     {max:512,spx:50.0,turbo:0},{max:512,spx:49.5,turbo:0},
@@ -29,7 +46,7 @@ const runner = `
     s.projects=[{id:projectId||"frames-project",name:"Frames plan",catId:"",on:true,from:1,to:1,done:0,prio:null,
       levels:[{costs:[{item:"Frames",qty:frames},{item:"Bricks",qty:5000},{item:"Glass",qty:4000},{item:"Rods",qty:3000}]}]}];
     normalize(s);syncManual(s);return s;}
-  function solve(frames,policy,projectId){S=state(frames,policy,projectId);return optimizeProjectTop();}
+  function solve(frames,policy,projectId){S=state(frames,policy,projectId);return optimizeProjectTop(SOLVE);}
   function close(actual,expected,tolerance,label){assert.ok(Math.abs(actual-expected)<=tolerance,label+" actual="+actual+" expected="+expected);}
 
   check("projectSchedule is pure and proposes rather than commits a record",()=>{
@@ -132,7 +149,7 @@ const runner = `
     const s=defaults();s.mode="project";s.projectSeq=false;s.projectGate=false;s.projectStability="prefer-current";
     s.projects=[{id:"partial-project",name:"Partial",catId:"",on:true,from:1,to:1,done:0,prio:null,
       levels:[{costs:[{item:"Glass",qty:100},{item:"Batteries",qty:1}]}]}];
-    normalize(s);syncManual(s);S=s;const partial=optimizeProjectTop();
+    normalize(s);syncManual(s);S=s;const partial=optimizeProjectTop(SOLVE);
     assert.equal(partial.lpFeasible,false);assert.equal(partial.partial,true);
     assert.equal(projectRunExecutable(partial),false);
     assert.deepEqual(getLineStability(),sentinel);
@@ -143,7 +160,7 @@ const runner = `
     s.projects=[
       {id:"project-x",name:"Duplicate",catId:"",on:true,from:1,to:1,done:0,prio:1,levels:[{costs:[{item:"Glass",qty:100}]}]},
       {id:"project-y",name:"Duplicate",catId:"",on:true,from:1,to:1,done:0,prio:2,levels:[{costs:[{item:"Bricks",qty:100}]}]}
-    ];normalize(s);syncManual(s);S=s;const sequenced=optimizeProjectTop();
+    ];normalize(s);syncManual(s);S=s;const sequenced=optimizeProjectTop(SOLVE);
     assert.deepEqual(sequenced.phases.map(phase=>phase.phaseKey),["project-x","project-y"]);
 
     resetLineStability();s=defaults();s.mode="project";s.projectSeq=false;s.projectGate=true;s.projectStability="reoptimize";
@@ -151,7 +168,7 @@ const runner = `
       {id:"z-unlocker",name:"Duplicate",catId:"frame-factory",on:true,from:1,to:1,done:0,prio:null,levels:[{costs:[{item:"Glass",qty:100}]}]},
       {id:"a-peer",name:"Duplicate",catId:"",on:true,from:1,to:1,done:0,prio:null,levels:[{costs:[{item:"Bricks",qty:100}]}]},
       {id:"b-consumer",name:"Duplicate",catId:"",on:true,from:1,to:1,done:0,prio:null,levels:[{costs:[{item:"Frames",qty:100}]}]}
-    ];normalize(s);syncManual(s);S=s;const waved=optimizeProjectTop();
+    ];normalize(s);syncManual(s);S=s;const waved=optimizeProjectTop(SOLVE);
     assert.equal(waved.waved,true);assert.deepEqual(waved.phases.map(phase=>phase.phaseKey),["a-peer+z-unlocker","b-consumer"]);
   });
 
