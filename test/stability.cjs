@@ -159,7 +159,6 @@ globalThis.__emit = (str) => {
   process.exit(fail ? 1 : 0);
 };
 
-// eslint-disable-next-line no-eval
 /* Every solve here runs with performance.now() frozen at 0, which is what makes the assignments
  * reproducible — no deadline can fire, so nothing depends on the machine. Left at that alone the
  * anytime search also runs to EXHAUSTION: one solve consumed 190 million checkpoints and this file
@@ -173,4 +172,5 @@ globalThis.__emit = (str) => {
  * where the plateau starts and runs in 16 s. If a change here ever needs a bigger cap, raise it —
  * a limit that has to come DOWN to keep the file green is the signal that something regressed. */
 const __workLimit = 8_000_000;
+// eslint-disable-next-line no-eval
 eval(coreSrc + "\n;\n" + projectSrc + "\n;\n" + solverSrc + "\n;\n" + runner);
