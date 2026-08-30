@@ -191,11 +191,46 @@ const PROBE_SRC = `
 })(__deltaProbes, __deltaRelTol)
 `;
 
+/* The corpus is shaped for the perf harness, where a fixture's MODE is most of what it measures.
+ * Nothing here goes through optimize(): this calls solveCore directly with explicit targets, so
+ * `mode`, `targetMode` and `margin` — the only things separating items-7line from credits-7line,
+ * project-7line, project-seq-7line, project-split-7line and the share/margin variant — cannot reach
+ * the code under test, and the tolerance sweep below sets tol itself. Run whole, the corpus spent
+ * six identical million-probe runs per target set to print six identical lines: N=7 R=9 reported
+ * "328516 moves, worst relative 2.75e-13" for every one of them.
+ *
+ * So a fixture earns a run by what solveCore can actually see — its lines and the recipe data the
+ * jobs are built from. Signature, not allow-list: a fixture added later with a genuinely different
+ * factory runs on its own, and one added as another mode of the same factory does not. Coverage is
+ * unchanged (7, 8 and 10 lines x three target sets, at full probe count); the duplicates are what
+ * this drops. */
+function solveCoreSignature(realm) {
+  return vm.runInContext(`JSON.stringify({
+    lines:S.lines.map(l=>[l.max,l.spx,l.turbo]),maxTurbo:S.maxTurbo,dupe:S.dupe,
+    baseTime:S.baseTime,forgie:Object.keys(S.forgie).map(k=>[k,String(S.forgie[k])]),
+    minedIncome:Object.keys(S.minedIncome).map(r=>[r,Object.keys(S.minedIncome[r])
+      .map(s=>[s,String(S.minedIncome[r][s])])]),
+    prodCost:Object.keys(S.prodCost).map(p=>[p,Object.keys(S.prodCost[p])
+      .map(k=>[k,LEVELS.map(L=>String(S.prodCost[p][k][L]))])]),
+    targets:[...PRODUCTS,...RAWS].filter(it=>S.targets[it]&&S.targets[it].on)
+  })`, realm.context, { filename: "delta-eval-signature" });
+}
+
 const started = Date.now();
+const seenFactories = new Map();
+let skipped = 0;
 for (const fixture of FIXTURES) {
   const realm = createSolverContext();
   realm.resetRun({ virtual: false, watchCheckpoints: false });
   realm.loadState(materialize(fixture));
+  const signature = solveCoreSignature(realm);
+  if (seenFactories.has(signature)) {
+    console.log("skip " + fixture.id + ": same factory as " + seenFactories.get(signature) +
+      " — solveCore cannot see what differs between them");
+    skipped++;
+    continue;
+  }
+  seenFactories.set(signature, fixture.id);
   realm.context.__deltaProbes = PROBES;
   realm.context.__deltaRelTol = REL_TOL;
   const reports = JSON.parse(vm.runInContext(PROBE_SRC, realm.context, { filename: "delta-eval-probe" }));
@@ -221,6 +256,12 @@ for (const fixture of FIXTURES) {
   }
 }
 
-console.log("\n" + (failures ? failures + " delta-eval check(s) failed" : "delta evaluation holds on every corpus fixture") +
+// A corpus that ever stops covering more than one factory is a corpus this test has silently
+// reduced to a single case, so the count of what it actually ran is part of the result.
+check("the run covered every distinct factory in the corpus",
+  seenFactories.size >= 3 && seenFactories.size + skipped === FIXTURES.length,
+  seenFactories.size + " distinct of " + FIXTURES.length + " fixtures (" + skipped + " duplicate)");
+
+console.log("\n" + (failures ? failures + " delta-eval check(s) failed" : "delta evaluation holds on every distinct corpus factory") +
   " (" + ((Date.now() - started) / 1000).toFixed(1) + "s)");
 process.exitCode = failures ? 1 : 0;
