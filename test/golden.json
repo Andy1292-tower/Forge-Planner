@@ -381,7 +381,7 @@
       {
         "line": 4,
         "reserved": false,
-        "job": "Rods@1"
+        "job": "Rods@2"
       },
       {
         "line": 5,
@@ -396,14 +396,14 @@
       {
         "line": 7,
         "reserved": false,
-        "job": "Rods@2"
+        "job": "Rods@1"
       }
     ],
     "balance": [
       "Frames:157.332",
-      "Ingots:264.101",
+      "Ingots:310.713",
       "Plates:34.9628",
-      "Rods:36.1859"
+      "Rods:28.4172"
     ]
   },
   "items.multi.noGel.L7": {

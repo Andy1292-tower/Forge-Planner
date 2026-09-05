@@ -23,7 +23,7 @@ const UPDATE_CHECK_INTERVAL_MS=30*60*1000;
 // Consecutive failures (offline, flaky link) back off instead of retrying on the normal cadence.
 const UPDATE_RETRY_BACKOFF_MS=[5*60*1000,15*60*1000,60*60*1000];
 
-const updateState={stamp:"",timer:null,nextCheckAt:0,failures:0,checking:false,stopped:false,found:false};
+const updateState={stamp:"",version:"",timer:null,nextCheckAt:0,failures:0,checking:false,stopped:false,found:false};
 
 // Written by scripts/build-static.cjs. An unbuilt source tree keeps the placeholder, which
 // fails the shape test below and leaves the whole check inert for local development.
@@ -69,6 +69,9 @@ async function updateFetchBuild(){
   const data=await response.json();
   const build=data&&typeof data.build==="string"?data.build:"";
   if(!UPDATE_STAMP_SHAPE.test(build))throw new Error("version.json carries no usable build id");
+  // The release name is what the notice can put in front of the reader; a host serving a
+  // version.json without one leaves the notice reading exactly as it did before.
+  updateState.version=data&&typeof data.version==="string"?data.version:"";
   return build;
 }
 
@@ -97,6 +100,8 @@ async function updateRunCheck(){
 }
 
 function updateShowNotice(){
+  const headline=document.getElementById("updateHeadline");
+  if(headline&&updateState.version)headline.textContent="Forge Planner "+updateState.version+" is available.";
   const bar=document.getElementById("updateBar");
   if(bar)bar.hidden=false;
 }
@@ -118,6 +123,11 @@ function startUpdateCheck(){
   if(reload)reload.addEventListener("click",updateReloadNow);
   const dismiss=document.getElementById("updateDismiss");
   if(dismiss)dismiss.addEventListener("click",updateHideNotice);
+  /* The notes this opens are the ones the running build shipped with, so they stop at the version
+   * the reader is on: a release describes itself only once its own bundle is loaded, and its entry
+   * is marked new on the first open after the refresh. */
+  const notes=document.getElementById("updateNotes");
+  if(notes&&typeof changelogDialog!=="undefined"&&changelogDialog)notes.addEventListener("click",event=>changelogDialog.open(event.currentTarget));
   updateState.stamp=updateBuildStamp();
   if(!updateState.stamp||typeof fetch!=="function")return false;
   updateState.nextCheckAt=Date.now()+UPDATE_CHECK_INTERVAL_MS;

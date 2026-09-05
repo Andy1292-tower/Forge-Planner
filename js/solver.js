@@ -1255,6 +1255,23 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     // is budget-independent, which keeps the result monotonic in budget. The single-target case
     // (each credits item) converges in a handful of iterations, so it gets a much smaller limit.
     const stagLimit=targets.length>1?8000:1200;let stag=0;
+    /* Stagnation ends a trajectory, not the search. The kick rewrites at most three lines and
+     * localOpt walks the wreck back one improving line at a time, so an incumbent whose only
+     * improvement is a joint move over more lines than that is a fixed point of the entire loop —
+     * more iterations buy nothing. On the factory in issue #164 a single checked output settles at
+     * 43798 Frames/hr and is still there after 100000 stagnant iterations, while the same factory
+     * descended from a different random start settles at 46644 on six starts out of eight: what
+     * separates them is which basin the first descent fell into, and the only exit from a basin
+     * this operator cannot leave is to start somewhere else. A restart draws a fresh uniform
+     * assignment, descends it and runs the same ILS over it; incBest keeps the best trajectory
+     * rather than the last, so a restart can only add.
+     *
+     * The schedule is a fixed count and reads no clock, which is what keeps the search
+     * deterministic and monotonic in budget: a smaller budget stops partway through the same
+     * schedule and returns the best of the trajectories it completed. Off unless the caller asks
+     * for it, because the Credits comparison runs one of these per priced item inside its own
+     * slice of the budget and pays the cost once per candidate. */
+    const restartLimit=opts.restarts?32:0,RESTART_DRY_LIMIT=3;let restarts=0,dryRestarts=0,incBest=inc;
     /* Destroy-and-repair, an alternative to the random kick below — BUILT, MEASURED AND LEFT OFF.
      * opts.lnsCadence is a direct-source test seam in the same family as opts.onDeltaProbe: never
      * persisted, never posted through the Worker protocol, never set by the app. At 0 (production)
@@ -1384,7 +1401,25 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       return true;
     };
     for(let it=0;it<2000000&&!interrupted;it++){
-      if(stag>stagLimit||!keepGoing("ils-iteration"))break;
+      if(!keepGoing("ils-iteration"))break;
+      if(stag>stagLimit){
+        if(restarts>=restartLimit||dryRestarts>=RESTART_DRY_LIMIT)break;
+        restarts++;stag=0;
+        const fresh=new Array(N);
+        for(let i=0;i<N;i++){const fr=lp&&lp.frac?lp.frac[i]:null;
+          if(!fr){fresh[i]=(rnd()*lineJobs[i].length)|0;continue;}
+          let mass=0;for(let j=0;j<fr.length;j++)mass+=fr[j];
+          let x=rnd()*(mass>1e-12?mass:1),pick=lp.choice[i];
+          for(let j=0;j<fr.length;j++){x-=fr[j];if(x<=0){pick=j;break;}}
+          fresh[i]=pick;}
+        const restarted=localOpt(fresh);
+        if(interrupted)break;
+        if(restarted==null)continue;
+        inc={sc:restarted,ch:fresh.slice()};
+        if(restarted>incBest.sc){incBest=inc;dryRestarts=0;}else dryRestarts++;
+        tLastGain=control.readNow();
+        continue;
+      }
       const ch=inc.ch.slice();
       let cand=null;
       // Both moves hand a candidate to localOpt and both are accepted only on strict improvement, so
@@ -1407,10 +1442,10 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       if(interrupted)break;
       const sc=localOpt(ch);
       if(sc!=null&&!interrupted&&(!cand||sc>cand.sc))cand={sc,ch:ch.slice()};
-      if(cand&&!interrupted&&cand.sc>inc.sc+EPS){inc=cand;stag=0;tLastGain=control.readNow();}
+      if(cand&&!interrupted&&cand.sc>inc.sc+EPS){inc=cand;if(cand.sc>incBest.sc){incBest=cand;dryRestarts=0;}stag=0;tLastGain=control.readNow();}
       else if(!interrupted)stag++;
     }
-    evalChoice(inc.ch);best={score:scoreNow(),choice:inc.ch.slice(),produced:produced.slice(),consumed:consumed.slice()};
+    evalChoice(incBest.ch);best={score:scoreNow(),choice:incBest.ch.slice(),produced:produced.slice(),consumed:consumed.slice()};
   }
   if(interrupted){capped=true;break;}
   // The DFS drives produced/consumed through its own incremental loops and does not touch the
@@ -1704,7 +1739,7 @@ function optimizeInner(timeBudget,testOptions,shard){
     const mix=mixWeights(targets,itemControl,itemsBudget,shard);
     const w=mix.weights;
     const rc=relevantChain(targets);
-    const sr=solveCore(targets,w,rc.prods,rc.raws,itemsBudget,{control:itemControl,spendFreeHeadroom:true});
+    const sr=solveCore(targets,w,rc.prods,rc.raws,itemsBudget,{control:itemControl,spendFreeHeadroom:true,restarts:true});
     const {plan,balance,minedUsage,gelReserved}=planFrom(sr);
     const out={};targets.forEach((t,k)=>{out[t]=sr.feasible?(sr.best.produced[sr.tIdx[k]]-sr.best.consumed[sr.tIdx[k]])*3600:0;});
     // The objective is the shared weighted floor: the smallest output-to-weight ratio. Reporting it
