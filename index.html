@@ -156,14 +156,25 @@
 
   <footer>
     Strict steady-state plans require produced inputs to keep pace with consumption; May-work can intentionally allow a disclosed paper shortfall. Project results disclose required warm-up or starting stock. Frames assume Bits are pre-produced. Calculations and saved planner state stay in this browser; the page loads Google Fonts but does not send them your planner state.
-    <p class="footer-links"><a href="https://github.com/Andy1292-tower/Forge-Planner" target="_blank" rel="noopener">Forge Planner on GitHub</a></p>
+    <p class="footer-links"><button class="linkbtn" type="button" id="btnChangelog">What&rsquo;s new</button> &middot; <a href="https://github.com/Andy1292-tower/Forge-Planner" target="_blank" rel="noopener">Forge Planner on GitHub</a></p>
   </footer>
+</div>
+
+<!-- RELEASE NOTES -->
+<div class="modal-bg" id="changelogModal" hidden>
+  <div class="modal dialog-shell" role="dialog" aria-modal="true" aria-labelledby="changelogTitle">
+    <div class="modal-h"><h3 id="changelogTitle">What&rsquo;s new</h3><button class="iconbtn" id="changelogClose" title="Close" aria-label="Close the release notes" data-dialog-close>&times;</button></div>
+    <div class="modal-b" data-dialog-body>
+      <div id="changelogBody" class="changelog"></div>
+    </div>
+  </div>
 </div>
 
 <!-- NEW BUILD NOTICE — unhidden by js/update-check.js when a newer deployment is live -->
 <div class="update-bar" id="updateBar" role="status" aria-live="polite" aria-atomic="true" hidden>
-  <span class="update-msg"><b>A new version of Forge Planner is available.</b> Your saved build is kept — refreshing just loads the update.</span>
+  <span class="update-msg"><b id="updateHeadline">A new version of Forge Planner is available.</b> Your saved build is kept — refreshing just loads the update.</span>
   <div class="update-actions">
+    <button class="btn ghost" type="button" id="updateNotes">What&rsquo;s new</button>
     <button class="btn primary" type="button" id="updateReload">Refresh now</button>
     <button class="btn ghost" type="button" id="updateDismiss">Later</button>
   </div>
@@ -371,6 +382,7 @@
 <script src="js/results.js"></script>
 <script src="js/manual.js"></script>
 <script src="js/dialogs.js"></script>
+<script src="js/changelog.js"></script>
 <script src="js/events.js"></script>
 <script src="js/feedback.js"></script>
 <script src="js/update-check.js"></script>

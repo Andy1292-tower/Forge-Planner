@@ -18,6 +18,7 @@ const PAGE_SCRIPTS = [
   "results.js",
   "manual.js",
   "dialogs.js",
+  "changelog.js",
   "events.js",
   "feedback.js",
   "update-check.js",
@@ -278,8 +279,18 @@ function stampBuildId(index, buildId) {
 
 /* Deliberately not content-addressed: this is the one stable URL an old tab already knows
  * how to ask for, so its name must survive every release. */
-function buildVersionFile(buildId) {
-  return Buffer.from(`${JSON.stringify({ build: buildId })}\n`);
+/* The newest entry in js/changelog.js names the release. It is read out of the source rather than
+ * kept in a second place, so the notes the page shows and the name version.json hands an open tab
+ * cannot drift apart. A source tree whose changelog has no readable version still builds — the
+ * field is simply absent and the notice falls back to naming no version at all. */
+function readReleaseVersion(source) {
+  const match = readText(path.join(source, "js", "changelog.js")).match(/version\s*:\s*"([0-9]{4}\.[0-9]{2}\.[0-9]{2}(?:\.[0-9]+)?)"/);
+  return match ? match[1] : "";
+}
+
+function buildVersionFile(buildId, version) {
+  const payload = version ? { build: buildId, version } : { build: buildId };
+  return Buffer.from(`${JSON.stringify(payload)}\n`);
 }
 
 function verifyStage(stageRoot, buildId) {
@@ -347,7 +358,7 @@ function buildStaticSite({ sourceRoot, outputRoot } = {}) {
     });
     const buildId = computeBuildId(unstampedIndex);
     write(stage, "index.html", stampBuildId(unstampedIndex, buildId));
-    write(stage, VERSION_FILE, buildVersionFile(buildId));
+    write(stage, VERSION_FILE, buildVersionFile(buildId, readReleaseVersion(source)));
     write(stage, BOOT_SCRIPT, read(path.join(source, "js", BOOT_SCRIPT)));
     write(stage, "js/solver.worker.js", read(path.join(source, "js", "solver.worker.js")));
     const legacyV2 = read(path.join(source, "compat", "solver.worker.v2.js"));
