@@ -2068,7 +2068,7 @@ function gelLoadout(rows,vespBudgetHr){
 }
 // Aggregate Vespium/hour from every declared source (0 if all are unset → Gel off).
 function gelVespBudgetHr(){return minedBudgetHr("Vespium");}
-function projectDemand(){
+function projectDemand(includeCompleted){
   const gross={};ALLITEMS.forEach(it=>gross[it]=DEC_ZERO);
   const perProject=[];
   (S.projects||[]).forEach(p=>{
@@ -2078,7 +2078,7 @@ function projectDemand(){
     const to=Math.min(lv.length,Math.max(from,Math.floor(num(p.to)||lv.length)));
     // levels completed in the tracker are skipped — non-destructive progress that
     // raises the effective start level without touching the user's from→to target.
-    const done=Math.max(0,Math.min(to-from+1,Math.floor(num(p.done)||0)));
+    const done=includeCompleted?0:Math.max(0,Math.min(to-from+1,Math.floor(num(p.done)||0)));
     const start=from-1+done;
     if(start>=to)return;   // project fully checked off — nothing left to craft
     const sub={};ALLITEMS.forEach(it=>sub[it]=DEC_ZERO);
@@ -2798,6 +2798,38 @@ function unlockLayers(perProject){
   for(let i=0;i<n;i++)calc(i,{});
   return layer;
 }
+// Completing an unlock can collapse useful waves into one phase. Keep those partitions available
+// as candidates, without restoring a single completed cost or crediting any historical production.
+// Each graph contains all current prerequisites; only its grouping is projected onto remaining work.
+function projectProgressLayers(perProject){
+  if(S.projectSeq!==false||S.projectGate===false||perProject.length<2)return [];
+  const remainingIds=new Set(perProject.map(p=>p.id)),remainingCats=new Set(perProject.map(p=>p.catId).filter(Boolean));
+  // An imported duplicate catalog entry must not replace a still-pending prerequisite in the graph.
+  const history=projectDemand(true).perProject.filter(p=>remainingIds.has(p.id)||!remainingCats.has(p.catId));
+  const prerequisiteIds=new Set(Object.values(PROJECT_PREREQS).flat());
+  const completedGates=history.filter(p=>!remainingIds.has(p.id)&&(UNLOCKS[p.catId]||prerequisiteIds.has(p.catId)));
+  const compact=layers=>{const ranks=[...new Set(layers)].sort((a,b)=>a-b);return layers.map(L=>ranks.indexOf(L));};
+  const seen=new Set([compact(unlockLayers(perProject)).join(",")]),candidates=[];
+  const consider=graph=>{
+    const layers=unlockLayers(graph),byId=new Map(graph.map((p,i)=>[p.id,layers[i]]));
+    const projected=compact(perProject.map(p=>byId.get(p.id))),key=projected.join(",");
+    if(!seen.has(key)){seen.add(key);candidates.push(projected);}
+  };
+  completedGates.forEach(gate=>consider(perProject.concat(gate)));
+  // The original selected ranges also retain edges removed by partially completed project levels.
+  consider(history);
+  return candidates;
+}
+// Candidate runs share one root budget/work counter. A local cutoff ends only this candidate,
+// leaving later partitions their share; phase-local cutoffs still work inside the candidate.
+function projectCandidateControl(root,deadline){
+  let stopped=false;
+  const control=makeLocalDeadlineControl(root,deadline,()=>{stopped=true;});
+  return Object.assign(control,{deadline,
+    isStopped:()=>stopped||root.isStopped(),
+    deadlineReached:()=>{if(root.deadlineReached()||root.currentTime()>=deadline)stopped=true;return stopped;},
+    reason:()=>root.reason()||(stopped?"deadline":null)});
+}
 /* Which line plan a RUN is solving, which is not always the one the user selected. Line switching
  * runs a second, non-switching candidate when its own plan needs a warm-up (see optimizeProjectTop),
  * and that candidate has to reach every site below without mutating S — the state object is shared
@@ -3357,7 +3389,7 @@ function putIdleLinesToWork(ph,laterProjects,inventory,context,runOptions,phaseI
   fillIdleLinesAhead(ph,laterProjects,inventory,context,control,deadline);
 }
 function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
-  const layer=unlockLayers(perProject);
+  const layer=runOptions&&runOptions.progressLayers||unlockLayers(perProject);
   const maxL=perProject.length?Math.max.apply(null,layer):0;
   const invStart=projectInitialInventory;
   const context=projectScheduleContext(),executionPhases=[];
@@ -3637,57 +3669,79 @@ function optimizeProjectTop(testOptions){
     idleWork:staticControl
       ?{budget:Math.max(projectBudget*STATIC_FILL_TIME_SHARE,STATIC_FILL_TIME_FLOOR),options:testOptions,control:null}
       :null};
-  const selectedPolicy={readStability:projectStability==="prefer-current",rememberStability:true,stabilityCache:cacheSnapshot};
-  let selected=solveProjectRun(seq,net,perProject,selectedPolicy,runOptions);selected.gross=gross;
-  let stabilityComparison=null;
-  if(projectStability==="prefer-current"&&selected.phases.some(ph=>ph.stabilized===true)){
-    const alternative=solveProjectRun(seq,net,perProject,{readStability:false,rememberStability:false,stabilityCache:{}},runOptions);
-    stabilityComparison=stabilityComparisonSummary(selected,alternative);
-  }
-  /* ---------- Line switching: the candidate the makespan LP cannot see ----------
-   * The schedule LP balances a phase in AVERAGE rates: an entry holding a line for fraction f of the
-   * phase contributes its output over the whole phase, so the LP prices it at outHr. Execution is
-   * time-ordered — that entry runs alone for f of the phase, at outHr/f — and a job handed a small
-   * enough fraction therefore consumes its inputs many times faster than the plan replenishes them.
-   * The replay catches it and buildExecutableProjectSchedule prepends a warm-up to stock up first.
-   *
-   * That warm-up is real time the user waits, and `eta` counts it, but the LP that chose the plan
-   * never saw it: it optimises `workEta` alone and reports itself exhaustive the moment the tableau
-   * is optimal, with the run's budget almost untouched. So a phase can be handed a plan whose 8.5 h
-   * of work carries 3.9 h of warm-up in front of it while a slower-on-paper plan needing none would
-   * have finished the lot sooner.
-   *
-   * An assignment that never switches is the one shape immune to this: every entry runs the whole
-   * phase, so its average rate IS its instantaneous rate and no warm-up can be induced. It is also
-   * an ordinary point of the LP's own feasible region — one entry per line at frac 1 — which makes
-   * it a candidate Line switching is entitled to return, not a different mode leaking in. Solving
-   * for it costs the budget the LP left unspent, and only a complete run that REPLAYS and comes out
-   * strictly shorter is taken, so this can lower the answer and never raise it.
-   *
-   * Set & forget searches these assignments already, which is why it can beat Line switching on a
-   * factory with enough stock to tempt the LP into a fraction it cannot execute (issue #150). With
-   * the candidate in hand the two modes are ordered again by construction: Line switching considers
-   * everything Set & forget does, so it can never come out slower. */
-  let staticSearchControl=staticControl;
-  if(!isStatic&&projectRunExecutable(selected)&&selected.warmupEta>0){
-    staticSearchControl=projectControl;
-    // scheduleControl stays on the run control: the candidate solves its phases through the discrete
-    // search, but the ordering estimates around it are split-mode LPs like any other and must remain
-    // bounded by the user's solve-time setting rather than running off the books.
-    const heldOptions=Object.assign({},runOptions,{lineMode:"static",staticControl:projectControl,
-      idleWork:{budget:Math.max(projectBudget*STATIC_FILL_TIME_SHARE,STATIC_FILL_TIME_FLOOR),options:testOptions,control:null}});
-    const held=solveProjectRun(seq,net,perProject,selectedPolicy,heldOptions);
-    if(projectRunExecutable(held)&&held.eta<selected.eta-etaCompareEpsilon(selected.eta,held.eta)){
-      held.gross=gross;held.noSwitchFallback=true;
-      delete selected._stabilityUpdates;
-      // The plan being returned switches no line, so the prefer-current comparison — which is a
-      // statement about which line kept which job across an edit — has nothing left to describe.
-      selected=held;stabilityComparison=null;
+  const solveCandidate=(runOptions,projectControl)=>{
+    const staticControl=runOptions.staticControl;
+    const selectedPolicy={readStability:projectStability==="prefer-current",rememberStability:true,stabilityCache:cacheSnapshot};
+    let selected=solveProjectRun(seq,net,perProject,selectedPolicy,runOptions);selected.gross=gross;
+    let stabilityComparison=null;
+    if(projectStability==="prefer-current"&&selected.phases.some(ph=>ph.stabilized===true)){
+      const alternative=solveProjectRun(seq,net,perProject,{readStability:false,rememberStability:false,stabilityCache:{}},runOptions);
+      stabilityComparison=stabilityComparisonSummary(selected,alternative);
     }
+    /* ---------- Line switching: the candidate the makespan LP cannot see ----------
+     * The schedule LP balances a phase in AVERAGE rates: an entry holding a line for fraction f of the
+     * phase contributes its output over the whole phase, so the LP prices it at outHr. Execution is
+     * time-ordered — that entry runs alone for f of the phase, at outHr/f — and a job handed a small
+     * enough fraction therefore consumes its inputs many times faster than the plan replenishes them.
+     * The replay catches it and buildExecutableProjectSchedule prepends a warm-up to stock up first.
+     *
+     * That warm-up is real time the user waits, and `eta` counts it, but the LP that chose the plan
+     * never saw it: it optimises `workEta` alone and reports itself exhaustive the moment the tableau
+     * is optimal, with the run's budget almost untouched. So a phase can be handed a plan whose 8.5 h
+     * of work carries 3.9 h of warm-up in front of it while a slower-on-paper plan needing none would
+     * have finished the lot sooner.
+     *
+     * An assignment that never switches is the one shape immune to this: every entry runs the whole
+     * phase, so its average rate IS its instantaneous rate and no warm-up can be induced. It is also
+     * an ordinary point of the LP's own feasible region — one entry per line at frac 1 — which makes
+     * it a candidate Line switching is entitled to return, not a different mode leaking in. Solving
+     * for it costs the budget the LP left unspent, and only a complete run that REPLAYS and comes out
+     * strictly shorter is taken, so this can lower the answer and never raise it.
+     *
+     * Set & forget searches these assignments already, which is why it can beat Line switching on a
+     * factory with enough stock to tempt the LP into a fraction it cannot execute (issue #150). With
+     * the candidate in hand the two modes are ordered again by construction: Line switching considers
+     * everything Set & forget does, so it can never come out slower. */
+    let staticSearchControl=staticControl;
+    if(!isStatic&&projectRunExecutable(selected)&&selected.warmupEta>0){
+      staticSearchControl=projectControl;
+      // scheduleControl stays on the run control: the candidate solves its phases through the discrete
+      // search, but the ordering estimates around it are split-mode LPs like any other and must remain
+      // bounded by the user's solve-time setting rather than running off the books.
+      const heldOptions=Object.assign({},runOptions,{lineMode:"static",staticControl:projectControl,
+        idleWork:runOptions.idleWork||{budget:Math.max(projectBudget*STATIC_FILL_TIME_SHARE,STATIC_FILL_TIME_FLOOR),options:testOptions,control:null}});
+      const held=solveProjectRun(seq,net,perProject,selectedPolicy,heldOptions);
+      if(projectRunExecutable(held)&&held.eta<selected.eta-etaCompareEpsilon(selected.eta,held.eta)){
+        held.gross=gross;held.noSwitchFallback=true;
+        delete selected._stabilityUpdates;
+        // The plan being returned switches no line, so the prefer-current comparison — which is a
+        // statement about which line kept which job across an edit — has nothing left to describe.
+        selected=held;stabilityComparison=null;
+      }
+    }
+    // Later candidates advance the same clock; freeze this run's status while it still owns it.
+    return {selected,stabilityComparison,staticDeadlineReached:staticSearchControl?staticSearchControl.deadlineReached():false};
+  };
+  const groupings=[null,...projectProgressLayers(perProject)];
+  let best=null;
+  for(let index=0;index<groupings.length;index++){
+    if(index>0&&!projectControl.checkpoint("project-progress-candidate"))break;
+    const now=projectControl.currentTime();
+    const control=groupings.length===1?projectControl:projectCandidateControl(projectControl,
+      now+Math.max(0,projectControl.deadline-now)/(groupings.length-index));
+    const options=groupings.length===1?runOptions:Object.assign({},runOptions,{
+      staticControl:isStatic?control:null,scheduleControl:control,progressLayers:groupings[index],
+      // Optional candidates may not start an extra fill clock after using their allotted time.
+      idleWork:{budget:Math.max(projectBudget*STATIC_FILL_TIME_SHARE,STATIC_FILL_TIME_FLOOR),options:testOptions,control}});
+    const candidate=solveCandidate(options,control);
+    if(groupings[index])candidate.selected.progressWaves=true;
+    if(!best||(projectRunExecutable(candidate.selected)&&(!projectRunExecutable(best.selected)||
+      candidate.selected.eta<best.selected.eta-etaCompareEpsilon(candidate.selected.eta,best.selected.eta))))best=candidate;
   }
+  const {selected,stabilityComparison,staticDeadlineReached}=best;
   if(projectRunExecutable(selected))commitLineStabilityUpdates(selected._stabilityUpdates,cacheSnapshot);
   delete selected._stabilityUpdates;
-  selected.staticDeadlineReached=staticSearchControl?staticSearchControl.deadlineReached():false;
+  selected.staticDeadlineReached=staticDeadlineReached;
   selected.projectStability=projectStability;selected.stabilityComparison=stabilityComparison;selected.ms=performance.now()-t0;
   return selected;
 }
