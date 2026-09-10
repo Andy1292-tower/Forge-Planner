@@ -156,6 +156,7 @@ function projOrderMode(res){
   return res.phases&&res.phases.length>1?"waves":"together";
 }
 function projOrderHeader(res){
+  if(res.progressWaves)return 'Order: <b style="color:var(--ink2)">projects grouped into faster stages</b> — keeping useful stages after progress is marked complete. Finish each stage before starting the next.';
   switch(projOrderMode(res)){
     case "seq":return 'Order: <b style="color:var(--ink2)">one project at a time</b> — unlocks first, then order numbers, then estimated completion time. Change this in the <b>Projects</b> tab of <b>Projects+Prices</b>.';
     case "single":return 'Order: <b style="color:var(--ink2)">all projects in one phase</b> — unlock ordering off. Change this in the <b>Projects</b> tab of <b>Projects+Prices</b>.';
@@ -337,7 +338,9 @@ function renderProjectResults(res,el,stat){
       :`${htmlText(f.resource||"A required resource")} is short by <b>${disp(f.deficit||0)}</b>${when}.`;
     html+=`<div class="notice warn"><b>Executable schedule blocked:</b> ${detail} ${htmlText(f.message||"")}</div>`;
   }
-  if(scheduleExecutable&&res.waved)html+=`<div class="notice info" style="font-size:11.5px"><b>Unlock-aware order.</b> Some projects unlock materials others need (Frames, Gel, Wire), so this is split into <b>${res.phases.length} waves</b> — finish each wave before starting the next. Everything within a wave is crafted together.</div>`;
+  if(scheduleExecutable&&res.waved)html+=res.progressWaves
+    ?`<div class="notice info" style="font-size:11.5px"><b>Faster in stages.</b> This plan keeps <b>${res.phases.length} stages</b> from earlier unlock groups because they finish the remaining work sooner. Completed projects stay complete. Finish each stage before starting the next; projects within a stage are crafted together.</div>`
+    :`<div class="notice info" style="font-size:11.5px"><b>Unlock-aware order.</b> Some projects unlock materials others need (Frames, Gel, Wire), so this is split into <b>${res.phases.length} waves</b> — finish each wave before starting the next. Everything within a wave is crafted together.</div>`;
   if(res.blockedMined&&Object.keys(res.blockedMined).length){
     const blocked=Object.entries(res.blockedMined).map(([item,resources])=>`<b>${item}</b> needs ${resources.map(r=>`<b>${r}</b>`).join(" and ")}`).join("; ");
     html+=`<div class="notice warn"><b>Missing mined income:</b> ${blocked}. Enter those incomes in <b>Mined resources</b> to include the blocked items; they remain excluded from the plan time below.</div>`;
@@ -348,7 +351,7 @@ function renderProjectResults(res,el,stat){
   // Summary metrics
   html+=`<div class="metrics">
     <div class="metric"><div class="l">${res.partial?"Partial plan time":scheduleExecutable?"Executable total time":"Analytical LP time"}</div><div class="v">${fmtDuration(scheduleExecutable?res.eta:res.workEta)}</div><div class="u">${res.partial?"currently plannable work only":scheduleExecutable?(res.sequenced?"includes warm-ups; finishes every project":"includes warm-ups and prerequisites"):"not executable — see blocking diagnostic"}</div></div>
-    <div class="metric"><div class="l">Projects</div><div class="v">${res.perProject.length}</div><div class="u">${scheduleExecutable?(res.sequenced?"one at a time":res.waved?res.phases.length+" unlock waves":res.single?"all in one phase":"scheduled together"):res.phases.length+" analytical phase"+(res.phases.length===1?"":"s")}</div></div>
+    <div class="metric"><div class="l">Projects</div><div class="v">${res.perProject.length}</div><div class="u">${scheduleExecutable?(res.sequenced?"one at a time":res.waved?res.phases.length+(res.progressWaves?" stages":" unlock waves"):res.single?"all in one phase":"scheduled together"):res.phases.length+" analytical phase"+(res.phases.length===1?"":"s")}</div></div>
     ${!res.sequenced&&!res.waved&&res.bottleneck?`<div class="metric"><div class="l">Bottleneck</div><div class="v" style="font-size:17px">${res.bottleneck}</div><div class="u">${scheduleExecutable?`sets the ${res.partial?"partial plan":"finish"} time`:"analytical LP bottleneck only"}</div></div>`:""}
   </div>`;
   html+=projAdjustPanelHtml(false);
@@ -357,8 +360,8 @@ function renderProjectResults(res,el,stat){
   // Everything analytical folds into one collapsed breakdown so it's a click away, not in the way.
   let bd="";
   if(res.sequenced||res.waved){
-    bd+=`<div class="subhead" style="margin-top:0">${scheduleExecutable?(res.waved?"Build order — waves, each crafted together":"Completion order — done one project at a time"):"Analytical phase breakdown"}</div>
-      <table><thead><tr><th>#</th><th>${scheduleExecutable?(res.waved?"Wave":"Project"):"Phase"}</th><th>Needs</th><th class="num">${res.partial?"Plan time":"Phase"}</th><th class="num">${scheduleExecutable?(res.partial?"Plannable by":"Done by"):"LP endpoint"}</th></tr></thead><tbody>`;
+    bd+=`<div class="subhead" style="margin-top:0">${scheduleExecutable?(res.waved?(res.progressWaves?"Build order — stages, each crafted together":"Build order — waves, each crafted together"):"Completion order — done one project at a time"):"Analytical phase breakdown"}</div>
+      <table><thead><tr><th>#</th><th>${scheduleExecutable?(res.waved?(res.progressWaves?"Stage":"Wave"):"Project"):"Phase"}</th><th>Needs</th><th class="num">${res.partial?"Plan time":"Phase"}</th><th class="num">${scheduleExecutable?(res.partial?"Plannable by":"Done by"):"LP endpoint"}</th></tr></thead><tbody>`;
     res.phases.forEach((ph,i)=>{
       const sub=ph.demandSub||{};
       const items=ALLITEMS.filter(it=>(sub[it]||0)>0);

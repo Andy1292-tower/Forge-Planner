@@ -36,6 +36,7 @@ const tests = [
   "test/outputs-solve-scope.cjs",
   "test/perf-harness.cjs",
   "test/project-transients.cjs",
+  "test/project-progress.cjs",
   "test/rawtargets.cjs",
   "test/report-issue.cjs",
   "test/scale.cjs",
