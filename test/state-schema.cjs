@@ -426,11 +426,11 @@ for (const [label, candidate] of [
 test("rejects wrong nested container types", () => {
   const candidate = currentState();
   candidate.lines = {};
-  candidate.prodCost = [];
+  candidate.baseTime = [];
   const result = api("validateAndMigrate")(candidate);
   assert.equal(result.ok, false);
   assert.match(result.errors.join(" "), /lines/i);
-  assert.match(result.errors.join(" "), /prodCost/i);
+  assert.match(result.errors.join(" "), /baseTime/i);
 });
 
 test("rejects missing fields from a versioned current save", () => {
@@ -856,7 +856,6 @@ test("accepts every numeric descriptor boundary including an exact 60000 ms budg
   candidate.margin = 20;
   candidate.solveBudget = 60000;
   candidate.baseTime.Ingots = 1e-6;
-  candidate.prodCost.Glass.Bits[1] = 1e100;
   candidate.sellPrice.Frames = 1e100;
   candidate.forgie.Frames = 0;
   candidate.minedIncome.Vespium.resourcesTradingPerSec = 1e100;
@@ -887,8 +886,8 @@ test("rejects representative numeric values beyond every live field family", () 
     ["solve budget integer", state => { state.solveBudget = 2345.5; }],
     ["base time", state => { state.baseTime.Ingots = 0; }],
     // Quantities carry no magnitude ceiling now (issue #142); what they still reject is a
-    // negative amount or a value that is not a quantity at all.
-    ["recipe", state => { state.prodCost.Glass.Bits[1] = -1; }],
+    // negative amount or a value that is not a quantity at all. Recipe costs are absent from this
+    // list because they are derived rather than imported — there is no typed value left to reject.
     ["price", state => { state.sellPrice.Frames = -1; }],
     ["Forgie", state => { state.forgie.Frames = -1; }],
     ["mined", state => { state.minedIncome.Hydracite.resourcesTradingPerSec = -1; }],

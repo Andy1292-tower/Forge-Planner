@@ -529,17 +529,6 @@ document.getElementById("forgieRows").addEventListener("input",e=>{
   if(result.committed){save();scheduleSolve();}
 });
 
-/* ---------- mined resources modal ---------- */
-const btnMined=document.getElementById("btnMined");
-const minedDialog=dialogController.register({root:document.getElementById("minedModal"),panel:document.querySelector("#minedModal .modal"),opener:btnMined,initialFocus:()=>document.getElementById("minedRocksTrading"),onOpen:renderMinedResources});
-function openMined(invoker){minedDialog.open(invoker);}
-function closeMined(){minedDialog.close();}
-document.getElementById("minedModal").addEventListener("input",e=>{
-  const resource=e.target.dataset.minedResource,source=e.target.dataset.minedSource;if(!resource||!source)return;
-  const result=commitFieldDraft(e.target,FIELD_SCHEMA.minedIncome,S.minedIncome[resource][source],(st,value,raw)=>{st.minedIncomeText[resource][source]=raw;st.minedIncome[resource][source]=value;});
-  if(result.committed){save();renderMinedResources();scheduleSolve();}
-});
-
 /* ---------- Infusion Upgrades modal ---------- */
 const INFUSION_LABELS=Object.freeze({ee7:"Expansion Essentials VII",dupeDay:"Dupe Day"});
 function renderInfusion(){
@@ -575,6 +564,17 @@ document.getElementById("infusionModal").addEventListener("change",e=>{
   renderRecipes();
   renderInputState();
   scheduleSolve();
+});
+
+/* ---------- mined resources modal ---------- */
+const btnMined=document.getElementById("btnMined");
+const minedDialog=dialogController.register({root:document.getElementById("minedModal"),panel:document.querySelector("#minedModal .modal"),opener:btnMined,initialFocus:()=>document.getElementById("minedRocksTrading"),onOpen:renderMinedResources});
+function openMined(invoker){minedDialog.open(invoker);}
+function closeMined(){minedDialog.close();}
+document.getElementById("minedModal").addEventListener("input",e=>{
+  const resource=e.target.dataset.minedResource,source=e.target.dataset.minedSource;if(!resource||!source)return;
+  const result=commitFieldDraft(e.target,FIELD_SCHEMA.minedIncome,S.minedIncome[resource][source],(st,value,raw)=>{st.minedIncomeText[resource][source]=raw;st.minedIncome[resource][source]=value;});
+  if(result.committed){save();renderMinedResources();scheduleSolve();}
 });
 
 /* ---------- settings modal (max solve time) ---------- */
