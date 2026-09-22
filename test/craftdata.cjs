@@ -83,7 +83,9 @@ const runner=`
   eq("legacy vesp value carries over at the same hourly budget",minedBudgetHr("Vespium",legacy).toString(),"435000000000000000000");
   eq("legacy per-minute text is not shown against a per-second field",legacy.minedIncomeText.Vespium?.resourcesTradingPerSec==="7.25qu",false);
   eq("custom base time preserved",legacy.baseTime.Wire,12345);
-  eq("custom recipe cost preserved",legacy.prodCost.Wire.Gel[4],999);
+  // Recipe costs are derived now, so a hand-typed one in an old save is replaced by the game's
+  // own figure: Wire spends 2 Gel at 1x, and costs scale 3x per compression level.
+  eq("custom recipe cost replaced by the derived curve",legacy.prodCost.Wire.Gel[4],18);
   eq("new Hydracite source blank",legacy.minedIncome.Hydracite?.resourcesTradingPerSec,null);
   eq("legacy numeric removed",Object.prototype.hasOwnProperty.call(legacy,"gelVesp"),false);
   eq("legacy text removed",Object.prototype.hasOwnProperty.call(legacy,"gelVespText"),false);

@@ -368,22 +368,9 @@ const runner=`
   const boundedEl=new El(),boundedStat=new El();renderSolveResult(boundedNoPlan,boundedEl,boundedStat);
   check("capped zero baseline does not claim no sustainable plan",boundedEl.innerHTML.includes("no plan found in bounded search")&&
     !boundedEl.innerHTML.includes("No sustainable plan found"),"boundedCopy="+boundedEl.innerHTML.includes("no plan found in bounded search"));
-  S=stateFor(["Glass"]);S.forgie.Glass=1000;
-  RECIPE.Glass.inputs.forEach(input=>LEVELS.forEach(level=>{S.prodCost.Glass[input][level]=null;}));
-  const passiveOnly=optimizeInner(200,{now:()=>0,workLimit:100000});
-  const passiveGlass=passiveOnly.ranking.find(candidate=>candidate.item==="Glass");
-  check("missing craft costs retain the executable passive-output baseline",
-    passiveOnly.bestItem==="Glass"&&passiveOnly.credits.eq(1000)&&passiveGlass.out===1000&&passiveGlass.feasible&&
-      passiveGlass.plan.every(row=>row.job.kind==="idle")&&!passiveGlass.capped&&passiveOnly.searchExhaustive,
-    "best="+passiveOnly.bestItem+", credits="+passiveOnly.credits+", capped="+(passiveGlass&&passiveGlass.capped));
-  S=stateFor(["Frames"]);S.forgie.Plates=0;S.forgie.Frames=0;
-  RECIPE.Plates.inputs.forEach(input=>LEVELS.forEach(level=>{S.prodCost.Plates[input][level]=null;}));
-  const transitiveMissing=optimizeInner(2000,{now:()=>0,workLimit:10_000_000});
-  const transitiveEl=new El(),transitiveStat=new El();renderSolveResult(transitiveMissing,transitiveEl,transitiveStat);
-  check("Credits surfaces missing transitive recipe data instead of a definitive no-plan claim",
-    transitiveMissing.issues.includes("No material cost entered for Plates.")&&transitiveEl.innerHTML.includes("Missing data:")&&
-      !transitiveEl.innerHTML.includes("No sustainable plan found"),
-    "issues="+JSON.stringify(transitiveMissing.issues)+", noPlan="+transitiveEl.innerHTML.includes("No sustainable plan found"));
+  /* The two "missing recipe cost" cases that stood here are gone with the editable recipe grid.
+     Costs are derived now, so every product has one at every compression level and there is no
+     longer a degraded path to hold to a contract. */
   S=stateFor([],[{max:1,spx:1,turbo:0}]);
   const beyondCurrentPlan=[null,{line:2,max:1,sp:1,dp:1,spx:1,dup:0,
     job:{kind:"produce",res:"Bits",lvl:1,ct:1,prod:[[0,1]],cons:[]}}];

@@ -20,6 +20,7 @@ const tests = [
   "test/game-alignment.cjs",
   "test/gate.cjs",
   "test/gel-loadout-exact.cjs",
+  "test/infusion-upgrades.cjs",
   "test/inventory.cjs",
   "test/legacy-worker-retirement.cjs",
   "test/lns-repair.cjs",

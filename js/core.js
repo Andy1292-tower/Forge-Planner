@@ -2,6 +2,18 @@
 const LEVELS=[1,2,4,8,16,32,64,128,256,512,1024,2048,4096,8192,16384];
 const RAWS=["Ingots","Bits","Concrete"];
 const PRODUCTS=["Glass","Bricks","Plates","Rods","Frames","Gel","Wire","Reinforced Concrete","Batteries"];
+/* ---- Infusion Upgrades ----
+   Both are opt-in and default off: neither is live in game yet, so nothing changes until the
+   player ticks the box.
+     ee7      Expansion Essentials VII — every product below costs half as much to craft.
+     dupeDay  Dupe Day — lifts the 100% ceiling off the duplication field, and nothing else. The
+              player's duplication figure already includes whatever Dupe Day gave them, and
+              dupeMult() is the right expected multiplier at any value (see below). */
+const INFUSION_KEYS=Object.freeze(["ee7","dupeDay"]);
+/* Spelled out rather than taken from PRODUCTS: EE7 halves the products the game shipped it with,
+   and a product added to the planner later must not be swept in until an upgrade says so. */
+const EE7_PRODUCTS=Object.freeze(["Glass","Bricks","Plates","Rods","Frames","Gel","Wire","Reinforced Concrete","Batteries"]);
+function infusionOn(key,state=S){const flags=state&&state.infusion;return !!(flags&&flags[key]);}
 // Gel is crafted on a crafter line, spending budgeted Vespium plus informational Rocks.
 const GEL="Gel";
 const RECIPE={
@@ -59,10 +71,20 @@ function craftYield(item,L){return (RECIPE[item]&&RECIPE[item].baseOutput||1)*L;
    scaled by compression, topping out at 4.8e29 Rocks at 16384x, and nothing a player types reaches
    them. Keeping them float keeps this arithmetic bit-for-bit what it was — a Decimal normalises its
    mantissa, which moved the 16384x Hydracite cost by one ULP. */
-function minedCost(item,L){
+/* "Individual product costs cannot go below 1 and will always round up" — the game's own wording
+   for Expansion Essentials VII, applied per cost cell rather than to a recipe's total. */
+function halveCraftingCost(value){const cost=toDec(value);return cost===null?null:Decimal.max(1,cost.div(2).ceil());}
+function minedCost(item,L,state=S){
   const cfg=MINED_CRAFTS[item],out={};if(!cfg)return out;
   const mult=Math.pow(3,Math.log2(L));
-  Object.entries({...cfg.informationalCosts,...cfg.baseCosts}).forEach(([r,v])=>out[r]=v*mult);
+  /* Stays float, for the reason above. Halving is exact in binary, and by 16384x these costs are
+     around 1e29, where the ceiling and the floor of 1 are both no-ops — they only bite at the
+     small end, which is where the game says they should. */
+  const halve=infusionOn("ee7",state)&&EE7_PRODUCTS.includes(item);
+  Object.entries({...cfg.informationalCosts,...cfg.baseCosts}).forEach(([r,v])=>{
+    const cost=v*mult;
+    out[r]=halve?Math.max(1,Math.ceil(cost/2)):cost;
+  });
   return out;
 }
 function isMinedResource(r){return MINED_RESOURCES.includes(r);}
@@ -140,8 +162,10 @@ function lineSpeed(row){
 // and the precision "Apply max turbo" writes back into the speed field. One rounding, shared by the
 // note and the button that replaces it, is what keeps the two from disagreeing by a hundredth.
 function displayedLineSpeed(row){return Math.round(lineSpeed(row)*100)/100;}
-// Duplication chance (%), entered once and global to every crafter — the average %
-// of crafts that drop a free duplicate. dupeMult() is the output multiplier.
+/* Duplication chance (%), entered once and global to every crafter. dupeMult() is the output
+   multiplier, and it is linear all the way up: at 150% half the crafts roll a third copy and half
+   roll a second, averaging 2.5 — exactly 1 + 150/100. So the x3-then-x4 escalation Dupe Day
+   describes needs no arithmetic of its own; all that upgrade does is lift the field's ceiling. */
 function dupeChance(){return Math.max(0,num(S.dupe)||0);}
 function dupeMult(){return 1+dupeChance()/100;}
 const newId=()=>"p"+Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36);
@@ -156,9 +180,11 @@ function fmtDuration(h){
   return parts.slice(0,3).join(" ")||"0s";
 }
 
-function defaults(){
+/* The game's own cost curve, before any Infusion Upgrade touches it. Not player data: the recipe
+   grid is read-only, so this is derived on every normalize() and never read back from a save. */
+function baseProdCost(){
   const c=(coef)=>{const o={};LEVELS.forEach(L=>{o[L]=new Decimal(coef).times(Math.pow(3,Math.log2(L)));});return o;};
-  const prodCost={
+  return {
     Glass:{Bits:c(2)},
     Bricks:{Concrete:c(3)},
     Plates:{Ingots:c(2)},
@@ -169,6 +195,22 @@ function defaults(){
     "Reinforced Concrete":{Bricks:c(10000),Concrete:c(100000),Frames:c(700)},
     Batteries:{Wire:c(500),Gel:c(100000)}
   };
+}
+// The table the solver reads: the curve above, halved where Expansion Essentials VII applies.
+function derivedProdCost(state){
+  const table=baseProdCost();
+  if(!infusionOn("ee7",state))return table;
+  EE7_PRODUCTS.forEach(P=>{
+    const inputs=(RECIPE[P]||{}).inputs||[];
+    inputs.forEach(k=>{
+      if(!table[P]||!table[P][k])return;
+      LEVELS.forEach(L=>{table[P][k][L]=halveCraftingCost(table[P][k][L]);});
+    });
+  });
+  return table;
+}
+function defaults(){
+  const prodCost=baseProdCost();
   const baseTime={Ingots:10,Bits:6.178,Concrete:9.273,Glass:92.68,Bricks:108.2,Plates:30.89,Rods:46.34,Frames:308.9,Gel:3201,Wire:5400.8,"Reinforced Concrete":355531.88,Batteries:1034274.56};
   const nulls=(keys)=>{const o={};(keys||[...RAWS,...PRODUCTS]).forEach(it=>o[it]=null);return o;};
   const blankSources=()=>{
@@ -196,7 +238,7 @@ function defaults(){
       {max:64,spx:45.20,turbo:0},
       {max:32,spx:42.87,turbo:0}
     ],
-    maxTurbo:0,dupe:12.40,
+    maxTurbo:0,dupe:12.40,infusion:{ee7:false,dupeDay:false},
     prodCost,baseTime,margin:0,mode:"items",solveBudget:10000,
     sellPrice:nulls(PRICEABLE_ITEMS),priceText:{},
     forgie:nulls(),forgieText:{},
@@ -259,6 +301,8 @@ function normalize(st){
   if(!Array.isArray(st.lines))st.lines=[];
   st.lines.forEach(l=>{if(l.spx==null||isNaN(l.spx)||l.spx<=0)l.spx=1;if(l.turbo==null||isNaN(l.turbo)||l.turbo<0)l.turbo=0;});
   if(st.maxTurbo==null||isNaN(st.maxTurbo)||st.maxTurbo<0)st.maxTurbo=0;
+  if(!st.infusion||typeof st.infusion!=="object"||Array.isArray(st.infusion))st.infusion={};
+  INFUSION_KEYS.forEach(key=>{st.infusion[key]=st.infusion[key]===true;});
   if(st.dupe==null||isNaN(st.dupe)||st.dupe<0){
     let _d;
     if(st.attrDupe!=null&&!isNaN(st.attrDupe))_d=Math.max(0,Number(st.attrDupe)+(Number(st.maxTurbo)||0)*(Number(st.trio4)||0));
@@ -266,6 +310,7 @@ function normalize(st){
     st.dupe=_d;
   }
   delete st.attrDupe;delete st.trio4;
+  if(!st.infusion.dupeDay&&st.dupe>100)st.dupe=100;
   if(st.margin==null||isNaN(st.margin))st.margin=0;
   const _budgetRule=typeof FIELD_SCHEMA!=="undefined"?FIELD_SCHEMA.solveBudget:{min:200,max:60000,defaultValue:10000};
   const _budgetValue=Number(st.solveBudget);
@@ -276,14 +321,12 @@ function normalize(st){
   const _migrate=!st.baseTimeRev||st.baseTimeRev<2;
   [...RAWS,...PRODUCTS].forEach(it=>{const v=st.baseTime[it];if(v==null||isNaN(v)||v<=0)st.baseTime[it]=_DB[it];else if(_migrate&&(Math.abs(v-(_PB[it]||-1))<1e-4||Math.abs(v-12.85)<1e-4))st.baseTime[it]=_DB[it];});
   st.baseTimeRev=2;
-  const _DP=defaults().prodCost;
-  if(!st.prodCost)st.prodCost={};
-  PRODUCTS.forEach(P=>{if(!st.prodCost[P])st.prodCost[P]={};RECIPE[P].inputs.forEach(k=>{if(!st.prodCost[P][k]||Object.keys(st.prodCost[P][k]).length===0)st.prodCost[P][k]=_DP[P][k];else LEVELS.forEach(L=>{
-    // A MISSING level takes the default; a level that is present and blank stays blank. Clearing a
-    // recipe cost is how a player says "I have not entered this", and the solver reports it as such.
-    if(!(L in st.prodCost[P][k]))st.prodCost[P][k][L]=_DP[P][k][L];
-    else st.prodCost[P][k][L]=toDec(st.prodCost[P][k][L]);
-  });});});
+  /* Recipe costs are the game's own curve, not player data. The grid that used to edit them is
+     read-only, so the table is rebuilt here from the constants and the Infusion Upgrades that
+     change them, and whatever a save happens to carry under prodCost is discarded. That is what
+     makes the table trustworthy: it cannot drift out of step with the game one hand-typed cell
+     at a time. */
+  st.prodCost=derivedProdCost(st);
   /* Quantity revival. normalize() runs on every load and on the Worker's state commit, so this is
      the one place a persisted string / legacy float becomes the Decimal the rest of the app holds.
      A value that will not parse becomes null ("not entered"), never a silent zero. */

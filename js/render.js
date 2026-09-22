@@ -6,7 +6,7 @@ const TIPS={
   spx:"The total speed × currently shown above the crafter unit in-game (e.g. ×49.38) — enter it exactly as displayed, with your current turbo stacks already baked in.",
   turbo:"How many turbo stacks this crafter has active right now (each stack = +1% speed). With the global max-turbo-stacks figure, the planner backs out your base speed and projects the speed you'll have at full turbo.",
   maxTurbo:"The most turbo stacks any crafter can reach — a global cap (each stack = +1% speed). The planner projects every line's current speed up to this many stacks, so the plan reflects your sustained speed at full turbo.",
-  dup:"Duplication chance — average % of crafts that drop a free duplicate. Adds output without spending extra material. Global to every crafter; leave 0 if you don't have dupe bonuses.",
+  dup:"Duplication chance — the average % of crafts that drop a free copy. Adds output without spending extra material. Global to every crafter; leave 0 if you don't have dupe bonuses. Past 100% the surplus becomes a chance at a third copy, then a fourth, and so on; the planner works from the average either way. Values above 100% need the Dupe Day upgrade ticked under Inf. Upgrades.",
   del:"Remove this crafter line"
 };
 function tipHtml(id,label,text,className="",style=""){
@@ -325,9 +325,7 @@ function prodCard(p){
     let cells=`<td class="lv">${compressionLabel(L)}</td>`;
     ins.forEach(k=>{
       const v=S.prodCost[p][k][L];
-      const errorId=`field-recipe-${fieldDomToken(p)}-${fieldDomToken(k)}-${L}-error`;
-      cells+=`<td><span class="field-stack"><input type="number" ${htmlFieldInputAttributes(FIELD_SCHEMA.recipeCost)} placeholder="–" value="${v??""}"
-        data-res="${p}" data-fld="cost" data-in="${k}" data-lv="${L}" data-field-error="${errorId}" aria-label="${p} recipe ${k} cost at compression ${L}x"><span class="field-error" id="${errorId}" aria-live="polite" aria-atomic="true"></span></span></td>`;
+      cells+=`<td class="rcost mono">${disp(v)}</td>`;
     });
     rows+=`<tr>${cells}</tr>`;
   });
