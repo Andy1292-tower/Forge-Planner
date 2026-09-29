@@ -275,7 +275,7 @@ button.btn.ghost{background:transparent}
 .line-proj{font-size:10px;color:var(--amber);letter-spacing:.2px;margin-top:3px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* the upgrade level behind the chosen multiplier, hung off the picker for the same
-   reason: this column is only as wide as its heading, so "16.38k× (level 14)" cannot
+   reason: this column is only as wide as its heading, so "65.54k× (level 16)" cannot
    fit inside the closed select. Muted, because it restates the value above it. */
 .line-lvl{font-size:10px;color:var(--ink3);letter-spacing:.2px;margin-top:3px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

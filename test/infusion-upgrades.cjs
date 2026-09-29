@@ -70,9 +70,14 @@ test("the round-up is not confined to cheap recipes — odd costs round up at ev
   assert.equal(cost(ee7, "Bricks", "Concrete", 512), "29525");
   assert.equal(cost(base, "Bricks", "Concrete", 16384), "14348907");
   assert.equal(cost(ee7, "Bricks", "Concrete", 16384), "7174454");
+  // Still true at the top of the table, where the odd coefficient is nine figures.
+  assert.equal(cost(base, "Bricks", "Concrete", 65536), "129140163");
+  assert.equal(cost(ee7, "Bricks", "Concrete", 65536), "64570082");
   // An even cost halves exactly, at any size.
   assert.equal(cost(base, "Plates", "Ingots", 16384), "9565938");
   assert.equal(cost(ee7, "Plates", "Ingots", 16384), "4782969");
+  assert.equal(cost(base, "Plates", "Ingots", 65536), "86093442");
+  assert.equal(cost(ee7, "Plates", "Ingots", 65536), "43046721");
 });
 
 test("EE7 covers every product and every compression level", () => {
@@ -110,8 +115,8 @@ test("EE7 halves the mined costs behind Gel and Batteries", () => {
   const ee7Gel = call("minedCost", "Gel", 1, { infusion: { ee7: true } });
   assert.equal(ee7Gel.Vespium, baseGel.Vespium / 2, "Vespium per Gel craft halves");
   assert.equal(ee7Gel.Rocks, baseGel.Rocks / 2, "the informational Rocks cost halves too");
-  const baseBatt = call("minedCost", "Batteries", 16384, {});
-  const ee7Batt = call("minedCost", "Batteries", 16384, { infusion: { ee7: true } });
+  const baseBatt = call("minedCost", "Batteries", 65536, {});
+  const ee7Batt = call("minedCost", "Batteries", 65536, { infusion: { ee7: true } });
   assert.equal(ee7Batt.Hydracite, baseBatt.Hydracite / 2, "Hydracite per Battery craft halves");
   assert.equal(typeof ee7Batt.Hydracite, "number", "mined costs stay float");
 });

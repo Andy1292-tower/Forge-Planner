@@ -1,5 +1,5 @@
 "use strict";
-const LEVELS=[1,2,4,8,16,32,64,128,256,512,1024,2048,4096,8192,16384];
+const LEVELS=[1,2,4,8,16,32,64,128,256,512,1024,2048,4096,8192,16384,32768,65536];
 const RAWS=["Ingots","Bits","Concrete"];
 const PRODUCTS=["Glass","Bricks","Plates","Rods","Frames","Gel","Wire","Reinforced Concrete","Batteries"];
 /* ---- Infusion Upgrades ----
@@ -62,24 +62,32 @@ const SPENDABLE_MINED_STOCK=["Hydracite"];
 // Display names. Internal keys stay short so they match MINED_CRAFTS and the existing saved state.
 const MINED_DISPLAY_NAMES=Object.freeze({Rocks:"Worthless Rocks"});
 function minedDisplayName(resource){return MINED_DISPLAY_NAMES[resource]||resource;}
-function compressionLabel(L){return Number(L)===16384?"16.38k×":String(L)+"×";}
+/* The game prints a multiplier in full until it reaches five digits, then switches to the same
+   abbreviated notation it uses everywhere else — 8192×, then 16.38k×, 32.77k×, 65.54k×. Deriving
+   the abbreviation from the shared formatter rather than naming each tier means a tier added above
+   these is labelled the way the game labels it without another special case here. */
+const COMPRESSION_ABBREVIATE_FROM=10000;
+function compressionLabel(L){
+  const n=Number(L);
+  return (n>=COMPRESSION_ABBREVIATE_FROM?formatGameNum(n,2):String(n))+"×";
+}
 // The in-game upgrade level behind a multiplier: level 0 is 1× and each level doubles it,
-// so the top tier (16384×) is level 14.
+// so the top tier (65.54k×) is level 16.
 function compressionLevel(L){return Math.round(Math.log2(Number(L)||1));}
 function craftYield(item,L){return (RECIPE[item]&&RECIPE[item].baseOutput||1)*L;}
 /* Floats, like gelOreCost and for the same reason: MINED_CRAFTS holds hardcoded game constants
-   scaled by compression, topping out at 4.8e29 Rocks at 16384x, and nothing a player types reaches
+   scaled by compression, topping out at 4.3e30 Rocks at 65536x, and nothing a player types reaches
    them. Keeping them float keeps this arithmetic bit-for-bit what it was — a Decimal normalises its
-   mantissa, which moved the 16384x Hydracite cost by one ULP. */
+   mantissa, which moved the top-tier Hydracite cost by one ULP. */
 /* "Individual product costs cannot go below 1 and will always round up" — the game's own wording
    for Expansion Essentials VII, applied per cost cell rather than to a recipe's total. */
 function halveCraftingCost(value){const cost=toDec(value);return cost===null?null:Decimal.max(1,cost.div(2).ceil());}
 function minedCost(item,L,state=S){
   const cfg=MINED_CRAFTS[item],out={};if(!cfg)return out;
   const mult=Math.pow(3,Math.log2(L));
-  /* Stays float, for the reason above. Halving is exact in binary, and by 16384x these costs are
-     around 1e29, where the ceiling and the floor of 1 are both no-ops — they only bite at the
-     small end, which is where the game says they should. */
+  /* Stays float, for the reason above. Halving is exact in binary, and at the top of the table
+     these costs are around 1e30, where the ceiling and the floor of 1 are both no-ops — they only
+     bite at the small end, which is where the game says they should. */
   const halve=infusionOn("ee7",state)&&EE7_PRODUCTS.includes(item);
   Object.entries({...cfg.informationalCosts,...cfg.baseCosts}).forEach(([r,v])=>{
     const cost=v*mult;
@@ -551,7 +559,7 @@ function decToStore(value){const d=toDec(value);return d===null?null:d.toString(
    the planner budgets against — rocks stay informational (see the ore-cost modal). */
 /* Floats, deliberately. Every other cost in the planner is a Decimal because a player can edit it
    and the game can grow it; these two are hardcoded constants scaled by compression, topping out at
-   2.4e21 Vespium and 4.8e29 Rocks at 16384×. Nothing user-entered reaches them, so they cannot
+   2.2e22 Vespium and 4.3e30 Rocks at 65.54k×. Nothing user-entered reaches them, so they cannot
    outgrow a float64 — and keeping them float keeps the Gel capacity helper's arithmetic bit-for-bit
    what it was. Routing them through Decimal moved gelVespHr by one ULP, which was enough to change
    which compression step last fit inside a Vespium budget. */

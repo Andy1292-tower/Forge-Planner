@@ -451,19 +451,23 @@ const runner = `
       thinSplit.feasible === true, "feasible=" + thinSplit.feasible + " eta=" + thinSplit.eta.toFixed(4));
   }
 
-  /* ---- the top of the compression table (8192 / 16384) -------------------------------------
-   * LEVELS grew past 4096, and a static line runs ONE level for the whole phase, so picking the
-   * wrong one is not recoverable mid-run. A line capped at the top must be free to use the top:
-   * output per second is (L / cycle) x min(speed, cycle), which keeps climbing with L here. */
+  /* ---- the top of the compression table (8192 / 65536) -------------------------------------
+   * LEVELS grew past 4096, and again past 16384, and a static line runs ONE level for the whole
+   * phase, so picking the wrong one is not recoverable mid-run. A line capped at the top must be
+   * free to use the top: output per second is (L / cycle) x min(speed, cycle), which keeps
+   * climbing with L here. */
   {
-    const top = scene([["Concrete",1e12]], [{max:16384, spx:50}], {});
+    const top = scene([["Concrete",1e12]], [{max:65536, spx:50}], {});
     const e = rowsOf(top)[0].entries[0];
-    record("static: a 16384x line may run at 16384x",
-      top.feasible === true && e.item === "Concrete" && e.lvl === 16384 && e.frac === 1,
+    record("static: a 65536x line may run at 65536x",
+      top.feasible === true && e.item === "Concrete" && e.lvl === 65536 && e.frac === 1,
       "job=" + e.item + "@" + e.lvl + " label=" + compressionLabel(e.lvl) + " eta=" + top.eta.toFixed(4));
-    record("static: the top level renders through compressionLabel, not raw arithmetic",
-      compressionLabel(e.lvl) === "16.38k×" && compressionLabel(8192) === "8192×",
-      "16384=" + compressionLabel(16384) + " 8192=" + compressionLabel(8192));
+    /* Both sides of the switch to abbreviated notation, which falls between 8192x and 16384x. */
+    record("static: the top levels render through compressionLabel, not raw arithmetic",
+      compressionLabel(e.lvl) === "65.54k×" && compressionLabel(32768) === "32.77k×" &&
+        compressionLabel(16384) === "16.38k×" && compressionLabel(8192) === "8192×",
+      "65536=" + compressionLabel(65536) + " 32768=" + compressionLabel(32768) +
+        " 16384=" + compressionLabel(16384) + " 8192=" + compressionLabel(8192));
     const capped = scene([["Concrete",1e12]], [{max:8192, spx:50}], {});
     const ce = rowsOf(capped)[0].entries[0];
     record("static: a line never exceeds its own cap",
@@ -471,7 +475,7 @@ const runner = `
       "job=" + ce.item + "@" + ce.lvl + " (cap 8192)");
     record("static: the taller cap really is the faster plan (so the choice matters)",
       top.eta < capped.eta - 1e-12,
-      "eta@16384=" + top.eta.toFixed(4) + "h eta@8192=" + capped.eta.toFixed(4) + "h");
+      "eta@65536=" + top.eta.toFixed(4) + "h eta@8192=" + capped.eta.toFixed(4) + "h");
   }
 
   __emit(JSON.stringify(results));

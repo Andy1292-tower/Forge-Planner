@@ -12,6 +12,7 @@
 const CHANGELOG=[
   {version:"2026.09.22",date:"2026-09-22",groups:{
     Added:[
+      "Compression levels 15 and 16 — 32.77k× and 65.54k×. Set a crafter's cap to either and the planner costs, times and schedules the tier like every one below it; the cost table under Crafting stats runs up to them too.",
       "Infusion Upgrades, from the new button on the top bar. Tick the ones you have bought and the planner works from them. Expansion Essentials VII halves every crafting cost — materials, the Vespium behind Gel and the Hydracite behind Batteries — rounding each cost up and never below 1. Dupe Day lets the dupe % field go past 100%, where a crafter starts rolling a third copy instead of a second, then a fourth."
     ],
     Changed:[

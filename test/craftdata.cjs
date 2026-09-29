@@ -19,12 +19,18 @@ const runner=`
   const eq=(name,got,want)=>{const ok=same(got,want);console.log((ok?"ok   ":"FAIL ")+name+" ["+got+" vs "+want+"]");if(!ok)fail++;};
   const near=(name,got,want)=>{const ok=Math.abs(got-want)<=1e-9*Math.max(1,Math.abs(want));console.log((ok?"ok   ":"FAIL ")+name+" ["+got+" vs "+want+"]");if(!ok)fail++;};
   const d=defaults();S=d;
-  eq("8192 tier",LEVELS[LEVELS.length-2],8192);
-  eq("16384 tier",LEVELS[LEVELS.length-1],16384);
+  eq("32768 tier",LEVELS[LEVELS.length-2],32768);
+  eq("65536 tier",LEVELS[LEVELS.length-1],65536);
+  /* The game prints a multiplier in full until it reaches five digits, then abbreviates it. Both
+     sides of that switch are pinned, because the tier list crosses it. */
+  eq("8192 display",compressionLabel(8192),"8192×");
   eq("16384 display",compressionLabel(16384),"16.38k×");
+  eq("32768 display",compressionLabel(32768),"32.77k×");
+  eq("65536 display",compressionLabel(65536),"65.54k×");
   eq("1× is level 0",compressionLevel(1),0);
   eq("64× is level 6",compressionLevel(64),6);
-  eq("16384× is the top level",compressionLevel(16384),LEVELS.length-1);
+  eq("65536× is the top level",compressionLevel(65536),LEVELS.length-1);
+  eq("65536× is level 16",compressionLevel(65536),16);
   eq("every tier maps to its index",LEVELS.every((L,i)=>compressionLevel(L)===i),true);
   eq("default Worthless Rocks income is blank",d.minedIncome.Rocks?.resourcesTradingPerSec,null);
   eq("default Vespium Resources & Trading income is blank",d.minedIncome.Vespium?.resourcesTradingPerSec,null);
