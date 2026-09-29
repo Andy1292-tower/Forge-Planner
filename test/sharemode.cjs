@@ -110,12 +110,13 @@ const runner = `
     JSON.stringify(shared2.slack));
 
   /* ---- an unmakeable output is named, not silently fatal ---- */
-  // Strip every recipe cost for Glass so no line can craft it at any level.
-  const blocked=solve("share",{Plates:{share:50},Glass:{share:50}},s=>{
-    LEVELS.forEach(L=>{s.prodCost.Glass.Bits[L]=null;});
+  /* Recipe costs are derived now, so no product can be starved of one. Gel is the output that can
+     still be impossible: it spends mined Vespium, and without an income no line can run it. */
+  const blocked=solve("share",{Plates:{share:50},Gel:{share:50}},s=>{
+    s.minedIncome.Vespium.resourcesTradingPerSec=null;
   });
   check("an output nothing can make is named rather than silently zeroing the others",
-    Array.isArray(blocked.blocked)&&blocked.blocked.includes("Glass"),
+    Array.isArray(blocked.blocked)&&blocked.blocked.includes("Gel"),
     JSON.stringify(blocked.blocked)+" feasible="+blocked.feasible);
 
   console.log("");

@@ -40,6 +40,10 @@
           <span class="rail-lbl"><span class="rail-dot" aria-hidden="true"></span><span class="rail-name" data-short="Mined">Mined</span></span>
           <span class="rail-state" id="stMined"></span>
         </button>
+        <button class="rail-seg" type="button" id="btnInfusion">
+          <span class="rail-lbl"><span class="rail-dot" aria-hidden="true"></span><span class="rail-name" data-short="Upgrades">Inf. Upgrades</span></span>
+          <span class="rail-state" id="stInfusion"></span>
+        </button>
       </div>
       <button class="btn ghost rail-aside" id="btnSettings">Settings</button>
       <span class="saveind" id="saveind" role="status" aria-live="polite" aria-atomic="true"></span>
@@ -69,7 +73,7 @@
         <div class="body">
           <div class="globals">
             <div class="fl"><span><label for="maxTurbo">max turbo stacks</label> <button type="button" class="tip" aria-label="Help for max turbo stacks" aria-describedby="maxTurboHelp">?<span class="tip-text" id="maxTurboHelp" role="tooltip">The most turbo stacks any crafter can reach — a global cap (each stack = +1% speed). The planner projects every line's current speed up to this many stacks, so the plan reflects your sustained speed at full turbo.</span></button></span><input type="number" min="0" max="1000000" step="any" inputmode="decimal" id="maxTurbo" placeholder="0" aria-describedby="maxTurboHelp" data-field-error="field-max-turbo-error"><div class="field-error" id="field-max-turbo-error" aria-live="polite" aria-atomic="true"></div></div>
-            <div class="fl"><span><label for="dupe">dupe %</label> <button type="button" class="tip tip-ic" style="--tip-img:url('../assets/dupe.jpg')" aria-label="Help for duplication chance" aria-describedby="dupeHelp">?<span class="tip-text" id="dupeHelp" role="tooltip">Duplication chance — average % of crafts that drop a free duplicate. Adds output without spending extra material. Global to every crafter; leave 0 if you don't have dupe bonuses.</span></button></span><input type="number" min="0" max="100" step="any" inputmode="decimal" id="dupe" placeholder="0" aria-describedby="dupeHelp" data-field-error="field-dupe-error"><div class="field-error" id="field-dupe-error" aria-live="polite" aria-atomic="true"></div></div>
+            <div class="fl"><span><label for="dupe">dupe %</label> <button type="button" class="tip tip-ic" style="--tip-img:url('../assets/dupe.jpg')" aria-label="Help for duplication chance" aria-describedby="dupeHelp">?<span class="tip-text" id="dupeHelp" role="tooltip">Duplication chance — the average % of crafts that drop a free copy. Adds output without spending extra material. Global to every crafter; leave 0 if you don&rsquo;t have dupe bonuses. Past 100% the surplus becomes a chance at a third copy, then a fourth, and so on; the planner works from the average either way. To go above 100%, tick Dupe Day under Inf. Upgrades.</span></button></span><input type="number" min="0" step="any" inputmode="decimal" id="dupe" placeholder="0" aria-describedby="dupeHelp" data-field-error="field-dupe-error"><div class="field-error" id="field-dupe-error" aria-live="polite" aria-atomic="true"></div></div>
           </div>
           <div id="lines"></div>
           <div class="line-actions">
@@ -130,10 +134,10 @@
     <button class="rsec-toggle" id="recipeToggle" aria-expanded="false">
       <span class="chev">▸</span>
       <span class="rsec-title">Crafting stats — material costs &amp; base times</span>
-      <span class="rsec-hint">base times · recipe costs · calibration tool — defaults are good, open only to tweak</span>
+      <span class="rsec-hint">base times · recipe costs · calibration tool — base times are yours to tweak, costs are read-only</span>
     </button>
     <div class="rsec-body" id="recipeBody" hidden>
-    <p class="help" style="margin-top:14px">Craft time is computed, not entered: effective time = (this item's base time) × 1.5^(compression level) ÷ the line's total speed ×. Set each line's max compression, its currently-displayed total speed × (the ×NN.NN reading at the top of that crafting unit), and its current turbo stacks above — the planner backs out your base speed and projects it to the global max turbo stacks. Duplication chance is entered once at the top and applies to every crafter. Each item has its own base time @1× on its card below — they don't have to match. Cost columns are the material each craft consumes per level. Most crafts output the compression amount; Batteries output 5 × compression. Costs scale 3× per level.</p>
+    <p class="help" style="margin-top:14px">Craft time is computed, not entered: effective time = (this item's base time) × 1.5^(compression level) ÷ the line's total speed ×. Set each line's max compression, its currently-displayed total speed × (the ×NN.NN reading at the top of that crafting unit), and its current turbo stacks above — the planner backs out your base speed and projects it to the global max turbo stacks. Duplication chance is entered once at the top and applies to every crafter. Each item has its own base time @1× on its card below — they don&rsquo;t have to match. Cost columns are the material each craft consumes per level; they are the game&rsquo;s own cost curve, so they are shown rather than entered, and they follow whatever you have ticked under <b>Inf. Upgrades</b>. Most crafts output the compression amount; Batteries output 5 × compression. Costs scale 3× per level.</p>
 
     <div class="calib">
       <div class="calib-h">Calibrate / verify a base time</div>
@@ -177,6 +181,32 @@
     <button class="btn ghost" type="button" id="updateNotes">What&rsquo;s new</button>
     <button class="btn primary" type="button" id="updateReload">Refresh now</button>
     <button class="btn ghost" type="button" id="updateDismiss">Later</button>
+  </div>
+</div>
+
+<!-- INFUSION UPGRADES MODAL -->
+<div class="modal-bg" id="infusionModal" hidden>
+  <div class="modal dialog-shell infusion-modal" role="dialog" aria-modal="true" aria-labelledby="infusionTitle">
+    <div class="modal-h"><h3 id="infusionTitle">Infusion Upgrades</h3><button class="iconbtn" id="infusionClose" title="Close" aria-label="Close Infusion Upgrades" data-dialog-close>&times;</button></div>
+    <div class="modal-b" data-dialog-body>
+      <p class="help">Tick the Infusion Upgrades you have bought. Each one changes what the planner assumes about your factory, so leave anything you have not unlocked switched off.</p>
+      <div class="infusion-grid">
+        <section class="infusion-card">
+          <label class="infusion-toggle" for="infEe7">
+            <input type="checkbox" id="infEe7" data-infusion="ee7">
+            <span class="infusion-name">Expansion Essentials VII</span>
+          </label>
+          <p class="infusion-desc">Every product costs half as much to craft. Individual costs never fall below 1 and always round up, so the cheapest recipes gain least. Halves the mined Vespium behind Gel and the Hydracite behind Batteries as well as the material costs, and the recipe tables under <b>Crafting stats</b> update to match.</p>
+        </section>
+        <section class="infusion-card">
+          <label class="infusion-toggle" for="infDupeDay">
+            <input type="checkbox" id="infDupeDay" data-infusion="dupeDay">
+            <span class="infusion-name">Dupe Day</span>
+          </label>
+          <p class="infusion-desc">Lets the <b>dupe %</b> field go above 100%. Past that point a crafter starts rolling a third copy instead of a second, then a fourth, and so on — the planner already averages that correctly, so enter your total duplication as the game reports it. Switching this back off returns the field to 100%.</p>
+        </section>
+      </div>
+    </div>
   </div>
 </div>
 

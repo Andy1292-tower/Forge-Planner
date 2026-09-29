@@ -275,7 +275,7 @@ button.btn.ghost{background:transparent}
 .line-proj{font-size:10px;color:var(--amber);letter-spacing:.2px;margin-top:3px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* the upgrade level behind the chosen multiplier, hung off the picker for the same
-   reason: this column is only as wide as its heading, so "16.38k× (level 14)" cannot
+   reason: this column is only as wide as its heading, so "65.54k× (level 16)" cannot
    fit inside the closed select. Muted, because it restates the value above it. */
 .line-lvl{font-size:10px;color:var(--ink3);letter-spacing:.2px;margin-top:3px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -526,6 +526,8 @@ tr:last-child td{border-bottom:none}
 .rtab td.lv{font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--ink2);width:40px}
 .rtab input{padding:4px 5px;font-size:11.5px;text-align:right}
 .rtab input::placeholder{color:var(--ink3);opacity:.5}
+/* Recipe costs are derived from the game's own curve, so they read as values, not fields. */
+.rtab td.rcost{padding:4px 5px;font-size:11.5px;text-align:right;color:var(--ink2);white-space:nowrap}
 .base-time-field>.field-stack{width:122px;max-width:58%;flex:0 0 auto}
 .base-time-input{width:100%!important;max-width:100%;text-align:right}
 .help{font-size:11.5px;color:var(--ink3);line-height:1.5;margin-bottom:14px}
@@ -843,14 +845,17 @@ footer a:hover,.contrib-help a:hover{text-decoration:underline}
   .brand h1{font-size:34px;letter-spacing:1.2px}
   .settings-actions{grid-template-columns:minmax(0,1fr)}
   button.btn{padding:8px 10px;font-size:11.5px}
-  /* rail goes full width as an even three-up band, labels centred over their state.
-     Segments only divide evenly if the labels shrink too — the full names would
-     force "Projects + Prices" wider than a third and squeeze the other two. The
-     accessible name comes from each button's aria-label, so swapping the visible
-     text here costs nothing to screen readers. */
+  /* rail goes full width, labels centred over their state. Segments only divide evenly if the
+     labels shrink too — the full names would force "Projects + Prices" wider than its share and
+     squeeze the rest. The accessible name comes from each button's aria-label, so swapping the
+     visible text here costs nothing to screen readers. Four segments will not sit on one phone
+     row legibly, so they wrap to a 2x2 grid and each takes half the width. */
   .tools{width:100%}
-  .rail{flex:1 0 100%;order:1}
-  .rail-seg{flex:1 1 0;min-width:0;align-items:center;text-align:center;padding:8px 6px}
+  .rail{flex:1 0 100%;order:1;flex-wrap:wrap}
+  .rail-seg{flex:1 1 50%;min-width:0;align-items:center;text-align:center;padding:8px 6px}
+  .rail-seg:nth-child(odd)+.rail-seg{border-left:1px solid var(--line2)}
+  .rail-seg:nth-child(n+3){border-top:1px solid var(--line2)}
+  .rail-seg:nth-child(odd){border-left:0}
   .rail-lbl{gap:5px;font-size:10.5px;letter-spacing:.4px;max-width:100%}
   .rail-name{font-size:0}
   .rail-name::after{content:attr(data-short);font-size:10.5px}
@@ -912,3 +917,14 @@ footer a:hover,.contrib-help a:hover{text-decoration:underline}
 .cl-group{margin:10px 0 4px;font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;opacity:.75}
 .cl-list{margin:0;padding-left:20px}
 .cl-list li{margin:3px 0}
+
+/* ---- Infusion Upgrades ----
+   One card per upgrade: a checkbox that carries the name, and the sentence explaining what the
+   planner assumes once it is ticked. The grid collapses to a single column when there is no room
+   for two, which is also what keeps a long description readable. */
+.infusion-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.infusion-card{border:1px solid var(--line2);border-radius:6px;padding:12px 14px;background:var(--surface)}
+.infusion-toggle{display:flex;align-items:center;gap:9px;cursor:pointer}
+.infusion-toggle input{width:16px;height:16px;flex:0 0 auto;cursor:pointer;accent-color:var(--copper)}
+.infusion-name{font-size:12px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--ink)}
+.infusion-desc{margin:8px 0 0;font-size:11px;line-height:1.55;color:var(--ink3)}

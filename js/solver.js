@@ -195,8 +195,6 @@ function recipeRate(cost,seconds){
   const rate=value.div(seconds).toNumber();
   return Number.isFinite(rate)?rate:null;
 }
-// Whether a recipe has a usable cost for every input at this compression level.
-const hasRecipeCost=(item,inputs,L)=>inputs.every(k=>toDec(S.prodCost[item]&&S.prodCost[item][k]&&S.prodCost[item][k][L])!==null);
 
 /* One clock read per this many checkpoints. A search probe is a few hundred nanoseconds of typed-
  * array arithmetic and performance.now() is tens of nanoseconds of it, so sampling the clock on
@@ -393,13 +391,9 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   // vector in the solve that genuinely needs the range; baseArr below is its float64 projection.
   const supplyPerSec=resources.map(r=>decUnscale(supplyHr(r),3600));
 
-  // data-availability check (cost only — time is computed from compression)
+  /* No data-availability check: recipe costs are derived, so every product has a cost at every
+     compression level and "no material cost entered" can no longer happen. */
   const issues=[];
-  relProds.forEach(P=>{
-    const ins=RECIPE[P].inputs;
-    const any=LEVELS.some(L=>hasRecipeCost(P,ins,L));
-    if(!any)issues.push("No material cost entered for "+P+".");
-  });
 
   // jobs per distinct max; per-line speed factor sp and dup factor dp
   const jobsByMax={};
@@ -1633,7 +1627,7 @@ function soloMaxKey(state){
   const src=state||{};
   return canonicalShareKey({
     lines:(src.lines||[]).map(line=>[line.max,line.spx,line.turbo]),
-    maxTurbo:src.maxTurbo,dupe:src.dupe,margin:src.margin,
+    maxTurbo:src.maxTurbo,dupe:src.dupe,margin:src.margin,infusion:src.infusion||{},
     baseTime:src.baseTime||{},prodCost:src.prodCost||{},forgie:src.forgie||{},minedIncome:src.minedIncome||{}
   });
 }
@@ -1819,19 +1813,10 @@ function optimizeInner(timeBudget,testOptions,shard){
         plan:raw.plan,balance:raw.balance,minedUsage:[],gelReserved:null,resIndex:raw.resIndex,feasible:raw.feasible,
         usesMargin:false,capped:false,evaluated:true,ms:Math.max(0,control.readNow()-start)};
     }else{
-      const ins=RECIPE[item].inputs;
-      const hasCost=LEVELS.some(L=>hasRecipeCost(item,ins,L));
-      if(!hasCost){
-        issues.push("No material cost entered for "+item+" — only passive output can be priced.");
-        if(control.checkpoint("credits-baseline-complete")){const out=supplyRate(forgieHr(item)),resIndex={[item]:0};candidate={item,kind:"product",out,price,credits:price.times(out),
-          plan:idlePlan(),balance:[{res:item,prod:0,forgie:out,cons:0}],minedUsage:[],gelReserved:null,resIndex,feasible:out>1e-9,
-          usesMargin:false,capped:false,evaluated:true,ms:Math.max(0,control.readNow()-start)};}
-      }else{
-        const rc=relevantChain([item]);
-        const sr=solveCore([item],[1],rc.prods,rc.raws,credBudget,{control,baselineOnly:true,localWorkLimit:baselineWorkLimit});
-        addIssues(sr.issues);
-        if(!sr.interrupted)candidate=fromCore(item,sr,Math.max(0,control.readNow()-start),true);
-      }
+      const rc=relevantChain([item]);
+      const sr=solveCore([item],[1],rc.prods,rc.raws,credBudget,{control,baselineOnly:true,localWorkLimit:baselineWorkLimit});
+      addIssues(sr.issues);
+      if(!sr.interrupted)candidate=fromCore(item,sr,Math.max(0,control.readNow()-start),true);
     }
     if(!candidate){baselineBroken=true;cand.push(unevaluated(item));continue;}
     cand.push(candidate);control.event("baseline-complete",{item});
@@ -2513,7 +2498,6 @@ function projectSchedule(net,targets,avail,opts){
       LEVELS.filter(L=>L<=ln.max).forEach(L=>{
         if(RAWS.includes(it)){const t=craftTime(it,L);if(!(t>0))return;const es=effSpeed(ln.sp,t);vars.push({li,item:it,lvl:L,rate:(craftYield(it,L)/t)*es*ln.dp*3600,cons:[]});}
         else if(PRODUCTS.includes(it)){const ins=RECIPE[it].inputs;const tt=craftTime(it,L);if(!(tt>0))return;
-          if(!hasRecipeCost(it,ins,L))return;
           const es=effSpeed(ln.sp,tt);
           /* recipeRate returns null for a cost no float64 can hold, and null*es*3600 is 0 — which
            * would schedule the craft as consuming nothing at all. Drop the level instead, exactly as
@@ -3068,7 +3052,6 @@ function fillerEntry(line,item,lvl){
   const es=effSpeed(line.sp,tt),cons=[];
   if(PRODUCTS.includes(item)){
     const ins=RECIPE[item].inputs;
-    if(!hasRecipeCost(item,ins,lvl))return null;
     // Same null-is-not-zero rule as the schedule LP above: an uncountable cost is an unmakeable job.
     for(const k of ins){
       const perSec=recipeRate(S.prodCost[item][k][lvl],tt);

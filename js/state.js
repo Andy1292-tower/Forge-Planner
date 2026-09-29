@@ -165,7 +165,9 @@ function validateAndMigrate(candidate){
   const strictProjectState=sourceVersion>=2;
   const versioned=sourceVersion>=1;
   if(versioned){
-    ["lines","maxTurbo","dupe","prodCost","baseTime","baseTimeRev","margin","mode","solveBudget",
+    /* prodCost is deliberately absent: the recipe table is derived in normalize(), the planner no
+       longer writes it, and a required key it never emits would reject its own saves. */
+    ["lines","maxTurbo","dupe","baseTime","baseTimeRev","margin","mode","solveBudget",
       "sellPrice","priceText","forgie","forgieText","minedIncome","minedIncomeText","targets",
       "projects","inventory","inventoryText","projectSeq","projectGate","planStart","manual","manualSaved",
       "manualActiveId"].forEach(key=>_required(candidate,key,errors));
@@ -193,7 +195,14 @@ function validateAndMigrate(candidate){
   }
 
   if(_own(candidate,"maxTurbo"))out.maxTurbo=_number(_readData(candidate,"maxTurbo","maxTurbo",errors),FIELD_SCHEMA.maxTurbo,"maxTurbo",errors);
-  if(_own(candidate,"dupe"))out.dupe=_number(_readData(candidate,"dupe","dupe",errors),FIELD_SCHEMA.dupe,"dupe",errors);
+  /* Read before dupe: Dupe Day is what decides which ceiling dupe is validated against. */
+  if(_own(candidate,"infusion")){
+    const flags=_object(_readData(candidate,"infusion","infusion",errors),"infusion",errors);
+    if(flags)INFUSION_KEYS.forEach(key=>{
+      if(_own(flags,key))out.infusion[key]=_boolean(_readData(flags,key,"infusion."+key,errors),"infusion."+key,errors);
+    });
+  }
+  if(_own(candidate,"dupe"))out.dupe=_number(_readData(candidate,"dupe","dupe",errors),dupeRule(out),"dupe",errors);
   else if(_own(candidate,"attrDupe")){
     const attr=_number(_readData(candidate,"attrDupe","attrDupe",errors),FIELD_SCHEMA.dupe,"attrDupe",errors);
     const trio=_own(candidate,"trio4")?_number(_readData(candidate,"trio4","trio4",errors),FIELD_SCHEMA.dupe,"trio4",errors):0;
@@ -222,25 +231,9 @@ function validateAndMigrate(candidate){
   }
   if(_own(candidate,"baseTimeRev"))out.baseTimeRev=_number(_readData(candidate,"baseTimeRev","baseTimeRev",errors),FIELD_SCHEMA.baseTimeRev,"baseTimeRev",errors);
 
-  const rawCosts=_readData(candidate,"prodCost","prodCost",errors),prodCost=_object(rawCosts,"prodCost",errors);
-  if(prodCost){
-    PRODUCTS.forEach(product=>{
-      if(versioned&&!_own(prodCost,product))_pushError(errors,"prodCost."+product,"is required");
-      if(!_own(prodCost,product))return;
-      const productMap=_object(_readData(prodCost,product,"prodCost."+product,errors),"prodCost."+product,errors);if(!productMap)return;
-      RECIPE[product].inputs.forEach(input=>{
-        const path="prodCost."+product+"."+input;
-        if(versioned&&!_own(productMap,input))_pushError(errors,path,"is required");
-        if(!_own(productMap,input))return;
-        const levelMap=_object(_readData(productMap,input,path,errors),path,errors);if(!levelMap)return;
-        Object.keys(levelMap).forEach(level=>{if(!LEVELS.some(item=>String(item)===level))_pushError(errors,path+"."+level,"uses an unknown compression level");});
-        LEVELS.forEach(level=>{
-          if(versioned&&!_own(levelMap,String(level)))_pushError(errors,path+"."+level,"is required");
-          if(_own(levelMap,String(level)))out.prodCost[product][input][level]=_decimal(_readData(levelMap,String(level),path+"."+level,errors),FIELD_SCHEMA.recipeCost,path+"."+level,errors);
-        });
-      });
-    });
-  }
+  /* prodCost is not read. The recipe grid is read-only and normalize() derives the whole table
+     from the game's cost curve plus the Infusion Upgrades that change it, so a save carrying its
+     own costs — every save written before the grid was frozen — simply has them replaced. */
 
   /* `keys` is what the map may carry; only ALLITEMS is ever demanded. The mined entries — sell
      prices for Rocks and Vespium, inventory for those two plus Hydracite — arrived in v6, so a v5
