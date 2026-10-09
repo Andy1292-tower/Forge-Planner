@@ -572,6 +572,9 @@ footer a:hover,.contrib-help a:hover{text-decoration:underline}
   .modesw button+button{border-left:none}
   .modesw button:nth-child(even){border-left:1px solid var(--line2)}
   .modesw button:nth-child(n+3){border-top:1px solid var(--line2)}
+  /* The Outputs switch shares its header row with the title, so it takes the room beside the
+     title rather than a full card width of its own. */
+  .tg-modesw{flex:1 1 auto;min-width:0}
 }
 
 /* modal */
