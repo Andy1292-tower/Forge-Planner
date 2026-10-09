@@ -49,8 +49,8 @@ const runner = `
       }
       t=end;
     }});
-  assert.ok(Math.abs(first-5.171317)<1e-6,"first boundary="+first);
-  assert.ok(Math.abs(ingots-(-2932.417170))<1e-6,"Ingot inventory="+ingots);
+  assert.ok(Math.abs(first-5.022321)<1e-6,"first boundary="+first);
+  assert.ok(Math.abs(ingots-(-8968.253968))<1e-6,"Ingot inventory="+ingots);
   assert.equal(result.lpFeasible,true,"the frozen LP remains average-feasible");
   assert.equal(result.scheduleValidation.ok,true,"an executable warm-up must repair the transient deficit");
   assert.ok(result.executionPhases.length>result.phases.length,"execution includes a prerequisite warm-up");

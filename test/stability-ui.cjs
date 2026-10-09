@@ -28,7 +28,7 @@ const solverSrc = fs.readFileSync(path.join(root, "js", "solver.js"), "utf8");
  *
  * Note what those pins are: the PLAN's ETA in factory-hours, not the solver's runtime, and recorded
  * output rather than independently derived values. The guarantee the feature actually makes is
- * HYST_FRAC (5%); pinning selectedThroughputLossPct to 2.6304 +/- 0.001 is far tighter than that, so
+ * HYST_FRAC (5%); pinning selectedThroughputLossPct to 3.8665 +/- 0.001 is far tighter than that, so
  * a legitimate solver improvement will break these six lines without anything being wrong. If that
  * happens, re-deriving the contract is the better fix than re-recording the numbers. */
 const __workLimit = 8_000_000;
@@ -63,7 +63,7 @@ const runner = `
   resetLineStability();setLineStability({sentinel:{0:["Bits@1"]}});
   const baseline=solve(200,"prefer-current");
   const baselineCache=JSON.parse(JSON.stringify(getLineStability()));
-  const held=solve(420,"prefer-current");
+  const held=solve(450,"prefer-current");
 
   check("successful visible solve commits only selected records while preserving unrelated cache",()=>{
     assert.deepEqual(getLineStability().sentinel,{0:["Bits@1"]});
@@ -73,7 +73,7 @@ const runner = `
     assert.deepEqual(getLineStability()[update.key],update.record,"hidden/free work overwrote the held selected record");
   });
 
-  check("420 Frames exposes the complete executable held-versus-reoptimized tradeoff",()=>{
+  check("450 Frames exposes the complete executable held-versus-reoptimized tradeoff",()=>{
     assert.equal(baseline.projectStability,"prefer-current");
     assert.equal(held.projectStability,"prefer-current");
     assert.equal(held.phases[0].phaseKey,"frames-project");
@@ -91,12 +91,12 @@ const runner = `
     assert.equal(comparison.phases.length,1);
     const phase=comparison.phases[0];
     assert.equal(phase.phaseKey,"frames-project");
-    close(phase.selectedThroughputLossPct,2.6304,0.001,"throughput loss %");
-    close(phase.selectedEtaPenaltyPct,2.7015,0.001,"phase ETA penalty %");
-    close(comparison.selectedTotalEta,0.6659750249,5e-8,"held total ETA");
-    close(comparison.alternativeTotalEta,0.6846583163,5e-8,"reoptimized total ETA");
-    close(comparison.alternativeMinusSelectedTotalEta*3600,67.26,0.05,"total ETA difference seconds");
-    close(comparison.alternativeMinusSelectedWarmupEta*3600,129.94,0.05,"warm-up difference seconds");
+    close(phase.selectedThroughputLossPct,3.8665,0.001,"throughput loss %");
+    close(phase.selectedEtaPenaltyPct,4.0221,0.001,"phase ETA penalty %");
+    close(comparison.selectedTotalEta,0.6936894129,5e-8,"held total ETA");
+    close(comparison.alternativeTotalEta,0.7002162453,5e-8,"reoptimized total ETA");
+    close(comparison.alternativeMinusSelectedTotalEta*3600,23.50,0.05,"total ETA difference seconds");
+    close(comparison.alternativeMinusSelectedWarmupEta*3600,119.37,0.05,"warm-up difference seconds");
     assert.equal(held.scheduleValidation.ok,true);
     assert.equal(held.scheduleValidation.firstFailure,null);
     held.scheduleValidation.boundaries.forEach(boundary=>{const values=Object.values(boundary.inventory||{}),scale=Math.max(1,...values.map(Math.abs));
@@ -104,10 +104,10 @@ const runner = `
       values.forEach(value=>assert.ok(value>=-tolerance,"inventory below replay tolerance: "+value+" < "+(-tolerance)));});
   });
 
-  check("prototype-like Project IDs keep the 200-to-420 held comparison exact and executable",()=>{
+  check("prototype-like Project IDs keep the 200-to-450 held comparison exact and executable",()=>{
     for(const projectId of ["constructor","toString"]){
       resetLineStability();solve(200,"prefer-current",projectId);
-      const prototypeHeld=solve(420,"prefer-current",projectId),comparison=prototypeHeld.stabilityComparison;
+      const prototypeHeld=solve(450,"prefer-current",projectId),comparison=prototypeHeld.stabilityComparison;
       assert.equal(prototypeHeld.phases[0].stabilized,true,projectId+" did not hold its selected jobs");
       assert.ok(comparison,projectId+" did not receive a hidden comparison");
       assert.equal(comparison.comparable,true,projectId+" comparison was not comparable");
@@ -121,7 +121,7 @@ const runner = `
 
   check("reoptimize ignores pins, skips a hidden comparison, and remembers its selected jobs",()=>{
     setLineStability(JSON.parse(JSON.stringify(baselineCache)));
-    const free=solve(420,"reoptimize");
+    const free=solve(450,"reoptimize");
     assert.equal(free.projectStability,"reoptimize");
     assert.equal(free.phases[0].stabilized,false);
     assert.equal(free.stabilityComparison,null);
@@ -137,8 +137,8 @@ const runner = `
 
   check("repeated held runs remain held without hidden, fixed-point, ordering, or warm-up cache writes",()=>{
     resetLineStability();setLineStability({sentinel:{0:["Bits@1"]}});solve(200,"prefer-current");
-    const first=solve(420,"prefer-current"),firstCache=JSON.parse(JSON.stringify(getLineStability()));
-    const second=solve(420,"prefer-current");
+    const first=solve(450,"prefer-current"),firstCache=JSON.parse(JSON.stringify(getLineStability()));
+    const second=solve(450,"prefer-current");
     assert.equal(first.phases[0].stabilized,true);assert.equal(second.phases[0].stabilized,true);
     assert.equal(Object.keys(getLineStability()).length,2,"non-semantic work created cache records");
     assert.deepEqual(getLineStability(),firstCache,"a repeated selected held plan did not stay stable");

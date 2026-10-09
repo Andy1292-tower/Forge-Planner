@@ -223,7 +223,7 @@ function derivedProdCost(state){
 }
 function defaults(){
   const prodCost=baseProdCost();
-  const baseTime={Ingots:10,Bits:6.178,Concrete:9.273,Glass:92.68,Bricks:108.2,Plates:30.89,Rods:46.34,Frames:308.9,Gel:3201,Wire:5400.8,"Reinforced Concrete":355531.88,Batteries:1034274.56};
+  const baseTime={Ingots:10,Bits:6,Concrete:9,Glass:90,Bricks:120,Plates:30,Rods:45,Frames:300,Gel:3200,Wire:5400,"Reinforced Concrete":355000,Batteries:1034000};
   const nulls=(keys)=>{const o={};(keys||[...RAWS,...PRODUCTS]).forEach(it=>o[it]=null);return o;};
   const blankSources=()=>{
     const o={};
@@ -329,10 +329,11 @@ function normalize(st){
   if(!Number.isInteger(_budgetValue)||_budgetValue<_budgetRule.min||_budgetValue>_budgetRule.max)st.solveBudget=_budgetRule.defaultValue;
   else st.solveBudget=_budgetValue;
   if(!st.baseTime)st.baseTime={};
-  const _DB=defaults().baseTime,_PB={Ingots:9.63,Bits:9.63,Concrete:9.63,Glass:87.3,Bricks:114.3,Plates:29.23,Rods:44.46,Frames:311.38};
-  const _migrate=!st.baseTimeRev||st.baseTimeRev<2;
-  [...RAWS,...PRODUCTS].forEach(it=>{const v=st.baseTime[it];if(v==null||isNaN(v)||v<=0)st.baseTime[it]=_DB[it];else if(_migrate&&(Math.abs(v-(_PB[it]||-1))<1e-4||Math.abs(v-12.85)<1e-4))st.baseTime[it]=_DB[it];});
-  st.baseTimeRev=2;
+  /* Base times are the game's own recipe timers. A save from before revision 3 takes every one of
+     them from defaults(); from revision 3 on, a value the player sets is kept. */
+  const _DB=defaults().baseTime,_reset=!st.baseTimeRev||st.baseTimeRev<3;
+  [...RAWS,...PRODUCTS].forEach(it=>{const v=st.baseTime[it];if(_reset||v==null||isNaN(v)||v<=0)st.baseTime[it]=_DB[it];});
+  st.baseTimeRev=3;
   /* Recipe costs are the game's own curve, not player data. The grid that used to edit them is
      read-only, so the table is rebuilt here from the constants and the Infusion Upgrades that
      change them, and whatever a save happens to carry under prodCost is discarded. That is what

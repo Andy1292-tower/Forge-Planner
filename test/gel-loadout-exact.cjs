@@ -17,6 +17,9 @@ const source = ["decimal.js", "core.js", "project-schedule.js", "solver.js"]
 
 const runner = `
 (function(){
+  // The anchors and regression vectors in this file assume a Gel base time of 3201 s; several sit
+  // on ULP-scale ties that move with it.
+  const gelVectorState=()=>{const state=defaults();state.baseTime.Gel=3201;return state;};
   // Independently restate the production ULP-scale objective policy. A broad absolute
   // epsilon here would let the oracle bless a real sub-1e-9 Gel regression.
   const ABS_EPS=Number.EPSILON*8,REL_EPS=Number.EPSILON*32;
@@ -112,7 +115,7 @@ const runner = `
     });
   }
 
-  S=defaults();S.dupe=0;S.maxTurbo=0;
+  S=gelVectorState();S.dupe=0;S.maxTurbo=0;
   assert.ok(gelLoadoutClose(1,1+Number.EPSILON*16),"ULP-scale neighbors must compare equal");
   assert.ok(!gelLoadoutClose(1,1+Number.EPSILON*256),"values beyond the ULP equality window must remain distinct");
   assert.ok(!gelLoadoutClose(0,1e-12),"the absolute equality floor must not erase real Gel output");
@@ -355,7 +358,7 @@ const runner = `
     "a budget immediately above the selected cost must accept it");
   console.log("PASS strict budget boundaries preserve tiny real output differences");
 
-  S=defaults();S.dupe=50;S.maxTurbo=100;
+  S=gelVectorState();S.dupe=50;S.maxTurbo=100;
   const calibrated={__i:11,max:2,spx:10,turbo:25,meta:{nested:["preserve"]}};
   const calibratedBudget=gelVespHr(calibrated,2),calibratedResult=gelLoadout([calibrated],calibratedBudget);
   assert.deepEqual(calibratedResult.perLine.map(line=>line.L),[2],"the compression anchor must select 2x");
@@ -397,7 +400,7 @@ const runner = `
   });
   console.log("PASS "+oracleCases+" exhaustive 1-5 line cap/budget/dupe/permutation cases");
 
-  S=defaults();S.dupe=0;S.maxTurbo=0;
+  S=gelVectorState();S.dupe=0;S.maxTurbo=0;
   const subsetRows=Array.from({length:12},(_,index)=>({__i:index,max:1,spx:Math.pow(2,index),turbo:0}));
   const subsetUnit=gelVespHr(subsetRows[0],1);
   const reachable=subsetRows.filter((row,index)=>(1365&(1<<index))!==0)

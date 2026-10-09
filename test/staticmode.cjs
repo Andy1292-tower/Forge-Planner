@@ -373,16 +373,16 @@ const runner = `
     const wire=(ph.balance||[]).find(row=>row.res==="Wire"),gel=(ph.balance||[]).find(row=>row.res==="Gel");
     const hydra=(ph.minedUsage||[]).find(use=>use.item==="Batteries"&&use.resource==="Hydracite");
     record("static Batteries: five units finish in one physical craft",
-      oneCraft.feasible===true&&Math.abs(oneCraft.eta-287.2984888888889)<=1e-9,
+      oneCraft.feasible===true&&Math.abs(oneCraft.eta-287.22222222222223)<=1e-9,
       "eta="+oneCraft.eta+" feasible="+oneCraft.feasible);
     record("static Batteries: replay preserves corrected outHr",
-      entry&&Math.abs(entry.outHr-0.01740350260572976)<=1e-15&&
-        Math.abs((ph.rate.Batteries||0)-0.01740350260572976)<=1e-15,
+      entry&&Math.abs(entry.outHr-0.017408123791102514)<=1e-15&&
+        Math.abs((ph.rate.Batteries||0)-0.017408123791102514)<=1e-15,
       "entry="+(entry&&entry.outHr)+" rate="+(ph.rate.Batteries||0));
     record("static Batteries: inputs remain per physical craft",
-      wire&&gel&&hydra&&Math.abs(wire.cons-1.7403502605729757)<=1e-12&&
-        Math.abs(gel.cons-348.0700521145951)<=1e-9&&
-        Math.abs(hydra.inputHr-17403502605.72976)<=1e-5,
+      wire&&gel&&hydra&&Math.abs(wire.cons-1.7408123791102514)<=1e-12&&
+        Math.abs(gel.cons-348.1624758220503)<=1e-9&&
+        Math.abs(hydra.inputHr-17408123791.102516)<=1e-5,
       "wire="+(wire&&wire.cons)+" gel="+(gel&&gel.cons)+" hydra="+(hydra&&hydra.inputHr));
   }
 

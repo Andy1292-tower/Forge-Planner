@@ -39,21 +39,21 @@ const runner = `
   check("hydracite enables batteries",r.feasible&&(r.out.Batteries||0)>0,"out="+(r.out.Batteries||0));
   check("hydra use stays under income",hu&&hu.inputHr<=minedBudgetHr("Hydracite",S)+1,"use="+(hu&&hu.inputHr));
   check("items Batteries output is five units per physical craft",
-    Math.abs((r.out.Batteries||0)-0.01740350260572976)<=1e-15,"out="+(r.out.Batteries||0));
+    Math.abs((r.out.Batteries||0)-0.017408123791102514)<=1e-15,"out="+(r.out.Batteries||0));
   check("items Batteries keep Wire consumption per craft",
-    wire&&Math.abs(wire.cons-1.7403502605729757)<=1e-12,"wire="+(wire&&wire.cons));
+    wire&&Math.abs(wire.cons-1.7408123791102514)<=1e-12,"wire="+(wire&&wire.cons));
   check("items Batteries keep Gel consumption per craft",
-    gel&&Math.abs(gel.cons-348.0700521145951)<=1e-9,"gel="+(gel&&gel.cons));
+    gel&&Math.abs(gel.cons-348.1624758220503)<=1e-9,"gel="+(gel&&gel.cons));
   check("items Batteries keep Hydracite consumption per craft",
-    hu&&Math.abs(hu.inputHr-17403502605.72976)<=1e-5,"hydra="+(hu&&hu.inputHr));
+    hu&&Math.abs(hu.inputHr-17408123791.102516)<=1e-5,"hydra="+(hu&&hu.inputHr));
   S=base();S.dupe=50;setHydraPerMin(S,300000000);r=optimize();
   const dupWire=(r.balance||[]).find(x=>x.res==="Wire");
   check("items Batteries duplication increases output only",
-    Math.abs((r.out.Batteries||0)-0.02610525390859464)<=1e-15&&
-      dupWire&&Math.abs(dupWire.cons-1.7403502605729757)<=1e-12,
+    Math.abs((r.out.Batteries||0)-0.026112185686653768)<=1e-15&&
+      dupWire&&Math.abs(dupWire.cons-1.7408123791102514)<=1e-12,
     "out="+(r.out.Batteries||0)+", wire="+(dupWire&&dupWire.cons));
   S=base();S.lines=Array.from({length:2},()=>({max:1,spx:1,turbo:0}));
-  S.forgie.Gel=347;setVesp(S,1e13);setHydraPerMin(S,300000000);
+  S.forgie.Gel=347.5;setVesp(S,1e13);setHydraPerMin(S,300000000);
   r=optimize();
   const fullUses=r.minedUsage||[];
   check("items battery pipeline uses both ores",r.feasible&&fullUses.some(x=>x.resource==="Vespium")&&fullUses.some(x=>x.resource==="Hydracite"),JSON.stringify(fullUses));
@@ -69,11 +69,11 @@ const runner = `
   setVesp(S,1e30);
   r=optimize();
   const gelRow=(r.plan||[]).find(p=>p.job&&p.job.res==="Gel"),rocks=(r.minedUsage||[]).find(x=>x.item==="Gel"&&x.resource==="Rocks");
-  const rockExpected=1e23/3201*3600;
+  const rockExpected=1e23/3200*3600;
   check("items report real informational Rocks consumption",rocks&&Math.abs(rocks.inputHr-rockExpected)<=1e-9*Math.max(1,rockExpected),"use="+(rocks&&rocks.inputHr)+", expected="+rockExpected);
   check("Rocks consumption is not duplicated",rocks&&rocks.outHr>0&&Math.abs(rocks.inputHr/rockExpected-1)<=1e-9,"use="+(rocks&&rocks.inputHr)+", dup="+dupeMult());
   S=base();S.mode="credits";PRODUCTS.forEach(p=>S.targets[p].on=false);
-  S.lines=Array.from({length:2},()=>({max:1,spx:1,turbo:0}));S.forgie.Gel=347;
+  S.lines=Array.from({length:2},()=>({max:1,spx:1,turbo:0}));S.forgie.Gel=347.5;
   S.sellPrice.Batteries=10;setVesp(S,1e13);setHydraPerMin(S,300000000);
   r=optimize();
   check("credits can select batteries",r.feasible&&r.bestItem==="Batteries","best="+r.bestItem);
@@ -84,10 +84,10 @@ const runner = `
   setHydraPerMin(S,300000000);r=optimize();
   const creditBattery=(r.ranking||[]).find(candidate=>candidate.item==="Batteries");
   check("credits Batteries output uses five-unit craft yield",
-    creditBattery&&Math.abs(creditBattery.out-0.01740350260572976)<=1e-15,
+    creditBattery&&Math.abs(creditBattery.out-0.017408123791102514)<=1e-15,
     "out="+(creditBattery&&creditBattery.out));
   check("credits Batteries revenue uses corrected output",
-    creditBattery&&Math.abs(creditBattery.credits-0.1740350260572976)<=1e-15,
+    creditBattery&&Math.abs(creditBattery.credits-0.17408123791102514)<=1e-15,
     "credits="+(creditBattery&&creditBattery.credits));
   S=base();PRODUCTS.forEach(p=>S.targets[p].on=p==="Reinforced Concrete");
   S.forgie.Bricks=1e12;S.forgie.Concrete=1e12;S.forgie.Frames=1e12;
@@ -101,7 +101,7 @@ const runner = `
   function frozenGelSolve(mode){
     const s=defaults();s.dupe=0;s.maxTurbo=0;s.margin=0;s.mode=mode;
     s.lines=[{max:1,spx:6,turbo:0},{max:1,spx:4,turbo:0},{max:1,spx:4,turbo:0}];
-    setVesp(s,4498594189315839/60);
+    setVesp(s,4500000000000000/60);
     PRODUCTS.forEach(product=>s.targets[product]={on:mode==="items"&&product==="Gel",w:1});
     [...RAWS,...PRODUCTS].forEach(item=>s.sellPrice[item]=null);
     if(mode==="credits")s.sellPrice.Gel=1;
@@ -110,12 +110,12 @@ const runner = `
   const frozenItems=frozenGelSolve("items"),frozenCredits=frozenGelSolve("credits");
   const creditCandidate=(frozenCredits.ranking||[]).find(candidate=>candidate.item==="Gel");
   const itemGel=frozenItems.out.Gel||0,creditGel=creditCandidate&&creditCandidate.out||0;
-  check("items keeps the frozen exact Gel optimum",Math.abs(itemGel-8.997188378631677)<=1e-12,"out="+itemGel);
+  check("items keeps the frozen exact Gel optimum",Math.abs(itemGel-9)<=1e-12,"out="+itemGel);
   check("credits keeps Items Gel parity",frozenCredits.bestItem==="Gel"&&Math.abs(creditGel-itemGel)<=1e-12,
     "items="+itemGel+", credits="+creditGel);
   check("frozen Items and Credits stay inside Vespium budget",
     [frozenItems,frozenCredits].every(result=>(result.minedUsage||[])
-      .filter(use=>use.resource==="Vespium").reduce((sum,use)=>sum+use.inputHr,0)<=4498594189315839),
+      .filter(use=>use.resource==="Vespium").reduce((sum,use)=>sum+use.inputHr,0)<=4500000000000000),
     "items="+JSON.stringify(frozenItems.minedUsage)+", credits="+JSON.stringify(frozenCredits.minedUsage));
   S=base();setHydraPerMin(S,300000000);
   const direct=optimize(),directOut=direct.out.Batteries||0;

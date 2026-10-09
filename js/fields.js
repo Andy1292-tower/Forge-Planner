@@ -15,7 +15,7 @@
  * margin, base craft time and the solve budget describe machinery with a fixed physical ceiling,
  * and a float64 will always hold them. */
 const CURRENT_SCHEMA_VERSION=6;
-const CURRENT_BASE_TIME_REVISION=2;
+const CURRENT_BASE_TIME_REVISION=3;
 const STATE_LIMITS=Object.freeze({
   maxBytes:2*1024*1024,
   maxDepth:10,

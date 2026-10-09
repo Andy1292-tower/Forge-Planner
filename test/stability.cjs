@@ -85,7 +85,7 @@ const runner = `
   // 4a) HYST_FRAC band — MUST HOLD: a Frames-demand bump whose pinned re-solve costs a *strict, sub-5%*
   //     amount of throughput is kept stable. This pins the band's lower edge: shrink HYST_FRAC below the
   //     gap and this flips to a release, failing the test (the ratio==1 swap case can't catch that).
-  resetLineStability(); run(LINES,200); const hold=run(LINES,420);
+  resetLineStability(); run(LINES,200); const hold=run(LINES,450);
   { const gap=hold.zFree>0?(1-hold.zPin/hold.zFree):0;
     rec("HYST band: sub-band cost is HELD", hold.stab===true && gap>0.001 && gap<HYST_FRAC,
       "held="+hold.stab+" pinGap="+(gap*100).toFixed(2)+"% (< "+(HYST_FRAC*100)+"%)"); }

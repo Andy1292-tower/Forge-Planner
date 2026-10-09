@@ -167,7 +167,7 @@ const runner=`
       {max:1024,spx:1266.24,turbo:30},{max:256,spx:731.34,turbo:30},
       {max:128,spx:682.47,turbo:30}
     ];
-    state.maxTurbo=30;state.dupe=28.39;state.margin=0;
+    state.maxTurbo=30;state.dupe=28.39;state.margin=0;state.baseTimeRev=CURRENT_BASE_TIME_REVISION;
     Object.assign(state.baseTime,{Ingots:10.008152415790276,Bits:6.178815895950821,Concrete:9.273471564294061,
       Glass:92.68223843926229,Bricks:108.28296141848294,Plates:30.8940794797541,Rods:46.34486759132246,
       Frames:308.940794797541,Gel:3201,Wire:5400.8,"Reinforced Concrete":355531.88,Batteries:1034274.56});

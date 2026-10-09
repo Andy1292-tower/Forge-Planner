@@ -31,7 +31,7 @@ function api(expression) {
 function currentState() {
   const state = api("normalize(defaults())");
   state.schemaVersion = api("CURRENT_SCHEMA_VERSION");
-  state.baseTimeRev = 2;
+  state.baseTimeRev = 3;
   return state;
 }
 
@@ -598,13 +598,22 @@ test("pre-schema saves receive the one-time 10-second solve budget migration", (
   assert.equal(result.state.solveBudget, 10000);
 });
 
-test("migrates old base-time defaults but preserves custom calibration", () => {
+test("a save from before base-time revision 3 takes the game's base times, custom ones included", () => {
   const result = api("validateAndMigrate")(fixture("legacy-base-time.json"));
   assert.equal(result.ok, true, JSON.stringify(result.errors));
   assert.equal(result.state.baseTime.Ingots, 10);
-  assert.equal(result.state.baseTime.Bits, 6.178);
+  assert.equal(result.state.baseTime.Bits, 6);
+  assert.equal(result.state.baseTime.Frames, 300);
+  assert.equal(result.state.baseTimeRev, 3);
+});
+
+test("a revision 3 save keeps the base times the player set", () => {
+  const candidate = currentState();
+  candidate.baseTime.Frames = 300.123;
+  const result = api("validateAndMigrate")(candidate);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
   assert.equal(result.state.baseTime.Frames, 300.123);
-  assert.equal(result.state.baseTimeRev, 2);
+  assert.equal(result.state.baseTimeRev, 3);
 });
 
 test("migrates retired Gel reservation fixture without retaining dead controls", () => {
@@ -627,7 +636,7 @@ test("migrates Gel income, project first flag, and fills later compression costs
   assert.equal(qty(api("minedBudgetHr")("Vespium", result.state)), "435000000000000000000");
   assert.equal(Object.hasOwn(result.state.minedIncome.Vespium, "rigPerMin"), false);
   assert.notEqual(result.state.minedIncomeText.Vespium.resourcesTradingPerSec, "7.25qu");
-  assert.equal(result.state.baseTime.Wire, 12345);
+  assert.equal(result.state.baseTime.Wire, 5400);
   assert.equal(qty(result.state.prodCost.Wire.Gel[4]), "18");
   assert.equal(qty(result.state.prodCost.Wire.Gel[16384]), qty(api("defaults().prodCost.Wire.Gel[16384]")));
   assert.equal(result.state.projects[0].prio, 1);
