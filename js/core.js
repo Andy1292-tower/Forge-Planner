@@ -80,7 +80,8 @@ function craftYield(item,L){return (RECIPE[item]&&RECIPE[item].baseOutput||1)*L;
    them. Keeping them float keeps this arithmetic bit-for-bit what it was — a Decimal normalises its
    mantissa, which moved the top-tier Hydracite cost by one ULP. */
 /* "Individual product costs cannot go below 1 and will always round up" — the game's own wording
-   for Expansion Essentials VII, applied per cost cell rather than to a recipe's total. */
+   for Expansion Essentials VII. It applies to each input's 1x cost, and compression scales the
+   rounded figure: Bricks are 3 Concrete at 1x, so 2 under EE7, and 2 * 3^10 = 118098 at 1024x. */
 function halveCraftingCost(value){const cost=toDec(value);return cost===null?null:Decimal.max(1,cost.div(2).ceil());}
 function minedCost(item,L,state=S){
   const cfg=MINED_CRAFTS[item],out={};if(!cfg)return out;
@@ -214,7 +215,8 @@ function derivedProdCost(state){
     const inputs=(RECIPE[P]||{}).inputs||[];
     inputs.forEach(k=>{
       if(!table[P]||!table[P][k])return;
-      LEVELS.forEach(L=>{table[P][k][L]=halveCraftingCost(table[P][k][L]);});
+      const unit=halveCraftingCost(table[P][k][1]);
+      LEVELS.forEach(L=>{table[P][k][L]=unit.times(Math.pow(3,Math.log2(L)));});
     });
   });
   return table;

@@ -6,9 +6,9 @@
  * shipped it with. Dupe Day does not change any arithmetic at all: it lifts the ceiling off the
  * duplication field, and dupeMult() was already linear past 100%. Both default off.
  *
- * The recipe table is derived from these flags rather than typed, so the cases that matter are the
- * small ones — the ceiling and the floor only bite where costs are cheap, which is the low end of
- * the compression range. */
+ * The recipe table is derived from these flags rather than typed. The ceiling and the floor act on
+ * each input's 1x cost, and compression scales the rounded figure, so an odd 1x cost carries its
+ * extra half unit up through every level. */
 
 const assert = require("assert");
 const fs = require("fs");
@@ -60,19 +60,20 @@ test("EE7 halves a cost, rounding up and never dropping below 1", () => {
   assert.equal(call("halveCraftingCost", 3).toString(), "2");
 });
 
-test("the round-up is not confined to cheap recipes — odd costs round up at every level", () => {
-  /* Costs scale 3x per compression level, so a recipe with an odd coefficient is odd at every
-     level: Bricks are 3 Concrete at 1x and 59049 at 512x, both odd. The player pays the extra
-     unit each time, which is what "always round up" costs them at the top of the range too. */
+test("the round-up lands on the 1x cost, and compression scales the rounded figure", () => {
+  /* Bricks are 3 Concrete at 1x, which EE7 rounds up to 2. Every compression level then costs
+     3x the level below it, so Bricks at 1024x are 2 * 3^10 = 118098 Concrete, not
+     ceil(177147 / 2) = 88574. */
   const base = costs({ ee7: false });
   const ee7 = costs({ ee7: true });
+  assert.equal(cost(base, "Bricks", "Concrete", 2), "9");
+  assert.equal(cost(ee7, "Bricks", "Concrete", 2), "6");
   assert.equal(cost(base, "Bricks", "Concrete", 512), "59049");
-  assert.equal(cost(ee7, "Bricks", "Concrete", 512), "29525");
-  assert.equal(cost(base, "Bricks", "Concrete", 16384), "14348907");
-  assert.equal(cost(ee7, "Bricks", "Concrete", 16384), "7174454");
-  // Still true at the top of the table, where the odd coefficient is nine figures.
+  assert.equal(cost(ee7, "Bricks", "Concrete", 512), "39366");
+  assert.equal(cost(base, "Bricks", "Concrete", 1024), "177147");
+  assert.equal(cost(ee7, "Bricks", "Concrete", 1024), "118098");
   assert.equal(cost(base, "Bricks", "Concrete", 65536), "129140163");
-  assert.equal(cost(ee7, "Bricks", "Concrete", 65536), "64570082");
+  assert.equal(cost(ee7, "Bricks", "Concrete", 65536), "86093442");
   // An even cost halves exactly, at any size.
   assert.equal(cost(base, "Plates", "Ingots", 16384), "9565938");
   assert.equal(cost(ee7, "Plates", "Ingots", 16384), "4782969");
@@ -83,11 +84,12 @@ test("the round-up is not confined to cheap recipes — odd costs round up at ev
 test("EE7 covers every product and every compression level", () => {
   const base = costs({ ee7: false });
   const ee7 = costs({ ee7: true });
+  const Decimal = api("Decimal");
   for (const product of PRODUCTS) {
     for (const input of RECIPE[product].inputs) {
+      const unit = Decimal.max(1, Decimal(cost(base, product, input, 1)).div(2).ceil());
       for (const level of LEVELS) {
-        const before = api("Decimal")(cost(base, product, input, level));
-        const want = api("Decimal").max(1, before.div(2).ceil());
+        const want = unit.times(Math.pow(3, Math.log2(level)));
         assert.equal(cost(ee7, product, input, level), want.toString(),
           `${product}/${input} at ${level}x`);
       }
