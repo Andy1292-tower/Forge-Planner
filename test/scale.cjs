@@ -180,7 +180,7 @@ const runner = `
   function frozenGelBudgetRun(mode,solveBudget){
     const s=base();s.mode=mode;s.dupe=0;s.maxTurbo=0;s.margin=0;
     s.lines=[{max:1,spx:6,turbo:0},{max:1,spx:4,turbo:0},{max:1,spx:4,turbo:0}];
-    s.minedIncome.Vespium.resourcesTradingPerSec=4498594189315839/3600;s.solveBudget=solveBudget;
+    s.minedIncome.Vespium.resourcesTradingPerSec=4500000000000000/3600;s.solveBudget=solveBudget;
     PRODUCTS.forEach(product=>s.targets[product]={on:mode==='items'&&product==='Gel',w:1});
     [...RAWS,...PRODUCTS].forEach(item=>s.sellPrice[item]=null);if(mode==='credits')s.sellPrice.Gel=1;
     normalize(s);syncManual(s);S=s;
@@ -193,8 +193,8 @@ const runner = `
   }
   ['items','credits'].forEach(mode=>[200,400].forEach(solveBudget=>{
     const run=frozenGelBudgetRun(mode,solveBudget);
-    const ok=run.result.feasible&&Math.abs(run.outHr-8.997188378631677)<=1e-12&&
-      run.vespHr<=4498594189315839&&run.ms<3000;
+    const ok=run.result.feasible&&Math.abs(run.outHr-9)<=1e-12&&
+      run.vespHr<=4500000000000000&&run.ms<3000;
     __emit((ok?'ok   ':'FAIL ')+mode+' real-clock '+solveBudget+'ms budget keeps the 6/4/4 correction ['+
       run.outHr+' Gel/hr in '+run.ms+'ms]');
     if(!ok)scaleFail=true;

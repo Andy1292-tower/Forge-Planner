@@ -15,8 +15,14 @@ const CHANGELOG=[
       "Game loadout codes. Max items/hr, Max credits/hr, Manual and every Project plan step have a Game code button that gives you a code for the game's loadout screen. Set the loadout's name and icon before you copy it. A Project step where crafters switch jobs partway through gets one code per switch, labelled with the time to load it.",
       "Import game code, in Manual. Paste a code from the game and it becomes your Manual setup, crafter 1 on line 1. If the code runs a crafter above that line's cap, or uses more crafters than you have lines, the planner lists the changes to your crafter lines and asks before making them. Tick the box to keep the loadout as a saved setup."
     ],
-    Changed:["Keep your crafter lines in the game's crafter order. Game codes put crafter 1 on line 1, so the order of the lines now matters."],
-    Fixed:["The planner fits a phone screen instead of zooming out and cutting off the right edge of every card and dialog."]}},
+    Changed:[
+      "Keep your crafter lines in the game's crafter order. Game codes put crafter 1 on line 1, so the order of the lines now matters.",
+      "Base craft times are the game's own recipe timers: Bits 6s, Concrete 9s, Ingots 10s, Plates 30s, Rods 45s, Glass 90s, Bricks 120s, Frames 300s, Gel 3,200s, Wire 5,400s, Reinforced Concrete 355,000s and Batteries 1,034,000s. Your save picks them up the next time it loads, replacing any base time you had calibrated by hand."
+    ],
+    Fixed:[
+      "The planner fits a phone screen instead of zooming out and cutting off the right edge of every card and dialog.",
+      "With Expansion Essentials VII ticked, Bricks at 2× and above were costed up to a quarter short on Concrete, so a plan with Bricks lines could show Concrete in surplus while the game ran it at a loss. Bricks now cost what the game charges at every compression level."
+    ]}},
   {version:"2026.09.22",date:"2026-09-22",groups:{
     Added:[
       "Compression levels 15 and 16 — 32.77k× and 65.54k×. Set a crafter's cap to either and the planner costs, times and schedules the tier like every one below it; the cost table under Crafting stats runs up to them too.",

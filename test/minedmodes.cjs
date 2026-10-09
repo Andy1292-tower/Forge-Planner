@@ -51,7 +51,7 @@ const runner = `
   let expectedRocks=0;
   (r.phases[0].plan||[]).forEach(p=>(p.entries||[]).forEach(e=>{
     if(e.item!=="Gel")return;
-    const tier=Math.log2(e.lvl),ct=3201*Math.pow(1.5,tier),cost=1e23*Math.pow(3,tier);
+    const tier=Math.log2(e.lvl),ct=3200*Math.pow(1.5,tier),cost=1e23*Math.pow(3,tier);
     expectedRocks+=(cost/ct)*Math.min(p.sp,ct)*(e.frac||0)*3600;
   }));
   check("project reports real informational Rocks consumption",rockUse&&Math.abs(rockUse.inputHr-expectedRocks)<=1e-9*Math.max(1,expectedRocks),"use="+(rockUse&&rockUse.inputHr)+", expected="+expectedRocks);
@@ -66,17 +66,17 @@ const runner = `
   const exactWire=(exactPhase.balance||[]).find(x=>x.res==="Wire"),exactGel=(exactPhase.balance||[]).find(x=>x.res==="Gel");
   const exactHydra=(exactPhase.minedUsage||[]).find(x=>x.item==="Batteries"&&x.resource==="Hydracite");
   check("split project completes five Batteries in one physical craft",
-    r.feasible&&Math.abs(r.eta-287.2984888888889)<=1e-9,
+    r.feasible&&Math.abs(r.eta-287.22222222222223)<=1e-9,
     "eta="+r.eta+", feasible="+r.feasible);
   check("split project replays corrected Batteries outHr",
-    exactEntry&&Math.abs(exactEntry.outHr-0.01740350260572976)<=1e-15&&
-      Math.abs((exactPhase.rate.Batteries||0)-0.01740350260572976)<=1e-15,
+    exactEntry&&Math.abs(exactEntry.outHr-0.017408123791102514)<=1e-15&&
+      Math.abs((exactPhase.rate.Batteries||0)-0.017408123791102514)<=1e-15,
     "entry="+(exactEntry&&exactEntry.outHr)+", rate="+(exactPhase.rate.Batteries||0));
   check("split project keeps Batteries inputs per physical craft",
     exactWire&&exactGel&&exactHydra&&
-      Math.abs(exactWire.cons-1.7403502605729757)<=1e-12&&
-      Math.abs(exactGel.cons-348.0700521145951)<=1e-9&&
-      Math.abs(exactHydra.inputHr-17403502605.72976)<=1e-5,
+      Math.abs(exactWire.cons-1.7408123791102514)<=1e-12&&
+      Math.abs(exactGel.cons-348.1624758220503)<=1e-9&&
+      Math.abs(exactHydra.inputHr-17408123791.102516)<=1e-5,
     "wire="+(exactWire&&exactWire.cons)+", gel="+(exactGel&&exactGel.cons)+", hydra="+(exactHydra&&exactHydra.inputHr));
 
   S=project(1e40,1e40);

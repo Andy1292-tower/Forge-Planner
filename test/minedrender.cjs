@@ -42,7 +42,7 @@ const runner=`
       "error="+(hugeBudgetError&&hugeBudgetError.message)+", capacity="+hugeCapacity+", loadout="+hugeLoadout);
   });
 
-  const exactBudget=4498594189315839;
+  const exactBudget=4500000000000000;
   S=defaults();S.dupe=0;S.maxTurbo=0;
   const counterLines=[{max:1,spx:6,turbo:0},{max:1,spx:4,turbo:0},{max:1,spx:4,turbo:0}];
   S.lines=counterLines.concat(Array.from({length:9},()=>({max:1,spx:100,turbo:0})));
@@ -88,7 +88,7 @@ const runner=`
   S=defaults();S.mode="items";S.dupe=50;S.lines=[{max:1,spx:1,turbo:0}];
   PRODUCTS.forEach(p=>S.targets[p]={on:p==="Gel",w:1});S.minedIncome.Vespium.resourcesTradingPerSec=1e30/60;
   let result=optimize(),el=new El(),stat=new El();renderSolveResult(result,el,stat);
-  const gelLine=result.plan.find(p=>p.job&&p.job.res==="Gel"),itemRocks=1e23/3201*3600;
+  const gelLine=result.plan.find(p=>p.job&&p.job.res==="Gel"),itemRocks=1e23/3200*3600;
   check("items Gel plan row renders real Rocks consumption",el.innerHTML.includes(disp(itemRocks)+" Rocks"),el.innerHTML);
   check("Rocks usage summary labels the cost informational",el.innerHTML.includes("Rocks/hr (informational)"),el.innerHTML);
   const idleNote=idleLinesNote([{line:2,job:{kind:"idle"}}],result.minedUsage);
@@ -98,11 +98,11 @@ const runner=`
   S.minedIncome.Vespium.resourcesTradingPerSec=1e30/60;S.projects=[{id:"gel",name:"Gel render",catId:"",on:true,from:1,to:1,done:0,prio:null,
     levels:[{costs:[{item:"Gel",qty:100}]}]}];
   result=optimize();const phase=result.phases[0];let projectRocks=0;
-  phase.plan.forEach(p=>(p.entries||[]).forEach(e=>{if(e.item!=="Gel")return;const tier=Math.log2(e.lvl),t=3201*Math.pow(1.5,tier),cost=1e23*Math.pow(3,tier);
+  phase.plan.forEach(p=>(p.entries||[]).forEach(e=>{if(e.item!=="Gel")return;const tier=Math.log2(e.lvl),t=3200*Math.pow(1.5,tier),cost=1e23*Math.pow(3,tier);
     projectRocks+=(cost/t)*Math.min(p.sp,t)*(e.frac||0)*3600;}));
   const projectHtml=lineAssignTableHtml(phase.plan);
   check("project Gel plan row renders real Rocks consumption",projectHtml.includes(disp(projectRocks)+" Rocks")||phase.plan.some(p=>(p.entries||[]).some(e=>{
-    if(e.item!=="Gel")return false;const tier=Math.log2(e.lvl),t=3201*Math.pow(1.5,tier),cost=1e23*Math.pow(3,tier),rocks=(cost/t)*Math.min(p.sp,t)*(e.frac||0)*3600;
+    if(e.item!=="Gel")return false;const tier=Math.log2(e.lvl),t=3200*Math.pow(1.5,tier),cost=1e23*Math.pow(3,tier),rocks=(cost/t)*Math.min(p.sp,t)*(e.frac||0)*3600;
     return projectHtml.includes(disp(rocks)+" Rocks");})),projectHtml);
 
   S=defaults();S.dupe=0;S.lines=[{max:1,spx:1,turbo:0},{max:1,spx:1,turbo:0}];
@@ -118,7 +118,7 @@ const runner=`
   S=defaults();S.dupe=0;S.maxTurbo=0;S.lines=[{max:1,spx:1,turbo:0}];
   S.manual=[{job:"Batteries",lvl:1,sell:false}];syncManual(S);
   S.minedIncome.Vespium.resourcesTradingPerSec=1e100;S.minedIncome.Hydracite.resourcesTradingPerSec=1e100;
-  const manualBattery=manualResult(),batteryJob=manualBattery.plan[0].job,batterySeconds=1034274.56;
+  const manualBattery=manualResult(),batteryJob=manualBattery.plan[0].job,batterySeconds=1034000;
   check("Manual Battery output uses the five-unit base batch",
     Math.abs(batteryJob.prod[0][1]-5/batterySeconds)<1e-18,
     "rate="+batteryJob.prod[0][1]+", expected="+(5/batterySeconds));

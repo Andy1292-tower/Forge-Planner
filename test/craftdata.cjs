@@ -62,16 +62,16 @@ const runner=`
   eq("battery hydracite 1x",minedCost("Batteries",1).Hydracite,5000000000000);
   eq("reinforced bricks 8192x",d.prodCost["Reinforced Concrete"].Bricks[8192].toNumber(),15943230000);
   eq("battery hydracite 16384x",minedCost("Batteries",16384).Hydracite,23914845000000000000);
-  near("reinforced base time",d.baseTime["Reinforced Concrete"],355531.88);
-  near("battery base time",d.baseTime.Batteries,1034274.56);
-  near("reinforced time 8192x",craftTime("Reinforced Concrete",8192),69193439.15005371);
-  near("battery time 16384x",craftTime("Batteries",16384),301935007.2002344);
+  near("reinforced base time",d.baseTime["Reinforced Concrete"],355000);
+  near("battery base time",d.baseTime.Batteries,1034000);
+  near("reinforced time 8192x",craftTime("Reinforced Concrete",8192),69089924.926757813);
+  near("battery time 16384x",craftTime("Batteries",16384),301854855.10253906);
   LEVELS.forEach((L,i)=>{
     near("reinforced cost scale "+L,d.prodCost["Reinforced Concrete"].Bricks[L],10000*Math.pow(3,i));
     near("battery ordinary cost scale "+L,d.prodCost.Batteries.Gel[L],100000*Math.pow(3,i));
     near("battery mined cost scale "+L,minedCost("Batteries",L).Hydracite,5e12*Math.pow(3,i));
-    near("reinforced time scale "+L,craftTime("Reinforced Concrete",L),355531.88*Math.pow(1.5,i));
-    near("battery time scale "+L,craftTime("Batteries",L),1034274.56*Math.pow(1.5,i));
+    near("reinforced time scale "+L,craftTime("Reinforced Concrete",L),355000*Math.pow(1.5,i));
+    near("battery time scale "+L,craftTime("Batteries",L),1034000*Math.pow(1.5,i));
   });
   setMinedIncome("Rocks","resourcesTradingPerSec","7.25qu");
   setMinedIncome("Vespium","resourcesTradingPerSec","3");
@@ -88,7 +88,11 @@ const runner=`
   // is now entered in, so the same Vespium/hr budget comes back out.
   eq("legacy vesp value carries over at the same hourly budget",minedBudgetHr("Vespium",legacy).toString(),"435000000000000000000");
   eq("legacy per-minute text is not shown against a per-second field",legacy.minedIncomeText.Vespium?.resourcesTradingPerSec==="7.25qu",false);
-  eq("custom base time preserved",legacy.baseTime.Wire,12345);
+  // A save from before base-time revision 3 takes the game's timers; from revision 3 on, a base
+  // time the player sets is kept.
+  eq("pre-revision-3 base time replaced by the game's",legacy.baseTime.Wire,5400);
+  const current=defaults();current.baseTimeRev=3;current.baseTime.Wire=12345;normalize(current);
+  eq("custom base time preserved from revision 3",current.baseTime.Wire,12345);
   // Recipe costs are derived now, so a hand-typed one in an old save is replaced by the game's
   // own figure: Wire spends 2 Gel at 1x, and costs scale 3x per compression level.
   eq("custom recipe cost replaced by the derived curve",legacy.prodCost.Wire.Gel[4],18);

@@ -47,7 +47,7 @@ test("owns distinct numeric descriptors and the complete persisted ranges", () =
   const expected = {
     lineSpeed: [1e-6, 1e9, false], turbo: [0, 1e6, false], maxTurbo: [0, 1e6, false],
     dupe: [0, 100, false], margin: [0, 20, false], solveBudget: [200, 60000, false],
-    baseTime: [1e-6, 1e15, false], baseTimeRev: [0, 12, false],
+    baseTime: [1e-6, 1e15, false], baseTimeRev: [0, 13, false],
     targetWeight: [1, 9, false], projectIndex: [1, 1e6, false],
     projectPriority: [1, 1e6, true], calibrationSpeed: [1e-6, 1e9, false],
     calibrationSeconds: [1e-6, 1e15, false],
@@ -71,7 +71,7 @@ test("owns distinct numeric descriptors and the complete persisted ranges", () =
   }
   assert.notStrictEqual(schema.sellPrice, schema.forgie);
   assert.notStrictEqual(schema.inventory, schema.projectQuantity);
-  assert.equal(schema.baseTimeRev.defaultValue, 2, "save schema changes must not change the base-time revision");
+  assert.equal(schema.baseTimeRev.defaultValue, 3, "save schema changes must not change the base-time revision");
 });
 
 test("fresh and reset state presents a 10-second solve budget", () => {
