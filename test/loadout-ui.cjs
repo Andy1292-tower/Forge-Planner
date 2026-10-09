@@ -125,13 +125,19 @@ test("both scripts load in the same place on the page and in the release build",
 
 test("the windows are body-level dialogs with the controls the script drives", () => {
   const html = read("index.html");
-  for (const id of ["loadoutExportModal", "loadoutExportSource", "loadoutExportName", "loadoutExportIcon", "loadoutExportCode",
-    "loadoutExportNotes", "loadoutExportStatus", "loadoutExportCopy"]) assert.ok(html.includes(`id="${id}"`), id);
-  assert.match(html, /<div class="modal-bg" id="loadoutExportModal" hidden>\s*<div class="modal dialog-shell loadout-modal" role="dialog" aria-modal="true" aria-labelledby="loadoutExportTitle">/);
-  // The dialog controller inerts every child of <body> but the open one, so a window nested inside
-  // the page would inert itself: count the <div>s still open where the window starts.
-  const between = html.slice(html.indexOf("<body"), html.indexOf('<div class="modal-bg" id="loadoutExportModal"'));
-  assert.equal((between.match(/<div\b/g) || []).length - (between.match(/<\/div>/g) || []).length, 0);
+  for (const [modal, ids] of [
+    ["loadoutExportModal", ["loadoutExportSource", "loadoutExportName", "loadoutExportIcon", "loadoutExportCode",
+      "loadoutExportNotes", "loadoutExportStatus", "loadoutExportCopy"]],
+    ["loadoutImportModal", ["loadoutImportCode", "loadoutImportPreview", "loadoutImportSave", "loadoutImportName",
+      "loadoutImportPresetFull", "loadoutImportStatus", "loadoutImportApply"]]]) {
+    for (const id of ids) assert.ok(html.includes(`id="${id}"`), id);
+    const title = modal.replace("Modal", "Title");
+    assert.ok(new RegExp(`<div class="modal-bg" id="${modal}" hidden>\\s*<div class="modal dialog-shell loadout-modal" role="dialog" aria-modal="true" aria-labelledby="${title}">`).test(html), modal);
+    // The dialog controller inerts every child of <body> but the open one, so a window nested inside
+    // the page would inert itself: count the <div>s still open where the window starts.
+    const between = html.slice(html.indexOf("<body"), html.indexOf(`<div class="modal-bg" id="${modal}"`));
+    assert.equal((between.match(/<div\b/g) || []).length - (between.match(/<\/div>/g) || []).length, 0, modal);
+  }
 });
 
 /* ---- export buttons ---- */
@@ -293,6 +299,160 @@ test("Copy puts the code on the clipboard, and falls back to selecting it when t
   el("loadoutExportName").dispatch("input");
   assert.equal(el("loadoutExportStatus").textContent, "", "editing the name clears a stale copy status");
   exportDialog.close();
+});
+
+/* ---- import window (Manual only) ---- */
+
+const EXAMPLE = "ingots-7-adaj-adaj-adah-adag-adaf-adae-aaaa-aaaa";
+let commits = 0, linesRendered = 0, confirmText = null;
+const acceptCommits = () => {
+  commits = 0; linesRendered = 0;
+  context.renderLines = () => { linesRendered++; };
+  context.commitResultMutation = (mutator, syncControls) => { commits++; mutator(api("S")); syncControls(true); return true; };
+};
+const answerConfirm = answer => { confirmText = null; context.confirm = text => { confirmText = text; return answer; }; };
+const openImport = () => clickResults("#manualImportCode", button("manualImportCode"));
+const paste = code => { el("loadoutImportCode").value = code; el("loadoutImportCode").dispatch("input"); };
+const previewText = () => el("loadoutImportPreview").children.map(child => child.text).join(" | ");
+
+test("Manual always offers Import game code, and nothing else does", () => {
+  const st = factory([512]); setState(st);
+  const bar = new FakeEl("div"); call("renderManualPresetBar", bar, [], null);
+  assert.ok(bar.children.some(c => c.id === "manualImportCode"));
+  const html = read("js/results.js") + read("js/events.js");
+  assert.ok(!html.includes("manualImportCode") && !html.includes("openLoadoutImport"), "only Manual opens the import window");
+});
+
+test("opening the window starts it empty, and a full preset list rules out saving", () => {
+  setState(factory([512]));
+  el("loadoutImportCode").value = "left over";
+  el("loadoutImportSave").checked = true;
+  openImport();
+  assert.equal(importDialog.isOpen, true);
+  assert.equal(el("loadoutImportCode").value, "");
+  assert.deepEqual(el("loadoutImportPreview").children, []);
+  assert.equal(el("loadoutImportApply").disabled, true);
+  assert.equal(el("loadoutImportSave").checked, false);
+  assert.equal(el("loadoutImportSave").disabled, false);
+  assert.equal(el("loadoutImportName").disabled, true);
+  assert.equal(el("loadoutImportPresetFull").hidden, true);
+  importDialog.close();
+  const full = factory([512]);
+  full.manualSaved = Array.from({ length: api("STATE_LIMITS").maxPresets }, (_, i) => ({ id: "p" + i, name: "Set " + i, config: [] }));
+  setState(full);
+  openImport();
+  assert.equal(el("loadoutImportSave").disabled, true);
+  assert.equal(el("loadoutImportPresetFull").hidden, false);
+  importDialog.close();
+});
+
+test("a malformed code says what is wrong and cannot be imported", () => {
+  setState(factory([512]));
+  openImport();
+  paste("ingots-7-adaj");
+  assert.match(previewText(), /8 crafters/);
+  assert.equal(el("loadoutImportApply").disabled, true);
+  paste("   ");
+  assert.deepEqual(el("loadoutImportPreview").children, []);
+  importDialog.close();
+});
+
+test("a valid code previews the setup, every line change and every crafter left idle", () => {
+  setState(factory([512, 64, 128, 64, 32]));
+  openImport();
+  paste("ingots-7-adaj-adaj-adah-adag-adaf-anaj-aaaa-adae");
+  const text = previewText();
+  assert.match(text, /Manual setup.*Line 1: Ingots 512×/);
+  assert.match(text, /Changes to your crafter lines.*Line 2 cap: 64× → 512×.*Adds line 8/);
+  assert.match(text, /Not in the planner.*Line 6: Pipes isn't in the planner/);
+  assert.equal(el("loadoutImportApply").disabled, false);
+  assert.equal(el("loadoutImportName").value, "ingots");
+  el("loadoutImportName").value = "my run";
+  el("loadoutImportName").dispatch("input");
+  paste("other-7-adaj-adaj-adah-adag-adaf-adae-aaaa-aaaa");
+  assert.equal(el("loadoutImportName").value, "my run", "a name the player typed is kept");
+  importDialog.close();
+});
+
+test("a code of crafters the planner cannot run is not called empty", () => {
+  setState(factory([512, 512]));
+  openImport();
+  paste("pipes-7-anaa-anaa-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa");
+  const text = previewText();
+  assert.ok(!/Every crafter in this code is empty/.test(text), text);
+  assert.match(text, /No crafter in this code runs a job the planner models, so every line will be idle\./);
+  assert.match(text, /Line 1: Pipes isn't in the planner/);
+  paste("empty-0-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa");
+  assert.match(previewText(), /Every crafter in this code is empty, so every line will be idle\./);
+  importDialog.close();
+});
+
+test("declining the line changes changes nothing", () => {
+  const st = factory([512, 64, 128, 64, 32]); setState(st);
+  const before = JSON.stringify(api("S"));
+  acceptCommits(); answerConfirm(false);
+  openImport();
+  paste("ingots-7-adaj-adaj-adah-adag-adaf-aaaa-aaaa-adae");
+  el("loadoutImportApply").dispatch("click");
+  assert.match(confirmText, /^Importing this code changes your crafter lines:\n• Line 2 cap: 64× → 512×\n• Adds line 6/);
+  assert.match(confirmText, /Are you sure\?$/);
+  assert.equal(commits, 0);
+  assert.equal(JSON.stringify(api("S")), before);
+  assert.equal(importDialog.isOpen, true);
+  importDialog.close();
+});
+
+test("accepting them imports lines, setup and mode in one edit, then closes", () => {
+  const st = factory([512, 64, 128, 64, 32]);
+  st.mode = "items"; st.manualSaved = [{ id: "pOld", name: "Old", config: [] }]; st.manualActiveId = "pOld";
+  setState(st);
+  acceptCommits(); answerConfirm(true);
+  openImport();
+  paste("ingots-7-adaj-adaj-adah-adag-adaf-aaaa-aaaa-adae");
+  el("loadoutImportApply").dispatch("click");
+  const S = api("S");
+  assert.ok(confirmText);
+  assert.equal(commits, 1);
+  assert.equal(linesRendered, 1, "the crafter lines card is redrawn");
+  assert.deepEqual(S.lines.map(l => l.max), [512, 512, 128, 64, 32, 512, 512, 512]);
+  assert.deepEqual(S.manual.map(m => m.job), ["Ingots", "Ingots", "Ingots", "Ingots", "Ingots", "Idle", "Idle", "Ingots"]);
+  assert.equal(S.mode, "manual");
+  assert.equal(S.manualActiveId, null);
+  assert.equal(S.manualSaved.length, 1);
+  assert.equal(importDialog.isOpen, false);
+  assert.equal(el("solveStat").textContent, "Imported “ingots” into Manual.");
+});
+
+test("a code that fits imports without asking, and can be kept as a named preset", () => {
+  setState(factory([512, 512, 128, 64, 32, 16]));
+  acceptCommits();
+  context.confirm = () => { throw new Error("nothing to confirm"); };
+  openImport();
+  paste(EXAMPLE);
+  el("loadoutImportSave").checked = true;
+  el("loadoutImportSave").dispatch("change", { target: el("loadoutImportSave") });
+  assert.equal(el("loadoutImportName").disabled, false);
+  el("loadoutImportName").value = "  Ingot farm  ";
+  el("loadoutImportCode").dispatch("keydown", { key: "Enter" });
+  const S = api("S");
+  assert.equal(commits, 1, "Enter in the code field imports");
+  assert.equal(S.manualSaved.length, 1);
+  assert.equal(S.manualSaved[0].name, "Ingot farm");
+  assert.equal(S.manualActiveId, S.manualSaved[0].id);
+  assert.deepEqual(S.manualSaved[0].config.map(c => c.lvl), [512, 512, 128, 64, 32, 16]);
+});
+
+test("a save the planner rejects leaves the window open and says nothing changed", () => {
+  setState(factory([512, 512, 128, 64, 32, 16]));
+  context.commitResultMutation = (mutator, syncControls) => { syncControls(false); return false; };
+  context.confirm = () => true;
+  openImport();
+  paste(EXAMPLE);
+  el("loadoutImportApply").dispatch("click");
+  assert.equal(importDialog.isOpen, true);
+  assert.match(el("loadoutImportStatus").textContent, /nothing changed/);
+  assert.ok(el("loadoutImportStatus").classList.contains("is-bad"));
+  importDialog.close();
 });
 
 (async () => {

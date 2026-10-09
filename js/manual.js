@@ -232,6 +232,8 @@ function renderManualPresetBar(container,saved,active){
     const code=domElement("button","btn ghost","Game code");
     code.id="manualExportCode";code.title="Get the game loadout code for this setup";controls.push(code);
   }
+  const importCode=domElement("button","btn ghost","Import game code");
+  importCode.id="manualImportCode";importCode.title="Replace this setup with a loadout code from the game";controls.push(importCode);
   container.replaceChildren(...controls);
 }
 function renderManual(el,stat){

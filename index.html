@@ -416,6 +416,23 @@
   </div>
 </div>
 
+<!-- GAME LOADOUT CODE: IMPORT -->
+<div class="modal-bg" id="loadoutImportModal" hidden>
+  <div class="modal dialog-shell loadout-modal" role="dialog" aria-modal="true" aria-labelledby="loadoutImportTitle">
+    <div class="modal-h"><h3 id="loadoutImportTitle">Import a game loadout</h3><button class="iconbtn" title="Close" aria-label="Close import game loadout" data-dialog-close>&times;</button></div>
+    <div class="modal-b" data-dialog-body>
+      <p class="help">Paste a code from the game's loadout screen. It replaces your Manual setup: crafter 1 goes on line 1, crafter 2 on line 2, and so on.</p>
+      <label class="loadout-field" for="loadoutImportCode"><span>Code</span><input type="text" id="loadoutImportCode" class="loadout-code" autocomplete="off" spellcheck="false" aria-describedby="loadoutImportPreview"></label>
+      <div id="loadoutImportPreview" aria-live="polite"></div>
+      <label class="loadout-save" for="loadoutImportSave"><input type="checkbox" id="loadoutImportSave"> Save it as a Manual preset</label>
+      <label class="loadout-field" for="loadoutImportName"><span>Preset name</span><input type="text" id="loadoutImportName" maxlength="256" autocomplete="off" disabled></label>
+      <p class="help" id="loadoutImportPresetFull" hidden>You have the most saved setups the planner keeps. Delete one to save another.</p>
+      <p class="contrib-status" id="loadoutImportStatus" role="status" aria-live="polite"></p>
+    </div>
+    <div class="modal-f"><button class="btn ghost" type="button" data-dialog-close>Cancel</button><button class="btn primary" type="button" id="loadoutImportApply" disabled>Import</button></div>
+  </div>
+</div>
+
 <script src="js/boot.js"></script>
 <script src="js/decimal.js"></script>
 <script src="js/catalog.js"></script>

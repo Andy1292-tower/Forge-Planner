@@ -86,4 +86,70 @@ document.getElementById("results").addEventListener("click",e=>{
   const step=cl("[data-loadout-step]");if(step){exportProjectLoadout(step);return;}
   const plan=cl("#btnExportCode");if(plan){exportPlanLoadout(plan);return;}
   const manual=cl("#manualExportCode");if(manual){exportManualLoadout(manual);return;}
+  const importCode=cl("#manualImportCode");if(importCode)openLoadoutImport(importCode);
 });
+
+/* Import: Manual only. The window previews what the code does to the Manual setup and to the crafter
+   lines, asks before it changes any line, and commits everything as one edit — lines, setup, the
+   optional preset and the switch to Manual — so a rejected save rolls all of it back together. */
+let loadoutImportNameEdited=false;
+const loadoutImportDialog=dialogController.register({root:loadoutEl("loadoutImportModal"),
+  panel:document.querySelector("#loadoutImportModal .modal"),opener:null,initialFocus:()=>loadoutEl("loadoutImportCode"),onOpen:resetLoadoutImport});
+function openLoadoutImport(invoker){loadoutImportDialog.open(invoker);}
+function resetLoadoutImport(){
+  loadoutEl("loadoutImportCode").value="";
+  loadoutImportNameEdited=false;
+  const full=(S.manualSaved||[]).length>=STATE_LIMITS.maxPresets,save=loadoutEl("loadoutImportSave"),name=loadoutEl("loadoutImportName");
+  save.checked=false;save.disabled=full;
+  loadoutEl("loadoutImportPresetFull").hidden=!full;
+  name.value="";name.disabled=true;
+  previewLoadoutImport();
+}
+function loadoutList(tone,title,items){
+  const box=loadoutNotice(tone,"");
+  box.appendChild(domElement("b","",title));
+  const list=domElement("ul","loadout-list");
+  items.forEach(item=>list.appendChild(domElement("li","",item)));
+  box.appendChild(list);
+  return box;
+}
+function previewLoadoutImport(){
+  const raw=loadoutEl("loadoutImportCode").value,preview=loadoutEl("loadoutImportPreview"),apply=loadoutEl("loadoutImportApply");
+  loadoutSay("loadoutImportStatus","");
+  if(!raw.trim()){preview.replaceChildren();apply.disabled=true;return;}
+  const parsed=parseLoadoutCode(raw);
+  if(!parsed.ok){preview.replaceChildren(loadoutNotice("warn",parsed.error));apply.disabled=true;return;}
+  const notes=loadoutImportNotes(planLoadoutImport(S,parsed)),parts=[];
+  parts.push(notes.jobs.length?loadoutList("info","Manual setup",notes.jobs)
+    :loadoutNotice("info",notes.unmodelled.length?"No crafter in this code runs a job the planner models, so every line will be idle."
+      :"Every crafter in this code is empty, so every line will be idle."));
+  if(notes.lineChanges.length)parts.push(loadoutList("warn","Changes to your crafter lines",notes.lineChanges));
+  if(notes.unmodelled.length)parts.push(loadoutList("warn","Not in the planner",notes.unmodelled));
+  if(notes.idledLines)parts.push(loadoutNotice("info",notes.idledLines));
+  preview.replaceChildren(...parts);
+  if(!loadoutImportNameEdited)loadoutEl("loadoutImportName").value=loadoutPresetName(parsed);
+  apply.disabled=false;
+}
+function applyLoadoutImportFromWindow(){
+  const parsed=parseLoadoutCode(loadoutEl("loadoutImportCode").value);
+  if(!parsed.ok){previewLoadoutImport();return;}
+  const plan=planLoadoutImport(S,parsed);
+  if(plan.changesLines&&!confirm(loadoutImportConfirmText(plan)))return;
+  const save=loadoutEl("loadoutImportSave");
+  const presetName=save.checked&&!save.disabled
+    ?(loadoutEl("loadoutImportName").value.trim().slice(0,FIELD_SCHEMA.projectName.maxLength)||loadoutPresetName(parsed)):null;
+  const accepted=commitResultMutation(st=>{applyLoadoutImport(st,planLoadoutImport(st,parsed),presetName);},
+    ()=>{renderLines();if(typeof renderModeSwitch==="function")renderModeSwitch();});
+  if(!accepted){loadoutSay("loadoutImportStatus","The planner couldn't save this import, so nothing changed.","bad");return;}
+  loadoutImportDialog.close();
+  const stat=loadoutEl("solveStat");if(stat)stat.textContent=`Imported “${loadoutPresetName(parsed)}” into Manual.`;
+}
+loadoutEl("loadoutImportCode").addEventListener("input",previewLoadoutImport);
+loadoutEl("loadoutImportCode").addEventListener("keydown",e=>{
+  if(e.key==="Enter"&&!loadoutEl("loadoutImportApply").disabled){e.preventDefault();applyLoadoutImportFromWindow();}
+});
+loadoutEl("loadoutImportSave").addEventListener("change",e=>{
+  const name=loadoutEl("loadoutImportName");name.disabled=!e.target.checked;if(e.target.checked)name.focus();
+});
+loadoutEl("loadoutImportName").addEventListener("input",()=>{loadoutImportNameEdited=true;});
+loadoutEl("loadoutImportApply").addEventListener("click",applyLoadoutImportFromWindow);
