@@ -10,6 +10,7 @@ const PAGE_SCRIPTS = [
   "core.js",
   "fields.js",
   "state.js",
+  "loadout-code.js",
   "dom.js",
   "render.js",
   "project-schedule.js",
@@ -20,11 +21,19 @@ const PAGE_SCRIPTS = [
   "dialogs.js",
   "changelog.js",
   "events.js",
+  "loadout-ui.js",
   "feedback.js",
   "update-check.js",
 ];
 const WORKER_SCRIPTS = ["decimal.js", "core.js", "fields.js", "state.js", "project-schedule.js", "solver.js"];
-const IMAGE_FILES = ["favicon.png", "dupe.jpg", "speed.jpg"];
+// The game's loadout icons, in icon-id order. js/loadout-ui.js names each one once, and the app is
+// rewritten to its hashed URL the way it is for the speed tooltip.
+const LOADOUT_ICON_FILES = [
+  "loadout-bits.png", "loadout-concrete.png", "loadout-glass.png", "loadout-bricks.png", "loadout-gel.png",
+  "loadout-reinforced-concrete.png", "loadout-batteries.png", "loadout-ingots.png", "loadout-plates.png",
+  "loadout-rods.png", "loadout-frames.png", "loadout-wire.png",
+];
+const IMAGE_FILES = ["favicon.png", "dupe.jpg", "speed.jpg", ...LOADOUT_ICON_FILES];
 const HASH_LENGTH = 16;
 const BUILD_STAMP_PLACEHOLDER = "__FORGE_BUILD_ID__";
 const VERSION_FILE = "version.json";
@@ -213,11 +222,15 @@ function buildApp(sourceRoot, assetUrls) {
     "production Worker constructor"
   );
   app = replaceExactly(app, "assets/speed.jpg", assetUrls.speed, 1, "speed tooltip image");
+  for (const file of LOADOUT_ICON_FILES) {
+    app = replaceExactly(app, `assets/${file}`, assetUrls[path.basename(file, ".png")], 1, `loadout icon ${file}`);
+  }
   assertSingleConstructionPath(app);
   assertSolverWorkerBootstrap(app);
   if (/importScripts\s*\(/.test(app)) throw new Error("The app still contains a network-importing Worker");
   if (WORKER_SCRIPT_URL.test(app)) throw new Error("The app still references a Worker URL");
   if (/assets\/speed\.jpg/.test(app)) throw new Error("The app still references the unhashed speed image");
+  if (/assets\/loadout-/.test(app)) throw new Error("The app still references an unhashed loadout icon");
   if (ROOT_RELATIVE_OWNED_URL.test(app)) throw new Error("The app contains a root-relative owned asset URL");
   if (ANALYTICS_SIGNATURE.test(app)) throw new Error("The app contains a Vercel Analytics signature");
   return Buffer.from(app);

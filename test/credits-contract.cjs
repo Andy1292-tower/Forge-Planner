@@ -61,6 +61,8 @@ const runner=`
 
   const el=new El(),stat=new El();renderSolveResult(result,el,stat);
   check("a strict winner does not inherit a losing May-work warning",!el.innerHTML.includes("<b>May-work plan.</b>"),"notice="+el.innerHTML.includes("<b>May-work plan.</b>"));
+  check("a busy plan offers its game loadout code beside Copy to Manual",el.innerHTML.includes('id="btnExportCode"')&&el.innerHTML.includes('id="btnCopyManual"'),
+    "code="+el.innerHTML.includes('id="btnExportCode"')+", copy="+el.innerHTML.includes('id="btnCopyManual"'));
   const emptyItemsEl=new El(),emptyItemsStat=new El();renderSolveResult({empty:true,mode:"items"},emptyItemsEl,emptyItemsStat);
   check("empty Items guidance describes the dedicated Credits comparison",
     emptyItemsEl.innerHTML.includes("best dedicated sell plan")&&!emptyItemsEl.innerHTML.includes("profitable mix"),emptyItemsEl.innerHTML);
@@ -358,10 +360,12 @@ const runner=`
     stoppedEl.innerHTML.includes("not evaluated")&&stoppedEl.innerHTML.includes("—")&&!stoppedEl.innerHTML.includes("No sustainable plan found"),
     stoppedStat.textContent);
   check("all-idle result hides Copy to Manual",!stoppedEl.innerHTML.includes('id="btnCopyManual"'),"copy="+stoppedEl.innerHTML.includes('id="btnCopyManual"'));
+  check("all-idle result offers no game loadout code",!stoppedEl.innerHTML.includes('id="btnExportCode"'),"code="+stoppedEl.innerHTML.includes('id="btnExportCode"'));
 
   S=stateFor([]);const noPrices=optimizeInner(200,{now:()=>0,workLimit:100});
   const emptyEl=new El(),emptyStat=new El();renderSolveResult(noPrices,emptyEl,emptyStat);
   check("no-price Credits result hides Copy to Manual",!emptyEl.innerHTML.includes('id="btnCopyManual"'),"copy="+emptyEl.innerHTML.includes('id="btnCopyManual"'));
+  check("no-price Credits result offers no game loadout code",!emptyEl.innerHTML.includes('id="btnExportCode"'),"code="+emptyEl.innerHTML.includes('id="btnExportCode"'));
   const boundedNoPlan={...noPrices,issues:[],ranking:[{item:"Batteries",kind:"product",out:0,price:1,credits:0,plan:null,balance:null,
     minedUsage:[],resIndex:{},feasible:false,usesMargin:false,capped:true,evaluated:true,ms:1}],allCandidatesEvaluated:true,
     deadlineReached:true,searchExhaustive:false,capped:false,ms:1};
@@ -397,6 +401,7 @@ const runner=`
     job:{kind:"craft",res:"OldItem",lvl:1,ct:1,prod:[[0,0]],cons:[]}}],ms:1};
   const staleEl=new El(),staleStat=new El();renderSolveResult(staleRender,staleEl,staleStat);
   check("unknown-resource result hides Copy to Manual",!staleEl.innerHTML.includes('id="btnCopyManual"'),"copy="+staleEl.innerHTML.includes('id="btnCopyManual"'));
+  check("unknown-resource result offers no game loadout code",!staleEl.innerHTML.includes('id="btnExportCode"'),"code="+staleEl.innerHTML.includes('id="btnExportCode"'));
   S=stateFor([]);
   const validPlan=S.lines.map((line,index)=>index===0?null:{job:index===1?{kind:"produce",res:"Bits",lvl:1}:{kind:"craft",res:"OldItem",lvl:1}});
   copyPlanToManual({mode:"credits",bestItem:"Bits",plan:validPlan});

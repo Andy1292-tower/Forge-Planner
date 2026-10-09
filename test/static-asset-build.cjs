@@ -95,14 +95,20 @@ function tooltipCustomPropertyUrl(source, label) {
   return matches[0][1];
 }
 
+// The game's loadout icons, in icon-id order. The app names each one, so it rotates with them.
+const LOADOUT_ICON_STEMS = ["bits", "concrete", "glass", "bricks", "gel", "reinforced-concrete", "batteries", "ingots",
+  "plates", "rods", "frames", "wire"].map(name => `loadout-${name}`);
+
 function assetNames(directory) {
-  return {
+  const names = {
     app: findOne(directory, /^app\.[0-9a-f]{16}\.js$/),
     styles: findOne(directory, /^styles\.[0-9a-f]{16}\.css$/),
     favicon: findOne(directory, /^favicon\.[0-9a-f]{16}\.png$/),
     dupe: findOne(directory, /^dupe\.[0-9a-f]{16}\.jpg$/),
     speed: findOne(directory, /^speed\.[0-9a-f]{16}\.jpg$/),
   };
+  for (const stem of LOADOUT_ICON_STEMS) names[stem] = findOne(directory, new RegExp(`^${stem}\\.[0-9a-f]{16}\\.png$`));
+  return names;
 }
 
 function generatedWorkerLifecycleSource(app) {
@@ -239,6 +245,14 @@ test("the generated page has a closed hashed asset graph and an in-memory Worker
     assertStylesheetRelativeUrlResolvesAtMount(temporary, speedUrl, stylesheetUrl, mount);
   }
 
+  // Loadout icons are <img> sources the app builds, so each resolves against the page itself.
+  assert.doesNotMatch(app, /assets\/loadout-/, "the app must not name an unhashed loadout icon");
+  for (const stem of LOADOUT_ICON_STEMS) {
+    const url = `static/${findOne(temporary, new RegExp(`^${stem}\\.[0-9a-f]{16}\\.png$`))}`;
+    assert.equal(app.split(`"${url}"`).length - 1, 1, `the app names ${stem} once, by its hashed URL`);
+    for (const mount of ["/", "/Forge-Planner/"]) assertUrlResolvesAtMount(temporary, url, mount);
+  }
+
   for (const relative of walk(temporary).filter(file => /\.(?:html|css|js)$/.test(file))) {
     assert.doesNotMatch(
       fs.readFileSync(path.join(temporary, ...relative.split("/")), "utf8"),
@@ -281,7 +295,7 @@ test("owned source tooltip URLs are document-relative", () => {
   }
 });
 
-test("CSS, favicon, dupe, and speed inputs rotate only their dependent hashed graph", () => {
+test("CSS, favicon, dupe, speed and loadout icon inputs rotate only their dependent hashed graph", () => {
   const cases = [
     {
       label: "CSS",
@@ -306,6 +320,12 @@ test("CSS, favicon, dupe, and speed inputs rotate only their dependent hashed gr
       relative: "assets/speed.jpg",
       mutation: Buffer.from("independent-speed-rotation"),
       rotated: ["speed", "app"],
+    },
+    {
+      label: "loadout icon",
+      relative: "assets/loadout-gel.png",
+      mutation: Buffer.from("independent-loadout-icon-rotation"),
+      rotated: ["loadout-gel", "app"],
     },
   ];
 

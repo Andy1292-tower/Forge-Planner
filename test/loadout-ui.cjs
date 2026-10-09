@@ -1,0 +1,527 @@
+"use strict";
+
+/* Game loadout code windows and the buttons that open them.
+ *
+ * Export lives beside every build the planner draws — the Max items / Max credits line assignment,
+ * the Manual setup and each Project step — and opens one window that names, icons and copies the
+ * code. Import lives in Manual only. There is no browser here: the page scripts run in a vm context
+ * against a small fake document, and the renderers' HTML is read as text. */
+
+const assert = require("assert");
+const fs = require("fs");
+const path = require("path");
+const vm = require("vm");
+
+const ROOT = path.resolve(__dirname, "..");
+const read = file => fs.readFileSync(path.join(ROOT, file), "utf8");
+
+/* ---- a fake document: just what the loadout windows and the DOM helpers touch ---- */
+class FakeClassList {
+  constructor() { this.names = new Set(); }
+  add(name) { this.names.add(name); }
+  remove(name) { this.names.delete(name); }
+  contains(name) { return this.names.has(name); }
+  toggle(name, on) { if (on === undefined) on = !this.names.has(name); if (on) this.names.add(name); else this.names.delete(name); return on; }
+}
+class FakeEl {
+  constructor(tag, id) {
+    this.tagName = String(tag || "div").toUpperCase();
+    this.id = id || "";
+    this.children = [];
+    this.options = [];
+    this.listeners = {};
+    this.attributes = {};
+    this.style = {};
+    this.classList = new FakeClassList();
+    this.value = ""; this.textContent = ""; this.title = "";
+    this.hidden = false; this.disabled = false; this.checked = false; this.selected = false;
+  }
+  set className(value) { this.classList = new FakeClassList(); String(value).split(/\s+/).filter(Boolean).forEach(n => this.classList.add(n)); }
+  get className() { return [...this.classList.names].join(" "); }
+  addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); }
+  dispatch(type, extra) {
+    const event = { type, target: this, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, ...extra };
+    (this.listeners[type] || []).forEach(fn => fn(event));
+    return event;
+  }
+  appendChild(child) { this.children.push(child); if (this.tagName === "SELECT" && child.tagName === "OPTION") this.options.push(child); return child; }
+  replaceChildren(...children) { this.children = children; }
+  focus() { fakeDocument.activeElement = this; }
+  select() { this.selected = true; }
+  getAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attributes, name) ? this.attributes[name] : null; }
+  setAttribute(name, value) { this.attributes[name] = String(value); }
+  // Every piece of text under this element, the way a reader would meet it.
+  get text() { return [this.textContent, ...this.children.map(child => child && child.text !== undefined ? child.text : String(child))].join(" "); }
+}
+const elements = {};
+const fakeDocument = {
+  activeElement: null,
+  getElementById: id => elements[id] || (elements[id] = new FakeEl("div", id)),
+  querySelector: selector => elements[selector] || (elements[selector] = new FakeEl("div")),
+  createElement: tag => new FakeEl(tag)
+};
+// The windows' selects and inputs, created up front so their tag is right.
+for (const [id, tag] of [["loadoutExportName", "input"], ["loadoutExportCode", "input"],
+  ["loadoutImportCode", "input"], ["loadoutImportName", "input"], ["loadoutImportSave", "input"], ["loadoutImportApply", "button"]])
+  elements[id] = new FakeEl(tag, id);
+
+const dialogs = [];
+const context = vm.createContext({
+  console, setTimeout, clearTimeout,
+  performance: { now: () => 0 },
+  localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+  document: fakeDocument,
+  navigator: {},
+  confirm: () => { throw new Error("confirm was not expected"); },
+  dialogController: { register(options) {
+    const dialog = { options, isOpen: false, opened: 0, closed: 0, invoker: null,
+      open(invoker) { dialog.isOpen = true; dialog.opened++; dialog.invoker = invoker; if (options.onOpen) options.onOpen(); },
+      close() { dialog.isOpen = false; dialog.closed++; } };
+    dialogs.push(dialog);
+    return dialog;
+  } },
+  staleCauses: new Set(),
+  _lastItemsCreditsRes: null,
+  _lastProjectRes: null,
+  commitResultMutation: () => { throw new Error("commitResultMutation was not expected"); },
+  renderLines: () => {},
+  renderModeSwitch: () => {}
+});
+for (const file of ["js/decimal.js", "js/catalog.js", "js/core.js", "js/fields.js", "js/state.js", "js/dom.js",
+  "js/loadout-code.js", "js/manual.js", "js/loadout-ui.js"])
+  vm.runInContext(read(file), context, { filename: path.join(ROOT, file) });
+const api = expression => vm.runInContext(expression, context);
+const call = (name, ...args) => api(name)(...args);
+const setState = state => { context.__next = state; api("S=__next"); };
+const [exportDialog, importDialog] = dialogs;
+const el = id => fakeDocument.getElementById(id);
+// A click inside #results, landing on the element that answers `selector`.
+// The icon picker: one <label> tile per game icon, holding its radio and its image.
+const iconTiles = () => el("loadoutExportIcon").children;
+const checkedIcon = () => iconTiles().findIndex(tile => tile.children[0].checked);
+const pickIcon = index => {
+  const radio = iconTiles()[index].children[0];
+  radio.checked = true;
+  el("loadoutExportIcon").dispatch("change", { target: radio });
+};
+const clickResults = (selector, target) => el("results").dispatch("click",
+  { target: { closest: candidate => (candidate === selector ? target : null) } });
+
+const tests = [];
+const test = (name, fn) => tests.push({ name, fn });
+
+const line = max => ({ max, spx: 1, turbo: 0 });
+const factory = maxes => {
+  const st = JSON.parse(JSON.stringify(call("defaults")));
+  st.lines = maxes.map(line);
+  call("syncManual", st);
+  return st;
+};
+const wirePlan = count => Array.from({ length: count }, (_, i) =>
+  ({ job: i < 2 ? { kind: "craft", res: "Wire", lvl: 16 } : { kind: "idle", res: null, lvl: null } }));
+const button = (id, attributes = {}) => Object.assign(new FakeEl("button", id), { attributes });
+
+/* ---- page wiring ---- */
+
+test("both scripts load in the same place on the page and in the release build", () => {
+  const pageOrder = [...read("index.html").matchAll(/<script src="js\/([^"]+)"><\/script>/g)].map(m => m[1]).filter(f => f !== "boot.js");
+  const buildOrder = [...read("scripts/build-static.cjs").match(/const PAGE_SCRIPTS = \[([\s\S]*?)\];/)[1].matchAll(/"([^"]+)"/g)].map(m => m[1]);
+  assert.deepEqual(pageOrder, buildOrder);
+  assert.equal(pageOrder[pageOrder.indexOf("state.js") + 1], "loadout-code.js");
+  assert.equal(pageOrder[pageOrder.indexOf("events.js") + 1], "loadout-ui.js");
+});
+
+test("the windows are body-level dialogs with the controls the script drives", () => {
+  const html = read("index.html");
+  for (const [modal, ids] of [
+    ["loadoutExportModal", ["loadoutExportSource", "loadoutExportName", "loadoutExportIcon", "loadoutExportCode",
+      "loadoutExportNotes", "loadoutExportStatus", "loadoutExportCopy"]],
+    ["loadoutImportModal", ["loadoutImportCode", "loadoutImportPreview", "loadoutImportSave", "loadoutImportName",
+      "loadoutImportPresetFull", "loadoutImportStatus", "loadoutImportApply"]]]) {
+    for (const id of ids) assert.ok(html.includes(`id="${id}"`), id);
+    const title = modal.replace("Modal", "Title");
+    assert.ok(new RegExp(`<div class="modal-bg" id="${modal}" hidden>\\s*<div class="modal dialog-shell loadout-modal" role="dialog" aria-modal="true" aria-labelledby="${title}">`).test(html), modal);
+    // The dialog controller inerts every child of <body> but the open one, so a window nested inside
+    // the page would inert itself: count the <div>s still open where the window starts.
+    const between = html.slice(html.indexOf("<body"), html.indexOf(`<div class="modal-bg" id="${modal}"`));
+    assert.equal((between.match(/<div\b/g) || []).length - (between.match(/<\/div>/g) || []).length, 0, modal);
+  }
+});
+
+/* ---- export buttons ---- */
+
+test("Manual offers Game code only when a line is busy", () => {
+  const ids = st => { setState(st); const bar = new FakeEl("div"); call("renderManualPresetBar", bar, st.manualSaved, null); return bar.children.map(c => c.id); };
+  const idle = factory([512, 64]);
+  assert.ok(!ids(idle).includes("manualExportCode"));
+  const busy = factory([512, 64]);
+  busy.manual[1] = { job: "Rods", lvl: 64, sell: false };
+  assert.ok(ids(busy).includes("manualExportCode"));
+});
+
+// stepPlanHtml lives in events.js, which wires the live page as it loads; slice the renderer out.
+const eventsSrc = read("js/events.js");
+const stepStart = eventsSrc.indexOf("function stepPlanHtml(res){"), stepEnd = eventsSrc.indexOf("// ── Plan-start", stepStart);
+const stepPlanHtml = Function("S", "fmtDuration", "htmlText", "htmlAttribute", "disp", "RAWS", "MINED_CRAFTS", "compressionLabel",
+  "minedUsageNote", "projectStepLoadouts", eventsSrc.slice(stepStart, stepEnd) + "\nreturn stepPlanHtml;")(
+  { planStart: Date.UTC(2026, 9, 9, 12), projLineMode: "split" }, h => h + "h", api("htmlText"), api("htmlAttribute"), String,
+  api("RAWS"), {}, api("compressionLabel"), () => "", api("projectStepLoadouts"));
+const entry = (item, lvl, start, end, eta) => ({ item, lvl, frac: (end - start) / eta, start, end, outHr: 1, cons: [] });
+const stepRes = (overrides = {}) => ({
+  empty: false, phases: [{}], feasible: true, lpFeasible: true, eta: 4,
+  executionPhases: [
+    { kind: "prerequisite", eta: 0, plan: [], externalSupply: { Bits: 10 }, invStart: { Bits: 0 } },
+    { kind: "warmup", name: "Warm-up: Rods", eta: 1, plan: [{ line: 1, max: 64, entries: [entry("Rods", 64, 0, 1, 1)] }] },
+    { kind: "project", name: "Tower-of \"Chad\"", eta: 3, plan: [
+      { line: 1, max: 64, entries: [entry("Rods", 64, 0, 2, 3), entry("Frames", 16, 2, 3, 3)] },
+      { line: 2, max: 64, entries: [entry("Plates", 64, 0, 3, 3)] }] }],
+  scheduleValidation: { ok: true, boundaries: [
+    { kind: "switch", phaseIndex: 1, phaseTime: 1, active: [{ line: 1, item: "Rods", lvl: 64 }] },
+    { kind: "switch", phaseIndex: 2, phaseTime: 2, active: [{ line: 1, item: "Rods", lvl: 64 }, { line: 2, item: "Plates", lvl: 64 }] },
+    { kind: "switch", phaseIndex: 2, phaseTime: 3, active: [{ line: 1, item: "Frames", lvl: 16 }, { line: 2, item: "Plates", lvl: 64 }] }] },
+  ...overrides
+});
+
+test("a Project step with one loadout gets a Game code button in its header", () => {
+  const html = stepPlanHtml(stepRes());
+  const header = html.slice(html.indexOf('<span class="step-n">2</span>'), html.indexOf("</div>", html.indexOf('<span class="step-n">2</span>')));
+  assert.match(header, /<button type="button" class="btn ghost step-code" id="loadoutStep1_0" data-loadout-step="1" data-loadout-slice="0"/);
+  assert.match(header, />Game code<\/button>/);
+  assert.match(header, /data-loadout-label="Step 2 \(warm-up\), from the start of the step until ~[^"]+"/);
+});
+
+test("a Project step whose crafters change job partway through gets one button per loadout", () => {
+  const html = stepPlanHtml(stepRes());
+  const row = html.match(/<div class="step-codes">([\s\S]*?)<\/div>/);
+  assert.ok(row, "the step has a row of codes");
+  assert.match(row[1], /Game codes:/);
+  assert.match(row[1], /id="loadoutStep2_0"[^>]*>Start<\/button>/);
+  assert.match(row[1], /id="loadoutStep2_1"[^>]*>~[^<]+<\/button>/);
+  assert.match(row[1], /data-loadout-label="Step 3 \(Tower-of &quot;Chad&quot;\), from ~[^"]+ until ~[^"]+"/);
+  assert.ok(!/id="loadoutStep2_0"[^>]*>Game code/.test(html), "a multi-loadout step has no single header button");
+});
+
+test("no codes for a prerequisite step or a blocked plan", () => {
+  assert.ok(!stepPlanHtml(stepRes()).includes('data-loadout-step="0"'), "prerequisite step");
+  for (const blocked of [{ feasible: false }, { lpFeasible: false }, { scheduleValidation: { ok: false, boundaries: [] } }])
+    assert.ok(!stepPlanHtml(stepRes(blocked)).includes("data-loadout-step"), JSON.stringify(blocked));
+});
+
+/* ---- export window ---- */
+
+test("Max items: the window opens prefilled and the code follows the name and icon", () => {
+  setState(factory([16, 16, 16]));
+  context._lastItemsCreditsRes = { mode: "items", targets: ["Wire"], plan: wirePlan(3) };
+  const invoker = button("btnExportCode");
+  clickResults("#btnExportCode", invoker);
+  assert.equal(exportDialog.isOpen, true);
+  assert.equal(exportDialog.invoker, invoker);
+  assert.match(el("loadoutExportSource").textContent, /last Max items\/hr solve/);
+  assert.equal(el("loadoutExportName").value, "Max Wire");
+  assert.equal(checkedIcon(), 11);
+  assert.equal(iconTiles().length, 12);
+  assert.equal(el("loadoutExportCode").value, "Max Wire-11-alae-alae-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa");
+  el("loadoutExportName").value = "my-wire";
+  el("loadoutExportName").dispatch("input");
+  assert.equal(el("loadoutExportCode").value, "my wire-11-alae-alae-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa");
+  pickIcon(3);
+  assert.equal(el("loadoutExportCode").value, "my wire-3-alae-alae-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa");
+  el("loadoutExportName").value = " ";
+  el("loadoutExportName").dispatch("input");
+  assert.match(el("loadoutExportCode").value, /^Max Wire-3-/, "a blanked name falls back to the default");
+  exportDialog.close();
+});
+
+// A picture's file is named for the icon it shows, so it is read from the icon table rather than
+// from a second list that could drift out of step with it.
+const iconFile = item => `loadout-${item.toLowerCase().replace(/ /g, "-")}.png`;
+const ICON_FILES = api("LOADOUT_ICONS").map(iconFile);
+
+test("the icon picker shows the game's twelve icons as radio tiles, in the game's order", () => {
+  setState(factory([16, 16, 16]));
+  context._lastItemsCreditsRes = { mode: "credits", bestItem: "Batteries", plan: wirePlan(3) };
+  clickResults("#btnExportCode", button("btnExportCode"));
+  const tiles = iconTiles();
+  assert.equal(tiles.length, 12);
+  tiles.forEach((tile, index) => {
+    const [radio, image] = tile.children;
+    assert.equal(tile.tagName, "LABEL");
+    assert.equal(radio.tagName, "INPUT");
+    assert.equal(radio.type, "radio");
+    assert.equal(radio.name, "loadoutExportIcon");
+    assert.equal(radio.value, String(index));
+    assert.equal(image.tagName, "IMG");
+    assert.equal(image.src, "assets/" + iconFile(api("LOADOUT_ICONS")[index]), "the picture is the one its icon id names");
+    assert.equal(image.alt, api("LOADOUT_ICONS")[index], "the image names the radio for a screen reader");
+    assert.equal(tile.title, api("LOADOUT_ICONS")[index], "hovering names the icon");
+  });
+  assert.equal(checkedIcon(), 6, "Batteries");
+  exportDialog.close();
+  // Opening again reuses the tiles and moves the selection.
+  context._lastItemsCreditsRes = { mode: "items", targets: ["Wire"], plan: wirePlan(3) };
+  clickResults("#btnExportCode", button("btnExportCode"));
+  assert.equal(iconTiles().length, 12);
+  assert.equal(checkedIcon(), 11);
+  assert.equal(iconTiles().filter(tile => tile.children[0].checked).length, 1);
+  exportDialog.close();
+});
+
+test("every icon image ships: in assets, in the hashed build, referenced exactly once by the page", () => {
+  const build = read("scripts/build-static.cjs");
+  const pageScripts = [...build.match(/const PAGE_SCRIPTS = \[([\s\S]*?)\];/)[1].matchAll(/"([^"]+)"/g)].map(m => read("js/" + m[1])).join("\n");
+  for (const file of ICON_FILES) {
+    assert.ok(fs.statSync(path.join(ROOT, "assets", file)).size > 0, file);
+    assert.match(build, new RegExp(`"${file.replace(/\./g, "\\.")}"`), file + " is a hashed build input");
+    assert.equal(pageScripts.split("assets/" + file).length - 1, 1, file + " is named once, so the build can swap in its hashed URL");
+  }
+});
+
+test("in a forced-colors theme the chosen icon is still marked", () => {
+  // Forced colors drop author border colours and box shadows, so the chosen tile needs a system colour.
+  const css = read("css/styles.css");
+  const forced = css.slice(css.indexOf("@media (forced-colors:active){"));
+  const block = forced.slice(0, forced.indexOf("\n}") + 2);
+  assert.match(block, /\.loadout-icon input:checked\+img\{[^}]*border[^}]*Highlight/);
+});
+
+test("Max credits names the item it sells", () => {
+  setState(factory([16, 16]));
+  context._lastItemsCreditsRes = { mode: "credits", bestItem: "Wire", plan: wirePlan(2) };
+  clickResults("#btnExportCode", button("btnExportCode"));
+  assert.match(el("loadoutExportSource").textContent, /Max credits\/hr solve, which sells Wire\./);
+  assert.equal(el("loadoutExportName").value, "Max credits");
+  exportDialog.close();
+});
+
+test("lines past eight and an out-of-date plan are both called out; Manual is never out of date", () => {
+  setState(factory(Array(10).fill(16)));
+  const plan = wirePlan(10); plan[9] = { job: { kind: "craft", res: "Bits", lvl: 1 } };
+  context._lastItemsCreditsRes = { mode: "items", targets: ["Wire", "Bits"], plan };
+  context.staleCauses = new Set(["lines"]);
+  clickResults("#btnExportCode", button("btnExportCode"));
+  const notes = el("loadoutExportNotes").children.map(c => c.textContent);
+  assert.equal(notes.length, 2);
+  assert.match(notes[0], /Line #10 is left out — a game loadout holds 8 crafters\./);
+  assert.match(notes[1], /out of date/);
+  exportDialog.close();
+  const st = factory([16]); st.manual[0] = { job: "Bits", lvl: 16, sell: false }; setState(st);
+  clickResults("#manualExportCode", button("manualExportCode"));
+  assert.deepEqual(el("loadoutExportNotes").children, []);
+  assert.equal(el("loadoutExportName").value, "Manual");
+  assert.equal(el("loadoutExportSource").textContent, "Your current Manual setup.");
+  context.staleCauses = new Set();
+  exportDialog.close();
+});
+
+test("a Project step button exports that stretch, named for its step and place", () => {
+  setState(factory([64, 64]));
+  context._lastProjectRes = stepRes();
+  const target = button("loadoutStep2_1", { "data-loadout-step": "2", "data-loadout-slice": "1",
+    "data-loadout-label": "Step 3 (Tower), from ~2:00 PM until ~3:00 PM" });
+  clickResults("[data-loadout-step]", target);
+  assert.equal(exportDialog.isOpen, true);
+  assert.equal(el("loadoutExportName").value, "Step 3.2");
+  assert.equal(el("loadoutExportSource").textContent, "Step 3 (Tower), from ~2:00 PM until ~3:00 PM.");
+  assert.equal(el("loadoutExportCode").value, "Step 3.2-10-amae-aeag-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa");
+  exportDialog.close();
+});
+
+test("Copy puts the code on the clipboard, and falls back to selecting it when the browser refuses", async () => {
+  setState(factory([16, 16, 16]));
+  context._lastItemsCreditsRes = { mode: "items", targets: ["Wire"], plan: wirePlan(3) };
+  clickResults("#btnExportCode", button("btnExportCode"));
+  let written = null;
+  context.navigator = { clipboard: { writeText: text => { written = text; return Promise.resolve(); } } };
+  await call("copyLoadoutCode");
+  assert.equal(written, el("loadoutExportCode").value);
+  assert.match(el("loadoutExportStatus").textContent, /Copied/);
+  assert.ok(el("loadoutExportStatus").classList.contains("is-good"));
+  for (const navigator of [{ clipboard: { writeText: () => Promise.reject(new Error("denied")) } }, {}]) {
+    context.navigator = navigator;
+    el("loadoutExportCode").selected = false;
+    await call("copyLoadoutCode");
+    assert.ok(el("loadoutExportCode").selected, "the code is selected for a manual copy");
+    assert.equal(fakeDocument.activeElement, el("loadoutExportCode"));
+    assert.match(el("loadoutExportStatus").textContent, /blocked the clipboard/);
+    assert.ok(el("loadoutExportStatus").classList.contains("is-bad"));
+  }
+  // A refused clipboard API still copies when the browser allows the older selection copy.
+  context.navigator = { clipboard: { writeText: () => Promise.reject(new Error("denied")) } };
+  fakeDocument.execCommand = command => command === "copy" && el("loadoutExportCode").selected;
+  el("loadoutExportCode").selected = false;
+  await call("copyLoadoutCode");
+  assert.match(el("loadoutExportStatus").textContent, /Copied/);
+  fakeDocument.execCommand = () => { throw new Error("unsupported"); };
+  await call("copyLoadoutCode");
+  assert.match(el("loadoutExportStatus").textContent, /blocked the clipboard/);
+  delete fakeDocument.execCommand;
+  el("loadoutExportName").dispatch("input");
+  assert.equal(el("loadoutExportStatus").textContent, "", "editing the name clears a stale copy status");
+  exportDialog.close();
+});
+
+/* ---- import window (Manual only) ---- */
+
+const EXAMPLE = "ingots-7-adaj-adaj-adah-adag-adaf-adae-aaaa-aaaa";
+let commits = 0, linesRendered = 0, confirmText = null;
+const acceptCommits = () => {
+  commits = 0; linesRendered = 0;
+  context.renderLines = () => { linesRendered++; };
+  context.commitResultMutation = (mutator, syncControls) => { commits++; mutator(api("S")); syncControls(true); return true; };
+};
+const answerConfirm = answer => { confirmText = null; context.confirm = text => { confirmText = text; return answer; }; };
+const openImport = () => clickResults("#manualImportCode", button("manualImportCode"));
+const paste = code => { el("loadoutImportCode").value = code; el("loadoutImportCode").dispatch("input"); };
+const previewText = () => el("loadoutImportPreview").children.map(child => child.text).join(" | ");
+
+test("Manual always offers Import game code, and nothing else does", () => {
+  const st = factory([512]); setState(st);
+  const bar = new FakeEl("div"); call("renderManualPresetBar", bar, [], null);
+  assert.ok(bar.children.some(c => c.id === "manualImportCode"));
+  const html = read("js/results.js") + read("js/events.js");
+  assert.ok(!html.includes("manualImportCode") && !html.includes("openLoadoutImport"), "only Manual opens the import window");
+});
+
+test("opening the window starts it empty, and a full preset list rules out saving", () => {
+  setState(factory([512]));
+  el("loadoutImportCode").value = "left over";
+  el("loadoutImportSave").checked = true;
+  openImport();
+  assert.equal(importDialog.isOpen, true);
+  assert.equal(el("loadoutImportCode").value, "");
+  assert.deepEqual(el("loadoutImportPreview").children, []);
+  assert.equal(el("loadoutImportApply").disabled, true);
+  assert.equal(el("loadoutImportSave").checked, false);
+  assert.equal(el("loadoutImportSave").disabled, false);
+  assert.equal(el("loadoutImportName").disabled, true);
+  assert.equal(el("loadoutImportPresetFull").hidden, true);
+  importDialog.close();
+  const full = factory([512]);
+  full.manualSaved = Array.from({ length: api("STATE_LIMITS").maxPresets }, (_, i) => ({ id: "p" + i, name: "Set " + i, config: [] }));
+  setState(full);
+  openImport();
+  assert.equal(el("loadoutImportSave").disabled, true);
+  assert.equal(el("loadoutImportPresetFull").hidden, false);
+  importDialog.close();
+});
+
+test("a malformed code says what is wrong and cannot be imported", () => {
+  setState(factory([512]));
+  openImport();
+  paste("ingots-7-adaj");
+  assert.match(previewText(), /8 crafters/);
+  assert.equal(el("loadoutImportApply").disabled, true);
+  paste("   ");
+  assert.deepEqual(el("loadoutImportPreview").children, []);
+  importDialog.close();
+});
+
+test("a valid code previews the setup, every line change and every crafter left idle", () => {
+  setState(factory([512, 64, 128, 64, 32]));
+  openImport();
+  paste("ingots-7-adaj-adaj-adah-adag-adaf-anaj-aaaa-adae");
+  const text = previewText();
+  assert.match(text, /Manual setup.*Line 1: Ingots 512×/);
+  assert.match(text, /Changes to your crafter lines.*Line 2 cap: 64× → 512×.*Adds line 8/);
+  assert.match(text, /Not in the planner.*Line 6: Pipes isn't in the planner/);
+  assert.equal(el("loadoutImportApply").disabled, false);
+  assert.equal(el("loadoutImportName").value, "ingots");
+  el("loadoutImportName").value = "my run";
+  el("loadoutImportName").dispatch("input");
+  paste("other-7-adaj-adaj-adah-adag-adaf-adae-aaaa-aaaa");
+  assert.equal(el("loadoutImportName").value, "my run", "a name the player typed is kept");
+  importDialog.close();
+});
+
+test("a code of crafters the planner cannot run is not called empty", () => {
+  setState(factory([512, 512]));
+  openImport();
+  paste("pipes-7-anaa-anaa-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa");
+  const text = previewText();
+  assert.ok(!/Every crafter in this code is empty/.test(text), text);
+  assert.match(text, /No crafter in this code runs a job the planner models, so every line will be idle\./);
+  assert.match(text, /Line 1: Pipes isn't in the planner/);
+  paste("empty-0-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa");
+  assert.match(previewText(), /Every crafter in this code is empty, so every line will be idle\./);
+  importDialog.close();
+});
+
+test("declining the line changes changes nothing", () => {
+  const st = factory([512, 64, 128, 64, 32]); setState(st);
+  const before = JSON.stringify(api("S"));
+  acceptCommits(); answerConfirm(false);
+  openImport();
+  paste("ingots-7-adaj-adaj-adah-adag-adaf-aaaa-aaaa-adae");
+  el("loadoutImportApply").dispatch("click");
+  assert.match(confirmText, /^Importing this code changes your crafter lines:\n• Line 2 cap: 64× → 512×\n• Adds line 6/);
+  assert.match(confirmText, /Are you sure\?$/);
+  assert.equal(commits, 0);
+  assert.equal(JSON.stringify(api("S")), before);
+  assert.equal(importDialog.isOpen, true);
+  importDialog.close();
+});
+
+test("accepting them imports lines, setup and mode in one edit, then closes", () => {
+  const st = factory([512, 64, 128, 64, 32]);
+  st.mode = "items"; st.manualSaved = [{ id: "pOld", name: "Old", config: [] }]; st.manualActiveId = "pOld";
+  setState(st);
+  acceptCommits(); answerConfirm(true);
+  openImport();
+  paste("ingots-7-adaj-adaj-adah-adag-adaf-aaaa-aaaa-adae");
+  el("loadoutImportApply").dispatch("click");
+  const S = api("S");
+  assert.ok(confirmText);
+  assert.equal(commits, 1);
+  assert.equal(linesRendered, 1, "the crafter lines card is redrawn");
+  assert.deepEqual(S.lines.map(l => l.max), [512, 512, 128, 64, 32, 512, 512, 512]);
+  assert.deepEqual(S.manual.map(m => m.job), ["Ingots", "Ingots", "Ingots", "Ingots", "Ingots", "Idle", "Idle", "Ingots"]);
+  assert.equal(S.mode, "manual");
+  assert.equal(S.manualActiveId, null);
+  assert.equal(S.manualSaved.length, 1);
+  assert.equal(importDialog.isOpen, false);
+  assert.equal(el("solveStat").textContent, "Imported “ingots” into Manual.");
+});
+
+test("a code that fits imports without asking, and can be kept as a named preset", () => {
+  setState(factory([512, 512, 128, 64, 32, 16]));
+  acceptCommits();
+  context.confirm = () => { throw new Error("nothing to confirm"); };
+  openImport();
+  paste(EXAMPLE);
+  el("loadoutImportSave").checked = true;
+  el("loadoutImportSave").dispatch("change", { target: el("loadoutImportSave") });
+  assert.equal(el("loadoutImportName").disabled, false);
+  el("loadoutImportName").value = "  Ingot farm  ";
+  el("loadoutImportCode").dispatch("keydown", { key: "Enter" });
+  const S = api("S");
+  assert.equal(commits, 1, "Enter in the code field imports");
+  assert.equal(S.manualSaved.length, 1);
+  assert.equal(S.manualSaved[0].name, "Ingot farm");
+  assert.equal(S.manualActiveId, S.manualSaved[0].id);
+  assert.deepEqual(S.manualSaved[0].config.map(c => c.lvl), [512, 512, 128, 64, 32, 16]);
+});
+
+test("a save the planner rejects leaves the window open and says nothing changed", () => {
+  setState(factory([512, 512, 128, 64, 32, 16]));
+  context.commitResultMutation = (mutator, syncControls) => { syncControls(false); return false; };
+  context.confirm = () => true;
+  openImport();
+  paste(EXAMPLE);
+  el("loadoutImportApply").dispatch("click");
+  assert.equal(importDialog.isOpen, true);
+  assert.match(el("loadoutImportStatus").textContent, /nothing changed/);
+  assert.ok(el("loadoutImportStatus").classList.contains("is-bad"));
+  importDialog.close();
+});
+
+(async () => {
+  let failed = 0;
+  for (const { name, fn } of tests) {
+    try { await fn(); console.log(`ok - ${name}`); }
+    catch (error) { failed++; console.error(`not ok - ${name}`); console.error(error.stack || error); }
+  }
+  if (failed) {
+    console.error(`\n${failed} loadout-ui test(s) failed`);
+    process.exitCode = 1;
+  } else console.log(`\n${tests.length} loadout-ui tests passed`);
+})();
