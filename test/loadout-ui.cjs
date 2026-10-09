@@ -61,7 +61,7 @@ const fakeDocument = {
   createElement: tag => new FakeEl(tag)
 };
 // The windows' selects and inputs, created up front so their tag is right.
-for (const [id, tag] of [["loadoutExportIcon", "select"], ["loadoutExportName", "input"], ["loadoutExportCode", "input"],
+for (const [id, tag] of [["loadoutExportName", "input"], ["loadoutExportCode", "input"],
   ["loadoutImportCode", "input"], ["loadoutImportName", "input"], ["loadoutImportSave", "input"], ["loadoutImportApply", "button"]])
   elements[id] = new FakeEl(tag, id);
 
@@ -96,6 +96,14 @@ const setState = state => { context.__next = state; api("S=__next"); };
 const [exportDialog, importDialog] = dialogs;
 const el = id => fakeDocument.getElementById(id);
 // A click inside #results, landing on the element that answers `selector`.
+// The icon picker: one <label> tile per game icon, holding its radio and its image.
+const iconTiles = () => el("loadoutExportIcon").children;
+const checkedIcon = () => iconTiles().findIndex(tile => tile.children[0].checked);
+const pickIcon = index => {
+  const radio = iconTiles()[index].children[0];
+  radio.checked = true;
+  el("loadoutExportIcon").dispatch("change", { target: radio });
+};
 const clickResults = (selector, target) => el("results").dispatch("click",
   { target: { closest: candidate => (candidate === selector ? target : null) } });
 
@@ -210,19 +218,70 @@ test("Max items: the window opens prefilled and the code follows the name and ic
   assert.equal(exportDialog.invoker, invoker);
   assert.match(el("loadoutExportSource").textContent, /last Max items\/hr solve/);
   assert.equal(el("loadoutExportName").value, "Max Wire");
-  assert.equal(el("loadoutExportIcon").value, "11");
-  assert.equal(el("loadoutExportIcon").options.length, 12);
+  assert.equal(checkedIcon(), 11);
+  assert.equal(iconTiles().length, 12);
   assert.equal(el("loadoutExportCode").value, "Max Wire-11-alae-alae-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa");
   el("loadoutExportName").value = "my-wire";
   el("loadoutExportName").dispatch("input");
   assert.equal(el("loadoutExportCode").value, "my wire-11-alae-alae-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa");
-  el("loadoutExportIcon").value = "3";
-  el("loadoutExportIcon").dispatch("change");
+  pickIcon(3);
   assert.equal(el("loadoutExportCode").value, "my wire-3-alae-alae-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa");
   el("loadoutExportName").value = " ";
   el("loadoutExportName").dispatch("input");
   assert.match(el("loadoutExportCode").value, /^Max Wire-3-/, "a blanked name falls back to the default");
   exportDialog.close();
+});
+
+// A picture's file is named for the icon it shows, so it is read from the icon table rather than
+// from a second list that could drift out of step with it.
+const iconFile = item => `loadout-${item.toLowerCase().replace(/ /g, "-")}.png`;
+const ICON_FILES = api("LOADOUT_ICONS").map(iconFile);
+
+test("the icon picker shows the game's twelve icons as radio tiles, in the game's order", () => {
+  setState(factory([16, 16, 16]));
+  context._lastItemsCreditsRes = { mode: "credits", bestItem: "Batteries", plan: wirePlan(3) };
+  clickResults("#btnExportCode", button("btnExportCode"));
+  const tiles = iconTiles();
+  assert.equal(tiles.length, 12);
+  tiles.forEach((tile, index) => {
+    const [radio, image] = tile.children;
+    assert.equal(tile.tagName, "LABEL");
+    assert.equal(radio.tagName, "INPUT");
+    assert.equal(radio.type, "radio");
+    assert.equal(radio.name, "loadoutExportIcon");
+    assert.equal(radio.value, String(index));
+    assert.equal(image.tagName, "IMG");
+    assert.equal(image.src, "assets/" + iconFile(api("LOADOUT_ICONS")[index]), "the picture is the one its icon id names");
+    assert.equal(image.alt, api("LOADOUT_ICONS")[index], "the image names the radio for a screen reader");
+    assert.equal(tile.title, api("LOADOUT_ICONS")[index], "hovering names the icon");
+  });
+  assert.equal(checkedIcon(), 6, "Batteries");
+  exportDialog.close();
+  // Opening again reuses the tiles and moves the selection.
+  context._lastItemsCreditsRes = { mode: "items", targets: ["Wire"], plan: wirePlan(3) };
+  clickResults("#btnExportCode", button("btnExportCode"));
+  assert.equal(iconTiles().length, 12);
+  assert.equal(checkedIcon(), 11);
+  assert.equal(iconTiles().filter(tile => tile.children[0].checked).length, 1);
+  exportDialog.close();
+});
+
+test("every icon image ships: in assets, in the hashed build, referenced exactly once by the page", () => {
+  const build = read("scripts/build-static.cjs");
+  const pageScripts = [...build.match(/const PAGE_SCRIPTS = \[([\s\S]*?)\];/)[1].matchAll(/"([^"]+)"/g)].map(m => read("js/" + m[1])).join("\n");
+  for (const file of ICON_FILES) {
+    assert.ok(fs.statSync(path.join(ROOT, "assets", file)).size > 0, file);
+    assert.match(build, new RegExp(`"${file.replace(/\./g, "\\.")}"`), file + " is a hashed build input");
+    assert.equal(pageScripts.split("assets/" + file).length - 1, 1, file + " is named once, so the build can swap in its hashed URL");
+  }
+});
+
+test("in a forced-colors theme the chosen icon is still marked", () => {
+  // Forced colors drop author border colours and box shadows, so the chosen tile needs a system colour.
+  const css = read("css/styles.css");
+  const forced = css.slice(css.indexOf("@media (forced-colors:active){"));
+  const block = forced.slice(0, forced.indexOf("\n}") + 2);
+  assert.match(block, /\.loadout-icon input:checked\+img\{[^}]*border[^}]*Highlight/);
 });
 
 test("Max credits names the item it sells", () => {

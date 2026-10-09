@@ -404,10 +404,8 @@
     <div class="modal-h"><h3 id="loadoutExportTitle">Game loadout code</h3><button class="iconbtn" title="Close" aria-label="Close game loadout code" data-dialog-close>&times;</button></div>
     <div class="modal-b" data-dialog-body>
       <p class="help" id="loadoutExportSource"></p>
-      <div class="loadout-fields">
-        <label class="loadout-field" for="loadoutExportName"><span>Loadout name</span><input type="text" id="loadoutExportName" maxlength="16" autocomplete="off" spellcheck="false"></label>
-        <label class="loadout-field" for="loadoutExportIcon"><span>Icon</span><select id="loadoutExportIcon"></select></label>
-      </div>
+      <label class="loadout-field" for="loadoutExportName"><span>Loadout name</span><input type="text" id="loadoutExportName" maxlength="16" autocomplete="off" spellcheck="false"></label>
+      <fieldset class="loadout-icon-field"><legend>Icon</legend><div class="loadout-icons" id="loadoutExportIcon"></div></fieldset>
       <label class="loadout-field" for="loadoutExportCode"><span>Code</span><input type="text" id="loadoutExportCode" class="loadout-code" readonly spellcheck="false"></label>
       <div id="loadoutExportNotes"></div>
       <p class="contrib-status" id="loadoutExportStatus" role="status" aria-live="polite"></p>

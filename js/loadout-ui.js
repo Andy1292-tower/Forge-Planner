@@ -7,7 +7,11 @@
    The buttons live inside #results, which is rebuilt on every render, so they are handled here by
    one delegated listener; each has a stable id for the dialog to hand focus back to. */
 const loadoutEl=id=>document.getElementById(id);
-let loadoutExportModel=null;
+let loadoutExportModel=null,loadoutExportIcon=0;
+// The game's icon images, by icon id. The release build swaps each path for its hashed URL.
+const LOADOUT_ICON_IMAGES=Object.freeze(["assets/loadout-bits.png","assets/loadout-concrete.png","assets/loadout-glass.png",
+  "assets/loadout-bricks.png","assets/loadout-gel.png","assets/loadout-reinforced-concrete.png","assets/loadout-batteries.png",
+  "assets/loadout-ingots.png","assets/loadout-plates.png","assets/loadout-rods.png","assets/loadout-frames.png","assets/loadout-wire.png"]);
 const loadoutExportDialog=dialogController.register({root:loadoutEl("loadoutExportModal"),
   panel:document.querySelector("#loadoutExportModal .modal"),opener:null,initialFocus:()=>loadoutEl("loadoutExportCopy")});
 function loadoutSay(id,message,tone){
@@ -21,14 +25,29 @@ function loadoutNotice(tone,text){
   note.style.fontSize="11.5px";
   return note;
 }
+/* One tile per icon, as the game shows them: the image is the whole tile. Each holds a real radio, so
+   arrow keys move between them, and the image's alt text names the choice. The tiles are built the
+   first time the window opens; the images load then too. */
+const loadoutIconRadios=[];
+function selectLoadoutIcon(icon){
+  const box=loadoutEl("loadoutExportIcon");
+  if(!loadoutIconRadios.length)LOADOUT_ICONS.forEach((item,index)=>{
+    const tile=domElement("label","loadout-icon"),radio=domElement("input"),image=domElement("img");
+    tile.title=item;
+    radio.type="radio";radio.name="loadoutExportIcon";radio.value=String(index);
+    image.src=LOADOUT_ICON_IMAGES[index];image.alt=item;
+    tile.appendChild(radio);tile.appendChild(image);box.appendChild(tile);
+    loadoutIconRadios.push(radio);
+  });
+  loadoutIconRadios.forEach((radio,index)=>{radio.checked=index===icon;});
+  loadoutExportIcon=icon;
+}
 // canBeStale: a solved plan outlives the inputs it was solved from; the Manual setup never does.
 function openLoadoutExport(model,source,invoker,canBeStale){
   loadoutExportModel=model;
   loadoutEl("loadoutExportSource").textContent=source;
   loadoutEl("loadoutExportName").value=model.name;
-  const icon=loadoutEl("loadoutExportIcon");
-  if(!icon.options.length)LOADOUT_ICONS.forEach((item,index)=>icon.appendChild(domOption(index,item,false)));
-  icon.value=String(model.icon);
+  selectLoadoutIcon(model.icon);
   const notes=[];
   if(model.omittedLines.length){
     const many=model.omittedLines.length>1;
@@ -43,7 +62,7 @@ function openLoadoutExport(model,source,invoker,canBeStale){
 function refreshLoadoutExportCode(){
   if(!loadoutExportModel)return;
   loadoutEl("loadoutExportCode").value=encodeLoadoutCode({name:loadoutName(loadoutEl("loadoutExportName").value)||loadoutExportModel.name,
-    icon:Number(loadoutEl("loadoutExportIcon").value),slots:loadoutExportModel.slots});
+    icon:loadoutExportIcon,slots:loadoutExportModel.slots});
   loadoutSay("loadoutExportStatus","");
 }
 /* Started from the click, which is the gesture the clipboard API requires. In-app browsers often
@@ -64,7 +83,10 @@ function copyLoadoutCode(){
   });
 }
 loadoutEl("loadoutExportName").addEventListener("input",refreshLoadoutExportCode);
-loadoutEl("loadoutExportIcon").addEventListener("change",refreshLoadoutExportCode);
+loadoutEl("loadoutExportIcon").addEventListener("change",e=>{
+  const icon=Number(e.target&&e.target.value);
+  if(Number.isInteger(icon)&&icon>=0&&icon<LOADOUT_ICONS.length){loadoutExportIcon=icon;refreshLoadoutExportCode();}
+});
 loadoutEl("loadoutExportCopy").addEventListener("click",copyLoadoutCode);
 loadoutEl("loadoutExportCode").addEventListener("focus",e=>e.target.select());
 

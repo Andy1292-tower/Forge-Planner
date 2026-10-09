@@ -807,15 +807,23 @@ footer a:hover,.contrib-help a:hover{text-decoration:underline}
 .step-list li{font-size:12.5px;line-height:1.5;color:var(--ink)}
 /* Game loadout code windows and the per-step code buttons */
 .loadout-modal{max-width:560px}
-.loadout-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin:10px 0}
 .loadout-field{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--ink2);margin-bottom:8px}
-.loadout-field input,.loadout-field select{width:100%}
+.loadout-field input{width:100%}
+.loadout-icon-field{border:0;margin:0 0 8px;padding:0;min-width:0}
+.loadout-icon-field legend{padding:0;margin-bottom:4px;font-size:11.5px;color:var(--ink2)}
+.loadout-icons{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.loadout-icon{position:relative;display:block;cursor:pointer}
+.loadout-icon input{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
+.loadout-icon img{display:block;width:100%;aspect-ratio:4/3;object-fit:contain;border:2px solid var(--line);border-radius:8px}
+.loadout-icon:hover img{border-color:var(--copper)}
+.loadout-icon input:checked+img{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber)}
+.loadout-icon input:focus-visible+img{outline:2px solid var(--amber);outline-offset:2px}
 .loadout-code{font-family:"JetBrains Mono",monospace}
 .loadout-list{margin:6px 0 0;padding-left:18px}
 .loadout-save{display:flex;align-items:center;gap:8px;margin:12px 0 6px;font-size:12px}
 .step-codes{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 8px}
 button.btn.step-code{padding:4px 10px;font-size:11px}
-@media(max-width:560px){.loadout-fields{grid-template-columns:1fr}}
+@media(max-width:560px){.loadout-icons{grid-template-columns:repeat(4,minmax(0,1fr))}}
 .step-clock{font-family:"JetBrains Mono",monospace;font-size:11.5px;font-weight:600;color:var(--amber);white-space:nowrap}
 .step-seg{padding-left:16px;margin-top:3px;text-indent:-12px}
 .step-seg:first-of-type{margin-top:4px}
@@ -899,6 +907,7 @@ button.btn.step-code{padding:4px 10px;font-size:11px}
   .btn,.iconbtn,.tip,.pchev,input,select,.card,.proj,.table-scroll{border-style:solid}
   :focus-visible{outline:3px solid Highlight!important}
   .modesw button[aria-pressed="true"],.inputs-tabs button[aria-selected="true"]{border:2px solid Highlight;color:ButtonText;background:ButtonFace}
+  .loadout-icon input:checked+img{border:3px solid Highlight}
   .spinner{border-color:CanvasText;border-top-color:Highlight}
 }
 @media(max-width:260px){
