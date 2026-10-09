@@ -6,6 +6,7 @@
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
+const vm = require("vm");
 
 process.env.GITHUB_TOKEN = process.env.GITHUB_TOKEN || "test-github-token";
 process.env.FORGE_SUBMIT_SECRET = "test-submit-secret";
@@ -461,6 +462,85 @@ function pageContract() {
   }
 }
 
+/* ---------- the form, driven with a fake page ---------- */
+
+function feedbackHarness({ save = { schemaVersion: 9, lines: [] }, saveError = null, saveAttached = true } = {}) {
+  const elements = {};
+  const element = id => {
+    const node = {
+      id, value: "", disabled: false, hidden: false, title: "", textContent: "", handlers: {},
+      classList: { toggle() {}, add() {}, remove() {} },
+      addEventListener(type, handler) { (this.handlers[type] = this.handlers[type] || []).push(handler); },
+      appendChild(child) { this.textContent += child.textContent; },
+      querySelector() { return {}; },
+    };
+    elements[id] = node;
+  };
+  for (const id of [
+    "reportModal", "reportForm", "reportKind", "reportTitle", "reportBody", "reportContact", "reportWebsite",
+    "reportGithub", "reportAnon", "reportHelp", "reportStatus", "reportSaveNote", "btnReport",
+  ]) element(id);
+  elements.reportKind.value = "bug";
+  elements.reportTitle.value = "Solver hangs";
+  elements.reportBody.value = goodBody;
+
+  const seen = { downloads: [], opened: [], tabs: [], posts: [], copied: [], dialog: null };
+  const context = vm.createContext({
+    console, JSON, Math, Date, Promise, Number, String, Error, setTimeout, encodeURIComponent,
+    document: {
+      getElementById: id => elements[id] || null,
+      createElement: () => ({ textContent: "" }),
+    },
+    navigator: { clipboard: { writeText: async text => { seen.copied.push(text); } } },
+    window: {
+      // Like a browser: asking for "noopener" opens the tab but hands back no window.
+      open: (url, target, features = "") => {
+        seen.opened.push(url);
+        const tab = { opener: "the planner" };
+        seen.tabs.push(tab);
+        return /noopener|noreferrer/.test(features) ? null : tab;
+      },
+    },
+    dialogController: { register: options => { seen.dialog = options; return {}; } },
+    exportableSave: () => (saveError ? { ok: false, errors: [saveError] } : { ok: true, state: save }),
+    downloadJson: (name, value) => { seen.downloads.push({ name, value }); },
+    fetch: async (url, options = {}) => {
+      if ((options.method || "GET") === "GET") {
+        return { ok: true, json: async () => ({ token: "test-token", minWaitMs: 0 }) };
+      }
+      seen.posts.push(JSON.parse(options.body));
+      return {
+        ok: true,
+        json: async () => ({ ok: true, url: "https://github.com/o/r/issues/9", number: 9, saveAttached }),
+      };
+    },
+  });
+  const source = fs.readFileSync(path.join(root, "js", "feedback.js"), "utf8");
+  vm.runInContext(source, context, { filename: path.join(root, "js", "feedback.js") });
+  return {
+    elements,
+    seen,
+    context,
+    async click(id) { for (const handler of elements[id].handlers.click || []) await handler(); },
+    chooseKind(kind) {
+      elements.reportKind.value = kind;
+      for (const handler of elements.reportKind.handlers.change || []) handler();
+    },
+    status: () => elements.reportStatus.textContent,
+    prefilledBody: () => new URL(seen.opened[0]).searchParams.get("body"),
+  };
+}
+
+async function formContract() {
+  /* An opened tab is not mistaken for a blocked one, and GitHub's page gets no handle back to
+   * the planner. */
+  const plain = feedbackHarness();
+  plain.chooseKind("feature");
+  await plain.click("reportGithub");
+  assert.match(plain.status(), /Opened a prefilled issue/, `an opened tab was reported as: ${plain.status()}`);
+  assert.strictEqual(plain.seen.tabs[0].opener, null, "the GitHub tab can still reach the planner");
+}
+
 async function main() {
   const checks = [
     ["submit token", tokenContract],
@@ -473,6 +553,7 @@ async function main() {
     ["app auth", appAuthContract],
     ["unconfigured", unconfiguredContract],
     ["page", pageContract],
+    ["form", formContract],
   ];
   let failed = 0;
   for (const [name, check] of checks) {

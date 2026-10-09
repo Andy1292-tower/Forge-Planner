@@ -100,8 +100,11 @@ function reportViaGithub(){
    * what a URL carries, so the details go to the clipboard rather than being cut. The
    * write is started from this click, which is the gesture the clipboard API requires. */
   const copying=target.truncated?reportCopy(values.body):null;
-  const opened=window.open(target.url,"_blank","noopener");
+  /* Asking for "noopener" makes window.open return null even when the tab opens, which reads
+   * the same as a blocked pop-up. The handle is cut here instead. */
+  const opened=window.open(target.url,"_blank");
   if(!opened){reportSay("Your browser blocked the new tab. Allow pop-ups for this page and try again.","bad");return;}
+  opened.opener=null;
   if(target.truncated){
     Promise.resolve(copying).then(copied=>{
       reportSay(copied

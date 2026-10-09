@@ -21,7 +21,8 @@ const CHANGELOG=[
     ],
     Fixed:[
       "The planner fits a phone screen instead of zooming out and cutting off the right edge of every card and dialog.",
-      "With Expansion Essentials VII ticked, Bricks at 2× and above were costed up to a quarter short on Concrete, so a plan with Bricks lines could show Concrete in surplus while the game ran it at a loss. Bricks now cost what the game charges at every compression level."
+      "With Expansion Essentials VII ticked, Bricks at 2× and above were costed up to a quarter short on Concrete, so a plan with Bricks lines could show Concrete in surplus while the game ran it at a loss. Bricks now cost what the game charges at every compression level.",
+      "Post with my GitHub account opened the issue, then said your browser had blocked the new tab."
     ]}},
   {version:"2026.09.22",date:"2026-09-22",groups:{
     Added:[
