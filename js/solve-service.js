@@ -82,7 +82,11 @@ function dailySolveConditionKey(state){
     version:DAILY_SOLVE_CACHE_VERSION,mode,
     lines,maxTurbo:source.maxTurbo,dupe:source.dupe,margin:source.margin,
     solveBudget:source.solveBudget,baseTime:source.baseTime||{},
-    prodCost:source.prodCost||{},forgie:source.forgie||{},minedIncome:source.minedIncome||{}
+    /* infusion earns its place beside prodCost, not behind it: Expansion Essentials VII already
+       shows up in the derived costs, but Dupe Day's ceiling and the halved mined costs do not.
+       Without the flags here a toggle serves a plan cached under the other setting. */
+    prodCost:source.prodCost||{},infusion:source.infusion||{},
+    forgie:source.forgie||{},minedIncome:source.minedIncome||{}
   };
   if(mode==="credits")projected.sellPrice=source.sellPrice||{};
   // The mix mode reads a different number off each target, so two states with identical `targets`

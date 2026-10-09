@@ -244,11 +244,13 @@ test("state value validation rejects every representative numeric boundary trans
     state => { state.lines[0].spx = 0; },
     state => { state.lines[0].turbo = 1e6 + 1; },
     state => { state.maxTurbo = -1; },
+    // The capped ceiling, with Dupe Day off — which is what a save without the upgrade holds.
     state => { state.dupe = 100.1; },
+    // And the uncapped one has a ceiling of its own that the upgrade does not lift.
+    state => { state.infusion = { ee7: false, dupeDay: true };state.dupe = 1e6 + 1; },
     state => { state.margin = 20.1; },
     state => { state.solveBudget = 60000.5; },
     state => { state.baseTime.Ingots = 0; },
-    state => { state.prodCost.Glass.Bits[1] = -1; },
     state => { state.sellPrice.Frames = "not a number"; },
     state => { state.forgie.Frames = -1; },
     state => { state.minedIncome.Vespium.resourcesTradingPerSec = {}; },
@@ -281,8 +283,10 @@ test("source contracts enforce parse-before-mutation and persisted accepted fiel
     const handler = new RegExp(`commitFieldDraft\\([^\\n]*FIELD_SCHEMA\\.${rule}[^\\n]*\\);[\\s\\S]{0,240}result\\.committed[^\\n]*save\\(\\)`);
     assert.match(events, handler, `${rule} must persist its accepted value immediately`);
   }
-  assert.match(events, /const rule=d\.fld==="baseT"\?FIELD_SCHEMA\.baseTime:FIELD_SCHEMA\.recipeCost;[\s\S]{0,700}result\.committed\)\{save\(\)/,
-    "base time and recipe costs must persist accepted values immediately");
+  assert.match(events, /d\.fld!=="baseT"\)return;[\s\S]{0,400}FIELD_SCHEMA\.baseTime[\s\S]{0,400}result\.committed\)\{save\(\)/,
+    "base times must persist accepted values immediately");
+  assert.doesNotMatch(events, /data-fld="cost"|st\.prodCost\[/,
+    "recipe costs are derived and read-only: nothing may commit a typed cost back into state");
   assert.doesNotMatch(css, /\.field-error:empty\s*\{[^}]*display\s*:\s*none/,
     "empty live regions must exist in the accessibility tree before their text changes");
 });

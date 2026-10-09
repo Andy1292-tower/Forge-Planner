@@ -10,6 +10,15 @@
  * left out rather than padded in.
  */
 const CHANGELOG=[
+  {version:"2026.09.22",date:"2026-09-22",groups:{
+    Added:[
+      "Compression levels 15 and 16 — 32.77k× and 65.54k×. Set a crafter's cap to either and the planner costs, times and schedules the tier like every one below it; the cost table under Crafting stats runs up to them too.",
+      "Infusion Upgrades, from the new button on the top bar. Tick the ones you have bought and the planner works from them. Expansion Essentials VII halves every crafting cost — materials, the Vespium behind Gel and the Hydracite behind Batteries — rounding each cost up and never below 1. Dupe Day lets the dupe % field go past 100%, where a crafter starts rolling a third copy instead of a second, then a fourth."
+    ],
+    Changed:[
+      "Recipe costs under Crafting stats are shown rather than entered. They are the game's own cost curve and now follow your Infusion Upgrades, so there is nothing left to keep in step by hand. Base times are still yours to set, and the calibration tool is unchanged.",
+      "Any recipe costs you had typed over are replaced by the game's figures."
+    ]}},
   {version:"2026.09.04",date:"2026-09-04",groups:{
     Added:["What's new: the release notes for every version, opened from the update notice or from the footer. Entries you have not read yet are marked the first time you open them."],
     Fixed:["Max items/hr under-reported a single checked output. Checking one output could return less of it than checking the same output alongside another the factory already covered for free."]}},

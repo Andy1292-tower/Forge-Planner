@@ -53,7 +53,12 @@ const FIELD_SCHEMA=Object.freeze({
   lineSpeed:_field("number",1,{min:1e-6,max:1e9,allowBlank:false,notation:"decimal",inputMode:"decimal",label:"line speed"}),
   turbo:_field("number",0,{min:0,max:1e6,allowBlank:false,notation:"decimal",inputMode:"decimal",label:"turbo stacks"}),
   maxTurbo:_field("number",_FIELD_DEFAULTS.maxTurbo,{min:0,max:1e6,allowBlank:false,notation:"decimal",inputMode:"decimal",label:"maximum turbo stacks"}),
+  /* Two ceilings, picked between by dupeRule(). 100% is every craft duplicating, which is where
+     the stat stops until Dupe Day: past it the surplus becomes a chance at x3, then x4, and on
+     indefinitely. 1e6 matches maxTurbo — a configuration field keeps a range (see the header),
+     and dupeMult() is linear, so no value inside it needs different arithmetic. */
   dupe:_field("number",_FIELD_DEFAULTS.dupe,{min:0,max:100,allowBlank:false,notation:"decimal",inputMode:"decimal",label:"duplication chance"}),
+  dupeUncapped:_field("number",_FIELD_DEFAULTS.dupe,{min:0,max:1e6,allowBlank:false,notation:"decimal",inputMode:"decimal",label:"duplication chance"}),
   margin:_field("number",_FIELD_DEFAULTS.margin,{min:0,max:20,allowBlank:false,notation:"decimal",inputMode:"decimal",label:"May-work margin"}),
   solveBudget:_field("integer",_FIELD_DEFAULTS.solveBudget,{min:200,max:60000,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"solve time in milliseconds"}),
   baseTime:_field("number",null,{min:1e-6,max:1e15,allowBlank:false,notation:"decimal",inputMode:"decimal",label:"base craft time"}),
@@ -95,6 +100,12 @@ const FIELD_SCHEMA=Object.freeze({
   timestamp:_field("number",null,{min:0,max:Number.MAX_SAFE_INTEGER,allowBlank:true,notation:"decimal",inputMode:"numeric",label:"time"})
 });
 
+/* The duplication ceiling depends on an Infusion Upgrade, so every validator, every draft commit
+   and the input's own max attribute have to ask the same question. They all come through here. */
+function dupeRule(state){
+  const flags=state&&state.infusion;
+  return flags&&flags.dupeDay?FIELD_SCHEMA.dupeUncapped:FIELD_SCHEMA.dupe;
+}
 function _fieldNumber(value){
   if(typeof value!=="number"||!Number.isFinite(value))return null;
   return value;

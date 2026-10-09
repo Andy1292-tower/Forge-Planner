@@ -207,7 +207,7 @@ document.getElementById("maxTurbo").addEventListener("input",e=>{
   if(result.committed){refreshLineNotes();markStale();}
 });
 document.getElementById("dupe").addEventListener("input",e=>{
-  const result=commitFieldDraft(e.target,FIELD_SCHEMA.dupe,S.dupe,(st,value)=>{st.dupe=value;});
+  const result=commitFieldDraft(e.target,dupeRule(S),S.dupe,(st,value)=>{st.dupe=value;});
   if(result.committed)markStale();
 });
 
@@ -299,14 +299,10 @@ document.getElementById("targetPresetBar").addEventListener("click",e=>{
   if(button.id==="targetUncheckAll")uncheckAllTargets();
 });
 
+// Base times only. Recipe costs are derived and rendered as text — there is nothing to commit.
 document.getElementById("recipes").addEventListener("input",e=>{
-  const d=e.target.dataset;if(!d.res)return;
-  const rule=d.fld==="baseT"?FIELD_SCHEMA.baseTime:FIELD_SCHEMA.recipeCost;
-  const previous=d.fld==="baseT"?S.baseTime[d.res]:S.prodCost[d.res][d.in][+d.lv];
-  const result=commitFieldDraft(e.target,rule,previous,(st,value)=>{
-    if(d.fld==="baseT")st.baseTime[d.res]=value;
-    else st.prodCost[d.res][d.in][+d.lv]=value;
-  });
+  const d=e.target.dataset;if(!d.res||d.fld!=="baseT")return;
+  const result=commitFieldDraft(e.target,FIELD_SCHEMA.baseTime,S.baseTime[d.res],(st,value)=>{st.baseTime[d.res]=value;});
   if(result.committed){save();scheduleSolve();}
 });
 
@@ -533,6 +529,43 @@ document.getElementById("forgieRows").addEventListener("input",e=>{
   if(result.committed){save();scheduleSolve();}
 });
 
+/* ---------- Infusion Upgrades modal ---------- */
+const INFUSION_LABELS=Object.freeze({ee7:"Expansion Essentials VII",dupeDay:"Dupe Day"});
+function renderInfusion(){
+  INFUSION_KEYS.forEach(key=>{
+    const box=document.querySelector(`[data-infusion="${key}"]`);
+    if(box)box.checked=!!S.infusion[key];
+  });
+  syncDupeField();
+}
+const infusionDialog=dialogController.register({root:document.getElementById("infusionModal"),panel:document.querySelector("#infusionModal .modal"),opener:document.getElementById("btnInfusion"),initialFocus:()=>document.getElementById("infEe7"),onOpen:renderInfusion});
+function openInfusion(invoker){infusionDialog.open(invoker);}
+function closeInfusion(){infusionDialog.close();}
+/* The dupe input's ceiling is Dupe Day's to set, so the attribute is written from the same rule the
+   validator uses rather than being fixed in the markup. Turning the upgrade off pulls a value that
+   outlived it back inside the ceiling, so the field never displays a number the next save rejects. */
+function syncDupeField(){
+  const input=document.getElementById("dupe");if(!input)return;
+  const rule=dupeRule(S);
+  applyFieldInputAttributes(input,rule);
+  if(S.dupe>rule.max){
+    mutateState(st=>{st.dupe=rule.max;});
+    markStale();
+  }
+  input.value=String(S.dupe??rule.defaultValue);
+}
+document.getElementById("infusionModal").addEventListener("change",e=>{
+  const key=e.target.dataset.infusion;if(!key||!INFUSION_KEYS.includes(key))return;
+  mutateState(st=>{st.infusion[key]=!!e.target.checked;});
+  /* Expansion Essentials VII rewrites the derived cost table, which normalize() rebuilds on save,
+     so the recipe cards have to be redrawn from the state that comes back out of it. */
+  syncDupeField();
+  save();
+  renderRecipes();
+  renderInputState();
+  scheduleSolve();
+});
+
 /* ---------- mined resources modal ---------- */
 const btnMined=document.getElementById("btnMined");
 const minedDialog=dialogController.register({root:document.getElementById("minedModal"),panel:document.querySelector("#minedModal .modal"),opener:btnMined,initialFocus:()=>document.getElementById("minedRocksTrading"),onOpen:renderMinedResources});
@@ -631,9 +664,15 @@ function renderInputState(){
   // Via minedBudgetHr so the badge keeps working as income sources are added. Every mined resource
   // the player declares an income for is named, including Rocks, which no craft budgets but which
   // Max credits/hr ranks — the modal collects it, so the badge has to report it.
+  const active=INFUSION_KEYS.filter(key=>S.infusion&&S.infusion[key]);
+  seg("btnInfusion","stInfusion",active.length>0,
+    active.length?active.map(key=>INFUSION_LABELS[key]).join(" · "):"None active",
+    active.length?active.length+" active":"None",
+    "Infusion Upgrades — "+(active.length?active.map(key=>INFUSION_LABELS[key]).join(" and ")+" active":"none active"));
+
   const mined=MINED_INCOME_RESOURCES.filter(r=>minedBudgetHr(r).gt(DEC_ZERO)).map(minedDisplayName);
   seg("btnMined","stMined",mined.length>0,
-    mined.length?mined.join(" · "):"No income set",
+    mined.length?mined.map(name=>name==="Worthless Rocks"?"Rocks":name).join(" · "):"No income set",
     mined.length>1?plural(mined.length,"income"):mined.length?mined[0]:"None set",
     "Mined resources — "+(mined.length?mined.join(" and ")+" income set":"nothing set"));
 }
@@ -688,14 +727,13 @@ function initCalib(){
 function renderAll(){
   renderModeSwitch();renderInputState();
   renderLines();renderTargets();renderMinedResources();renderRecipes();renderResults();
-  const margin=document.getElementById("margin"),maxTurbo=document.getElementById("maxTurbo"),dupe=document.getElementById("dupe");
+  const margin=document.getElementById("margin"),maxTurbo=document.getElementById("maxTurbo");
   applyFieldInputAttributes(margin,FIELD_SCHEMA.margin,{step:0.5});
   applyFieldInputAttributes(maxTurbo,FIELD_SCHEMA.maxTurbo);
-  applyFieldInputAttributes(dupe,FIELD_SCHEMA.dupe);
   margin.value=String(S.margin??FIELD_SCHEMA.margin.defaultValue);
   document.getElementById("marginv").textContent=fmt(S.margin??FIELD_SCHEMA.margin.defaultValue,1)+"%";
   maxTurbo.value=String(S.maxTurbo??FIELD_SCHEMA.maxTurbo.defaultValue);
-  dupe.value=String(S.dupe??FIELD_SCHEMA.dupe.defaultValue);
+  syncDupeField();
 }
 const initialState=initializeState(renderAll);
 initCalib();

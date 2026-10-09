@@ -309,21 +309,21 @@ function nonFinite(value, at, found, depth) {
   check("...and a real cost still divides exactly as a float",
     rate(new Dec("478296900000"), 2) === 478296900000 / 2, String(rate(new Dec("478296900000"), 2)));
 
-  vm.runInContext(`
-    S = normalize(defaults());
-    S.mode = "project";
-    S.lines = [{max:64,spx:20,turbo:0},{max:64,spx:18,turbo:0}];
-    LEVELS.forEach(L => { S.prodCost.Glass.Bits[L] = parseGameNum("1e400"); });
-    S.projects = [{id:"g",name:"Glass job",catId:"",on:true,from:1,to:1,done:0,prio:null,
-      levels:[{costs:[{item:"Glass",qty:parseGameNum("5000")}]}]}];
-    normalize(S); syncManual(S);
-  `, context);
-  const freeCraft = api("optimize")();
-  const glassEntries = ((freeCraft.phases || [])[0] || {}).plan || [];
-  const craftsGlass = glassEntries.some(line => (line.entries || []).some(e => e.item === "Glass"));
-  check("a craft whose input cost cannot be counted is not scheduled as free",
-    !craftsGlass && !freeCraft.feasible,
-    "craftsGlass=" + craftsGlass + " feasible=" + freeCraft.feasible);
+  /* A recipe cost can no longer reach that ceiling from the outside: the table is derived rather
+     than typed, so nothing a player does puts an unrepresentable number in it. What keeps the
+     guard above honest is therefore the size of the derived table itself — the most expensive
+     cell, under either Infusion Upgrade setting, has to stay somewhere a float can divide. */
+  const derivedRatesAreFinite = flags => {
+    const table = api("derivedProdCost")({ infusion: flags });
+    return api("PRODUCTS").every(product => api("RECIPE")[product].inputs.every(input =>
+      api("LEVELS").every(level => {
+        const perSecond = rate(table[product][input][level], 1);
+        return perSecond !== null && Number.isFinite(perSecond * 3600);
+      })));
+  };
+  check("every derived recipe cost stays inside what a float can count",
+    derivedRatesAreFinite({ ee7: false }) && derivedRatesAreFinite({ ee7: true }),
+    "plain=" + derivedRatesAreFinite({ ee7: false }) + " ee7=" + derivedRatesAreFinite({ ee7: true }));
 
   // (b) Drawable stock past the float ceiling must not become an infinite LP coefficient.
   const coefficient = api("finiteCoefficient");
