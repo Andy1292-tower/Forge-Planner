@@ -177,6 +177,8 @@ function displayedLineSpeed(row){return Math.round(lineSpeed(row)*100)/100;}
 function dupeChance(){return Math.max(0,num(S.dupe)||0);}
 function dupeMult(){return 1+dupeChance()/100;}
 const newId=()=>"p"+Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36);
+// A crafter line as Add line creates it, before the player enters its real cap and speed.
+function newCrafterLine(){return {max:512,spx:1,turbo:0};}
 function fmtDuration(h){
   if(!isFinite(h)||h<=0)return "—";
   let s=Math.round(h*3600);

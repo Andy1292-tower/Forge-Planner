@@ -176,7 +176,7 @@ document.getElementById("lines").addEventListener("click",e=>{
   if(d!==undefined&&S.lines.length>1)commitLineStructureEdit(st=>{st.lines.splice(+d,1);st.manual.splice(+d,1);syncManual(st);},true);
 });
 document.getElementById("btnAddLine").addEventListener("click",()=>{
-  commitLineStructureEdit(st=>{st.lines.push({max:512,spx:1,turbo:0});syncManual(st);},true);
+  commitLineStructureEdit(st=>{st.lines.push(newCrafterLine());syncManual(st);},true);
 });
 // The inverse of the projection the line table displays: each line's entered reading becomes the
 // speed it was already being solved at (lineSpeed), and its stacks become the global maximum. The

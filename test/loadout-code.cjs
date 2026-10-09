@@ -298,6 +298,118 @@ for (const lineMode of ["split", "static"]) test(`a real ${lineMode} Project pla
   if (lineMode === "split") assert.ok(codes > steps, "Line switching changes jobs partway through a step");
 });
 
+/* ---- import ---- */
+
+const parse = code => call("parseLoadoutCode", code);
+const factory = maxes => {
+  const st = plain(call("defaults"));
+  st.lines = maxes.map(line);
+  call("syncManual", st);
+  return st;
+};
+
+test("Add line and an import's new lines start from the same crafter", () => {
+  assert.deepEqual(plain(call("newCrafterLine")), { max: 512, spx: 1, turbo: 0 });
+  const events = fs.readFileSync(path.join(ROOT, "js/events.js"), "utf8");
+  assert.match(events, /st\.lines\.push\(newCrafterLine\(\)\)/, "Add line uses the shared default");
+});
+
+test("a code that fits changes no crafter line", () => {
+  const st = factory([512, 512, 128, 64, 32, 16]);
+  const plan = call("planLoadoutImport", st, parse(EXAMPLE));
+  assert.equal(plan.changesLines, false);
+  assert.deepEqual(plain(plan.lines), plain(st.lines));
+  assert.deepEqual(plain(plan.manual.map(m => m.job)), Array(6).fill("Ingots"));
+});
+
+test("a level above a cap raises the cap, and busy crafters past the last line add lines", () => {
+  const st = factory([512, 64, 128, 64, 32]);
+  const plan = call("planLoadoutImport", st, parse("x-7-adaj-adaj-adah-adag-adaf-aaaa-aaaa-adae"));
+  assert.deepEqual(plain(plan.capRaises), [{ line: 2, from: 64, to: 512 }]);
+  assert.deepEqual(plain(plan.addedLines),
+    [{ line: 6, max: 512, spx: 1 }, { line: 7, max: 512, spx: 1 }, { line: 8, max: 512, spx: 1 }]);
+  assert.equal(plan.changesLines, true);
+  assert.deepEqual(plain(plan.manual.map(m => m.job)),
+    ["Ingots", "Ingots", "Ingots", "Ingots", "Ingots", "Idle", "Idle", "Ingots"]);
+  assert.deepEqual(plain(st.lines.map(l => l.max)), [512, 64, 128, 64, 32], "planning leaves state alone");
+});
+
+test("an added line keeps the Add line cap unless the code runs it higher", () => {
+  const plan = call("planLoadoutImport", factory([16]), parse("x-0-aaaa-abaq-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa"));
+  assert.deepEqual(plain(plan.addedLines), [{ line: 2, max: 65536, spx: 1 }]);
+  assert.deepEqual(plain(plan.capRaises), []);
+});
+
+test("planner lines past eight are set idle, and nothing is left marked for sale", () => {
+  const st = factory(Array(10).fill(16));
+  st.manual = st.lines.map(() => ({ job: "Bits", lvl: 16, sell: true }));
+  const plan = call("planLoadoutImport", st, parse("x-0-abae-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa"));
+  assert.deepEqual(plain(plan.manual.map(m => m.job)), ["Bits", ...Array(9).fill("Idle")]);
+  assert.ok(plan.manual.every(m => m.sell === false));
+  assert.match(call("loadoutImportNotes", plan).idledLines, /Lines 9–10/);
+  assert.equal(call("loadoutImportNotes", call("planLoadoutImport", factory([16]), parse(EXAMPLE))).idledLines, null);
+});
+
+test("an applied import is a state the validator accepts, with or without a preset", () => {
+  for (const preset of [null, "ingots run"]) {
+    const st = factory([512, 64, 128, 64, 32]);
+    st.manualSaved = [{ id: "pOld", name: "Old", config: [] }];
+    st.manualActiveId = "pOld";
+    call("applyLoadoutImport", st, call("planLoadoutImport", st, parse("x-7-adaj-adaj-adah-adag-adaf-aaaa-aaaa-adae")), preset);
+    assert.equal(st.mode, "manual");
+    assert.equal(st.lines.length, 8);
+    assert.equal(st.lines[1].max, 512);
+    assert.equal(st.manual.length, 8);
+    assert.equal(st.manual[7].job, "Ingots");
+    assert.equal(st.manual[5].lvl, 512, "an idle line sits at its cap, as syncManual keeps it");
+    if (preset) {
+      assert.equal(st.manualSaved.length, 2);
+      assert.equal(st.manualSaved[1].name, preset);
+      assert.equal(st.manualActiveId, st.manualSaved[1].id);
+      assert.deepEqual(plain(st.manualSaved[1].config), plain(st.manual));
+    } else {
+      assert.equal(st.manualSaved.length, 1);
+      assert.equal(st.manualActiveId, null, "the old preset's Update button must not offer to overwrite it");
+    }
+    const validated = call("validateAndMigrate", plain(st));
+    assert.equal(validated.ok, true, (validated.errors || []).join("; "));
+  }
+});
+
+test("the preview and the confirmation name every change", () => {
+  const st = factory([512, 64, 128, 64, 32]);
+  const plan = call("planLoadoutImport", st, parse("x-7-adaj-adaj-adah-adag-adaf-anaj-aaaa-adae"));
+  const notes = call("loadoutImportNotes", plan);
+  assert.deepEqual(plain(notes.jobs.slice(0, 2)), ["Line 1: Ingots 512×", "Line 2: Ingots 512×"]);
+  assert.deepEqual(plain(notes.lineChanges), ["Line 2 cap: 64× → 512×",
+    "Adds line 6 (cap 512×, speed 1×) — set its real speed under Crafter lines",
+    "Adds line 7 (cap 512×, speed 1×) — set its real speed under Crafter lines",
+    "Adds line 8 (cap 512×, speed 1×) — set its real speed under Crafter lines"]);
+  assert.deepEqual(plain(notes.unmodelled), ["Line 6: Pipes isn't in the planner, so the line is left idle."]);
+  const text = call("loadoutImportConfirmText", plan);
+  assert.match(text, /^Importing this code changes your crafter lines:/);
+  for (const change of notes.lineChanges) assert.ok(text.includes("• " + change), change);
+  assert.match(text, /Are you sure\?$/);
+  const unknown = call("loadoutImportNotes", call("planLoadoutImport", st, parse("x-0-auaj-adar-adba-aaaa-aaaa-aaaa-aaaa-aaaa")));
+  assert.deepEqual(plain(unknown.unmodelled), [
+    "Line 1: the game recipe there isn't one the planner knows, so the line is left idle.",
+    "Line 2: compression level 17 is above the planner's highest (level 16, 65.54k×), so the line is left idle.",
+    "Line 3: its compression level is above the planner's highest (level 16, 65.54k×), so the line is left idle."]);
+  // Past the player's last line there is no line to leave idle, and none is added for a crafter
+  // the planner cannot run.
+  const short = factory([512, 512, 128, 64, 32]);
+  const past = call("planLoadoutImport", short, parse("x-7-adaj-adaj-adah-adag-adaf-anaj-adar-aaaa"));
+  assert.equal(past.lines.length, 5);
+  assert.deepEqual(plain(call("loadoutImportNotes", past).unmodelled), [
+    "Crafter 6: Pipes isn't in the planner, and you have no line 6, so it is left out.",
+    "Crafter 7: compression level 17 is above the planner's highest (level 16, 65.54k×), and you have no line 7, so it is left out."]);
+});
+
+test("an imported preset is named after the loadout, or a plain default", () => {
+  assert.equal(call("loadoutPresetName", parse(EXAMPLE)), "ingots");
+  assert.equal(call("loadoutPresetName", parse("  -7-adaj-adaj-adah-adag-adaf-adae-aaaa-aaaa")), "Imported loadout");
+});
+
 let failed = 0;
 for (const { name, fn } of tests) {
   try { fn(); console.log(`ok - ${name}`); }

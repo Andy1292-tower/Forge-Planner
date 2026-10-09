@@ -191,3 +191,62 @@ function projectLoadoutExport(res,phaseIndex,codeIndex){
   const name="Step "+(phaseIndex+1)+(loadouts.length>1?"."+(codeIndex+1):"");
   return Object.assign(loadoutExport(loadout.slots,name),{start:loadout.start,end:loadout.end});
 }
+
+/* ---- import ----
+   A code names a job per crafter and nothing about the crafter itself, so where a line cannot run
+   what the code puts on it, the line is what changes: a cap below the code's level rises to it, and a
+   busy crafter past the last line gets a new line (Add line's defaults, cap raised the same way).
+   Nothing here touches state. The import window shows the plan, asks before it changes any line, and
+   commits it with applyLoadoutImport. */
+function planLoadoutImport(st,parsed){
+  const lines=(st.lines||[]).map(line=>({...line})),slots=parsed.slots,firstAdded=lines.length,capRaises=[],addedLines=[];
+  const lastBusy=slots.reduce((last,slot,k)=>slot?k:last,-1);
+  while(lines.length<=lastBusy)lines.push(newCrafterLine());
+  slots.forEach((slot,k)=>{
+    if(!slot||lines[k].max>=slot.lvl)return;
+    if(k<firstAdded)capRaises.push({line:k+1,from:lines[k].max,to:slot.lvl});
+    lines[k].max=slot.lvl;
+  });
+  for(let k=firstAdded;k<lines.length;k++)addedLines.push({line:k+1,max:lines[k].max,spx:lines[k].spx});
+  const manual=lines.map((line,k)=>{const slot=slots[k];return slot?{job:slot.item,lvl:slot.lvl,sell:false}:{job:"Idle",lvl:line.max,sell:false};});
+  return {lines,manual,capRaises,addedLines,changesLines:capRaises.length+addedLines.length>0,unmodelled:parsed.unmodelled.slice(),name:parsed.name};
+}
+// presetName null keeps no preset and clears the active one, so its Update button cannot overwrite a
+// saved setup with a build it never held.
+function applyLoadoutImport(st,plan,presetName){
+  st.lines=plan.lines.map(line=>({...line}));
+  st.manual=plan.manual.map(entry=>({...entry}));
+  syncManual(st);
+  if(typeof presetName==="string"){
+    const id=newId();
+    st.manualSaved=(Array.isArray(st.manualSaved)?st.manualSaved:[]).concat([{id,name:presetName,
+      config:st.manual.map(entry=>({job:entry.job,lvl:entry.lvl,sell:!!entry.sell}))}]);
+    st.manualActiveId=id;
+  }else st.manualActiveId=null;
+  st.mode="manual";
+}
+function loadoutPresetName(parsed){
+  return String(parsed&&parsed.name||"").trim().slice(0,FIELD_SCHEMA.projectName.maxLength)||"Imported loadout";
+}
+// A crafter the planner cannot run idles its line, or, past the last line, is simply not imported:
+// no line is added for it.
+function loadoutUnmodelledText(entry,lineCount){
+  const top=LEVELS.length-1,n=entry.crafter;
+  const what=entry.kind==="level"
+    ?(entry.level===null?"its compression level":`compression level ${entry.level}`)+` is above the planner's highest (level ${top}, ${compressionLabel(LEVELS[top])})`
+    :entry.label?`${entry.label} isn't in the planner`:"the game recipe there isn't one the planner knows";
+  return n<=lineCount?`Line ${n}: ${what}, so the line is left idle.`:`Crafter ${n}: ${what}, and you have no line ${n}, so it is left out.`;
+}
+function loadoutImportNotes(plan){
+  const lineCount=plan.lines.length;
+  return {
+    jobs:plan.manual.slice(0,LOADOUT_SLOTS).map((entry,k)=>entry.job==="Idle"?null:`Line ${k+1}: ${entry.job} ${compressionLabel(entry.lvl)}`).filter(Boolean),
+    lineChanges:[...plan.capRaises.map(raise=>`Line ${raise.line} cap: ${compressionLabel(raise.from)} → ${compressionLabel(raise.to)}`),
+      ...plan.addedLines.map(added=>`Adds line ${added.line} (cap ${compressionLabel(added.max)}, speed ${added.spx}×) — set its real speed under Crafter lines`)],
+    unmodelled:plan.unmodelled.map(entry=>loadoutUnmodelledText(entry,lineCount)),
+    idledLines:lineCount>LOADOUT_SLOTS?`Lines ${LOADOUT_SLOTS+1}–${lineCount} have no crafter in a game code, so they are set idle.`:null
+  };
+}
+function loadoutImportConfirmText(plan){
+  return "Importing this code changes your crafter lines:\n"+loadoutImportNotes(plan).lineChanges.map(change=>"• "+change).join("\n")+"\n\nAre you sure?";
+}
