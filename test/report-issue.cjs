@@ -19,9 +19,28 @@ const SECRET = process.env.FORGE_SUBMIT_SECRET;
 const NOW = 1770000000000;
 const goodBody = "The solver hangs when every line is set to 16384 and I press solve.";
 const goodSubmission = { kind: "bug", title: "Solver hangs", body: goodBody };
+const LATEGAME_SAVE = JSON.parse(
+  fs.readFileSync(path.join(root, "test", "perf", "fixtures", "lategame-7line.json"), "utf8")
+);
+// GitHub refuses an issue body longer than this.
+const GITHUB_BODY_MAX = 65536;
 
 function freshToken(at = NOW) {
   return internals.issueToken(SECRET, at);
+}
+
+// The fenced save block inside a composed issue body, or null when there is none.
+function savedBlock(body) {
+  const match = body.match(/^(`{3,})json\n([\s\S]*?)\n\1$/m);
+  return match ? { fence: match[1], json: match[2] } : null;
+}
+
+// A save whose serialized form is exactly `chars` characters long.
+function saveOfLength(chars) {
+  const save = { schemaVersion: 9, lines: [], pad: "" };
+  save.pad = "x".repeat(chars - internals.serializeSave(save).length);
+  assert.strictEqual(internals.serializeSave(save).length, chars);
+  return save;
 }
 
 /* ---------- submit token ---------- */
@@ -131,6 +150,95 @@ function issueBodyContract() {
   assert.deepStrictEqual(withContact.labels, ["community", "bug"]);
 }
 
+/* ---------- attached save ---------- */
+
+function saveValidationContract() {
+  const save = { schemaVersion: 9, lines: [{ product: "Bits" }], projects: [] };
+  const kept = internals.validate({ ...goodSubmission, save });
+  assert.strictEqual(kept.error, undefined);
+  assert.deepStrictEqual(JSON.parse(kept.save), save, "the save did not survive validation intact");
+
+  // Only bug reports carry one; catalog submissions and feature requests stay text-only.
+  for (const kind of ["project", "feature"]) {
+    assert.strictEqual(internals.validate({ ...goodSubmission, kind, save }).save, null, `${kind} kept a save`);
+  }
+
+  /* The field carries a save, not free text. Anything shaped otherwise is dropped, and the
+   * report it came with still goes through. */
+  for (const [label, junk] of [
+    ["a string", "free text posted as a save"],
+    ["an array", [save]],
+    ["no schemaVersion", { lines: [] }],
+    ["a text schemaVersion", { schemaVersion: "9", lines: [] }],
+    ["no lines", { schemaVersion: 9 }],
+    ["lines that are not a list", { schemaVersion: 9, lines: "x" }],
+  ]) {
+    const result = internals.validate({ ...goodSubmission, save: junk });
+    assert.strictEqual(result.error, undefined, `${label} rejected the whole report`);
+    assert.strictEqual(result.save, null, `${label} was kept`);
+  }
+
+  // Over the cap the save is dropped, not the report.
+  const oversized = internals.validate({
+    ...goodSubmission,
+    save: { schemaVersion: 9, lines: [], pad: "x".repeat(internals.LIMITS.save.max) },
+  });
+  assert.strictEqual(oversized.error, undefined);
+  assert.strictEqual(oversized.save, null, "an oversized save was kept");
+  assert.ok(internals.validate({ ...goodSubmission, save: saveOfLength(internals.LIMITS.save.max) }).save);
+
+  // The late-game reference save fits.
+  assert.ok(internals.validate({ ...goodSubmission, save: LATEGAME_SAVE }).save, "the late-game save was dropped");
+
+  /* Characters that hide or reverse text, and backticks that could close the code fence,
+   * are written as escapes: the block reads as what it holds and parses back unchanged. */
+  const sneaky = { schemaVersion: 9, lines: [], name: "safe\u202Eevil\u200Bjoin\u2028line ``````", "`key`": 1 };
+  const escaped = internals.serializeSave(sneaky);
+  assert.ok(
+    !/[`\u200B-\u200F\u202A-\u202E\u2028\u2029\u2066-\u2069\uFEFF]/.test(escaped),
+    `hidden characters or backticks survived: ${escaped}`
+  );
+  assert.deepStrictEqual(JSON.parse(escaped), sneaky);
+}
+
+function saveIssueContract() {
+  const save = { schemaVersion: 9, lines: [], note: "cc @octocat about #42", fence: "``````\n</details>" };
+  const composed = internals.composeIssue(internals.validate({ ...goodSubmission, save }), NOW);
+  const block = savedBlock(composed.body);
+  assert.ok(block, "no save block in a bug report");
+  assert.strictEqual(block.fence, "```");
+  assert.deepStrictEqual(JSON.parse(block.json), save, "the posted save does not parse back to what was sent");
+  // Collapsed, so the report text stays readable above a save of any size.
+  assert.match(composed.body, /<details>\n<summary>Attached save \(\d+\.\d KB\)<\/summary>\n\n```json\n/);
+  // The save is unverified input too, so it sits above the footer that says so.
+  const at = text => composed.body.indexOf(text);
+  assert.ok(at(goodBody) < at("<details>"), "the save comes before the report text");
+  assert.ok(at("</details>") < at("Submitted anonymously"), "the save comes after the provenance footer");
+
+  // A bug report without one says so, so nobody goes looking for it.
+  const without = internals.composeIssue(internals.validate(goodSubmission), NOW);
+  assert.ok(without.body.includes("No save attached."), "a missing save is not stated");
+  assert.ok(!without.body.includes("<details>"));
+
+  const project = internals.composeIssue(internals.validate({ ...goodSubmission, kind: "project", save }), NOW);
+  assert.ok(!/save/i.test(project.body), "a catalog submission mentions a save");
+
+  /* Every field at its cap, the details doubled in places by neutralized mentions, and a save
+   * at its cap: the issue must still be one GitHub accepts. */
+  const worst = internals.composeIssue(
+    internals.validate({
+      kind: "bug",
+      title: "@a".repeat(internals.LIMITS.title.max / 2),
+      body: "@a".repeat(internals.LIMITS.body.max / 2),
+      contact: "@a".repeat(internals.LIMITS.contact.max / 2),
+      save: saveOfLength(internals.LIMITS.save.max),
+    }),
+    NOW
+  );
+  assert.ok(savedBlock(worst.body), "a save at the cap was left out");
+  assert.ok(worst.body.length <= GITHUB_BODY_MAX, `issue body is ${worst.body.length} characters`);
+}
+
 /* ---------- request gating ---------- */
 
 function originContract() {
@@ -183,6 +291,16 @@ function mockRequest(method, body, headers = {}) {
     headers: { origin: "https://forge.example", host: "forge.example", ...headers },
   };
   if (body !== undefined) request.body = body;
+  return request;
+}
+
+// A request whose body arrives as a byte stream, as it does where nothing parses it first.
+function streamedRequest(text, headers = {}) {
+  const request = mockRequest("POST", undefined, headers);
+  const bytes = Buffer.from(text, "utf8");
+  request[Symbol.asyncIterator] = async function* () {
+    for (let at = 0; at < bytes.length; at += 16384) yield bytes.subarray(at, at + 16384);
+  };
   return request;
 }
 
@@ -244,6 +362,48 @@ async function handlerContract() {
     assert.strictEqual(relabeled.statusCode, 201, `unexpected: ${JSON.stringify(relabeled.payload)}`);
     assert.strictEqual(calls.length, 2, "no retry without labels");
     assert.strictEqual(calls[1].payload.labels, undefined, "retry still sent labels");
+
+    // A bug report with the late-game save posts the save, and the reporter is told it went.
+    calls.length = 0;
+    respondWith(ok);
+    const saveReporter = { "x-forwarded-for": "198.51.100.20" };
+    const withSave = mockResponse();
+    await endpoint(
+      mockRequest("POST", { ...goodSubmission, token: await freshTokenFor(), save: LATEGAME_SAVE }, saveReporter),
+      withSave
+    );
+    assert.strictEqual(withSave.statusCode, 201, `unexpected: ${JSON.stringify(withSave.payload)}`);
+    assert.strictEqual(withSave.payload.saveAttached, true);
+    const posted = savedBlock(calls[0].payload.body);
+    assert.ok(posted, "the save never reached the issue");
+    assert.deepStrictEqual(JSON.parse(posted.json), LATEGAME_SAVE);
+
+    const withoutSave = mockResponse();
+    await endpoint(mockRequest("POST", { ...goodSubmission, token: await freshTokenFor() }, saveReporter), withoutSave);
+    assert.strictEqual(withoutSave.statusCode, 201);
+    assert.strictEqual(withoutSave.payload.saveAttached, false);
+
+    /* A streamed request is held to a byte cap before it is parsed. A save near its own cap
+     * must fit under it; anything past it is refused before it is read in full. */
+    const nearCap = mockResponse();
+    const nearCapBody = JSON.stringify({
+      ...goodSubmission,
+      token: await freshTokenFor(),
+      save: saveOfLength(internals.LIMITS.save.max - 1000),
+    });
+    await endpoint(streamedRequest(nearCapBody, saveReporter), nearCap);
+    assert.strictEqual(nearCap.statusCode, 201, `a save near the cap was refused: ${JSON.stringify(nearCap.payload)}`);
+    assert.strictEqual(nearCap.payload.saveAttached, true);
+
+    calls.length = 0;
+    const tooLarge = mockResponse();
+    await endpoint(
+      streamedRequest(JSON.stringify({ ...goodSubmission, pad: "x".repeat(internals.MAX_BODY_BYTES) })),
+      tooLarge
+    );
+    assert.strictEqual(tooLarge.statusCode, 413);
+    assert.strictEqual(tooLarge.payload.error, "too-large");
+    assert.strictEqual(calls.length, 0, "an oversized request still called GitHub");
 
     // Wrong method, cross-origin, and honeypot never reach GitHub.
     for (const [label, request] of [
@@ -449,17 +609,12 @@ function pageContract() {
   assert.ok(pageScripts.includes("feedback.js"));
   assert.strictEqual(typeof build.buildStaticSite, "function");
 
-  // Planner state must not ride along with a report; the page promises it stays local.
-  assert.ok(!/\bJSON\.stringify\(S\)/.test(feedback), "feedback.js serializes planner state");
-  assert.ok(!/\bLSKEY\b/.test(feedback), "feedback.js reads the saved build");
-  const posted = feedback.match(/body:JSON\.stringify\(\{([\s\S]*?)\}\)/);
-  assert.ok(posted, "could not find the submitted payload");
-  for (const field of posted[1].split(",").map(entry => entry.split(":")[0].trim()).filter(Boolean)) {
-    assert.ok(
-      ["token", "kind", "title", "body", "contact", "website"].includes(field),
-      `unexpected field in the submitted payload: ${field}`
-    );
-  }
+  /* The only planner state a report carries is the save, taken through the same check Export
+   * runs so a reported save always imports — never read raw from storage or memory. */
+  assert.ok(!/\bJSON\.stringify\(S\)/.test(feedback), "feedback.js serializes planner state directly");
+  assert.ok(!/\bLSKEY\b/.test(feedback), "feedback.js reads the saved build from storage");
+  assert.ok(/\bexportableSave\(\)/.test(feedback), "the save is not taken through exportableSave");
+  assert.ok(index.includes("Bug reports include your current save"), "the page does not say bug reports carry the save");
 }
 
 /* ---------- the form, driven with a fake page ---------- */
@@ -532,6 +687,56 @@ function feedbackHarness({ save = { schemaVersion: 9, lines: [] }, saveError = n
 }
 
 async function formContract() {
+  // The notice follows the kind: it says the save goes with a bug report, and nothing else.
+  const page = feedbackHarness();
+  page.seen.dialog.onOpen();
+  assert.strictEqual(page.elements.reportSaveNote.hidden, false, "notice hidden on a bug report");
+  page.chooseKind("project");
+  assert.strictEqual(page.elements.reportSaveNote.hidden, true, "notice shown on a catalog submission");
+  page.chooseKind("bug");
+  assert.strictEqual(page.elements.reportSaveNote.hidden, false);
+
+  // The client stops sending at the same size the server stops keeping.
+  assert.strictEqual(vm.runInContext("REPORT_MAX.save", page.context), internals.LIMITS.save.max);
+
+  // Sending without an account: a bug report carries the save as its only extra field.
+  const save = { schemaVersion: 9, lines: [{ product: "Bits" }] };
+  const anon = feedbackHarness({ save });
+  await anon.click("reportAnon");
+  assert.strictEqual(anon.seen.posts.length, 1);
+  assert.deepStrictEqual(
+    Object.keys(anon.seen.posts[0]).sort(),
+    ["body", "contact", "kind", "save", "title", "token", "website"]
+  );
+  assert.deepStrictEqual(anon.seen.posts[0].save, save);
+  assert.match(anon.status(), /with your save/);
+
+  for (const kind of ["project", "feature"]) {
+    const other = feedbackHarness({ save });
+    other.chooseKind(kind);
+    await other.click("reportAnon");
+    assert.ok(!("save" in other.seen.posts[0]), `a ${kind} report sent the save`);
+    assert.doesNotMatch(other.status(), /save/);
+  }
+
+  // A save too large to keep is not sent, and the report still goes with a reason given.
+  const huge = feedbackHarness({ save: { schemaVersion: 9, lines: [], pad: "x".repeat(internals.LIMITS.save.max) } });
+  await huge.click("reportAnon");
+  assert.strictEqual(huge.seen.posts.length, 1, "an oversized save stopped the report");
+  assert.ok(!("save" in huge.seen.posts[0]), "an oversized save was sent");
+  assert.match(huge.status(), /without your save.*too large/);
+
+  // A build Export would refuse is not sent either.
+  const broken = feedbackHarness({ saveError: "lines[0].cap is not a number" });
+  await broken.click("reportAnon");
+  assert.ok(!("save" in broken.seen.posts[0]), "a save that fails the export check was sent");
+  assert.match(broken.status(), /without your save/);
+
+  // The server has the last word on whether it was kept.
+  const dropped = feedbackHarness({ save, saveAttached: false });
+  await dropped.click("reportAnon");
+  assert.match(dropped.status(), /without your save/);
+
   /* An opened tab is not mistaken for a blocked one, and GitHub's page gets no handle back to
    * the planner. */
   const plain = feedbackHarness();
@@ -539,6 +744,44 @@ async function formContract() {
   await plain.click("reportGithub");
   assert.match(plain.status(), /Opened a prefilled issue/, `an opened tab was reported as: ${plain.status()}`);
   assert.strictEqual(plain.seen.tabs[0].opener, null, "the GitHub tab can still reach the planner");
+
+  // With a GitHub account: the save downloads, and the prefilled issue says where it goes.
+  const github = feedbackHarness({ save });
+  await github.click("reportGithub");
+  assert.strictEqual(github.seen.opened.length, 1);
+  assert.deepStrictEqual(github.seen.downloads, [{ name: "forge-build.json", value: save }]);
+  assert.match(github.prefilledBody(), /^The solver hangs[\s\S]*<!-- Drag forge-build\.json [^>]*-->$/);
+  assert.match(github.status(), /downloaded forge-build\.json.*Drag the file into the issue/);
+
+  const githubProject = feedbackHarness({ save });
+  githubProject.chooseKind("project");
+  await githubProject.click("reportGithub");
+  assert.strictEqual(githubProject.seen.downloads.length, 0, "a catalog submission downloaded the save");
+  assert.strictEqual(githubProject.prefilledBody(), goodBody);
+
+  // Nothing downloads when the tab never opened.
+  const blocked = feedbackHarness({ save });
+  blocked.context.window.open = () => null;
+  await blocked.click("reportGithub");
+  assert.strictEqual(blocked.seen.downloads.length, 0, "the save downloaded behind a blocked pop-up");
+
+  const githubBroken = feedbackHarness({ saveError: "lines[0].cap is not a number" });
+  await githubBroken.click("reportGithub");
+  assert.strictEqual(githubBroken.seen.opened.length, 1, "a broken save stopped the issue opening");
+  assert.strictEqual(githubBroken.seen.downloads.length, 0);
+  assert.doesNotMatch(githubBroken.prefilledBody(), /forge-build\.json/);
+  assert.match(githubBroken.status(), /save could not be attached/);
+
+  // Details too long for a link still go to the clipboard, and the save still downloads.
+  const long = feedbackHarness({ save });
+  // Spaces triple in length once encoded, so these details overflow a link.
+  const longDetails = "x y ".repeat(internals.LIMITS.body.max / 4);
+  long.elements.reportBody.value = longDetails;
+  await long.click("reportGithub");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.strictEqual(long.seen.copied[0], longDetails.trim());
+  assert.strictEqual(long.seen.downloads.length, 1);
+  assert.match(long.status(), /forge-build\.json/);
 }
 
 async function main() {
@@ -547,6 +790,8 @@ async function main() {
     ["input caps", validationContract],
     ["sanitizers", sanitizerContract],
     ["issue body", issueBodyContract],
+    ["save validation", saveValidationContract],
+    ["save in the issue", saveIssueContract],
     ["origin gate", originContract],
     ["rate limit", rateLimitContract],
     ["handler", handlerContract],

@@ -17,7 +17,8 @@ const CHANGELOG=[
     ],
     Changed:[
       "Keep your crafter lines in the game's crafter order. Game codes put crafter 1 on line 1, so the order of the lines now matters.",
-      "Base craft times are the game's own recipe timers: Bits 6s, Concrete 9s, Ingots 10s, Plates 30s, Rods 45s, Glass 90s, Bricks 120s, Frames 300s, Gel 3,200s, Wire 5,400s, Reinforced Concrete 355,000s and Batteries 1,034,000s. Your save picks them up the next time it loads, replacing any base time you had calibrated by hand."
+      "Base craft times are the game's own recipe timers: Bits 6s, Concrete 9s, Ingots 10s, Plates 30s, Rods 45s, Glass 90s, Bricks 120s, Frames 300s, Gel 3,200s, Wire 5,400s, Reinforced Concrete 355,000s and Batteries 1,034,000s. Your save picks them up the next time it loads, replacing any base time you had calibrated by hand.",
+      "Bug reports include your save, so the problem can be loaded exactly as you had it. Sending without an account posts the save with the report. Posting with a GitHub account downloads it as forge-build.json for you to drag into the issue. Once posted, the save is public. Catalog submissions and feature requests still send only what you type."
     ],
     Fixed:[
       "The planner fits a phone screen instead of zooming out and cutting off the right edge of every card and dialog.",

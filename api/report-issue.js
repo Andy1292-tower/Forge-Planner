@@ -25,11 +25,16 @@ const TOKEN_VERSION = "v1";
 const MIN_TOKEN_AGE_MS = 3000;
 const MAX_TOKEN_AGE_MS = 2 * 60 * 60 * 1000;
 
-const MAX_BODY_BYTES = 16 * 1024;
+/* GitHub refuses an issue body over 65,536 characters. The details can grow to about 6,000
+ * once mentions are neutralized, and the contact line, footer and save wrapper take a few
+ * hundred more, so a save gets what is left with a margin. The request cap leaves room for a
+ * save at that size written in multi-byte characters. */
+const MAX_BODY_BYTES = 96 * 1024;
 const LIMITS = {
   title: { min: 5, max: 120 },
   body: { min: 20, max: 4000 },
   contact: { min: 0, max: 120 },
+  save: { max: 56000 },
 };
 
 const KINDS = {
@@ -265,6 +270,25 @@ function neutralizeReferences(text) {
     .replace(/\b(https?:\/\/(?:www\.)?github\.com\/[^\s)]*\/(?:issues|pull)\/\d+)/gi, "`$1`");
 }
 
+/* Characters inside JSON strings that would hide or reverse text, end a line in some
+ * readers, or close the code fence the save is posted in. Each is written as its \u escape,
+ * which parses back to the same value. None can occur outside a string in JSON. */
+const SAVE_ESCAPED = /[`\u200B-\u200F\u202A-\u202E\u2028\u2029\u2066-\u2069\uFEFF]/g;
+
+function serializeSave(save) {
+  // The field carries a planner save and nothing else; anything shaped otherwise is dropped.
+  if (!save || typeof save !== "object" || Array.isArray(save)) return null;
+  if (!Number.isInteger(save.schemaVersion) || !Array.isArray(save.lines)) return null;
+  let text;
+  try {
+    text = JSON.stringify(save);
+  } catch (error) {
+    return null;
+  }
+  text = text.replace(SAVE_ESCAPED, char => `\\u${char.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}`);
+  return text.length > LIMITS.save.max ? null : text;
+}
+
 function checkLength(field, value) {
   const limit = LIMITS[field];
   if (value.length < limit.min) return `${field}-short`;
@@ -288,7 +312,26 @@ function validate(payload) {
     const problem = checkLength(field, value);
     if (problem) return { error: problem };
   }
-  return { kind, title, body, contact };
+  // A save that cannot be kept is dropped rather than costing the reporter the report.
+  const save = kind === "bug" ? serializeSave(payload.save) : null;
+  return { kind, title, body, contact, save };
+}
+
+function saveSection(submission) {
+  if (submission.kind !== "bug") return [];
+  if (!submission.save) return ["", "No save attached."];
+  const size = (Buffer.byteLength(submission.save, "utf8") / 1024).toFixed(1);
+  return [
+    "",
+    "<details>",
+    `<summary>Attached save (${size} KB)</summary>`,
+    "",
+    "```json",
+    submission.save,
+    "```",
+    "",
+    "</details>",
+  ];
 }
 
 function composeIssue(submission, receivedAt) {
@@ -298,6 +341,7 @@ function composeIssue(submission, receivedAt) {
     : "not provided";
   const body = [
     neutralizeReferences(submission.body),
+    ...saveSection(submission),
     "",
     "---",
     "",
@@ -448,7 +492,12 @@ module.exports = async function handler(req, res) {
     });
   }
 
-  return sendJson(res, 201, { ok: true, url: result.url, number: result.number });
+  return sendJson(res, 201, {
+    ok: true,
+    url: result.url,
+    number: result.number,
+    saveAttached: Boolean(submission.save),
+  });
 };
 
 module.exports.internals = {
@@ -464,9 +513,11 @@ module.exports.internals = {
   neutralizeReferences,
   rateLimited,
   sameOrigin,
+  serializeSave,
   validate,
   verifyToken,
   LIMITS,
+  MAX_BODY_BYTES,
   MIN_TOKEN_AGE_MS,
   MAX_TOKEN_AGE_MS,
 };

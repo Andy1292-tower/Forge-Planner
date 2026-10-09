@@ -355,12 +355,19 @@ stateRecoveryDownload.addEventListener("click",()=>{
 document.getElementById("stateRecoveryImport").addEventListener("click",()=>document.getElementById("fileImport").click());
 document.getElementById("stateRecoveryDismiss").addEventListener("click",()=>dismissStateRecovery(true));
 
+/* The build as Export writes it, after the same validation an import applies. A bug report
+   attaches exactly this, so a reported save always imports. */
+function exportableSave(){return validateAndMigrate(S);}
+function downloadJson(filename,value){
+  const blob=new Blob([JSON.stringify(value,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=url;a.download=filename;a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),0);
+}
 document.getElementById("btnExport").addEventListener("click",()=>{
-  const result=validateAndMigrate(S);
+  const result=exportableSave();
   if(!result.ok){showSettingsRecovery(null,"The current build contains a value that cannot be exported safely: "+result.errors.join("; "));return;}
-  const blob=new Blob([JSON.stringify(result.state,null,2)],{type:"application/json"});
-  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
-  a.download="forge-build.json";a.click();URL.revokeObjectURL(a.href);
+  downloadJson("forge-build.json",result.state);
 });
 document.getElementById("btnImport").addEventListener("click",()=>document.getElementById("fileImport").click());
 document.getElementById("fileImport").addEventListener("change",e=>{
