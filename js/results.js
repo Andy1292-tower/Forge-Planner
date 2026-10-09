@@ -562,7 +562,9 @@ function renderSolveResult(res,el,stat,solveKey,metadata){
   const canCopy=visiblePlan.some(row=>row.job.kind!=="idle"&&ALLITEMS.includes(row.job.res));
   html+=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:16px 0 8px">
     <div class="subhead" style="margin:0">Line assignment</div>${canCopy?`
-    <button class="btn ghost" id="btnCopyManual" title="Copy this plan into Manual mode so you can fine-tune it by hand">Copy to Manual</button>`:""}
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn ghost" id="btnExportCode" title="Get the game loadout code for this line assignment">Game code</button>
+      <button class="btn ghost" id="btnCopyManual" title="Copy this plan into Manual mode so you can fine-tune it by hand">Copy to Manual</button></div>`:""}
   </div>
     <table><thead><tr><th>Line</th><th>Cap</th><th>Job</th><th>Lvl</th>
       <th class="num">~s/craft</th><th class="num">Output /hr</th><th>Consumes /hr</th></tr></thead><tbody>`;

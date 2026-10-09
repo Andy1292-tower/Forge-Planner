@@ -1189,7 +1189,15 @@ function stepPlanHtml(res){
     }));
     h+=`<div class="step-phase">`;
     const label=ph.kind==="prerequisite"?"External prerequisite":ph.kind==="warmup"?"Warm-up":htmlText(ph.name||"Project phase");
-    h+=`<div class="step-h"><span class="step-n">${i+1}</span> <b>${label}</b> <span class="proj-mini">${ph.eta>0?"· "+fmtDuration(ph.eta)+" · complete by ":"· before crafting begins"}</span>${ph.eta>0?'<span class="step-clock">~'+fmtClock(pStart+(ph.eta||0))+'</span>':""}</div>`;
+    // A game loadout code for each stretch of the step in which no crafter changes job.
+    const codes=typeof projectStepLoadouts==="function"?projectStepLoadouts(res,i):[];
+    const codeButton=(k,text)=>{
+      const when=(k===0?"from the start of the step":"from ~"+fmtClock(pStart+codes[k].start))+" until ~"+fmtClock(pStart+codes[k].end);
+      const where=`Step ${i+1} (${ph.kind==="warmup"?"warm-up":ph.name||"project phase"}), ${when}`;
+      return `<button type="button" class="btn ghost step-code" id="loadoutStep${i}_${k}" data-loadout-step="${i}" data-loadout-slice="${k}" data-loadout-label="${htmlAttribute(where)}" title="${htmlAttribute("Game loadout code, "+when)}">${text}</button>`;
+    };
+    h+=`<div class="step-h"><span class="step-n">${i+1}</span> <b>${label}</b> <span class="proj-mini">${ph.eta>0?"· "+fmtDuration(ph.eta)+" · complete by ":"· before crafting begins"}</span>${ph.eta>0?'<span class="step-clock">~'+fmtClock(pStart+(ph.eta||0))+'</span>':""}${codes.length===1?codeButton(0,"Game code"):""}</div>`;
+    if(codes.length>1)h+=`<div class="step-codes"><span class="proj-mini">Game codes:</span>${codes.map((c,k)=>codeButton(k,k===0?"Start":"~"+fmtClock(pStart+c.start))).join("")}</div>`;
     if(ph.kind==="prerequisite"){
       const supply=Object.entries(ph.externalSupply||{}).map(([resource,amount])=>{const current=(ph.invStart&&ph.invStart[resource])||0;
         const total=(ph.prerequisiteDemand&&ph.prerequisiteDemand[resource])||current+amount;

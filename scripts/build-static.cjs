@@ -21,6 +21,7 @@ const PAGE_SCRIPTS = [
   "dialogs.js",
   "changelog.js",
   "events.js",
+  "loadout-ui.js",
   "feedback.js",
   "update-check.js",
 ];

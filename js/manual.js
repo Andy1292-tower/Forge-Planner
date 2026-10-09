@@ -228,6 +228,10 @@ function renderManualPresetBar(container,saved,active){
   }
   const saveNew=domElement("button","btn ghost","Save as new…");saveNew.id="manualSaveNew";controls.push(saveNew);
   if(saved.length){const del=domElement("button","btn ghost","Delete");del.id="manualDelPreset";del.title="Delete the selected saved setup";controls.push(del);}
+  if((S.manual||[]).some((entry,i)=>i<(S.lines||[]).length&&entry&&entry.job!=="Idle"&&ALLITEMS.includes(entry.job))){
+    const code=domElement("button","btn ghost","Game code");
+    code.id="manualExportCode";code.title="Get the game loadout code for this setup";controls.push(code);
+  }
   container.replaceChildren(...controls);
 }
 function renderManual(el,stat){

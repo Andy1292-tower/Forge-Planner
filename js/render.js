@@ -1,7 +1,7 @@
 "use strict";
 /* ---------- RENDER: lines ---------- */
 const TIPS={
-  line:"Crafter unit slot. The solver auto-sorts lines by max compression — this number only identifies which row you're editing.",
+  line:"Crafter unit slot — keep these in the game's crafter order. A game loadout code puts crafter 1 on line 1, crafter 2 on line 2, and so on. The solver itself sorts lines by max compression, so the order changes nothing else.",
   max:"Highest compression tier this crafter is upgraded to (1×–65.54k×). The list tags each tier with its in-game level (lv12) and the caption spells out the one you have picked: level 0 is 1× and every level doubles it, so 65.54k× is level 16. Each level doubles yield per craft but triples material cost per cycle — so the solver picks the most efficient level ≤ this cap.",
   spx:"The total speed × currently shown above the crafter unit in-game (e.g. ×49.38) — enter it exactly as displayed, with your current turbo stacks already baked in.",
   turbo:"How many turbo stacks this crafter has active right now (each stack = +1% speed). With the global max-turbo-stacks figure, the planner backs out your base speed and projects the speed you'll have at full turbo.",
