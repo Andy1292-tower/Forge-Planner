@@ -10,6 +10,7 @@ const PAGE_SCRIPTS = [
   "core.js",
   "fields.js",
   "state.js",
+  "loadout-code.js",
   "dom.js",
   "render.js",
   "project-schedule.js",

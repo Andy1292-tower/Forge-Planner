@@ -24,6 +24,7 @@ const tests = [
   "test/inventory.cjs",
   "test/legacy-worker-retirement.cjs",
   "test/lns-repair.cjs",
+  "test/loadout-code.cjs",
   "test/lookahead.cjs",
   "test/lp-memo.cjs",
   "test/lp-pivot.cjs",
