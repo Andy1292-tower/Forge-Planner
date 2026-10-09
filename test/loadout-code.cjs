@@ -21,7 +21,8 @@ const context = vm.createContext({
   clearTimeout,
   localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} }
 });
-for (const file of ["js/decimal.js", "js/catalog.js", "js/core.js", "js/fields.js", "js/state.js", "js/loadout-code.js"]) {
+for (const file of ["js/decimal.js", "js/catalog.js", "js/core.js", "js/fields.js", "js/state.js", "js/project-schedule.js",
+  "js/solver.js", "js/loadout-code.js"]) {
   const filename = path.join(ROOT, file);
   vm.runInContext(fs.readFileSync(filename, "utf8"), context, { filename });
 }
@@ -126,6 +127,175 @@ test("encoding pads to eight crafters, ignores extras, and repairs a blank name 
     "Loadout-0-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa-aaaa");
   const nine = Array.from({ length: 9 }, () => ({ item: "Wire", lvl: 2 }));
   assert.equal(call("encodeLoadoutCode", { name: "w", icon: 11, slots: nine }), "w-11-" + Array(8).fill("alab").join("-"));
+});
+
+/* ---- builds → crafter slots ---- */
+
+const line = max => ({ max, spx: 1, turbo: 0 });
+
+test("Manual setup: idle and unknown jobs are empty, and levels are held to the line cap", () => {
+  const st = { lines: [line(512), line(128), line(64), line(32)],
+    manual: [{ job: "Ingots", lvl: 512 }, { job: "Idle", lvl: 128 }, { job: "Pipes", lvl: 64 }, { job: "Wire", lvl: 512 }] };
+  assert.deepEqual(plain(call("manualLoadoutSlots", st)),
+    [{ item: "Ingots", lvl: 512 }, null, null, { item: "Wire", lvl: 32 }]);
+});
+
+test("Items/Credits plan: read over the current lines; idle, missing, unknown and extra rows are empty", () => {
+  const plan = [{ job: { kind: "craft", res: "Frames", lvl: 16 } }, { job: { kind: "idle", res: null, lvl: null } }, null,
+    { job: { kind: "craft", res: "OldItem", lvl: 1 } }, { job: { kind: "produce", res: "Bits", lvl: 2 } }];
+  assert.deepEqual(plain(call("planLoadoutSlots", plan, [line(16), line(16), line(16), line(16)])),
+    [{ item: "Frames", lvl: 16 }, null, null, null]);
+});
+
+const boundary = (phaseIndex, phaseTime, active) => ({ kind: "switch", phaseIndex, phaseTime, active });
+const projectRes = (phases, boundaries, ok = true) => ({ feasible: true, lpFeasible: true, executionPhases: phases,
+  scheduleValidation: { ok, boundaries } });
+
+test("Project step: one loadout per stretch in which no crafter changes job", () => {
+  const phases = [{ kind: "warmup", eta: 1, plan: [{ line: 1, entries: [] }, { line: 2, entries: [] }] },
+    { kind: "project", eta: 5, plan: [{ line: 1, entries: [] }, { line: 2, entries: [] }, { line: 3, entries: [] }] }];
+  const a = { line: 1, item: "Ingots", lvl: 512 }, b = { line: 2, item: "Rods", lvl: 64 }, c = { line: 2, item: "Frames", lvl: 16 };
+  const res = projectRes(phases, [{ kind: "phase-start", phaseIndex: 1, phaseTime: 0 }, boundary(0, 1, [a]),
+    boundary(1, 2, [a, b]), boundary(1, 3, [a, b]), boundary(1, 4, [a, c]), boundary(1, 5, [a]),
+    { kind: "completion", phaseIndex: 1, phaseTime: 5 }]);
+  assert.deepEqual(plain(call("projectStepLoadouts", res, 0)),
+    [{ start: 0, end: 1, slots: [{ item: "Ingots", lvl: 512 }, null] }]);
+  assert.deepEqual(plain(call("projectStepLoadouts", res, 1)).map(l => [l.start, l.end, l.slots.map(s => s && s.item)]), [
+    [0, 3, ["Ingots", "Rods", null]], [3, 4, ["Ingots", "Frames", null]], [4, 5, ["Ingots", null, null]]]);
+});
+
+test("Project step: blocked plans, prerequisites and all-idle steps have no loadouts", () => {
+  const phases = [{ kind: "prerequisite", eta: 0, plan: [] }, { kind: "project", eta: 1, plan: [{ line: 1, entries: [] }] }];
+  const idle = [boundary(1, 1, [])], busy = [boundary(1, 1, [{ line: 1, item: "Bits", lvl: 1 }])];
+  assert.deepEqual(plain(call("projectStepLoadouts", projectRes(phases, busy), 0)), []);
+  assert.deepEqual(plain(call("projectStepLoadouts", projectRes(phases, idle), 1)), []);
+  assert.deepEqual(plain(call("projectStepLoadouts", projectRes(phases, busy, false), 1)), []);
+  assert.deepEqual(plain(call("projectStepLoadouts", { ...projectRes(phases, busy), lpFeasible: false }, 1)), []);
+  assert.deepEqual(plain(call("projectStepLoadouts", { ...projectRes(phases, busy), feasible: false }, 1)), []);
+  assert.equal(call("projectStepLoadouts", projectRes(phases, busy), 1).length, 1);
+  assert.deepEqual(plain(call("projectStepLoadouts", null, 0)), []);
+});
+
+test("Project step: a stretch too short to run one craft is folded into its neighbour, not given a code", () => {
+  const phases = [{ kind: "project", eta: 3, plan: [{ line: 1, entries: [] }, { line: 2, entries: [] }] }];
+  const a = { line: 1, item: "Bits", lvl: 1 }, b = { line: 2, item: "Glass", lvl: 1 }, sliver = 1e-11;
+  const at = (...stretches) => plain(call("projectStepLoadouts", projectRes(phases,
+    stretches.map(([end, active]) => boundary(0, end, active))), 0)).map(l => [l.start, l.end, l.slots.map(s => s && s.item)]);
+  // A line finishing a rounding error before the step does leaves a sliver at the end.
+  assert.deepEqual(at([3 - sliver, [a, b]], [3, [a]]), [[0, 3, ["Bits", "Glass"]]]);
+  // Between two stretches running the same jobs, the sliver goes and the two become one loadout.
+  assert.deepEqual(at([1, [a, b]], [1 + sliver, [a]], [3, [a, b]]), [[0, 3, ["Bits", "Glass"]]]);
+  // At the very start, the next stretch takes its place from time zero.
+  assert.deepEqual(at([sliver, [b]], [2, [a]], [3, [a, b]]), [[0, 2, ["Bits", null]], [2, 3, ["Bits", "Glass"]]]);
+  // Half a second is still too short; two seconds is a stretch.
+  assert.equal(at([1, [a]], [1 + 0.5 / 3600, [b]], [3, [a]]).length, 1);
+  assert.equal(at([1, [a]], [1 + 2 / 3600, [b]], [3, [a]]).length, 3);
+  // A step shorter than a craft keeps what it has rather than losing every code.
+  const brief = [{ kind: "warmup", eta: sliver, plan: [{ line: 1, entries: [] }] }];
+  assert.equal(call("projectStepLoadouts", projectRes(brief, [boundary(0, sliver, [a])]), 0).length, 1);
+});
+
+test("Project step: only the eight crafters a game code holds decide where one loadout ends", () => {
+  const nine = Array.from({ length: 9 }, (_, i) => ({ line: i + 1, entries: [] }));
+  const phases = [{ kind: "project", eta: 3, plan: nine }];
+  const crafters = Array.from({ length: 8 }, (_, i) => ({ line: i + 1, item: "Ingots", lvl: 512 }));
+  const res = projectRes(phases, [boundary(0, 1, [...crafters, { line: 9, item: "Plates", lvl: 4 }]),
+    boundary(0, 2, [...crafters, { line: 9, item: "Rods", lvl: 4 }]), boundary(0, 3, [{ line: 9, item: "Rods", lvl: 4 }])]);
+  const loadouts = plain(call("projectStepLoadouts", res, 0));
+  // A job change on line 9 alone is no new loadout, and a stretch where only line 9 works has no
+  // crafter to load.
+  assert.deepEqual(loadouts.map(l => [l.start, l.end]), [[0, 2]]);
+  const model = call("projectLoadoutExport", res, 0, 0);
+  assert.equal(model.name, "Step 1");
+  assert.deepEqual(plain(model.omittedLines), [9], "the export still says line 9 is left out");
+});
+
+test("default icon: the build's own item when it has one, else the most-run item, ties to the lowest line", () => {
+  const s = (...items) => items.map(item => item && { item, lvl: 1 });
+  assert.equal(call("loadoutDefaultIcon", s("Bits", "Wire"), "Batteries"), 6);
+  assert.equal(call("loadoutDefaultIcon", s("Bits", "Wire", "Wire"), undefined), 11);
+  assert.equal(call("loadoutDefaultIcon", s("Rods", "Plates", "Plates", "Rods"), undefined), 9);
+  assert.equal(call("loadoutDefaultIcon", s(null, null), undefined), 0);
+  assert.equal(call("loadoutDefaultIcon", s("Gel"), "Rocks"), 4, "a mined winner has no icon of its own");
+});
+
+test("export defaults per source, and busy lines past eight are reported", () => {
+  const lines = Array.from({ length: 10 }, () => line(16));
+  const plan = lines.map((_, i) => ({ job: i === 9 || i < 2 ? { kind: "craft", res: "Wire", lvl: 16 } : { kind: "idle" } }));
+  const items = call("planLoadoutExport", { mode: "items", targets: ["Wire"], plan }, lines);
+  assert.equal(items.name, "Max Wire");
+  assert.equal(items.icon, 11);
+  assert.equal(items.slots.length, 8);
+  assert.deepEqual(plain(items.omittedLines), [10]);
+  assert.equal(call("planLoadoutExport", { mode: "items", targets: ["Wire", "Rods"], plan }, lines).name, "Max items");
+  assert.equal(call("planLoadoutExport", { mode: "items", targets: ["Reinforced Concrete"], plan }, lines).name, "Max Reinforced C");
+  const credits = call("planLoadoutExport", { mode: "credits", bestItem: "Batteries", plan }, lines);
+  assert.equal(credits.name, "Max credits");
+  assert.equal(credits.icon, 6);
+  const st = { lines: [line(512)], manual: [{ job: "Ingots", lvl: 512 }],
+    manualSaved: [{ id: "p1", name: "My-Setup", config: [] }], manualActiveId: "p1" };
+  assert.equal(call("manualLoadoutExport", st).name, "My Setup");
+  assert.equal(call("manualLoadoutExport", { ...st, manualActiveId: null }).name, "Manual");
+  assert.equal(call("manualLoadoutExport", { ...st, manualSaved: [{ id: "p1", name: " - ", config: [] }] }).name, "Manual");
+});
+
+test("project export names each step, and numbers the codes within a step", () => {
+  const phases = [{ kind: "project", eta: 2, plan: [{ line: 1, entries: [] }] }, { kind: "project", eta: 2, plan: [{ line: 1, entries: [] }] }];
+  const res = projectRes(phases, [boundary(0, 2, [{ line: 1, item: "Bits", lvl: 1 }]),
+    boundary(1, 1, [{ line: 1, item: "Bits", lvl: 1 }]), boundary(1, 2, [{ line: 1, item: "Glass", lvl: 1 }])]);
+  assert.equal(call("projectLoadoutExport", res, 0, 0).name, "Step 1");
+  assert.equal(call("projectLoadoutExport", res, 1, 1).name, "Step 2.2");
+  assert.equal(call("projectLoadoutExport", res, 1, 1).start, 1);
+  assert.equal(call("projectLoadoutExport", res, 1, 1).end, 2);
+  assert.equal(call("projectLoadoutExport", res, 1, 5), null);
+});
+
+// A real solve, round-tripped through JSON as the Worker hands it back: each step's loadouts tile
+// the step, carry exactly the jobs the replay ran, and survive the trip through a code.
+const solveProject = lineMode => plain(api(`(()=>{
+  const s=defaults();s.dupe=0;s.margin=0;s.mode="project";s.projLineMode=${JSON.stringify(lineMode)};
+  s.projectSeq=true;s.projectGate=false;
+  s.lines=[{max:4,spx:5,turbo:0},{max:4,spx:4.5,turbo:0},{max:2,spx:4,turbo:0},{max:2,spx:3.5,turbo:0}];
+  Object.assign(s.forgie,{Concrete:5e3,Ingots:5e3,Bits:5e3});
+  const project=(id,name,costs,prio)=>({id,name,catId:"",on:true,from:1,to:1,done:0,prio,
+    levels:[{costs:costs.map(c=>({item:c[0],qty:c[1]}))}]});
+  s.projects=[project("a","Frames run",[["Frames",400],["Glass",900]],1),project("b","Brick run",[["Bricks",900],["Rods",300]],2)];
+  normalize(s);syncManual(s);S=s;
+  return optimize();
+})()`));
+
+for (const lineMode of ["split", "static"]) test(`a real ${lineMode} Project plan exports every stretch of every step`, () => {
+  const res = solveProject(lineMode);
+  assert.ok(res.feasible && res.lpFeasible && res.scheduleValidation.ok, "fixture plan replays");
+  let steps = 0, codes = 0;
+  res.executionPhases.forEach((phase, i) => {
+    const loadouts = plain(call("projectStepLoadouts", res, i));
+    if (phase.kind === "prerequisite") { assert.deepEqual(loadouts, [], "prerequisite step " + (i + 1)); return; }
+    steps++;
+    codes += loadouts.length;
+    assert.ok(loadouts.length >= 1, "step " + (i + 1) + " has a loadout");
+    if (lineMode === "static") assert.equal(loadouts.length, 1, "Set & forget step " + (i + 1) + " is one loadout");
+    assert.equal(loadouts[0].start, 0);
+    assert.ok(Math.abs(loadouts[loadouts.length - 1].end - phase.eta) < 1e-9, "the last loadout runs to the end of step " + (i + 1));
+    loadouts.forEach((loadout, k) => {
+      if (k) assert.equal(loadout.start, loadouts[k - 1].end, "loadouts tile step " + (i + 1));
+      const slices = res.scheduleValidation.boundaries.filter(b => b.kind === "switch" && b.phaseIndex === i)
+        .map((b, j, all) => ({ ...b, from: j ? all[j - 1].phaseTime : 0 }));
+      // Slices shorter than one craft are folded into a neighbour, so only the real ones must match.
+      const ran = slices.filter(b => b.phaseTime > loadout.start && b.phaseTime <= loadout.end + 1e-12 &&
+        b.phaseTime - b.from >= api("MIN_CRAFT_S") / 3600);
+      assert.ok(ran.length >= 1);
+      for (const b of ran) {
+        const expected = loadout.slots.map(() => null);
+        b.active.forEach(job => { expected[job.line - 1] = { item: job.item, lvl: job.lvl }; });
+        assert.deepEqual(loadout.slots, expected, `step ${i + 1} at ${b.phaseTime}h`);
+      }
+      const code = call("encodeLoadoutCode", { name: "x", icon: 0, slots: loadout.slots });
+      assert.deepEqual(plain(call("parseLoadoutCode", code).slots).slice(0, loadout.slots.length), loadout.slots);
+    });
+  });
+  assert.ok(steps >= 2, "the fixture has at least two working steps");
+  if (lineMode === "split") assert.ok(codes > steps, "Line switching changes jobs partway through a step");
 });
 
 let failed = 0;

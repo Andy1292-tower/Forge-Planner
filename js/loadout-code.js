@@ -91,3 +91,103 @@ function parseLoadoutCode(text){
   }
   return {ok:true,name,icon:Number(iconPart),slots,unmodelled};
 }
+
+/* ---- builds → crafter slots ----
+   A slot is {item,lvl} — lvl the planner's multiplier — or null for an empty crafter. Every source
+   gives one slot per planner line; a code takes the first eight. */
+function loadoutSlot(item,lvl){return ALLITEMS.includes(item)&&LEVELS.includes(lvl)?{item,lvl}:null;}
+function sameLoadoutSlots(a,b){
+  for(let i=0;i<Math.max(a.length,b.length);i++){
+    const x=a[i]||null,y=b[i]||null;
+    if(!x!==!y||(x&&(x.item!==y.item||x.lvl!==y.lvl)))return false;
+  }
+  return true;
+}
+// Manual mode's setup, read the way manualResult reads it: an unknown job is idle and a level is
+// held to its line's cap.
+function manualLoadoutSlots(st){
+  return (st.lines||[]).map((line,i)=>{
+    const entry=st.manual&&st.manual[i];
+    if(!entry||entry.job==="Idle")return null;
+    return loadoutSlot(entry.job,Math.min(LEVELS.includes(entry.lvl)?entry.lvl:line.max,line.max));
+  });
+}
+// A Max items / Max credits plan, over the current lines the way the Line assignment table draws it.
+function planLoadoutSlots(plan,lines){
+  return (lines||[]).map((line,i)=>{
+    const job=Array.isArray(plan)&&plan[i]&&plan[i].job;
+    return job&&job.kind!=="idle"?loadoutSlot(job.res,job.lvl):null;
+  });
+}
+/* One loadout per stretch of a Project step in which no crafter changes job. The executable replay
+   already cut the step at every job's start and end; consecutive stretches whose eight crafters come
+   out the same are one loadout, since a line past the eighth has no crafter to load. A stretch shorter than the shortest craft runs nothing — it is the replay's rounding,
+   a line finishing a hair before the step does — so it joins the stretch before it (or after it, at
+   the very start) instead of getting a code. Only a plan the replay accepted has run instructions, so
+   a blocked plan has no codes, and neither has a prerequisite step or a stretch where every line is
+   idle. start and end are hours into the step. */
+function projectStepLoadouts(res,phaseIndex){
+  const validation=res&&res.scheduleValidation;
+  if(!res||!res.feasible||!res.lpFeasible||!validation||!validation.ok)return [];
+  const phase=(res.executionPhases||[])[phaseIndex];
+  if(!phase||phase.kind==="prerequisite"||!(phase.eta>0))return [];
+  const lineCount=(phase.plan||[]).reduce((n,row)=>Math.max(n,Number(row&&row.line)||0),0);
+  const stretches=[];let start=0;
+  (validation.boundaries||[]).forEach(boundary=>{
+    if(!boundary||boundary.kind!=="switch"||boundary.phaseIndex!==phaseIndex)return;
+    const slots=Array.from({length:lineCount},()=>null);
+    (boundary.active||[]).forEach(job=>{if(job&&job.line>=1&&job.line<=lineCount)slots[job.line-1]=loadoutSlot(job.item,job.lvl);});
+    const end=Number(boundary.phaseTime)||0;
+    stretches.push({start,end,slots});
+    start=end;
+  });
+  const shortest=MIN_CRAFT_S/3600,kept=[];
+  stretches.forEach(stretch=>{
+    if(stretch.end-stretch.start>=shortest)kept.push({...stretch});
+    else if(kept.length)kept[kept.length-1].end=stretch.end;
+  });
+  if(kept.length)kept[0].start=stretches[0].start;
+  const crafters=slots=>slots.slice(0,LOADOUT_SLOTS),loadouts=[];
+  (kept.length?kept:stretches).forEach(stretch=>{
+    const last=loadouts[loadouts.length-1];
+    if(!last||!sameLoadoutSlots(crafters(last.slots),crafters(stretch.slots))){loadouts.push({...stretch,slots:stretch.slots.slice()});return;}
+    last.end=stretch.end;
+    // Every line past the eighth that worked in the loadout stays on it, for the export to name.
+    stretch.slots.forEach((slot,i)=>{if(i>=LOADOUT_SLOTS&&slot&&!last.slots[i])last.slots[i]=slot;});
+  });
+  return loadouts.filter(loadout=>crafters(loadout.slots).some(Boolean));
+}
+
+/* ---- export defaults ---- */
+// The icon a loadout opens on: the item the build is for when it names one, else the item the most
+// crafters run, ties going to the one on the lowest line.
+function loadoutDefaultIcon(slots,preferredItem){
+  const preferred=LOADOUT_ICONS.indexOf(preferredItem);
+  if(preferred>=0)return preferred;
+  const busy=(slots||[]).filter(Boolean),counts={};
+  busy.forEach(slot=>{counts[slot.item]=(counts[slot.item]||0)+1;});
+  const most=Math.max(0,...Object.values(counts)),first=busy.find(slot=>counts[slot.item]===most);
+  return first?Math.max(0,LOADOUT_ICONS.indexOf(first.item)):0;
+}
+// What an export window shows: the first eight lines, and every busy line past them the game has no
+// crafter for.
+function loadoutExport(slots,name,preferredItem){
+  const all=slots||[],crafters=all.slice(0,LOADOUT_SLOTS);
+  return {slots:crafters,name:loadoutName(name)||"Loadout",icon:loadoutDefaultIcon(crafters,preferredItem),
+    omittedLines:all.map((slot,i)=>slot&&i>=LOADOUT_SLOTS?i+1:0).filter(Boolean)};
+}
+function planLoadoutExport(res,lines){
+  const credits=!!res&&res.mode==="credits",targets=Array.isArray(res&&res.targets)?res.targets:[];
+  const name=credits?"Max credits":targets.length===1?"Max "+targets[0]:"Max items";
+  return loadoutExport(planLoadoutSlots(res&&res.plan,lines),name,credits?res.bestItem:targets[0]);
+}
+function manualLoadoutExport(st){
+  const active=(st.manualSaved||[]).find(preset=>preset&&preset.id===st.manualActiveId);
+  return loadoutExport(manualLoadoutSlots(st),(active&&loadoutName(active.name))||"Manual");
+}
+function projectLoadoutExport(res,phaseIndex,codeIndex){
+  const loadouts=projectStepLoadouts(res,phaseIndex),loadout=loadouts[codeIndex];
+  if(!loadout)return null;
+  const name="Step "+(phaseIndex+1)+(loadouts.length>1?"."+(codeIndex+1):"");
+  return Object.assign(loadoutExport(loadout.slots,name),{start:loadout.start,end:loadout.end});
+}
