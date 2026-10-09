@@ -4,8 +4,10 @@
  * issue they own, so replies reach them; reporters without one post through
  * /api/report-issue, which signs the submission through and labels it `community`.
  *
- * Neither path touches planner state. Only what is typed into this form is sent, which
- * keeps the page's promise that saved builds stay in the browser. */
+ * A bug report also carries the current save — the build as Export writes it — so the
+ * problem can be reproduced. The anonymous path posts it in the issue; the GitHub path
+ * downloads it for the reporter to drop into theirs. Catalog submissions and feature
+ * requests send only what is typed into the form. */
 
 const REPORT_REPO="Andy1292-tower/Forge-Planner";
 const REPORT_ENDPOINT="/api/report-issue";
@@ -13,7 +15,10 @@ const REPORT_ENDPOINT="/api/report-issue";
 const REPORT_PREFILL_LIMIT=6000;
 const REPORT_KIND_LABEL={bug:"bug",project:"catalog",feature:"enhancement"};
 const REPORT_MIN={title:5,body:20};
-const REPORT_MAX={title:120,body:4000,contact:120};
+const REPORT_MAX={title:120,body:4000,contact:120,save:56000};
+const REPORT_SAVE_FILE="forge-build.json";
+// Shown in GitHub's editor, hidden in the posted issue if the reporter leaves it in.
+const REPORT_SAVE_REMINDER="<!-- Drag forge-build.json from your downloads into this box. -->";
 
 const reportState={token:null,minWaitMs:0,fetchedAt:0,pending:false,available:null,sent:false};
 let reportDialog=null;
@@ -62,6 +67,20 @@ function reportProblem(values){
   return null;
 }
 
+/* The save a report carries: bug reports only, and only what Export would write. null for
+ * the other kinds; otherwise {state}, or {problem} saying why it cannot go. */
+function reportSave(kind){
+  if(kind!=="bug")return null;
+  const result=exportableSave();
+  if(!result.ok)return {problem:"the current build has a value that cannot be exported"};
+  return {state:result.state};
+}
+
+function reportSyncSaveNote(){
+  const note=reportEl("reportSaveNote");
+  if(note)note.hidden=reportValues().kind!=="bug";
+}
+
 function reportBusy(busy){
   ["reportGithub","reportAnon"].forEach(id=>{
     const button=reportEl(id);
@@ -95,22 +114,35 @@ function reportViaGithub(){
   const values=reportValues();
   const problem=reportProblem(values);
   if(problem){reportSay(problem,"bad");return;}
-  const target=reportGithubUrl(values);
+  const save=reportSave(values.kind);
+  const attach=Boolean(save&&save.state);
+  const target=reportGithubUrl(attach?Object.assign({},values,{body:values.body+"\n\n"+REPORT_SAVE_REMINDER}):values);
   /* A full 35-level cost list is the common catalog submission and encodes well past
    * what a URL carries, so the details go to the clipboard rather than being cut. The
    * write is started from this click, which is the gesture the clipboard API requires. */
   const copying=target.truncated?reportCopy(values.body):null;
-  const opened=window.open(target.url,"_blank","noopener");
+  /* Asking for "noopener" makes window.open return null even when the tab opens, which reads
+   * the same as a blocked pop-up. The handle is cut here instead. */
+  const opened=window.open(target.url,"_blank");
   if(!opened){reportSay("Your browser blocked the new tab. Allow pop-ups for this page and try again.","bad");return;}
+  opened.opener=null;
+  if(attach)downloadJson(REPORT_SAVE_FILE,save.state);
+  const saveNote=!save?"":attach
+    ?" Drag the file into the issue, then press Create."
+    :` Your save could not be attached because ${save.problem}.`;
   if(target.truncated){
     Promise.resolve(copying).then(copied=>{
-      reportSay(copied
-        ?"Opened GitHub with the title filled in. Your details were too long for a link, so they were copied — paste them into the issue body."
-        :"Opened GitHub with the title filled in. Your details were too long for a link, so copy them from the box above into the issue body.","bad");
+      const opening=attach
+        ?"Opened GitHub with the title filled in and downloaded forge-build.json."
+        :"Opened GitHub with the title filled in.";
+      reportSay(opening+(copied
+        ?" Your details were too long for a link, so they were copied — paste them into the issue body."
+        :" Your details were too long for a link, so copy them from the box above into the issue body.")+saveNote,"bad");
     });
     return;
   }
-  reportSay("Opened a prefilled issue on GitHub. Press Create to post it under your account.","good");
+  if(attach){reportSay("Opened a prefilled issue on GitHub and downloaded forge-build.json."+saveNote,"good");return;}
+  reportSay("Opened a prefilled issue on GitHub. Press Create to post it under your account."+saveNote,save?"bad":"good");
 }
 
 /* ---------- path B: no account ---------- */
@@ -158,25 +190,36 @@ async function reportAnonymously(){
   if(problem){reportSay(problem,"bad");return;}
   if(reportState.sent){reportSay("That report was already sent. Close and reopen this to send another.","bad");return;}
 
+  /* Measured before sending: a save past what the server keeps would only push the request
+   * over its size limit and cost the reporter the report. */
+  const save=reportSave(values.kind);
+  let saveProblem=save&&save.problem;
+  if(save&&save.state&&JSON.stringify(save.state).length>REPORT_MAX.save)saveProblem="it is too large to send";
+
   reportBusy(true);
   reportSay("Sending…");
   try{
     const token=await reportToken();
     const waited=Date.now()-reportState.fetchedAt;
     if(waited<reportState.minWaitMs)await new Promise(resolve=>setTimeout(resolve,reportState.minWaitMs-waited));
+    const payload={
+      token,kind:values.kind,title:values.title,body:values.body,
+      contact:values.contact,website:values.website,
+    };
+    if(save&&!saveProblem)payload.save=save.state;
     const response=await fetch(REPORT_ENDPOINT,{
       method:"POST",
       headers:{"Content-Type":"application/json",Accept:"application/json"},
-      body:JSON.stringify({
-        token,kind:values.kind,title:values.title,body:values.body,
-        contact:values.contact,website:values.website,
-      }),
+      body:JSON.stringify(payload),
     });
     const data=await response.json().catch(()=>null);
     if(response.ok&&data&&data.ok&&data.url){
       reportState.sent=true;
       reportState.token=null;
-      reportSayLink("Posted. Thank you — it is now issue",data.url,"#"+data.number);
+      // The server has the last word on whether the save was kept.
+      if(save&&!saveProblem&&!data.saveAttached)saveProblem="it could not be attached";
+      const opening=!save?"Posted.":saveProblem?`Posted without your save, because ${saveProblem}.`:"Posted with your save.";
+      reportSayLink(opening+" Thank you — it is now issue",data.url,"#"+data.number);
       reportEl("reportTitle").value="";
       reportEl("reportBody").value="";
       reportBusy(false);
@@ -200,6 +243,7 @@ function reportOpened(){
     reportSay("");
     reportEl("reportContact").value="";
   }
+  reportSyncSaveNote();
   // Fetched on open, so a visitor who never reports makes no request at all.
   reportPrepare();
 }
@@ -218,6 +262,8 @@ function wireReportForm(){
     onOpen:reportOpened,
   });
   form.addEventListener("submit",event=>event.preventDefault());
+  const kind=reportEl("reportKind");
+  if(kind)kind.addEventListener("change",reportSyncSaveNote);
   const github=reportEl("reportGithub");
   if(github)github.addEventListener("click",reportViaGithub);
   const anon=reportEl("reportAnon");
