@@ -10,6 +10,8 @@
  * left out rather than padded in.
  */
 const CHANGELOG=[
+  {version:"2026.10.11",date:"2026-10-11",groups:{
+    Added:["Copy for Discord, in the Game loadout code window. It copies the code inside a Discord code block, ready to paste into a message."]}},
   {version:"2026.10.09",date:"2026-10-09",groups:{
     Added:[
       "Game loadout codes. Max items/hr, Max credits/hr, Manual and every Project plan step have a Game code button that gives you a code for the game's loadout screen. Set the loadout's name and icon before you copy it. A Project step where crafters switch jobs partway through gets one code per switch, labelled with the time to load it.",

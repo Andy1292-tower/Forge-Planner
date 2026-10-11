@@ -56,6 +56,9 @@ class FakeEl {
 const elements = {};
 const fakeDocument = {
   activeElement: null,
+  listeners: {},
+  addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); },
+  removeEventListener(type, fn) { this.listeners[type] = (this.listeners[type] || []).filter(f => f !== fn); },
   getElementById: id => elements[id] || (elements[id] = new FakeEl("div", id)),
   querySelector: selector => elements[selector] || (elements[selector] = new FakeEl("div")),
   createElement: tag => new FakeEl(tag)
@@ -135,7 +138,7 @@ test("the windows are body-level dialogs with the controls the script drives", (
   const html = read("index.html");
   for (const [modal, ids] of [
     ["loadoutExportModal", ["loadoutExportSource", "loadoutExportName", "loadoutExportIcon", "loadoutExportCode",
-      "loadoutExportNotes", "loadoutExportStatus", "loadoutExportCopy"]],
+      "loadoutExportNotes", "loadoutExportStatus", "loadoutExportCopy", "loadoutExportDiscord"]],
     ["loadoutImportModal", ["loadoutImportCode", "loadoutImportPreview", "loadoutImportSave", "loadoutImportName",
       "loadoutImportPresetFull", "loadoutImportStatus", "loadoutImportApply"]]]) {
     for (const id of ids) assert.ok(html.includes(`id="${id}"`), id);
@@ -357,6 +360,49 @@ test("Copy puts the code on the clipboard, and falls back to selecting it when t
   delete fakeDocument.execCommand;
   el("loadoutExportName").dispatch("input");
   assert.equal(el("loadoutExportStatus").textContent, "", "editing the name clears a stale copy status");
+  exportDialog.close();
+});
+
+test("Copy for Discord wraps the code in a code block, through the clipboard API or the older copy", async () => {
+  setState(factory([16, 16, 16]));
+  context._lastItemsCreditsRes = { mode: "items", targets: ["Wire"], plan: wirePlan(3) };
+  clickResults("#btnExportCode", button("btnExportCode"));
+  const code = el("loadoutExportCode").value, block = "```\n" + code + "\n```";
+  let written = null;
+  context.navigator = { clipboard: { writeText: text => { written = text; return Promise.resolve(); } } };
+  el("loadoutExportDiscord").dispatch("click");
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(written, block);
+  assert.match(el("loadoutExportStatus").textContent, /Discord code block/);
+  assert.ok(el("loadoutExportStatus").classList.contains("is-good"));
+  el("loadoutExportCopy").dispatch("click");
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(written, code, "Copy code still copies the bare code");
+
+  // The older copy takes the selected field, so the block goes in through the copy event.
+  context.navigator = { clipboard: { writeText: () => Promise.reject(new Error("denied")) } };
+  let pasted = null;
+  fakeDocument.execCommand = command => {
+    const event = { clipboardData: { setData: (type, text) => { if (type === "text/plain") pasted = text; } }, preventDefault() {} };
+    (fakeDocument.listeners.copy || []).forEach(fn => fn(event));
+    if (pasted === null) pasted = el("loadoutExportCode").value;
+    return command === "copy";
+  };
+  await call("copyLoadoutCode", true);
+  assert.equal(pasted, block);
+  assert.match(el("loadoutExportStatus").textContent, /Discord code block/);
+  assert.deepEqual(fakeDocument.listeners.copy, [], "the copy listener is removed afterwards");
+  pasted = null;
+  await call("copyLoadoutCode", false);
+  assert.equal(pasted, code, "the plain copy leaves the selection as it is");
+
+  // A copy event with no clipboardData copies the bare code, so the player is told to wrap it.
+  fakeDocument.execCommand = command => { (fakeDocument.listeners.copy || []).forEach(fn => fn({ preventDefault() {} })); return command === "copy"; };
+  await call("copyLoadoutCode", true);
+  assert.ok(el("loadoutExportCode").selected);
+  assert.match(el("loadoutExportStatus").textContent, /blocked the clipboard.*```/);
+  assert.ok(el("loadoutExportStatus").classList.contains("is-bad"));
+  delete fakeDocument.execCommand;
   exportDialog.close();
 });
 
