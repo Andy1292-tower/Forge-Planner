@@ -3,7 +3,7 @@
    Export: every place the planner draws a build has a Game code button beside it — the Line
    assignment of a Max items / Max credits solve, the Manual setup, and each Project step, one button
    per loadout when crafters change job partway through. The window prefills a name and an icon,
-   keeps the code in step with both, and copies it.
+   keeps the code in step with both, and copies it, bare or as a Discord code block.
    The buttons live inside #results, which is rebuilt on every render, so they are handled here by
    one delegated listener; each has a stable id for the dialog to hand focus back to. */
 const loadoutEl=id=>document.getElementById(id);
@@ -67,19 +67,30 @@ function refreshLoadoutExportCode(){
 }
 /* Started from the click, which is the gesture the clipboard API requires. In-app browsers often
    refuse that API, so a refusal falls back to copying the selected field the older way, and only
-   then to asking the player to copy the selection themselves. */
-function copyLoadoutCode(){
+   then to asking the player to copy the selection themselves.
+   forDiscord wraps the code in a ``` block so it pastes into a Discord message as a code block. The
+   field holds only the code, so the older copy swaps the block in from a copy listener; a browser
+   that copies without offering clipboardData has copied the bare code, which counts as blocked. */
+function copyLoadoutCode(forDiscord){
   const field=loadoutEl("loadoutExportCode");
+  const text=forDiscord?"```\n"+field.value+"\n```":field.value;
   let copying;
-  try{copying=navigator.clipboard&&navigator.clipboard.writeText?navigator.clipboard.writeText(field.value).then(()=>true,()=>false):Promise.resolve(false);}
+  try{copying=navigator.clipboard&&navigator.clipboard.writeText?navigator.clipboard.writeText(text).then(()=>true,()=>false):Promise.resolve(false);}
   catch(error){copying=Promise.resolve(false);}
   return copying.then(copied=>{
     if(!copied){
       field.focus();field.select();
-      try{copied=typeof document.execCommand==="function"&&document.execCommand("copy")===true;}catch(error){copied=false;}
+      let swapped=false;
+      const swap=e=>{if(e.clipboardData){e.clipboardData.setData("text/plain",text);e.preventDefault();swapped=true;}};
+      if(forDiscord)document.addEventListener("copy",swap);
+      try{copied=typeof document.execCommand==="function"&&document.execCommand("copy")===true&&(!forDiscord||swapped);}
+      catch(error){copied=false;}
+      finally{if(forDiscord)document.removeEventListener("copy",swap);}
     }
-    if(copied){loadoutSay("loadoutExportStatus","Copied — paste it into the game.","good");return;}
-    loadoutSay("loadoutExportStatus","Your browser blocked the clipboard. The code is selected: copy it with Ctrl+C (⌘C on a Mac).","bad");
+    if(copied){loadoutSay("loadoutExportStatus",forDiscord?"Copied as a Discord code block — paste it into your message.":"Copied — paste it into the game.","good");return;}
+    loadoutSay("loadoutExportStatus",forDiscord
+      ?"Your browser blocked the clipboard. The code is selected: copy it with Ctrl+C (⌘C on a Mac), then put ``` on the lines above and below it in Discord."
+      :"Your browser blocked the clipboard. The code is selected: copy it with Ctrl+C (⌘C on a Mac).","bad");
   });
 }
 loadoutEl("loadoutExportName").addEventListener("input",refreshLoadoutExportCode);
@@ -87,7 +98,8 @@ loadoutEl("loadoutExportIcon").addEventListener("change",e=>{
   const icon=Number(e.target&&e.target.value);
   if(Number.isInteger(icon)&&icon>=0&&icon<LOADOUT_ICONS.length){loadoutExportIcon=icon;refreshLoadoutExportCode();}
 });
-loadoutEl("loadoutExportCopy").addEventListener("click",copyLoadoutCode);
+loadoutEl("loadoutExportCopy").addEventListener("click",()=>copyLoadoutCode(false));
+loadoutEl("loadoutExportDiscord").addEventListener("click",()=>copyLoadoutCode(true));
 loadoutEl("loadoutExportCode").addEventListener("focus",e=>e.target.select());
 
 function exportPlanLoadout(invoker){
