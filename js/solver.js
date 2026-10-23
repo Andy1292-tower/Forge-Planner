@@ -1298,38 +1298,42 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
      * The move it was built for is not in the corpus either: the feeder second pass below, which
      * exists for exactly this coupled move, is reached 5 times across the whole corpus and improves
      * the incumbent zero of those 5 times. Re-opening this needs a saved factory that exhibits the
-     * issue #134 shape, not a bigger k. */
+     * issue #134 shape, not a bigger k.
+     *
+     * The enumeration itself is also what the relaxation placement after the ILS runs (see
+     * placeOnRelaxation). That one chooses its free lines from the LP rather than at random. */
     const lnsCadence=Math.max(0,Math.floor(Number(opts.lnsCadence)||0));
-    const LNS_MAX_FREE=4,LNS_WORK_CAP=4000;
+    const placement=!!opts.lpPlacement&&!!(lp&&lp.frac),lnsTables=lnsCadence>0||placement;
+    const LNS_MAX_FREE=4,LNS_WORK_CAP=4000,PLACEMENT_WORK_CAP=500000;
     // Each line's largest single-job output of every resource — the enumeration's suffix bound. Taken
     // off the same flat coefficients the probes sum, so the bound is on the same doubles the leaf test
     // compares, and tighter than the DFS's own maxProd, which scales by the uncapped line speed.
-    const lnsLineMax=new Float64Array(lnsCadence>0?N*R:0);
+    const lnsLineMax=new Float64Array(lnsTables?N*R:0);
     // Which lines are worth freeing. The exchange that pays is between a line the objective reads
     // directly and a line the relaxation wanted to split, so those carry the weight; every other line
     // stays eligible at 1, because the spare line a feeder has to land on is usually neither.
-    const lnsSplit=new Uint8Array(lnsCadence>0?N:0);
-    if(lnsCadence>0){
+    const lnsSplit=new Uint8Array(lnsTables?N:0);
+    if(lnsTables){
       for(let i=0;i<N;i++)for(let s=jobBase[i];s<jobBase[i+1];s++)
         for(let p=prodOff[s],e=prodOff[s+1];p<e;p++){const at=i*R+prodR[p];if(prodC[p]>lnsLineMax[at])lnsLineMax[at]=prodC[p];}
       if(lp&&lp.frac)for(let i=0;i<N;i++){let n=0;const fr=lp.frac[i]||[];for(let j=0;j<fr.length;j++)if(fr[j]>1e-6)n++;if(n>1)lnsSplit[i]=1;}
     }
     const lnsFree=new Int32Array(LNS_MAX_FREE),lnsCur=new Int32Array(LNS_MAX_FREE),lnsPick=new Int32Array(LNS_MAX_FREE);
-    const lnsSuf=new Float64Array(lnsCadence>0?(LNS_MAX_FREE+1)*R:0),lnsWeight=new Float64Array(lnsCadence>0?N:0);
+    const lnsSuf=new Float64Array(lnsTables?(LNS_MAX_FREE+1)*R:0),lnsWeight=new Float64Array(lnsCadence>0?N:0);
     /* Backtracking restores SAVED values, never the arithmetic that produced them: a leaf is compared
      * at 1e-9 against a state reached four moves down, and re-adding what was subtracted does not in
      * general land back on the same double — the state each later branch starts from would drift under
      * the branches that failed. The whole row set is small enough (R is 9 on the reference chain) that
      * saving it wholesale per depth beats tracking which rows a branch touched, and it carries the
      * cached feasibility verdicts back with it for free. */
-    const lnsSaveP=new Float64Array(lnsCadence>0?LNS_MAX_FREE*R:0),lnsSaveC=new Float64Array(lnsCadence>0?LNS_MAX_FREE*R:0);
-    const lnsSaveB=new Uint8Array(lnsCadence>0?LNS_MAX_FREE*R:0),lnsSaveN=new Int32Array(LNS_MAX_FREE);
-    let lnsN=0,lnsBestSc=0,lnsFound=false,lnsWorkAt=0;
+    const lnsSaveP=new Float64Array(lnsTables?LNS_MAX_FREE*R:0),lnsSaveC=new Float64Array(lnsTables?LNS_MAX_FREE*R:0);
+    const lnsSaveB=new Uint8Array(lnsTables?LNS_MAX_FREE*R:0),lnsSaveN=new Int32Array(LNS_MAX_FREE);
+    let lnsN=0,lnsBestSc=0,lnsFound=false,lnsWorkAt=0,lnsWorkCap=LNS_WORK_CAP;
     // Enumerate the freed lines against the frozen state. Returns false when the repair is out of work
     // or the whole solve is interrupted — both unwind the same way, and both keep whatever the
     // enumeration had already proved better than the incumbent.
     function lnsDfs(p){
-      if(control.work()-lnsWorkAt>=LNS_WORK_CAP)return false;
+      if(control.work()-lnsWorkAt>=lnsWorkCap)return false;
       if(!keepGoing("lns-node"))return false;
       if(p===lnsN){
         if(infeasCount!==0)return true;
@@ -1377,10 +1381,14 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
         lnsFree[at]=pick;
       }
       if(lnsN<2)return false;
+      lnsSuffix();
+      return true;
+    };
+    // The suffix bound over lnsFree[0..lnsN): at depth p, the most of each resource lines p.. could add.
+    const lnsSuffix=()=>{
       for(let r=0;r<R;r++)lnsSuf[lnsN*R+r]=0;
       for(let p=lnsN-1;p>=0;p--){const at=p*R,next=at+R,line=lnsFree[p]*R;
         for(let r=0;r<R;r++)lnsSuf[at+r]=lnsSuf[next+r]+lnsLineMax[line+r];}
-      return true;
     };
     // One destroy-and-repair on the incumbent, writing the freed lines' best joint assignment into
     // `ch`. False when nothing beat the incumbent, including when the bound refuted the subset.
@@ -1388,11 +1396,54 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       if(!lnsSelect())return false;
       for(let q=0;q<lnsN;q++)ch[lnsFree[q]]=idleIdx(lnsFree[q]);
       evalChoice(ch);                     // the frozen lines' production and burn, and nothing else
-      lnsBestSc=inc.sc;lnsFound=false;lnsWorkAt=control.work();
+      lnsBestSc=inc.sc;lnsFound=false;lnsWorkAt=control.work();lnsWorkCap=LNS_WORK_CAP;
       lnsDfs(0);
       if(!lnsFound)return false;
       for(let q=0;q<lnsN;q++)ch[lnsFree[q]]=lnsPick[q];
       return true;
+    };
+    /* Relaxation placement: hold every line the LP runs wholly on a checked output, on the output
+     * job it gives the most time, and enumerate every other line exactly against the best plan the
+     * ILS reached.
+     *
+     * Which line carries an output is the decision the local search is worst at. An output on a slow
+     * line with a fast line feeding it is beaten by the reverse, but moving the output onto the fast
+     * line raises what it burns, and paying for that can take a different job on every feeder line at
+     * once. Each of those steps alone is infeasible or scores lower, so neither a strictly-improving
+     * climb nor a kick of three lines crosses it. On issue #182's factory the crossing changes four
+     * lines, and the ILS reached it on some caps and not others depending on where its random draws
+     * fell.
+     *
+     * The relaxation is not misled by that: it prices every line at once, so where it puts an output
+     * whole is a strong statement about which lines' speed the output should get. It is a weak one
+     * about feeders. Their levels are degenerate in the LP (on #182 it runs one feeder line wholly on
+     * Bricks 256x where the better plan needs 512x), which is why only output lines are held and
+     * every feeder line is searched in full rather than rounded.
+     *
+     * Skipped when more than LNS_MAX_FREE lines are left free. Bounded by a work count and drawing no
+     * random numbers, so it stops at the same node at every budget. A plan comes back only when it is
+     * feasible and strictly better than the bar, so a placement the relaxation got wrong costs the
+     * enumeration and changes nothing. */
+    const placeOnRelaxation=bar=>{
+      const ch=bar.ch.slice();lnsN=0;
+      for(let i=0;i<N;i++){
+        const fr=lp.frac[i],js=lineJobs[i];let mass=0,pick=-1,pickF=0;
+        for(let j=0;j<fr.length;j++){
+          const job=js[j];if(job.kind==="idle"||targets.indexOf(job.res)<0)continue;
+          mass+=fr[j];if(fr[j]>pickF){pickF=fr[j];pick=j;}
+        }
+        if(pick>=0&&mass>=1-1e-6){ch[i]=pick;continue;}
+        if(lnsN>=LNS_MAX_FREE)return null;
+        lnsFree[lnsN++]=i;
+      }
+      lnsSuffix();
+      for(let q=0;q<lnsN;q++)ch[lnsFree[q]]=idleIdx(lnsFree[q]);
+      evalChoice(ch);                     // the held lines' production and burn, and nothing else
+      lnsBestSc=bar.sc;lnsFound=false;lnsWorkAt=control.work();lnsWorkCap=PLACEMENT_WORK_CAP;
+      lnsDfs(0);
+      if(!lnsFound)return null;
+      for(let q=0;q<lnsN;q++)ch[lnsFree[q]]=lnsPick[q];
+      return ch;
     };
     for(let it=0;it<2000000&&!interrupted;it++){
       if(!keepGoing("ils-iteration"))break;
@@ -1438,6 +1489,18 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
       if(sc!=null&&!interrupted&&(!cand||sc>cand.sc))cand={sc,ch:ch.slice()};
       if(cand&&!interrupted&&cand.sc>inc.sc+EPS){inc=cand;if(cand.sc>incBest.sc){incBest=cand;dryRestarts=0;}stag=0;tLastGain=control.readNow();}
       else if(!interrupted)stag++;
+    }
+    // After the ILS, so everything above runs to the plan it always did and this can only replace it
+    // with a strictly better one. The enumerated plan is kept as found and then climbed; the climb
+    // never leaves feasibility, so it can only add.
+    if(placement&&!interrupted&&keepGoing("placement-start")){
+      const placed=placeOnRelaxation(incBest);
+      if(placed){
+        evalChoice(placed);let cand={sc:scoreNow(),ch:placed.slice()};
+        const climbed=climb(placed);
+        if(climbed!=null&&!interrupted&&climbed>cand.sc)cand={sc:climbed,ch:placed.slice()};
+        if(cand.sc>incBest.sc+EPS)incBest=cand;
+      }
     }
     evalChoice(incBest.ch);best={score:scoreNow(),choice:incBest.ch.slice(),produced:produced.slice(),consumed:consumed.slice()};
   }
@@ -1733,7 +1796,7 @@ function optimizeInner(timeBudget,testOptions,shard){
     const mix=mixWeights(targets,itemControl,itemsBudget,shard);
     const w=mix.weights;
     const rc=relevantChain(targets);
-    const sr=solveCore(targets,w,rc.prods,rc.raws,itemsBudget,{control:itemControl,spendFreeHeadroom:true,restarts:true});
+    const sr=solveCore(targets,w,rc.prods,rc.raws,itemsBudget,{control:itemControl,spendFreeHeadroom:true,restarts:true,lpPlacement:true});
     const {plan,balance,minedUsage,gelReserved}=planFrom(sr);
     const out={};targets.forEach((t,k)=>{out[t]=sr.feasible?(sr.best.produced[sr.tIdx[k]]-sr.best.consumed[sr.tIdx[k]])*3600:0;});
     // The objective is the shared weighted floor: the smallest output-to-weight ratio. Reporting it

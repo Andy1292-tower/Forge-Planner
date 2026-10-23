@@ -17,6 +17,7 @@ const tests = [
   "test/forgieproject.cjs",
   "test/free-headroom.cjs",
   "test/single-output-restart.cjs",
+  "test/lp-placement.cjs",
   "test/game-alignment.cjs",
   "test/gate.cjs",
   "test/gel-loadout-exact.cjs",

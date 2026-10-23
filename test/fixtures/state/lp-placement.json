@@ -1,0 +1,29 @@
+{
+ "lines": [
+  {"max": 16384, "spx": 8277, "turbo": 50},
+  {"max": 16384, "spx": 5631, "turbo": 50},
+  {"max": 4096, "spx": 5857, "turbo": 50},
+  {"max": 4096, "spx": 6404, "turbo": 50},
+  {"max": 2048, "spx": 6756, "turbo": 50},
+  {"max": 512, "spx": 3920, "turbo": 50},
+  {"max": 256, "spx": 3799, "turbo": 50}
+ ],
+ "maxTurbo": 50,
+ "dupe": 40.45,
+ "margin": 0,
+ "mode": "items",
+ "solveBudget": 10000,
+ "targetMode": "ratio",
+ "forgie": {
+  "Ingots": "126810000",
+  "Concrete": "132240000",
+  "Bricks": "575100",
+  "Plates": "1800000",
+  "Rods": "1400000",
+  "Frames": "150000",
+  "Reinforced Concrete": "59.54"
+ },
+ "targets": {
+  "Reinforced Concrete": {"on": true, "share": 50, "w": 1}
+ }
+}

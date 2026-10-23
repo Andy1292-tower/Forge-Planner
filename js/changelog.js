@@ -10,6 +10,8 @@
  * left out rather than padded in.
  */
 const CHANGELOG=[
+  {version:"2026.10.22",date:"2026-10-22",groups:{
+    Fixed:["Max items/hr could miss a better line assignment your crafters can already run, and find it only after a crafter was upgraded to a cap the better plan doesn't use."]}},
   {version:"2026.10.11",date:"2026-10-11",groups:{
     Added:["Copy for Discord, in the Game loadout code window. It copies the code inside a Discord code block, ready to paste into a message."]}},
   {version:"2026.10.09",date:"2026-10-09",groups:{
