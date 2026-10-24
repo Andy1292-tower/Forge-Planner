@@ -26,7 +26,7 @@ const PAGE_SCRIPTS = [
   "feedback.js",
   "update-check.js",
 ];
-const WORKER_SCRIPTS = ["decimal.js", "core.js", "fields.js", "state.js", "project-schedule.js", "solver.js"];
+const WORKER_SCRIPTS = ["decimal.js", "ledgers.js", "core.js", "fields.js", "state.js", "project-schedule.js", "solver.js"];
 // The game's loadout icons, in icon-id order. js/loadout-ui.js names each one once, and the app is
 // rewritten to its hashed URL the way it is for the speed tooltip.
 const LOADOUT_ICON_FILES = [
@@ -118,7 +118,7 @@ function buildWorkerPayload(sourceRoot) {
   let handler = readText(handlerPath);
   handler = replaceExactly(
     handler,
-    'importScripts("decimal.js", "core.js", "fields.js", "state.js", "project-schedule.js", "solver.js");',
+    'importScripts("decimal.js", "ledgers.js", "core.js", "fields.js", "state.js", "project-schedule.js", "solver.js");',
     "",
     1,
     "Worker dependency import"
@@ -232,8 +232,9 @@ function buildApp(sourceRoot, assetUrls) {
   for (const file of LOADOUT_ICON_FILES) {
     app = replaceExactly(app, `assets/${file}`, assetUrls[path.basename(file, ".png")], 1, `loadout icon ${file}`);
   }
+  // The ledger data ships twice, in the page and in the Worker payload, so each portrait does too.
   for (const file of ledgerPortraitFiles(sourceRoot)) {
-    app = replaceExactly(app, `assets/${file}`, assetUrls[path.basename(file, ".webp")], 1, `ledger portrait ${file}`);
+    app = replaceExactly(app, `assets/${file}`, assetUrls[path.basename(file, ".webp")], 2, `ledger portrait ${file}`);
   }
   assertSingleConstructionPath(app);
   assertSolverWorkerBootstrap(app);

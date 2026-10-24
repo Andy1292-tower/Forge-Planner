@@ -248,6 +248,57 @@ test("past the limit says when nothing is left, and when nothing lands inside th
   assert.equal(none.extra.status, "listed");
 });
 
+test("past the limit looks at unticked projects in the list as well as the ticked ones", () => {
+  const ab = fit([A, B], 100000), abd = fit([A, B, D], 100000);
+  const hours = ab.eta * 1.001, off = Object.assign({}, D, { on: false });
+  const res = fit([A, B, off], hours, [], { fitNext: true, fitExtra: true, fitExtraHours: 1000 });
+  assert.deepEqual(res.selection.map(r => r.id), ["a", "b"], "the answer is still the ticked projects");
+  assert.equal(res.extra.status, "listed", "everything ticked fits, but the list still has D");
+  assert.deepEqual(res.extra.items.map(item => [item.id, item.ticked, item.checked]), [["d", false, true]]);
+  assert.ok(Math.abs(res.extra.items[0].eta - abd.eta) < 1e-6 * abd.eta);
+  assert.equal(res.next.id, "d");
+});
+
+test("a step past the chosen levels that still fits inside the limit is listed as inside it", () => {
+  const two = P("f", "F", [[["Glass", 2000]], [["Glass", 2000]]], { to: 1 });
+  const res = fit([two], 100000, [], { fitNext: true, fitExtra: true, fitExtraHours: 5 });
+  assert.equal(row(res, "f").taken, 1, "the answer keeps to the chosen levels");
+  assert.deepEqual(res.inside.map(item => [item.id, item.toLevel, item.checked]), [["f", 2, true]]);
+  assert.equal(res.next.status, "none", "nothing runs past the limit");
+  assert.deepEqual(res.extra.items, []);
+  const off = fit([two], 100000);
+  assert.deepEqual(off.inside, [], "nothing is looked at past the limit with both boxes off");
+});
+
+test("a ledger goes on past the limit through the character's following ledgers, by number", () => {
+  const tank = P("l1", "Tank", [[]], { ledgerId: "tank-timmerson", ledgerNo: 1 });  // #3 Concrete 250, #7 Ingots 100
+  const res = fit([tank], 100000, [], { fitExtra: true, fitExtraHours: 5 });
+  assert.equal(row(res, "l1").taken, 1);
+  assert.deepEqual(res.inside.map(item => [item.name, item.ledger, item.number, item.ticked]), [["Tank Timmerson", true, 7, true]]);
+  // On the character's last ledger, tracked as done: the data has no ledger after it.
+  const last = P("l2", "Tank", [[]], { ledgerId: "tank-timmerson", done: 1, ledgerNo: vm.runInContext(
+    `ledgerCharacter("tank-timmerson").ledgers.length`, page) });
+  const end = fit([A, last], 100000, [], { fitNext: true, fitExtra: true, fitExtraHours: 5 });
+  assert.equal(end.next.status, "all", "past the character's last ledger there is nothing left");
+  assert.equal(end.extra.status, "all");
+});
+
+test("every past-the-limit outcome reads as a sentence, never a blank", () => {
+  const source = fs.readFileSync(path.join(ROOT, "js", "results.js"), "utf8");
+  const from = source.indexOf("// What one past-the-limit step adds"), to = source.indexOf("function fitResultHtml(");
+  assert.ok(from > 0 && to > from, "fitPastHtml is found in js/results.js");
+  const ui = vm.createContext({ FIT_NEXT_WINDOW_HOURS: 12, htmlText: String, fmtDuration: h => `${h}h`, fmtPlanClock: h => `@${h}` });
+  vm.runInContext(source.slice(from, to) + ";globalThis.render=fitPastHtml;", ui);
+  const html = res => vm.runInContext("render", ui)(Object.assign({ next: null, extra: null, inside: [] }, res));
+  assert.match(html({ next: { status: "all" }, extra: { status: "all", hours: 300, items: [] } }), /already in the answer[\s\S]*Every project/);
+  assert.match(html({ next: { status: "time" }, extra: { status: "time", hours: 5, items: [] } }), /ran out[\s\S]*The search time ran out/);
+  assert.match(html({ extra: { status: "listed", hours: 5, items: [] } }), /Nothing else in your list finishes within 5h more/);
+  const ledger = { name: "Clank", ledger: true, number: 308, ticked: false, checked: true, eta: 30, over: 2 };
+  assert.match(html({ extra: { status: "listed", hours: 5, items: [ledger] } }), /Clank ledger #308 <span class="proj-mini">· not ticked<\/span>/);
+  assert.match(html({ inside: [Object.assign({}, ledger, { eta: 20, over: 0 })] }), /Also fits inside your limit:<\/b> Clank ledger #308/);
+  assert.equal(html({}), "", "with both boxes off there is nothing to say");
+});
+
 test("the past-the-limit settings save on their own and never move a plan", () => {
   const out = JSON.parse(vm.runInContext(`(function(){
     const s=normalize(defaults());s.schemaVersion=CURRENT_SCHEMA_VERSION;s.baseTimeRev=3;
@@ -282,6 +333,7 @@ test("the Worker runs the fit task on the fit search time and refuses anything e
   worker.importScripts = (...files) => files.forEach(file =>
     vm.runInContext(fs.readFileSync(path.join(ROOT, "js", file), "utf8"), worker, { filename: file }));
   vm.runInContext(fs.readFileSync(path.join(ROOT, "js", "solver.worker.v2.js"), "utf8"), worker);
+  assert.ok(vm.runInContext("LEDGERS.length", worker) > 0, "the Worker loads the ledger data");
   const state = JSON.parse(vm.runInContext(`(function(){const s=normalize(defaults());s.mode="project";
     s.schemaVersion=CURRENT_SCHEMA_VERSION;s.baseTimeRev=3;s.fitHours=100000;
     s.projects=[{id:"a",name:"A",on:true,prio:null,from:1,to:1,done:0,levels:[{costs:[{item:"Glass",qty:"200"}]}]}];

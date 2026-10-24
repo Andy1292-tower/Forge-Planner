@@ -456,30 +456,39 @@ function fitSelectionRowHtml(r){
     :r.required==="unlock"?' <span class="pill" style="font-size:9px">needed to unlock</span>':"";
   return `<tr><td>${name}${why}</td><td>${levels}</td><td class="num mono">${r.finish!=null?fmtPlanClock(r.finish):"—"}</td></tr>`;
 }
-// What one past-the-limit step adds: the project level, or the ledger, it takes the answer to.
+// What one past-the-limit step adds: the ledger, or the project level, it takes the answer to.
 function fitPastLabel(item){
   const name=htmlText(item.name);
-  if(item.ledger)return item.levelCount>1?`${name} <span class="proj-mini">· ledger ${item.taken} of ${item.levelCount}</span>`:name;
-  return `${name} lv ${item.toLevel}`;
+  const label=item.ledger?(item.number!=null?`${name} ledger #${item.number}`:name):`${name} lv ${item.toLevel}`;
+  return item.ticked===false?`${label} <span class="proj-mini">· not ticked</span>`:label;
 }
+const FIT_PAST_NOTHING_LEFT="every project and ledger in your list is already in the answer, to its last level.";
+const FIT_PAST_NO_TIME="the search time ran out before anything past the limit could be checked. Give it more search time.";
 function fitPastHtml(res){
   let html="";
+  const inside=Array.isArray(res.inside)?res.inside:[];
+  if(inside.length)html+=`<div class="fit-next"><b>Also fits inside your limit${inside.length>1?", each on its own":""}:</b> ${inside.map(item=>
+    `${fitPastLabel(item)} (the plan takes <b>${fmtDuration(item.eta)}</b>)`).join("; ")}.</div>`;
   const next=res.next;
-  if(next&&next.status!=="all"){
+  if(next){
     const body=next.status==="found"
       ?`${fitPastLabel(next)} — with it the plan takes <b>${fmtDuration(next.eta)}</b>, done by <b>${fmtPlanClock(next.eta)}</b>, <b>${fmtDuration(next.over)}</b> past your limit.`
-      :next.status==="time"?"the search time ran out before it could be checked. Give it more search time."
+      :next.status==="time"?FIT_PAST_NO_TIME
+      :next.status==="all"?FIT_PAST_NOTHING_LEFT
       :`nothing else finishes within ${FIT_NEXT_WINDOW_HOURS} hours of your limit.`;
     html+=`<div class="fit-next"><b>Next past the limit:</b> ${body}</div>`;
   }
   const extra=res.extra;
-  if(extra&&extra.status!=="all"){
+  if(extra){
     html+=`<div class="subhead">With up to ${fmtDuration(extra.hours)} more</div>`;
-    html+=extra.items.length
+    const sentence=text=>`<div class="proj-mini">${text.charAt(0).toUpperCase()+text.slice(1)}</div>`;
+    html+=extra.status==="all"?sentence(FIT_PAST_NOTHING_LEFT)
+      :extra.status==="time"?sentence(FIT_PAST_NO_TIME)
+      :extra.items.length
       ?`<table class="fit-table"><thead><tr><th>Adds</th><th class="num">Plan takes</th><th class="num">Past the limit</th></tr></thead><tbody>${extra.items.map(item=>
         `<tr><td>${fitPastLabel(item)}</td><td class="num mono">${item.checked?fmtDuration(item.eta):`at least ${fmtDuration(item.eta)}`}</td><td class="num mono">${item.checked?"+"+fmtDuration(item.over):"not checked"}</td></tr>`).join("")}</tbody></table>
         ${extra.items.some(item=>!item.checked)?'<div class="proj-mini" style="margin-top:4px">Unchecked rows ran out of search time; their time is a lower bound.</div>':""}`
-      :`<div class="proj-mini">Nothing else finishes within ${fmtDuration(extra.hours)} more.</div>`;
+      :`<div class="proj-mini">Nothing else in your list finishes within ${fmtDuration(extra.hours)} more.</div>`;
   }
   return html;
 }
@@ -555,7 +564,7 @@ function fitBoxHtml(){
       </div>
       ${fitForcedHtml(running)}
       ${fitPastControlsHtml(running)}
-      <p class="help" style="margin:8px 0 10px">A heavy solve: it tries many combinations of your ticked projects and ledgers against the time limit, then checks the best as a full plan. Anything under <b>Must finish</b> is always in the answer, and the rest is fitted around it. It runs for up to the search time you pick on up to ${cores} CPU core${cores===1?"":"s"}, and only when you press <b>Find what fits</b>.</p>
+      <p class="help" style="margin:8px 0 10px">A heavy solve: it tries many combinations of your ticked projects and ledgers against the time limit, then checks the best as a full plan. Anything under <b>Must finish</b> is always in the answer, and the rest is fitted around it. Past the limit it looks at every project in your list, ticked or not, and each ledger character's following ledgers. It runs for up to the search time you pick on up to ${cores} CPU core${cores===1?"":"s"}, and only when you press <b>Find what fits</b>.</p>
       <div id="fitBody">${body}</div>
     </div>
   </details>`;
