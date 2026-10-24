@@ -466,7 +466,11 @@ function validateAndMigrate(candidate){
         if(_own(copied,"catId"))_pushError(errors,path+".ledgerId","must not be set on a catalog project");
         const ledgerNo=_own(project,"ledgerNo")?_readData(project,"ledgerNo",path+".ledgerNo",errors):null;
         copied.ledgerNo=ledgerNo===null?null:_number(ledgerNo,FIELD_SCHEMA.ledgerNumber,path+".ledgerNo",errors);
-      }else if(_own(project,"ledgerNo"))_pushError(errors,path+".ledgerNo","is only valid on a ledger");
+        if(_own(project,"ledgerAhead"))copied.ledgerAhead=_number(_readData(project,"ledgerAhead",path+".ledgerAhead",errors),FIELD_SCHEMA.ledgerAhead,path+".ledgerAhead",errors);
+      }else{
+        if(_own(project,"ledgerNo"))_pushError(errors,path+".ledgerNo","is only valid on a ledger");
+        if(_own(project,"ledgerAhead"))_pushError(errors,path+".ledgerAhead","is only valid on a ledger");
+      }
       if(_own(project,"description"))copied.description=_string(_readData(project,"description",path+".description",errors),FIELD_SCHEMA.projectDescription,path+".description",errors);
       if(_own(project,"_open"))copied._open=_boolean(_readData(project,"_open",path+"._open",errors),path+"._open",errors);
       out.projects.push(copied);
@@ -480,6 +484,10 @@ function validateAndMigrate(candidate){
   if(strictProjectState)out.projectStability=_enum(_readData(candidate,"projectStability","projectStability",errors),FIELD_SCHEMA.projectStability,"projectStability",errors);
   if(_own(candidate,"projLineMode"))out.projLineMode=_enum(_readData(candidate,"projLineMode","projLineMode",errors),FIELD_SCHEMA.projLineMode,"projLineMode",errors);
   if(_own(candidate,"fitHours"))out.fitHours=_number(_readData(candidate,"fitHours","fitHours",errors),FIELD_SCHEMA.fitHours,"fitHours",errors);
+  if(_own(candidate,"fitForced")){
+    const forced=_array(_readData(candidate,"fitForced","fitForced",errors),"fitForced",errors,STATE_LIMITS.maxProjects);
+    if(forced)out.fitForced=forced.map((id,index)=>_string(id,FIELD_SCHEMA.id,"fitForced["+index+"]",errors));
+  }
   if(_own(candidate,"fitBudget"))out.fitBudget=_number(_readData(candidate,"fitBudget","fitBudget",errors),FIELD_SCHEMA.fitBudget,"fitBudget",errors);
   if(_own(candidate,"planStart"))out.planStart=_number(_readData(candidate,"planStart","planStart",errors),FIELD_SCHEMA.timestamp,"planStart",errors);
 

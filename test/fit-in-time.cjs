@@ -38,13 +38,13 @@ function P(id, name, levels, extra) {
   return Object.assign({ id, name, on: true, prio: null, from: 1, to: levels.length, done: 0,
     levels: levels.map(costs => ({ costs: costs.map(([item, qty]) => ({ item, qty })) })) }, extra || {});
 }
-function fit(projects, hours) {
-  page.__setup = { lines: LINES, projects, hours };
+function fit(projects, hours, forced) {
+  page.__setup = { lines: LINES, projects, hours, forced: forced || [] };
   const out = vm.runInContext(`(function(){
     const s=defaults();s.dupe=0;s.margin=0;s.mode="project";
     s.lines=JSON.parse(JSON.stringify(globalThis.__setup.lines));
     s.projects=JSON.parse(JSON.stringify(globalThis.__setup.projects));
-    s.fitHours=globalThis.__setup.hours;
+    s.fitHours=globalThis.__setup.hours;s.fitForced=globalThis.__setup.forced.slice();
     normalize(s);syncManual(s);S=s;
     return JSON.parse(JSON.stringify(optimizeFit({now:()=>0})));
   })()`, page);
@@ -110,11 +110,21 @@ test("levels already marked done are not offered again", () => {
 
 test("a ledger counts once, and a ledger with nothing to craft is not offered", () => {
   const ledger = P("l1", "Tank", [[]], { ledgerId: "tank-timmerson", ledgerNo: 1 });        // Concrete 250
-  const mined = P("l2", "Caylris", [[]], { ledgerId: "caylris-en-divalone", ledgerNo: 1 });  // Ardranite only
+  const mined = P("l2", "Clank", [[]], { ledgerId: "clank", ledgerNo: 14 });                  // Scorchium only
   const res = fit([ledger, mined], 100000);
   assert.deepEqual(res.selection.map(r => r.id), ["l1"]);
   assert.equal(row(res, "l1").ledger, true);
   assert.equal(res.count, 1);
+});
+
+test("a level with nothing to craft keeps its place in its chain but finishes nothing", () => {
+  // The middle level stands in for a ledger that only asks for mined resources.
+  const res = fit([P("t", "Run", [[["Glass", 200]], [], [["Glass", 200]]])], 100000);
+  const t = row(res, "t");
+  assert.equal(t.remaining, 3);
+  assert.equal(t.taken, 3);
+  assert.equal(t.finished, 2);
+  assert.equal(res.count, 2);
 });
 
 test("a level using an unlocked material only counts once the in-list unlock is taken whole", () => {
@@ -142,6 +152,54 @@ test("past the exhaustive size the search stops on its own and still checks its 
   assert.ok(res.count > 0 && res.count < 24, String(res.count));
   assert.ok(res.eta <= everything.eta * 0.4);
   res.selection.forEach(r => assert.ok(r.taken >= 0 && r.taken <= r.remaining));
+});
+
+test("a must-finish project is in the answer even where leaving it out would finish more", () => {
+  const c = fit([C], 100000);
+  const hours = c.eta * 1.001;
+  const free = fit([A, B, C], fit([A, B], 100000).eta * 1.001);
+  assert.equal(row(free, "c").taken, 0, "unforced, the big project is the one left out");
+  const res = fit([A, B, C], hours, ["c"]);
+  assert.equal(row(res, "c").taken, 1);
+  assert.equal(row(res, "c").required, "chosen");
+  assert.equal(row(res, "a").required, null);
+  assert.equal(res.verified, true);
+  assert.ok(res.eta <= hours, `${res.eta} <= ${hours}`);
+  assert.equal(res.forcedOver, null);
+});
+
+test("must-finish projects that cannot make the limit on their own are reported with their real time", () => {
+  const c = fit([C], 100000);
+  const res = fit([A, B, C], c.eta * 0.5, ["c"]);
+  assert.ok(res.forcedOver, JSON.stringify(res));
+  assert.ok(Math.abs(res.forcedOver.real - c.eta) < 1e-6 * c.eta, `${res.forcedOver.real} vs ${c.eta}`);
+  assert.equal(res.verified, false);
+  assert.equal(row(res, "c").taken, 1);
+});
+
+test("a must-finish project brings the in-list unlock it waits on", () => {
+  const factory = P("ff", "Frame Factory", [[]], { catId: "frame-factory" });
+  const user = P("fr", "Frames user", [[["Frames", 30]]]);
+  const res = fit([factory, user, A], 100000, ["fr"]);
+  assert.equal(row(res, "fr").required, "chosen");
+  assert.equal(row(res, "ff").required, "unlock");
+  assert.equal(row(res, "ff").taken, 1);
+});
+
+test("the must-finish list saves as project ids, keeps only projects still listed, and never moves a plan", () => {
+  const out = JSON.parse(vm.runInContext(`(function(){
+    const s=normalize(defaults());s.schemaVersion=CURRENT_SCHEMA_VERSION;s.baseTimeRev=3;s.mode="project";
+    s.projects=[{id:"a",name:"A",on:true,prio:null,from:1,to:1,done:0,levels:[{costs:[]}]}];
+    s.fitForced=["a","gone","a"];
+    const kept=validateAndMigrate(JSON.parse(JSON.stringify(s)));
+    const bad=validateAndMigrate(Object.assign(JSON.parse(JSON.stringify(s)),{fitForced:"a"}));
+    const other=JSON.parse(JSON.stringify(s));other.fitForced=[];
+    return JSON.stringify({ok:kept.ok,forced:kept.state.fitForced,badOk:bad.ok,sameKey:solveStateKey(s)===solveStateKey(other)});
+  })()`, page));
+  assert.equal(out.ok, true);
+  assert.deepEqual(out.forced, ["a"]);
+  assert.equal(out.badOk, false);
+  assert.equal(out.sameKey, true, "the must-finish list is a question for the search, not a plan input");
 });
 
 test("the shard merge keeps a checked answer, then the most finished, then the shortest", () => {

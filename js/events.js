@@ -900,9 +900,10 @@ function projCard(p,pi){
 }
 /* ---------- ledger cards ----------
    Every character in LEDGER_CHARACTERS gets a card, whether or not it is in S.projects yet. Picking a
-   ledger number adds the character as a one-level project; normalize() keeps a listed ledger's costs
-   in step with the data. "Not listed" is a ledger the data does not have, entered with the same item
-   rows a custom project uses. */
+   ledger adds the character as a project; normalize() keeps a listed ledger's costs in step with the
+   data, one level for it and one for each following ledger "Include next" asks for. "Not listed" is a
+   ledger the data does not have, entered with the same item rows a custom project uses. Ledgers are
+   numbered as the game numbers them, by their order code. */
 function ledgerQuantityList(list){
   return (list||[]).map(c=>`${htmlText(c.item)} <b class="mono">${formatGameNum(toDec(c.qty),2)}</b>`).join(' <span style="color:var(--ink3)">·</span> ');
 }
@@ -911,10 +912,15 @@ function ledgerOptionsHtml(character,p){
   const options=p?[]:[`<option value="" selected disabled>Pick ledger…</option>`];
   character.ledgers.forEach((ledger,index)=>{
     const n=index+1,minedOnly=!ledger.costs.length?" · nothing to craft":"";
-    options.push(`<option value="${n}"${current===String(n)?" selected":""}>#${n} · ${htmlText(ledger.code)}${minedOnly}</option>`);
+    options.push(`<option value="${n}"${current===String(n)?" selected":""}>#${ledgerNumber(ledger)} · ${htmlText(ledger.code)}${minedOnly}</option>`);
   });
   options.push(`<option value="manual"${current==="manual"?" selected":""}>Not listed — enter items</option>`);
   return options.join("");
+}
+// A level of a ledger project is one ledger; this is its number, or null for typed-in items.
+function ledgerLevelNumber(p,level){
+  const character=ledgerCharacter(p.ledgerId);
+  return character&&p.ledgerNo!=null?ledgerNumber(character.ledgers[p.ledgerNo-1+level-1]):null;
 }
 function ledgerBodyHtml(p,pi){
   if(p.ledgerNo==null){
@@ -924,10 +930,16 @@ function ledgerBodyHtml(p,pi){
       <button class="btn ghost proj-add-lvl" data-paddcost="${pi}" data-li="0" aria-label="Add an item to ${htmlAttribute(p.name)}">+ item</button>
     </div>`;
   }
-  const entry=ledgerEntry(p.ledgerId,p.ledgerNo);if(!entry)return "";
-  const craft=entry.costs.length?ledgerQuantityList(entry.costs):'<span style="color:var(--ink3)">Nothing to craft — this ledger only asks for the items below.</span>';
-  const other=entry.other.length?`<div class="cat-lvl"><span class="cat-lvl-n">Also</span><span>${ledgerQuantityList(entry.other)} <span class="proj-mini">· not planned</span></span></div>`:"";
-  return `<div class="cat-lvls"><div class="cat-lvl"><span class="cat-lvl-n">Craft</span><span>${craft}</span></div>${other}</div>`;
+  const character=ledgerCharacter(p.ledgerId),entries=ledgerWindow(character,p.ledgerNo,p.ledgerAhead);
+  if(!entries.length)return "";
+  const rows=entries.map(entry=>{
+    const craft=entry.costs.length?ledgerQuantityList(entry.costs):'<span style="color:var(--ink3)">Nothing to craft</span>';
+    const other=entry.other.length?`<div class="ledger-also">Also ${ledgerQuantityList(entry.other)} <span class="proj-mini">· not planned</span></div>`:"";
+    return `<div class="cat-lvl"><span class="cat-lvl-n">#${ledgerNumber(entry)}</span><span>${craft}${other}</span></div>`;
+  }).join("");
+  const short=entries.length<1+p.ledgerAhead
+    ?`<div class="proj-mini" style="margin-top:4px">${entries.length>1?`Only ${entries.length-1} more ${entries.length===2?"ledger is":"ledgers are"}`:"No more ledgers are"} listed after #${ledgerNumber(entries[0])}.</div>`:"";
+  return `<div class="cat-lvls">${rows}</div>${short}`;
 }
 function ledgerCard(character,p,pi){
   const id=htmlAttribute(character.ledgerId),name=htmlText(character.name);
@@ -939,6 +951,10 @@ function ledgerCard(character,p,pi){
         <div class="proj-tools">${pick}</div></div>
     </div>`;
   }
+  const typed=p.ledgerNo==null,errorId=`field-ledger-${fieldDomToken(p.id)}-ahead-error`;
+  const aheadTitle=typed?"Pick a listed ledger to plan the ones after it.":"Also plan this many of the ledgers that come after it, in order.";
+  const ahead=`<label class="ledger-ahead${typed?" disabled":""}" title="${htmlAttribute(aheadTitle)}">Include next
+    <span class="field-stack"><input type="text" ${htmlFieldInputAttributes(FIELD_SCHEMA.ledgerAhead)} data-ledger-ahead="${pi}" value="${p.ledgerAhead||""}" placeholder="0" data-field-error="${errorId}" aria-label="${htmlAttribute(character.name)}: following ledgers to include"${typed?" disabled":""}><span class="field-error" id="${errorId}" aria-live="polite" aria-atomic="true"></span></span></label>`;
   return `<div class="proj ledger-card open" data-ledger-id="${id}" data-pi="${pi}">
     <div class="proj-h">
       ${portrait}
@@ -947,6 +963,7 @@ function ledgerCard(character,p,pi){
       <div class="proj-tools">
         ${projPrioField(p,pi)}
         ${pick}
+        ${ahead}
         <button class="btn ghost ledger-next" type="button" data-ledger-next="${pi}" title="Move to the next ledger once you have handed this one in">Turned in</button>
         <button class="iconbtn" data-pdel="${pi}" title="Remove from Projects" aria-label="Remove ${htmlAttribute(p.name)} from Projects">×</button>
       </div>
@@ -961,6 +978,11 @@ function renderLedgers(){
     return ledgerCard(character,pi>=0?S.projects[pi]:null,pi);
   }).join(""):`<div class="proj-mini" style="padding:6px 2px">No ledger characters are listed.</div>`;
 }
+// Typing a count repaints only the card's ledger list, so the field being typed in keeps its focus.
+function refreshLedgerBody(pi){
+  const p=S.projects[pi],body=document.querySelector(`.ledger-card[data-pi="${pi}"] .proj-b`);
+  if(p&&body)body.innerHTML=ledgerBodyHtml(p,pi);
+}
 // The rebuilt list replaces the control that was just used; hand focus to its replacement.
 function focusProjectControl(selector){
   const target=document.querySelector(selector);if(target&&!target.disabled)target.focus();
@@ -973,7 +995,7 @@ function pickLedger(ledgerId,value){
   if(existing&&existing.ledgerNo===ledgerNo)return;
   mutateState(st=>{
     let p=st.projects.find(x=>x.ledgerId===ledgerId);
-    if(!p){p={id:newId(),ledgerId,ledgerNo:null,name:"",on:true,prio:null,from:1,to:1,done:0,levels:[{costs:[]}]};st.projects.push(p);}
+    if(!p){p={id:newId(),ledgerId,ledgerNo:null,ledgerAhead:0,name:"",on:true,prio:null,from:1,to:1,done:0,levels:[{costs:[]}]};st.projects.push(p);}
     if(ledgerNo===null)p.levels=[{costs:[]}];
     p.ledgerNo=ledgerNo;p.done=0;
     normalizeLedgerProject(p);
@@ -981,14 +1003,15 @@ function pickLedger(ledgerId,value){
   renderProjects();markInputEdited("projectCosts",READ_BY_PROJECT);
   focusProjectControl(`[data-ledger-no="${ledgerId}"]`);
 }
-// The next ledger opens once this one is handed in. Past the last ledger the data has, the card
-// switches to typed-in items, empty.
+// The next ledger opens once this one is handed in, and the ledgers planned after it move up with
+// it. Past the last ledger the data has, the card switches to typed-in items, empty.
 function turnInLedger(pi){
   const p=S.projects[pi];if(!p||!p.ledgerId)return;
   mutateState(()=>{
     const next=p.ledgerNo!=null?p.ledgerNo+1:null;
     p.ledgerNo=next!=null&&ledgerEntry(p.ledgerId,next)?next:null;
-    p.levels=[{costs:[]}];p.done=0;
+    p.done=p.ledgerNo!=null?Math.max(0,(Number(p.done)||0)-1):0;
+    p.levels=[{costs:[]}];
     normalizeLedgerProject(p);
   });
   renderProjects();markInputEdited("projectCosts",READ_BY_PROJECT);
@@ -1149,6 +1172,15 @@ document.getElementById("projLists").addEventListener("input",e=>{
     if(disclosure){const label=`${S.projects[+v]._open?"Hide":"Show"} level costs for ${t.value.trim()||"untitled project"}`;disclosure.setAttribute("aria-label",label);disclosure.title=label;}
     markInputEdited("projectCosts",READ_BY_PROJECT);return;
   }
+  if((v=g("data-ledger-ahead"))!=null){
+    const pi=+v,p=S.projects[pi];if(!p||!p.ledgerId)return;
+    const result=commitFieldDraft(t,FIELD_SCHEMA.ledgerAhead,p.ledgerAhead,(st,value)=>{
+      const q=st.projects[pi];q.ledgerAhead=value==null?0:value;normalizeLedgerProject(q);
+      q.done=Math.max(0,Math.min(q.levels.length,Math.floor(Number(q.done)||0)));
+    });
+    if(result.committed){markInputEdited("projectCosts",READ_BY_PROJECT);refreshLedgerBody(pi);}
+    return;
+  }
   if((v=g("data-pfrom"))!=null||(v=g("data-pto"))!=null){
     const pi=+v,p=S.projects[pi],card=t.closest(".proj");if(!p||!card)return;
     const fromInput=card.querySelector(`[data-pfrom="${pi}"]`),toInput=card.querySelector(`[data-pto="${pi}"]`);
@@ -1223,10 +1255,11 @@ function renderProgress(){
     for(let L=from;L<=to;L++){
       const idx=L-from, isDone=idx<done, isNext=idx===done;
       const projectName=p.name||"Project";
-      // A ledger is one level, so its chip is the ledger itself rather than a level number.
-      const chipLabel=p.ledgerId?(isDone?`Undo ${projectName} completion`:`Mark ${projectName} done`)
+      // A ledger project's levels are ledgers, so each chip names its ledger rather than a level.
+      const ledgerNo=p.ledgerId?ledgerLevelNumber(p,L):null,chipText=p.ledgerId?(ledgerNo!=null?`#${ledgerNo}`:"Done"):`Lv ${L}`;
+      const chipLabel=p.ledgerId?(isDone?`Undo ${projectName} ${chipText} completion`:`Mark ${projectName} done through ${chipText}`)
         :isDone?`Undo ${projectName} level ${L} completion`:`Mark ${projectName} completed through level ${L}`;
-      chips.push(`<button class="prog-lvl${isDone?" done":""}${isNext?" next":""}" data-pid="${htmlAttribute(p.id)}" data-lvl="${L}" aria-label="${htmlAttribute(chipLabel)}" title="${htmlAttribute(chipLabel)}"><span class="pl-box"></span>${p.ledgerId?"Done":"Lv "+L}</button>`);
+      chips.push(`<button class="prog-lvl${isDone?" done":""}${isNext?" next":""}" data-pid="${htmlAttribute(p.id)}" data-lvl="${L}" aria-label="${htmlAttribute(chipLabel)}" title="${htmlAttribute(chipLabel)}"><span class="pl-box"></span>${chipText}</button>`);
     }
     const desc=p.description?`<span class="prog-desc">${htmlText(p.description)}</span>`:"";
     return `<div class="prog-proj${complete?" complete":""}">
@@ -1444,6 +1477,10 @@ document.getElementById("results").addEventListener("input",e=>{
 document.getElementById("results").addEventListener("change",e=>{
   const t=e.target;if(!t||!t.getAttribute)return;let v;
   // Plan-start anchor: display-only, so repaint from cache (no solve).
+  if(t.id==="fitForcedAdd"){
+    const id=t.value;if(!id||!(S.projects||[]).some(p=>p.id===id))return;
+    mutateState(st=>{if(!st.fitForced.includes(id))st.fitForced.push(id);});save();repaintFit();return;
+  }
   if(t.id==="fitBudget"){const checked=validateFieldValue(FIELD_SCHEMA.fitBudget,Number(t.value));if(checked.valid){mutateState(st=>{st.fitBudget=checked.value;});save();}else t.value=String(S.fitBudget);return;}
   if(t.id==="sellAgainItem"){_sellItemChoice=t.value;repaintProject();const pick=document.getElementById("sellAgainItem");if(pick)pick.focus();return;}
   if(t.id==="spStart"){const val=t.value,ms=val?new Date(val).getTime():null;if(!val||!isNaN(ms))mutateState(st=>{st.planStart=ms;});save();repaintProject();return;}
@@ -1474,6 +1511,12 @@ document.getElementById("results").addEventListener("click",e=>{
   const lineMode=cl("[data-linemode]");
   if(lineMode){setProjectLineMode(lineMode.getAttribute("data-linemode"));return;}
   // Plan-start "Now" — re-anchor the clock to the current moment (display only).
+  const unforce=cl("[data-fit-unforce]");
+  if(unforce){
+    const id=unforce.getAttribute("data-fit-unforce");
+    mutateState(st=>{st.fitForced=(st.fitForced||[]).filter(x=>x!==id);});save();repaintFit();
+    const pick=document.getElementById("fitForcedAdd");if(pick)pick.focus();return;
+  }
   if(cl("#btnFitRun")){startFit();return;}
   if(cl("#btnFitStop")){stopFit();return;}
   if(cl("#btnFitApply")){applyFitSelection();return;}

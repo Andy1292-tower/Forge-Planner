@@ -367,15 +367,19 @@ function solveServiceStatus(){return typeof solveService!=="undefined"?solveServ
 function fitRunning(){const status=solveServiceStatus();return !!(_fitRun&&status.active&&status.generation===_fitRun.generation);}
 // Anything but the background sell ranking still solving would be superseded by a search.
 function fitBlockedBySolve(){const status=solveServiceStatus();return status.active&&!status.follow&&!fitRunning();}
+// The must-finish list an answer was searched with. Not part of the solve key, which is about plans,
+// so an answer also goes out of date when this list changes.
+function fitForcedKey(){return [...(S.fitForced||[])].sort().join(",");}
+function fitResultCurrent(entry){return !!entry&&entry.key===solveStateKey(S)&&entry.forced===fitForcedKey();}
 function startFit(){
   if(fitRunning()||fitBlockedBySolve())return;
-  const snapshot=solveStateSnapshot(S),key=solveStateKey(snapshot);
+  const snapshot=solveStateSnapshot(S),key=solveStateKey(snapshot),forced=fitForcedKey();
   const budget=boundedPersistedField("fitBudget",snapshot.fitBudget,60000,10000,300000,true);
   let generation=null;
   generation=solveService.request({mode:"project",task:"fit",quiet:true,stateRevision,budget,stateSnapshot:snapshot,solveKey:key,
     onDrop:()=>{if(_fitRun&&_fitRun.generation===generation){_fitRun=null;repaintFit();resumeSellRanking();}}},(res,error)=>{
     _fitRun=null;
-    _fitResult=error||!res?{key,error:solveErrorMessage(error)}:{key,res};
+    _fitResult=error||!res?{key,forced,error:solveErrorMessage(error)}:{key,forced,res};
     repaintFit();
     resumeSellRanking();
   });
@@ -383,10 +387,11 @@ function startFit(){
   repaintFit();
 }
 function stopFit(){if(fitRunning())solveService.cancel("Fit-in-time search stopped");}
-// Tick off what does not fit and lower each partly-fitting project's end level to match. The list
-// is then exactly the answer's, so the answer stays current over it.
+// Tick off what does not fit and lower each partly-fitting project's end level to match — for a
+// ledger card, how many of the following ledgers it includes. The list is then exactly the answer's,
+// so the answer stays current over it.
 function applyFitSelection(){
-  const entry=_fitResult;if(!entry||!entry.res||entry.key!==solveStateKey(S))return;
+  const entry=_fitResult;if(!entry||!entry.res||!fitResultCurrent(entry))return;
   const rows=entry.res.selection||[];
   const off=rows.filter(r=>r.taken===0).length,trimmed=rows.filter(r=>r.taken>0&&r.taken<r.remaining).length;
   const parts=[];
@@ -397,7 +402,7 @@ function applyFitSelection(){
   mutateState(st=>{rows.forEach(r=>{
     const p=(st.projects||[]).find(x=>x.id===r.id);if(!p)return;
     if(r.taken===0){p.on=false;return;}
-    if(!p.ledgerId&&r.taken<r.remaining)p.to=r.toLevel;
+    if(r.taken<r.remaining){if(p.ledgerId)p.ledgerAhead=r.toLevel-1;else p.to=r.toLevel;}
   });});
   if(typeof markInputEdited==="function")markInputEdited("projects",["project"]);
   entry.key=solveStateKey(S);
@@ -408,33 +413,57 @@ function fitSelectionApplied(res){
   return (res.selection||[]).every(r=>{
     const p=(S.projects||[]).find(x=>x.id===r.id);if(!p)return true;
     if(r.taken===0)return !p.on;
-    return p.on&&(p.ledgerId||r.taken===r.remaining||Number(p.to)===r.toLevel);
+    if(r.taken===r.remaining)return p.on;
+    return p.on&&(p.ledgerId?Number(p.ledgerAhead)===r.toLevel-1:Number(p.to)===r.toLevel);
   });
 }
 function fitSelectionRowHtml(r){
   const name=htmlText(r.name);
-  const levels=r.ledger?"ledger":r.remaining===1?`lv ${r.fromLevel}`:`lv ${r.fromLevel} → ${r.toLevel} <span class="proj-mini">· ${r.taken} of ${r.remaining}</span>`;
-  return `<tr><td>${name}</td><td>${levels}</td><td class="num mono">${r.finish!=null?fmtPlanClock(r.finish):"—"}</td></tr>`;
+  const levels=r.ledger
+    ?(r.remaining===1?"ledger":`${r.taken} of ${r.remaining} ledgers`)
+    :r.remaining===1?`lv ${r.fromLevel}`
+    :`lv ${r.fromLevel}${r.toLevel>r.fromLevel?` → ${r.toLevel}`:""} <span class="proj-mini">· ${r.taken} of ${r.remaining}</span>`;
+  const why=r.required==="chosen"?' <span class="pill craft" style="font-size:9px">must finish</span>'
+    :r.required==="unlock"?' <span class="pill" style="font-size:9px">needed to unlock</span>':"";
+  return `<tr><td>${name}${why}</td><td>${levels}</td><td class="num mono">${r.finish!=null?fmtPlanClock(r.finish):"—"}</td></tr>`;
 }
 function fitResultHtml(entry,current){
   if(entry.error)return `<div class="notice warn" style="font-size:11.5px"><b>The search stopped.</b> ${htmlText(entry.error)}</div>`;
   const res=entry.res;
   if(res.empty)return `<div class="proj-mini">Nothing is ticked, so there is nothing to fit.</div>`;
-  const stale=current?"":`<div class="notice info" style="font-size:11.5px">Your projects or factory changed since this search ran. Run it again for an up-to-date answer.</div>`;
-  const ledgers=res.selection.filter(r=>r.ledger&&r.taken>0).length,levels=res.count-ledgers;
+  const stale=current?"":`<div class="notice info" style="font-size:11.5px">Your projects, factory or Must finish list changed since this search ran. Run it again for an up-to-date answer.</div>`;
+  const finished=r=>r.finished!=null?r.finished:r.taken;
+  const ledgers=res.selection.filter(r=>r.ledger).reduce((sum,r)=>sum+finished(r),0),levels=res.count-ledgers;
   const named=[levels?`${levels} project level${levels===1?"":"s"}`:"",ledgers?`${ledgers} ledger${ledgers===1?"":"s"}`:""].filter(Boolean).join(" and ");
   let head;
-  if(!res.count)head=`Nothing on your list finishes within <b>${fmtDuration(res.hours)}</b>.`;
+  const mustCount=res.selection.filter(r=>r.required==="chosen").length;
+  if(res.forcedOver){
+    const real=res.forcedOver.real,own=mustCount===1?"Your must-finish project doesn't":"Your must-finish projects don't";
+    head=`${own} fit in <b>${fmtDuration(res.hours)}</b> on ${mustCount===1?"its":"their"} own: ${real!=null
+      ?`crafted together ${mustCount===1?"it takes":"they take"} <b>${fmtDuration(real)}</b>`
+      :`${mustCount===1?"it needs":"they need"} at least <b>${fmtDuration(res.forcedOver.estimate)}</b>`}. Remove one from Must finish, or give it more hours.`;
+  }
+  else if(!res.count)head=`Nothing on your list finishes within <b>${fmtDuration(res.hours)}</b>.`;
   else if(res.verified&&Number.isFinite(res.eta))head=`<b>${named}</b> finish within <b>${fmtDuration(res.hours)}</b>. Crafted together they take <b>${fmtDuration(res.eta)}</b>, done by <b>${fmtPlanClock(res.eta)}</b>${res.hours-res.eta>1/60?`, with <b>${fmtDuration(res.hours-res.eta)}</b> to spare`:""}.`;
   else head=`<b>${named}</b> look likely to finish within <b>${fmtDuration(res.hours)}</b> (about <b>${fmtDuration(res.estimateEta)}</b>). The search time ran out before this was checked as a full plan, so treat it as a guide, or give it more search time.`;
   const taken=res.selection.filter(r=>r.taken>0),missed=res.selection.filter(r=>r.taken<r.remaining);
   const table=taken.length?`<table class="fit-table"><thead><tr><th>Finishes</th><th>Levels</th><th class="num">Done by</th></tr></thead><tbody>${taken.map(fitSelectionRowHtml).join("")}</tbody></table>`:"";
-  const missedText=missed.length?`<div class="proj-mini" style="margin-top:6px">Doesn't fit: ${missed.map(r=>htmlText(r.name)+(r.taken>0?` (lv ${r.toLevel+1} on)`:"")).join(", ")}.</div>`:"";
+  const missedText=missed.length?`<div class="proj-mini" style="margin-top:6px">Doesn't fit: ${missed.map(r=>htmlText(r.name)+(r.taken>0?(r.ledger?` (the last ${r.remaining-r.taken})`:` (lv ${r.toLevel+1} on)`):"")).join(", ")}.</div>`:"";
   const how=`<div class="proj-mini" style="margin-top:6px">${res.exhaustive?"Every combination was tried":`Tried ${res.tried} combinations${res.shards>1?` across ${res.shards} workers`:""}`}.</div>`;
   const apply=!(current&&res.verified&&res.count>0&&missed.length>0)?""
     :fitSelectionApplied(res)?`<div class="proj-mini" style="margin-top:6px">Your project list matches this selection.</div>`
     :`<button class="btn ghost" type="button" id="btnFitApply" style="margin-top:8px">Use this selection</button>`;
   return `${stale}<p style="margin:0 0 8px;font-size:12px;color:var(--ink2);line-height:1.5">${head}</p>${table}${missedText}${how}${apply}`;
+}
+// The ticked projects the answer has to include, as removable chips, and a picker for the rest.
+function fitForcedHtml(running){
+  const ticked=(S.projects||[]).filter(p=>p.on);
+  if(!ticked.length)return "";
+  const forced=new Set(S.fitForced||[]),off=running?" disabled":"";
+  const chips=ticked.filter(p=>forced.has(p.id)).map(p=>`<span class="fit-chip">${htmlText(p.name)}<button type="button" class="fit-chip-x" data-fit-unforce="${htmlAttribute(p.id)}" title="Remove from Must finish" aria-label="Remove ${htmlAttribute(p.name)} from Must finish"${off}>×</button></span>`).join("");
+  const rest=ticked.filter(p=>!forced.has(p.id));
+  const add=rest.length?`<select id="fitForcedAdd" aria-label="Add a project or ledger that must finish"${off}><option value="" selected>+ Add…</option>${rest.map(p=>`<option value="${htmlAttribute(p.id)}">${htmlText(p.name)}</option>`).join("")}</select>`:"";
+  return `<div class="fit-forced"><span class="fit-forced-l">Must finish</span>${chips||'<span class="proj-mini">nothing yet</span>'}${add}</div>`;
 }
 function fitBoxHtml(){
   const running=fitRunning(),blocked=fitBlockedBySolve();
@@ -448,7 +477,7 @@ function fitBoxHtml(){
   let body="";
   if(running)body=`<div class="proj-mini"><span class="spinner" aria-hidden="true"></span> Searching — up to ${budgetLabel}.</div>`;
   else if(blocked)body=`<div class="proj-mini">Waiting for the plan to finish solving.</div>`;
-  else if(_fitResult)body=fitResultHtml(_fitResult,_fitResult.key===solveStateKey(S));
+  else if(_fitResult)body=fitResultHtml(_fitResult,fitResultCurrent(_fitResult));
   return `<details class="cat-panel fit-panel" id="fitBox" ${(_fitOpen||running||_fitResult)?"open":""}>
     <summary data-paneltoggle="fit"><span class="cat-sum-lbl">What fits in a time limit</span><span class="cat-sum-meta">heavy solve</span></summary>
     <div class="panel-pad">
@@ -457,7 +486,8 @@ function fitBoxHtml(){
         <label class="fit-field">Search for <select id="fitBudget" aria-label="Fit-in-time search time"${running?" disabled":""}>${budgetOptions}</select></label>
         ${action}
       </div>
-      <p class="help" style="margin:8px 0 10px">A heavy solve: it tries many combinations of your ticked projects and ledgers against the time limit, then checks the best as a full plan. It runs for up to the search time you pick on up to ${cores} CPU core${cores===1?"":"s"}, and only when you press <b>Find what fits</b>.</p>
+      ${fitForcedHtml(running)}
+      <p class="help" style="margin:8px 0 10px">A heavy solve: it tries many combinations of your ticked projects and ledgers against the time limit, then checks the best as a full plan. Anything under <b>Must finish</b> is always in the answer, and the rest is fitted around it. It runs for up to the search time you pick on up to ${cores} CPU core${cores===1?"":"s"}, and only when you press <b>Find what fits</b>.</p>
       <div id="fitBody">${body}</div>
     </div>
   </details>`;

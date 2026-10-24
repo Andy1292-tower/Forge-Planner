@@ -620,6 +620,12 @@ footer a:hover,.contrib-help a:hover{text-decoration:underline}
 .fit-field input{width:72px;padding:5px 7px;font-size:12px;height:30px;text-align:right}
 .fit-field select{padding:5px 7px;font-size:11.5px;height:30px}
 .fit-table td,.fit-table th{font-size:11.5px}
+.fit-forced{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px;font-size:11.5px;color:var(--ink2)}
+.fit-forced-l{font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:var(--ink3);margin-right:2px}
+.fit-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 4px 2px 9px;border:1px solid var(--copper);border-radius:999px;background:rgba(210,129,58,.12);color:var(--ink)}
+.fit-chip-x{min-width:var(--compact-target);min-height:var(--compact-target);border:0;background:transparent;color:var(--ink3);cursor:pointer;font-size:13px;line-height:1}
+.fit-chip-x:hover{color:var(--danger)}
+.fit-forced select{max-width:220px;padding:4px 7px;font-size:11.5px;height:28px}
 .fit-panel .spinner{width:12px;height:12px;vertical-align:-2px;margin-right:4px}
 /* Plan-start anchor — inline in the Project-mode panel (promoted from the old step-by-step modal). */
 .plan-anchor{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;margin-bottom:12px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg2)}
@@ -776,6 +782,10 @@ footer a:hover,.contrib-help a:hover{text-decoration:underline}
 .ledger-pick{max-width:230px;padding:5px 7px;font-size:11.5px;height:30px}
 .ledger-next{font-size:11px;padding:5px 10px}
 .ledger-card .cat-lvl{grid-template-columns:42px 1fr}
+.ledger-also{margin-top:2px;font-size:11px;color:var(--ink3)}
+.ledger-ahead{display:flex;align-items:center;gap:5px;font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:var(--ink3)}
+.ledger-ahead input{width:44px;text-align:center;padding:4px 5px;height:28px;font-size:11.5px}
+.ledger-ahead.disabled{opacity:.45}
 /* project catalog picker */
 .cat-panel{border:1px solid var(--line);border-radius:7px;background:var(--bg2);margin-bottom:14px;overflow:hidden}
 .cat-panel>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;font-size:12.5px;font-weight:600;color:var(--ink);user-select:none}
