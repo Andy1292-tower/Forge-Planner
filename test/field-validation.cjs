@@ -39,9 +39,9 @@ test("creates deterministic collision-free DOM tokens for distinct input strings
 
 test("owns distinct numeric descriptors and the complete persisted ranges", () => {
   const schema = api("FIELD_SCHEMA");
-  assert.equal(schema.schemaVersion.defaultValue, 6);
-  assert.equal(schema.schemaVersion.min, 6);
-  assert.equal(schema.schemaVersion.max, 6);
+  assert.equal(schema.schemaVersion.defaultValue, 7);
+  assert.equal(schema.schemaVersion.min, 7);
+  assert.equal(schema.schemaVersion.max, 7);
   // Configuration keeps its ranges — every one of these describes machinery with a fixed physical
   // ceiling that a float64 will always hold.
   const expected = {

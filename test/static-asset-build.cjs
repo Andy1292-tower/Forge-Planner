@@ -99,6 +99,9 @@ function tooltipCustomPropertyUrl(source, label) {
 const LOADOUT_ICON_STEMS = ["bits", "concrete", "glass", "bricks", "gel", "reinforced-concrete", "batteries", "ingots",
   "plates", "rods", "frames", "wire"].map(name => `loadout-${name}`);
 
+const LEDGER_PORTRAIT_STEMS = fs.readdirSync(path.join(root, "assets"))
+  .filter(file => /^ledger-[a-z0-9-]+\.webp$/.test(file)).map(file => path.basename(file, ".webp"));
+
 function assetNames(directory) {
   const names = {
     app: findOne(directory, /^app\.[0-9a-f]{16}\.js$/),
@@ -108,6 +111,7 @@ function assetNames(directory) {
     speed: findOne(directory, /^speed\.[0-9a-f]{16}\.jpg$/),
   };
   for (const stem of LOADOUT_ICON_STEMS) names[stem] = findOne(directory, new RegExp(`^${stem}\\.[0-9a-f]{16}\\.png$`));
+  for (const stem of LEDGER_PORTRAIT_STEMS) names[stem] = findOne(directory, new RegExp(`^${stem}\\.[0-9a-f]{16}\\.webp$`));
   return names;
 }
 
@@ -253,6 +257,15 @@ test("the generated page has a closed hashed asset graph and an in-memory Worker
     for (const mount of ["/", "/Forge-Planner/"]) assertUrlResolvesAtMount(temporary, url, mount);
   }
 
+  // Ledger portraits are <img> sources too, one per character in js/ledgers.js.
+  assert.equal(LEDGER_PORTRAIT_STEMS.length, 17, "every ledger character has a portrait");
+  assert.doesNotMatch(app, /assets\/ledger-/, "the app must not name an unhashed ledger portrait");
+  for (const stem of LEDGER_PORTRAIT_STEMS) {
+    const url = `static/${findOne(temporary, new RegExp(`^${stem}\\.[0-9a-f]{16}\\.webp$`))}`;
+    assert.equal(app.split(`"${url}"`).length - 1, 1, `the app names ${stem} once, by its hashed URL`);
+    for (const mount of ["/", "/Forge-Planner/"]) assertUrlResolvesAtMount(temporary, url, mount);
+  }
+
   for (const relative of walk(temporary).filter(file => /\.(?:html|css|js)$/.test(file))) {
     assert.doesNotMatch(
       fs.readFileSync(path.join(temporary, ...relative.split("/")), "utf8"),
@@ -326,6 +339,12 @@ test("CSS, favicon, dupe, speed and loadout icon inputs rotate only their depend
       relative: "assets/loadout-gel.png",
       mutation: Buffer.from("independent-loadout-icon-rotation"),
       rotated: ["loadout-gel", "app"],
+    },
+    {
+      label: "ledger portrait",
+      relative: "assets/ledger-clank.webp",
+      mutation: Buffer.from("independent-ledger-portrait-rotation"),
+      rotated: ["ledger-clank", "app"],
     },
   ];
 

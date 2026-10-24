@@ -2129,10 +2129,15 @@ function projectDemand(includeCompleted){
     const done=includeCompleted?0:Math.max(0,Math.min(to-from+1,Math.floor(num(p.done)||0)));
     const start=from-1+done;
     if(start>=to)return;   // project fully checked off — nothing left to craft
-    const sub={};ALLITEMS.forEach(it=>sub[it]=DEC_ZERO);
+    const costs=[];
     for(let i=start;i<to&&i<lv.length;i++){
-      (lv[i].costs||[]).forEach(c=>{const it=c.item,q=toDec0(c.qty);if(ALLITEMS.includes(it)&&q.gt(DEC_ZERO)){sub[it]=sub[it].add(q);gross[it]=gross[it].add(q);}});
+      (lv[i].costs||[]).forEach(c=>{const it=c.item,q=toDec0(c.qty);if(ALLITEMS.includes(it)&&q.gt(DEC_ZERO))costs.push([it,q]);});
     }
+    // A ledger that asks for nothing the planner crafts (mined resources only, or no items typed in
+    // yet) has no phase to schedule.
+    if(p.ledgerId&&!costs.length)return;
+    const sub={};ALLITEMS.forEach(it=>sub[it]=DEC_ZERO);
+    costs.forEach(([it,q])=>{sub[it]=sub[it].add(q);gross[it]=gross[it].add(q);});
     perProject.push({id:p.id||"",name:p.name||"Project",catId:p.catId||"",prio:(p.prio!=null?p.prio:null),from:start+1,to,levels:lv.length,sub});
   });
   const inv={};ALLITEMS.forEach(it=>inv[it]=toDec0(S.inventory&&S.inventory[it]));

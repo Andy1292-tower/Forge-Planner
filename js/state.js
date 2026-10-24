@@ -156,7 +156,7 @@ function validateAndMigrate(candidate){
       _pushError(errors,"schemaVersion","was written by a newer version of Forge Planner");
       return {ok:false,errors,sourceVersion};
     }
-    if(sourceVersion!==1&&sourceVersion!==2&&sourceVersion!==3&&sourceVersion!==4&&sourceVersion!==5&&sourceVersion!==CURRENT_SCHEMA_VERSION)return {ok:false,errors:["schemaVersion is not supported"],sourceVersion};
+    if(sourceVersion!==1&&sourceVersion!==2&&sourceVersion!==3&&sourceVersion!==4&&sourceVersion!==5&&sourceVersion!==6&&sourceVersion!==CURRENT_SCHEMA_VERSION)return {ok:false,errors:["schemaVersion is not supported"],sourceVersion};
   }else{
     const legacyShape=Array.isArray(candidate.lines)&&_plainObject(candidate.prodCost)&&_plainObject(candidate.targets);
     if(!legacyShape)return {ok:false,errors:["unversioned save does not match a known Forge Planner shape"],sourceVersion:0};
@@ -406,7 +406,7 @@ function validateAndMigrate(candidate){
   if(_own(candidate,"projects")){
     const projects=_array(_readData(candidate,"projects","projects",errors),"projects",errors,STATE_LIMITS.maxProjects);
     if(projects){
-      const projectSlice=projects.slice(0,STATE_LIMITS.maxProjects),usedProjectIds=new Set(),reservedProjectIds=new Set();
+      const projectSlice=projects.slice(0,STATE_LIMITS.maxProjects),usedProjectIds=new Set(),reservedProjectIds=new Set(),usedLedgerIds=new Set();
       projectSlice.forEach(raw=>{if(!_plainObject(raw)||!_own(raw,"id"))return;const value=_readData(raw,"id","projects[].id",errors);
         if(typeof value==="string"&&FIELD_SCHEMA.id.pattern.test(value)&&value.length<=FIELD_SCHEMA.id.maxLength)reservedProjectIds.add(value);});
       const migratedProjectId=index=>{const base="legacy-project-"+(index+1);let id=base+"-migrated",suffix=2;
@@ -455,6 +455,18 @@ function validateAndMigrate(candidate){
       else if(_readData(project,"first",path+".first",errors)===true)prio=1;
       const copied={id,name,on,prio,from,to,done,levels:copiedLevels};
       if(_own(project,"catId"))copied.catId=_string(_readData(project,"catId",path+".catId",errors),FIELD_SCHEMA.id,path+".catId",errors);
+      // A ledger card: one per character, never also a catalog project. ledgerNo null is a ledger
+      // whose costs were typed in.
+      if(_own(project,"ledgerId")){
+        copied.ledgerId=_string(_readData(project,"ledgerId",path+".ledgerId",errors),FIELD_SCHEMA.id,path+".ledgerId",errors);
+        if(copied.ledgerId!==undefined){
+          if(usedLedgerIds.has(copied.ledgerId))_pushError(errors,path+".ledgerId","must be unique across projects");
+          usedLedgerIds.add(copied.ledgerId);
+        }
+        if(_own(copied,"catId"))_pushError(errors,path+".ledgerId","must not be set on a catalog project");
+        const ledgerNo=_own(project,"ledgerNo")?_readData(project,"ledgerNo",path+".ledgerNo",errors):null;
+        copied.ledgerNo=ledgerNo===null?null:_number(ledgerNo,FIELD_SCHEMA.ledgerNumber,path+".ledgerNo",errors);
+      }else if(_own(project,"ledgerNo"))_pushError(errors,path+".ledgerNo","is only valid on a ledger");
       if(_own(project,"description"))copied.description=_string(_readData(project,"description",path+".description",errors),FIELD_SCHEMA.projectDescription,path+".description",errors);
       if(_own(project,"_open"))copied._open=_boolean(_readData(project,"_open",path+"._open",errors),path+"._open",errors);
       out.projects.push(copied);

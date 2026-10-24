@@ -187,8 +187,8 @@ const runner=`
   }
   const migratedCredits=validateAndMigrate(creditsSchemaV1State());
   check("save-derived schema-v1 state migrates once to the current schema and 10 seconds",
-    migratedCredits.ok&&migratedCredits.sourceVersion===1&&CURRENT_SCHEMA_VERSION===6&&
-      migratedCredits.state.schemaVersion===6&&migratedCredits.state.solveBudget===10000,
+    migratedCredits.ok&&migratedCredits.sourceVersion===1&&CURRENT_SCHEMA_VERSION===7&&
+      migratedCredits.state.schemaVersion===7&&migratedCredits.state.solveBudget===10000,
     "ok="+migratedCredits.ok+", source="+migratedCredits.sourceVersion+
       ", schema="+(migratedCredits.state&&migratedCredits.state.schemaVersion)+
       ", budget="+(migratedCredits.state&&migratedCredits.state.solveBudget)+

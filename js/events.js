@@ -891,6 +891,104 @@ function projCard(p,pi){
     </div>
   </div>`;
 }
+/* ---------- ledger cards ----------
+   Every character in LEDGER_CHARACTERS gets a card, whether or not it is in S.projects yet. Picking a
+   ledger number adds the character as a one-level project; normalize() keeps a listed ledger's costs
+   in step with the data. "Not listed" is a ledger the data does not have, entered with the same item
+   rows a custom project uses. */
+function ledgerQuantityList(list){
+  return (list||[]).map(c=>`${htmlText(c.item)} <b class="mono">${formatGameNum(toDec(c.qty),2)}</b>`).join(' <span style="color:var(--ink3)">·</span> ');
+}
+function ledgerOptionsHtml(character,p){
+  const current=p?(p.ledgerNo==null?"manual":String(p.ledgerNo)):"";
+  const options=p?[]:[`<option value="" selected disabled>Pick ledger…</option>`];
+  character.ledgers.forEach((ledger,index)=>{
+    const n=index+1,minedOnly=!ledger.costs.length?" · nothing to craft":"";
+    options.push(`<option value="${n}"${current===String(n)?" selected":""}>#${n} · ${htmlText(ledger.code)}${minedOnly}</option>`);
+  });
+  options.push(`<option value="manual"${current==="manual"?" selected":""}>Not listed — enter items</option>`);
+  return options.join("");
+}
+function ledgerBodyHtml(p,pi){
+  if(p.ledgerNo==null){
+    const rows=((p.levels[0]||{}).costs||[]).map((c,ci)=>costRow(pi,0,ci,c)).join("");
+    return `<div class="lvl-card">
+      ${rows||'<div class="proj-mini" style="margin-bottom:5px">No items yet — add what this ledger asks for.</div>'}
+      <button class="btn ghost proj-add-lvl" data-paddcost="${pi}" data-li="0" aria-label="Add an item to ${htmlAttribute(p.name)}">+ item</button>
+    </div>`;
+  }
+  const entry=ledgerEntry(p.ledgerId,p.ledgerNo);if(!entry)return "";
+  const craft=entry.costs.length?ledgerQuantityList(entry.costs):'<span style="color:var(--ink3)">Nothing to craft — this ledger only asks for the items below.</span>';
+  const other=entry.other.length?`<div class="cat-lvl"><span class="cat-lvl-n">Also</span><span>${ledgerQuantityList(entry.other)} <span class="proj-mini">· not planned</span></span></div>`:"";
+  return `<div class="cat-lvls"><div class="cat-lvl"><span class="cat-lvl-n">Craft</span><span>${craft}</span></div>${other}</div>`;
+}
+function ledgerCard(character,p,pi){
+  const id=htmlAttribute(character.ledgerId),name=htmlText(character.name);
+  const portrait=`<img class="ledger-portrait" src="${htmlAttribute(character.portrait)}" alt="" width="40" height="40" decoding="async">`;
+  const pick=`<select class="ledger-pick" data-ledger-no="${id}" aria-label="${htmlAttribute(character.name)} current ledger">${ledgerOptionsHtml(character,p)}</select>`;
+  if(!p){
+    return `<div class="proj ledger-card unpicked" data-ledger-id="${id}">
+      <div class="proj-h">${portrait}<span class="ledger-slot" aria-hidden="true"></span><span class="pname-static">${name}</span>
+        <div class="proj-tools">${pick}</div></div>
+    </div>`;
+  }
+  const ids=projectFieldIds(p,"ledger");
+  return `<div class="proj ledger-card open" data-ledger-id="${id}" data-pi="${pi}">
+    <div class="proj-h">
+      ${portrait}
+      <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule" aria-label="Include ${htmlAttribute(p.name)} in schedule">
+      <span class="pname-static">${name}</span>
+      <div class="proj-tools">
+        ${projPrioField(p,pi,ids.priority)}
+        ${pick}
+        <button class="btn ghost ledger-next" type="button" data-ledger-next="${pi}" title="Move to the next ledger once you have handed this one in">Turned in</button>
+        <button class="iconbtn" data-pdel="${pi}" title="Remove from Projects" aria-label="Remove ${htmlAttribute(p.name)} from Projects">×</button>
+        <div class="proj-field-errors"><div class="field-error" id="${ids.priority}" aria-live="polite" aria-atomic="true"></div></div>
+      </div>
+    </div>
+    <div class="proj-b">${ledgerBodyHtml(p,pi)}</div>
+  </div>`;
+}
+function renderLedgers(){
+  const box=document.getElementById("projListLedgers");if(!box)return;
+  box.innerHTML=LEDGERS.length?LEDGERS.map(character=>{
+    const pi=S.projects.findIndex(p=>p.ledgerId===character.ledgerId);
+    return ledgerCard(character,pi>=0?S.projects[pi]:null,pi);
+  }).join(""):`<div class="proj-mini" style="padding:6px 2px">No ledger characters are listed.</div>`;
+}
+// The rebuilt list replaces the control that was just used; hand focus to its replacement.
+function focusProjectControl(selector){
+  const target=document.querySelector(selector);if(target&&!target.disabled)target.focus();
+}
+function pickLedger(ledgerId,value){
+  if(!ledgerCharacter(ledgerId))return;
+  const ledgerNo=value==="manual"?null:Number(value);
+  if(ledgerNo!==null&&!ledgerEntry(ledgerId,ledgerNo))return;
+  const existing=S.projects.find(p=>p.ledgerId===ledgerId);
+  if(existing&&existing.ledgerNo===ledgerNo)return;
+  mutateState(st=>{
+    let p=st.projects.find(x=>x.ledgerId===ledgerId);
+    if(!p){p={id:newId(),ledgerId,ledgerNo:null,name:"",on:true,prio:null,from:1,to:1,done:0,levels:[{costs:[]}]};st.projects.push(p);}
+    if(ledgerNo===null)p.levels=[{costs:[]}];
+    p.ledgerNo=ledgerNo;p.done=0;
+    normalizeLedgerProject(p);
+  });
+  renderProjects();markInputEdited("projectCosts",READ_BY_PROJECT);
+  focusProjectControl(`[data-ledger-no="${ledgerId}"]`);
+}
+// The next ledger opens once this one is handed in. Past the last ledger the data has, the card
+// switches to typed-in items, empty.
+function turnInLedger(pi){
+  const p=S.projects[pi];if(!p||!p.ledgerId)return;
+  mutateState(()=>{
+    const next=p.ledgerNo!=null?p.ledgerNo+1:null;
+    p.ledgerNo=next!=null&&ledgerEntry(p.ledgerId,next)?next:null;
+    p.levels=[{costs:[]}];p.done=0;
+    normalizeLedgerProject(p);
+  });
+  renderProjects();markInputEdited("projectCosts",READ_BY_PROJECT);
+  focusProjectControl(`[data-ledger-next="${pi}"]`);
+}
 function renderInv(){
   const box=document.getElementById("invRows");
   renderItemValueRows(box,S.inventoryText,S.inventory,"inv","0",FIELD_SCHEMA.inventory,
@@ -905,10 +1003,21 @@ function setProjectLineMode(value){
   if(checked.value===S.projLineMode)return true;
   mutateState(st=>{st.projLineMode=checked.value;});persistNow();doSolve();return true;
 }
+// Which sub-tab lists a project. A ledger whose character is no longer in the data is shown with the
+// custom projects, where its typed-in items stay editable.
+function projectSource(p){
+  if(p.catId)return "catalog";
+  if(p.ledgerId&&ledgerCharacter(p.ledgerId))return "ledgers";
+  return "custom";
+}
 function renderProjects(){
-  const box=document.getElementById("projList");
-  box.innerHTML=S.projects.length?S.projects.map((p,pi)=>projCard(p,pi)).join("")
-    :`<div class="proj-mini" style="padding:6px 2px">No projects yet — add one to start building a schedule.</div>`;
+  const cards={catalog:[],custom:[]};
+  S.projects.forEach((p,pi)=>{const source=projectSource(p);if(cards[source])cards[source].push(projCard(p,pi));});
+  document.getElementById("projListCatalog").innerHTML=cards.catalog.join("")
+    ||`<div class="proj-mini" style="padding:6px 2px">No catalog projects yet — browse the catalog above and add one.</div>`;
+  document.getElementById("projListCustom").innerHTML=cards.custom.join("")
+    ||`<div class="proj-mini" style="padding:6px 2px">No custom projects yet — add one to build your own needs-list.</div>`;
+  renderLedgers();
   const st=document.getElementById("projSeqToggle");if(st)st.checked=S.projectSeq!==false;
   const gt=document.getElementById("projGateToggle");if(gt){gt.checked=S.projectGate===false;gt.disabled=S.projectSeq!==false;gt.closest(".seq-toggle").classList.toggle("disabled",gt.disabled);}
   const stability=document.getElementById("projectStability");if(stability)stability.value=S.projectStability==="reoptimize"?"reoptimize":"prefer-current";
@@ -920,6 +1029,41 @@ document.getElementById("projGateToggle").addEventListener("change",e=>{mutateSt
 document.getElementById("projectStability").addEventListener("change",e=>{
   const value=e.target.value;if(value!=="prefer-current"&&value!=="reoptimize")return;
   mutateState(st=>{st.projectStability=value;});markInputEdited("schedule",READ_BY_PROJECT);
+});
+
+/* ---------- Projects sub-tabs: catalog, ledgers, custom ---------- */
+const PROJECT_TABS=Object.freeze({
+  catalog:{tab:"projTabCatalog",panel:"projPanelCatalog"},
+  ledgers:{tab:"projTabLedgers",panel:"projPanelLedgers"},
+  custom:{tab:"projTabCustom",panel:"projPanelCustom"},
+});
+let activeProjectTab="catalog";
+function selectProjectTab(name,{focus=false}={}){
+  activeProjectTab=PROJECT_TABS[name]?name:"catalog";
+  Object.entries(PROJECT_TABS).forEach(([key,meta])=>{
+    const on=key===activeProjectTab,tab=document.getElementById(meta.tab);
+    tab.setAttribute("aria-selected",on?"true":"false");
+    tab.tabIndex=on?0:-1;
+    document.getElementById(meta.panel).hidden=!on;
+  });
+  if(focus)document.getElementById(PROJECT_TABS[activeProjectTab].tab).focus();
+}
+const projectTabs=document.querySelector(".proj-tabs");
+projectTabs.addEventListener("click",event=>{
+  const tab=event.target.closest('[role="tab"]');if(!tab)return;
+  const selected=Object.keys(PROJECT_TABS).find(name=>PROJECT_TABS[name].tab===tab.id);
+  if(selected)selectProjectTab(selected,{focus:true});
+});
+projectTabs.addEventListener("keydown",event=>{
+  const tab=event.target.closest('[role="tab"]');if(!tab)return;
+  const names=Object.keys(PROJECT_TABS),current=names.findIndex(name=>PROJECT_TABS[name].tab===tab.id);if(current<0)return;
+  let next=null;
+  if(event.key==="ArrowRight")next=names[(current+1)%names.length];
+  else if(event.key==="ArrowLeft")next=names[(current-1+names.length)%names.length];
+  else if(event.key==="Home")next=names[0];
+  else if(event.key==="End")next=names[names.length-1];
+  if(!next)return;
+  event.preventDefault();selectProjectTab(next,{focus:true});
 });
 
 /* ---------- project catalog (static, read-only source list) ---------- */
@@ -967,7 +1111,7 @@ document.getElementById("projAdd").addEventListener("click",()=>{
 });
 document.getElementById("projClear").addEventListener("click",()=>{
   if(!(S.projects||[]).length)return;
-  if(!confirm("Remove all projects? This clears every added catalog project and custom project."))return;
+  if(!confirm("Remove all projects? This clears every catalog project, ledger and custom project."))return;
   mutateState(st=>{st.projects=[];});
   renderProjects();markInputEdited("projects",READ_BY_PROJECT);
 });
@@ -976,11 +1120,12 @@ document.getElementById("projInvClear").addEventListener("click",()=>{
   mutateState(st=>{INVENTORY_ITEMS.forEach(it=>{st.inventory[it]=null;st.inventoryText[it]="";});});
   renderInv();markInputEdited("inventory",READ_BY_PROJECT);
 });
-document.getElementById("projList").addEventListener("click",e=>{
+document.getElementById("projLists").addEventListener("click",e=>{
   const t=e.target,g=a=>t.getAttribute(a);
   let v;
   if((v=g("data-ptoggle"))!=null){mutateState(st=>{st.projects[+v]._open=!st.projects[+v]._open;});schedulePersist();renderProjects();const disclosure=document.querySelector(`[data-ptoggle="${v}"]`);if(disclosure)disclosure.focus();return;}
-  if((v=g("data-pdel"))!=null){if(confirm("Delete this project?")){mutateState(st=>{st.projects.splice(+v,1);});renderProjects();markInputEdited("projects",READ_BY_PROJECT);}return;}
+  if((v=g("data-ledger-next"))!=null){turnInLedger(+v);return;}
+  if((v=g("data-pdel"))!=null){const target=S.projects[+v];if(confirm(target&&target.ledgerId?`Remove ${target.name} from Projects?`:"Delete this project?")){mutateState(st=>{st.projects.splice(+v,1);});renderProjects();markInputEdited("projects",READ_BY_PROJECT);}return;}
   if((v=g("data-pdup"))!=null){mutateState(st=>{const c=JSON.parse(JSON.stringify(st.projects[+v]));c.id=newId();c.name=(c.name||"Project")+" copy";c._open=true;st.projects.splice(+v+1,0,c);});renderProjects();markInputEdited("projects",READ_BY_PROJECT);return;}
   if((v=g("data-paddlvl"))!=null){mutateState(st=>{const p=st.projects[+v];p.levels.push({costs:[]});p.to=p.levels.length;});renderProjects();markInputEdited("projectCosts",READ_BY_PROJECT);return;}
   if((v=g("data-pdellvl"))!=null){const pi=+v,li=+g("data-li");mutateState(st=>{const p=st.projects[pi];p.levels.splice(li,1);if(p.levels.length===0)p.levels.push({costs:[]});if(p.to>p.levels.length)p.to=p.levels.length;if(p.from>p.levels.length)p.from=p.levels.length;});renderProjects();markInputEdited("projectCosts",READ_BY_PROJECT);return;}
@@ -989,7 +1134,7 @@ document.getElementById("projList").addEventListener("click",e=>{
   // +1/−1 level completion on a shopping-list card (issue #87 item 3) — clamped to the from→to span.
   if((v=g("data-psinc"))!=null||(v=g("data-psdec"))!=null){const inc=g("data-psinc")!=null,p=S.projects[+v];if(!p)return;mutateState(()=>{const {span}=projSpan(p);p.done=Math.max(0,Math.min(span,projDone(p)+(inc?1:-1)));});renderProjects();markInputEdited("progress",READ_BY_PROJECT);return;}
 });
-document.getElementById("projList").addEventListener("input",e=>{
+document.getElementById("projLists").addEventListener("input",e=>{
   const t=e.target,g=a=>t.getAttribute(a);let v;
   if((v=g("data-pname"))!=null){
     mutateState(st=>{st.projects[+v].name=t.value;});
@@ -1007,11 +1152,12 @@ document.getElementById("projList").addEventListener("input",e=>{
   if((v=g("data-pprio"))!=null){const pi=+v,p=S.projects[pi];if(!p)return;const result=commitFieldDraft(t,FIELD_SCHEMA.projectPriority,p.prio,(st,value)=>{st.projects[pi].prio=value;});if(result.committed)markInputEdited("schedule",READ_BY_PROJECT);return;}
   if((v=g("data-cqty"))!=null){const[pi,li,ci]=v.split("_").map(Number),cost=S.projects[pi].levels[li].costs[ci];const result=commitFieldDraft(t,FIELD_SCHEMA.projectQuantity,cost.qty,(st,value)=>{st.projects[pi].levels[li].costs[ci].qty=value;});if(result.committed)markInputEdited("projectCosts",READ_BY_PROJECT);return;}
 });
-document.getElementById("projList").addEventListener("change",e=>{
+document.getElementById("projLists").addEventListener("change",e=>{
   const t=e.target,g=a=>t.getAttribute(a);let v;
   // Ticking projects in or out is batched work — accept and persist each tick, then let the
   // Resimulate bar apply the whole batch, rather than re-solving between them.
   if((v=g("data-pon"))!=null){commitProjectInclusion(st=>{st.projects[+v].on=t.checked;});return;}
+  if((v=g("data-ledger-no"))!=null){pickLedger(v,t.value);return;}
   if((v=g("data-citem"))!=null){const[pi,li,ci]=v.split("_").map(Number);mutateState(st=>{st.projects[pi].levels[li].costs[ci].item=t.value;});markInputEdited("projectCosts",READ_BY_PROJECT);return;}
 });
 document.getElementById("invRows").addEventListener("input",e=>{
@@ -1066,8 +1212,10 @@ function renderProgress(){
     for(let L=from;L<=to;L++){
       const idx=L-from, isDone=idx<done, isNext=idx===done;
       const projectName=p.name||"Project";
-      const chipLabel=isDone?`Undo ${projectName} level ${L} completion`:`Mark ${projectName} completed through level ${L}`;
-      chips.push(`<button class="prog-lvl${isDone?" done":""}${isNext?" next":""}" data-pid="${htmlAttribute(p.id)}" data-lvl="${L}" aria-label="${htmlAttribute(chipLabel)}" title="${htmlAttribute(chipLabel)}"><span class="pl-box"></span>Lv ${L}</button>`);
+      // A ledger is one level, so its chip is the ledger itself rather than a level number.
+      const chipLabel=p.ledgerId?(isDone?`Undo ${projectName} completion`:`Mark ${projectName} done`)
+        :isDone?`Undo ${projectName} level ${L} completion`:`Mark ${projectName} completed through level ${L}`;
+      chips.push(`<button class="prog-lvl${isDone?" done":""}${isNext?" next":""}" data-pid="${htmlAttribute(p.id)}" data-lvl="${L}" aria-label="${htmlAttribute(chipLabel)}" title="${htmlAttribute(chipLabel)}"><span class="pl-box"></span>${p.ledgerId?"Done":"Lv "+L}</button>`);
     }
     const desc=p.description?`<span class="prog-desc">${htmlText(p.description)}</span>`:"";
     return `<div class="prog-proj${complete?" complete":""}">
@@ -1130,7 +1278,7 @@ function projInlineRowHtml(p){
   return `<div class="proj-inline-row">
       <input type="checkbox" data-spon="${htmlAttribute(p.id)}" ${p.on?"checked":""} aria-label="Include ${htmlAttribute(name)} in the plan" title="Include ${htmlAttribute(name)} in the plan">
       <span style="flex:1 1 130px;min-width:110px;${complete?"color:var(--ink3)":""}">${htmlText(name)}${badge}</span>
-      <span class="proj-mini proj-inline-range">lv <input type="number" ${htmlFieldInputAttributes(fromRule)} data-spfrom="${htmlAttribute(p.id)}" value="${from}" data-field-error="${ids.from}" aria-label="${htmlAttribute(name)} starting level"> → <input type="number" ${htmlFieldInputAttributes(toRule)} data-spto="${htmlAttribute(p.id)}" value="${to}" data-field-error="${ids.to}" aria-label="${htmlAttribute(name)} ending level"></span>
+      ${p.ledgerId?"":`<span class="proj-mini proj-inline-range">lv <input type="number" ${htmlFieldInputAttributes(fromRule)} data-spfrom="${htmlAttribute(p.id)}" value="${from}" data-field-error="${ids.from}" aria-label="${htmlAttribute(name)} starting level"> → <input type="number" ${htmlFieldInputAttributes(toRule)} data-spto="${htmlAttribute(p.id)}" value="${to}" data-field-error="${ids.to}" aria-label="${htmlAttribute(name)} ending level"></span>`}
       <span class="lvl-step" title="Mark levels done one at a time">
         <button class="iconbtn" data-spdec="${htmlAttribute(p.id)}" ${done<=0?"disabled":""} aria-label="Mark one fewer ${htmlAttribute(name)} level done" title="Mark one fewer ${htmlAttribute(name)} level done">−</button>
         <span class="mono proj-mini" title="levels completed">${done}/${span}</span>

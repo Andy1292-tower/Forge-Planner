@@ -14,7 +14,7 @@
  * CONFIGURATION fields ("number"/"integer") keep their ranges. Line speed, turbo, duplication %,
  * margin, base craft time and the solve budget describe machinery with a fixed physical ceiling,
  * and a float64 will always hold them. */
-const CURRENT_SCHEMA_VERSION=6;
+const CURRENT_SCHEMA_VERSION=7;
 const CURRENT_BASE_TIME_REVISION=3;
 const STATE_LIMITS=Object.freeze({
   maxBytes:2*1024*1024,
@@ -95,6 +95,7 @@ const FIELD_SCHEMA=Object.freeze({
   projectIndex:_field("integer",1,{min:1,max:1e6,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"project level"}),
   projectPriority:_field("integer",null,{min:1,max:1e6,allowBlank:true,notation:"decimal",inputMode:"numeric",label:"project order"}),
   projectDone:_field("integer",0,{min:0,max:1e6,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"completed project levels"}),
+  ledgerNumber:_field("integer",null,{min:1,max:1e6,allowBlank:true,notation:"decimal",inputMode:"numeric",label:"ledger number"}),
   item:_field("enum",PRODUCTS[0],{values:Object.freeze(ALLITEMS.slice()),allowBlank:false,label:"item"}),
   manualJob:_field("enum","Idle",{values:Object.freeze(["Idle",...ALLITEMS]),allowBlank:false,label:"Manual job"}),
   timestamp:_field("number",null,{min:0,max:Number.MAX_SAFE_INTEGER,allowBlank:true,notation:"decimal",inputMode:"numeric",label:"time"})
