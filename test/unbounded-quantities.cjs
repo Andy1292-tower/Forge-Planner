@@ -186,7 +186,7 @@ function nonFinite(value, at, found, depth) {
   check("the save accepts a quantity past the float64 ceiling",
     saved.ok, (saved.errors || []).join("; ") || "ok");
   check("the save is schema v6 and writes the quantity as its canonical string",
-    saved.state.schemaVersion === 6 && saved.state.sellPrice.Batteries instanceof Dec,
+    saved.state.schemaVersion === 7 && saved.state.sellPrice.Batteries instanceof Dec,
     "schema=" + saved.state.schemaVersion);
 
   // localStorage: JSON is the wire, and decimal.js supplies toJSON.
@@ -254,7 +254,7 @@ function nonFinite(value, at, found, depth) {
 
   const migrated = api("validateAndMigrate")(legacy);
   check("a v4 save migrates without error", migrated.ok, (migrated.errors || []).slice(0, 4).join("; ") || "ok");
-  check("v4 migrates to v6", migrated.state.schemaVersion === 6, String(migrated.state.schemaVersion));
+  check("v4 migrates to v7", migrated.state.schemaVersion === 7, String(migrated.state.schemaVersion));
   check("v4 float quantities become exact quantities",
     migrated.state.sellPrice.Frames.eq(new Dec("1.25e30")) &&
     migrated.state.forgie.Ingots.eq(345500000) &&

@@ -10,6 +10,18 @@
  * left out rather than padded in.
  */
 const CHANGELOG=[
+  {version:"2026.10.24",date:"2026-10-24",groups:{
+    Added:[
+      "Ledgers, in Projects+Prices → Projects. Each character who posts ledgers on the Exchange has a card: pick the ledger they are on and its craftable items go into your Project plan, with any mined resources or potions it also asks for listed beside them. Turned in moves the card to the next ledger. For a ledger the planner doesn't have yet, choose Not listed and type its items in.",
+      "Batch projects that share an order number. With one at a time on and the new box ticked, projects with the same order number are crafted together as one project.",
+      "What fits in a time limit, in Project plan. Enter the hours you have and press Find what fits: it looks for the most levels of your ticked projects and ledgers that finish in time, checks the best set as a full plan, and lists what finishes and when. Use this selection then unticks the rest. It is a heavy solve, so it only runs when you press the button, for up to the search time you pick, and spreads across several CPU cores where your device has them.",
+      "Selling again, in Project plan. It names the item Max credits/hr would sell on your factory, when your plan stops using it, how many to keep on hand until then, and the credits/hr it earns once the plan is done. Pick another priced item from its list to see the same for that one. Sell price edits now mark a Project plan out of date too."
+    ],
+    Changed:[
+      "The Projects tab is split into Catalog, Ledgers and Custom.",
+      "A project's order is picked from a list of 1 to 10. With the list selected, typing a number picks it.",
+      "Editing Lil' Forgie rates, inventory, sell prices, projects, mined income, Infusion Upgrades or base craft times no longer re-plans while you type. The plan is marked out of date, and Resimulate updates it once you are done. Manual still updates as you go."
+    ]}},
   {version:"2026.10.22",date:"2026-10-22",groups:{
     Fixed:["Max items/hr could miss a better line assignment your crafters can already run, and find it only after a crafter was upgraded to a cap the better plan doesn't use."]}},
   {version:"2026.10.11",date:"2026-10-11",groups:{

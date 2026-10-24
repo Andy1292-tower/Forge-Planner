@@ -2129,10 +2129,15 @@ function projectDemand(includeCompleted){
     const done=includeCompleted?0:Math.max(0,Math.min(to-from+1,Math.floor(num(p.done)||0)));
     const start=from-1+done;
     if(start>=to)return;   // project fully checked off — nothing left to craft
-    const sub={};ALLITEMS.forEach(it=>sub[it]=DEC_ZERO);
+    const costs=[];
     for(let i=start;i<to&&i<lv.length;i++){
-      (lv[i].costs||[]).forEach(c=>{const it=c.item,q=toDec0(c.qty);if(ALLITEMS.includes(it)&&q.gt(DEC_ZERO)){sub[it]=sub[it].add(q);gross[it]=gross[it].add(q);}});
+      (lv[i].costs||[]).forEach(c=>{const it=c.item,q=toDec0(c.qty);if(ALLITEMS.includes(it)&&q.gt(DEC_ZERO))costs.push([it,q]);});
     }
+    // A ledger that asks for nothing the planner crafts (mined resources only, or no items typed in
+    // yet) has no phase to schedule.
+    if(p.ledgerId&&!costs.length)return;
+    const sub={};ALLITEMS.forEach(it=>sub[it]=DEC_ZERO);
+    costs.forEach(([it,q])=>{sub[it]=sub[it].add(q);gross[it]=gross[it].add(q);});
     perProject.push({id:p.id||"",name:p.name||"Project",catId:p.catId||"",prio:(p.prio!=null?p.prio:null),from:start+1,to,levels:lv.length,sub});
   });
   const inv={};ALLITEMS.forEach(it=>inv[it]=toDec0(S.inventory&&S.inventory[it]));
@@ -3434,6 +3439,29 @@ function putIdleLinesToWork(ph,laterProjects,inventory,context,runOptions,phaseI
   fillIdleLinesWithOwnDemand(ph,inventory,context,control,baseline,deadline);
   fillIdleLinesAhead(ph,laterProjects,inventory,context,control,deadline);
 }
+/* What one-at-a-time mode schedules, one entry per phase. Each project is its own unit, unless
+ * batching is on: then projects sharing an order number are one unit, their costs summed and
+ * crafted from one pool in a single phase. Unlock precedence still holds inside a batch, so a batch
+ * that spans unlock layers is one unit per layer. A batched unit's id is its member ids joined,
+ * like a wave's, so line stability follows the same members across edits. */
+function projectScheduleUnits(perProject,layer,batch){
+  const single=(p,i)=>({p,layer:layer[i],members:null});
+  if(!batch)return perProject.map(single);
+  const groups=new Map(),units=[];
+  perProject.forEach((p,i)=>{
+    if(p.prio==null){units.push(single(p,i));return;}
+    const key=p.prio+":"+layer[i];
+    if(!groups.has(key)){const unit={layer:layer[i],list:[]};groups.set(key,unit);units.push(unit);}
+    groups.get(key).list.push(p);
+  });
+  return units.map(unit=>{
+    if(!unit.list)return unit;
+    if(unit.list.length===1)return {p:unit.list[0],layer:unit.layer,members:null};
+    const sub={};ALLITEMS.forEach(it=>sub[it]=unit.list.reduce((sum,m)=>sum.add(toDec0(m.sub[it])),DEC_ZERO));
+    const p={id:unit.list.map(m=>m.id).sort().join("+"),name:unit.list.map(m=>m.name).join(" + "),prio:unit.list[0].prio,sub};
+    return {p,layer:unit.layer,members:unit.list};
+  });
+}
 function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
   const layer=runOptions&&runOptions.progressLayers||unlockLayers(perProject);
   const maxL=perProject.length?Math.max.apply(null,layer):0;
@@ -3535,10 +3563,11 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
   // in Line switching, the run control that now bounds every other LP in the run. In Set & forget
   // the control belongs to the discrete search and these estimates stay off it, as they always have.
   const estimateOptions={scheduleControl:runOptions&&runOptions.scheduleControl,lpMemo:runOptions&&runOptions.lpMemo};
-  const cost=perProject.map(p=>{const netDemand=projNetVec(p.sub,invInit),avail=runIsStatic(runOptions)?{}:projAvailVec(p.sub,invInit);
+  const units=projectScheduleUnits(perProject,layer,S.projectBatch===true);
+  const cost=units.map(({p})=>{const netDemand=projNetVec(p.sub,invInit),avail=runIsStatic(runOptions)?{}:projAvailVec(p.sub,invInit);
     const ph=solvePhaseFor(netDemand,p.name,avail,false,null,estimateOptions);return ph.feasible?ph.eta:Infinity;});
-  const order=perProject.map((p,i)=>({p,i})).sort((a,b)=>{
-    if(layer[a.i]!==layer[b.i])return layer[a.i]-layer[b.i];   // unlock precedence (hard)
+  const order=units.map((unit,i)=>({p:unit.p,members:unit.members,layer:unit.layer,i})).sort((a,b)=>{
+    if(a.layer!==b.layer)return a.layer-b.layer;               // unlock precedence (hard)
     const pa=a.p.prio,pb=b.p.prio;
     if(pa!=null&&pb!=null){if(pa!==pb)return pa-pb;}            // manual order, lower first
     else if(pa!=null)return -1;
@@ -3548,10 +3577,11 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
     return ca-cb;                                               // else cheapest makespan
   });
   let cum=0;const phases=[];
-  order.forEach(({p},index)=>{
+  order.forEach(({p,members},index)=>{
     const inv0=Object.assign({},exactInventory),sliced=slicedRunOptions(index,order.length);
     const ph=solveExecutableProjectPhase(p.sub,p.name,exactInventory,stabilityPolicy,p.id,sliced);
     ph.semanticIndex=phases.length;ph.prio=(p.prio!=null?p.prio:null);ph.demandSub=p.sub;ph.invStart=inv0;
+    if(members)ph.members=members.map(m=>m.name);
     // Ordering above is settled before any of this, so a fill can never reshuffle the queue it is
     // banking for: it only puts lines this phase left idle to work on this project, then on what
     // comes next.
@@ -3640,7 +3670,7 @@ function solveProjectRun(seq,net,perProject,stabilityPolicy,runOptions){
   const main=phases[0]||{plan:[],balance:[],rate:{},demandItems:[],bottleneck:null};
   const stabilityUpdates=phases.filter(ph=>ph.feasible&&ph.preProducedConverged!==false&&ph.stabilityUpdate).map(ph=>ph.stabilityUpdate);
   return {empty:false,mode:"project",projLineMode:S.projLineMode==="static"?"static":"split",sequenced:seq,waved,single,
-    orderSeqSetting:S.projectSeq!==false,orderGateSetting:S.projectGate!==false,
+    orderSeqSetting:S.projectSeq!==false,orderGateSetting:S.projectGate!==false,orderBatchSetting:S.projectSeq!==false&&S.projectBatch===true,
     phases,executionPhases:executable.phases,perProject,net,
     plan:main.plan,balance:main.balance,
     demandItems:(seq||waved)?ALLITEMS.filter(it=>net[it]>1e-9):main.demandItems,
@@ -3792,6 +3822,269 @@ function optimizeProjectTop(testOptions){
   return selected;
 }
 
+
+/* ---------- fit in time ----------
+ * Which of the ticked levels finish inside a time limit. Every ticked project contributes its
+ * remaining levels as a chain (a level only after the one before it); a ledger is one level. Sets
+ * are compared by levels finished, then by lower order numbers (an unnumbered level ranks after
+ * 10), then by less time.
+ *
+ * A set is scored with the pooled makespan LP — the estimate one-at-a-time ordering uses — over its
+ * summed costs and the stock on hand. That LP lets the whole set share every line from the first
+ * minute, so no executable schedule of the set is faster, and a set it says misses the limit cannot
+ * make it. A level needing a material an in-list project unlocks only counts once that whole project
+ * is in the set, and a PROJECT_PREREQS prerequisite gates its dependent the same way.
+ *
+ * The best set found is then run as a complete Project plan crafted together — unlock waves,
+ * warm-ups, replay, the user's line mode — and how far that plan lands from its estimate moves the
+ * limit the search works to. Search and check repeat until the limit is settled; the answer is the
+ * best set whose real plan finished in time.
+ *
+ * Each shard starts the search from a different order (FIT_STRATEGIES) and spends what is left of
+ * its search time on seeded random restarts; the page keeps the best verified answer. */
+const FIT_STRATEGIES=Object.freeze(["marginal","order","standalone","random"]);
+const FIT_SEARCH_SHARE=0.7;
+const FIT_UNRANKED=11;
+const FIT_EXHAUSTIVE_SETS=512;
+const FIT_IDLE_RESTARTS=12;
+const FIT_MAX_CHECKS=6;          // full plan runs per shard
+const FIT_MAX_ROUNDS=16;         // limit moves, checked or answered from an earlier check
+const FIT_CHECK_SHARE=0.5;       // of the time left, one check may spend
+const FIT_REFINE_SHARE=0.25;     // of the time left, one re-search may spend
+const FIT_RESCALE_CAP=0.98;      // a rescale always lowers the limit by at least this much
+const FIT_LIMIT_TOLERANCE=0.01;  // of the hours: a bracket this narrow is settled
+function fitChains(){
+  const chains=[];
+  (S.projects||[]).forEach(p=>{
+    if(!p.on)return;
+    const lv=p.levels||[];
+    const from=Math.max(1,Math.min(lv.length,Math.floor(num(p.from)||1)));
+    const to=Math.min(lv.length,Math.max(from,Math.floor(num(p.to)||lv.length)));
+    const done=Math.max(0,Math.min(to-from+1,Math.floor(num(p.done)||0))),start=from-1+done;
+    if(start>=to)return;
+    const levels=[];
+    for(let i=start;i<to;i++){
+      const sub={};ALLITEMS.forEach(it=>sub[it]=DEC_ZERO);
+      (lv[i].costs||[]).forEach(c=>{const q=toDec0(c.qty);if(ALLITEMS.includes(c.item)&&q.gt(DEC_ZERO))sub[c.item]=sub[c.item].add(q);});
+      const direct=ALLITEMS.filter(it=>sub[it].gt(DEC_ZERO)),chain=relevantChain(direct);
+      levels.push({level:i+1,sub,uses:new Set([...direct,...chain.prods,...chain.raws])});
+    }
+    if(p.ledgerId&&levels.every(level=>!level.uses.size))return;
+    chains.push({id:p.id||"",name:p.name||"Project",catId:p.catId||"",ledger:!!p.ledgerId,
+      prio:p.prio!=null?p.prio:null,start,levelCount:lv.length,levels});
+  });
+  // Gates: an in-list unlocker must be taken whole before a level using its material counts.
+  const unlockerOf={},byCat={};
+  chains.forEach((c,i)=>{if(UNLOCKS[c.catId])unlockerOf[UNLOCKS[c.catId]]=i;if(c.catId)byCat[c.catId]=i;});
+  chains.forEach((c,i)=>{
+    const whole=(PROJECT_PREREQS[c.catId]||[]).map(cat=>byCat[cat]).filter(u=>u!=null&&u!==i);
+    c.levels.forEach(level=>{
+      level.gates=[...new Set([...whole,...UNLOCK_MATERIALS.map(m=>unlockerOf[m]).filter((u,k)=>u!=null&&u!==i&&level.uses.has(UNLOCK_MATERIALS[k]))])];
+    });
+  });
+  return chains;
+}
+function fitRandom(seed){
+  let a=seed>>>0;
+  return ()=>{a=(a+0x6D2B79F5)>>>0;let t=a;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return ((t^(t>>>14))>>>0)/4294967296;};
+}
+function optimizeFit(testOptions,shard){
+  const t0=performance.now();
+  const hours=boundedPersistedField("fitHours",S.fitHours,48,0.1,100000);
+  const budget=boundedPersistedField("fitBudget",S.fitBudget,60000,10000,300000,true);
+  const slice=normalizeShard(shard),strategyIndex=slice?slice.index:0;
+  const chains=fitChains();
+  if(!chains.length)return {empty:true,mode:"project",task:"fit",hours,selection:[],count:0,ms:performance.now()-t0};
+  const control=makeSolveControl(budget,testOptions),lpMemo=makeLpMemo(),isStatic=S.projLineMode==="static";
+  const inv=projectInitialInventory(),estimates=new Map();
+  // `limit` is the estimate a set must come in under. It starts at the real limit and moves once the
+  // full plan checks show how far the estimate sits below an executable schedule.
+  let tried=0,limit=hours,searchUntil=control.startedAt+budget*FIT_SEARCH_SHARE;
+  const searchOpen=()=>!control.isStopped()&&control.currentTime()<searchUntil;
+  const taken=n=>n.reduce((sum,k)=>sum+k,0);
+  const rankOf=n=>n.reduce((sum,k,i)=>sum+k*(chains[i].prio!=null?chains[i].prio:FIT_UNRANKED),0);
+  const allowed=(n,i,k)=>chains[i].levels[k].gates.every(u=>n[u]===chains[u].levels.length);
+  // Drop every level that lost its gate, from the first such level of its chain onward.
+  const settle=n=>{
+    const out=n.slice();let changed=true;
+    while(changed){changed=false;
+      out.forEach((k,i)=>{for(let j=0;j<k;j++)if(!allowed(out,i,j)){out[i]=j;changed=true;break;}});
+    }
+    return out;
+  };
+  const demandOf=n=>{
+    const sub={};ALLITEMS.forEach(it=>sub[it]=DEC_ZERO);
+    n.forEach((k,i)=>{for(let j=0;j<k;j++)ALLITEMS.forEach(it=>{sub[it]=sub[it].add(chains[i].levels[j].sub[it]);});});
+    return sub;
+  };
+  // Hours the pooled LP needs for set n; Infinity when it cannot be made or the search is out of time.
+  const estimate=n=>{
+    const key=n.join(",");
+    if(estimates.has(key))return estimates.get(key);
+    if(!taken(n)){estimates.set(key,0);return 0;}
+    if(!control.checkpoint("fit-candidate"))return Infinity;
+    tried++;
+    const sub=demandOf(n);
+    const ph=solvePhaseFor(projNetVec(sub,inv),"Fit check",isStatic?{}:projAvailVec(sub,inv),false,null,
+      {scheduleControl:control,lpMemo});
+    const eta=ph.evaluated!==false&&ph.feasible?ph.eta:Infinity;
+    if(ph.evaluated!==false)estimates.set(key,eta);
+    return eta;
+  };
+  const score=n=>({n,count:taken(n),rank:rankOf(n),eta:estimate(n)});
+  const better=(a,b)=>!b||a.count>b.count||(a.count===b.count&&(a.rank<b.rank||(a.rank===b.rank&&a.eta<b.eta-etaCompareEpsilon(a.eta,b.eta))));
+  // The hours level k of chain i adds to its own chain crafted alone.
+  const standalone=new Map();
+  const standaloneHours=(i,k)=>{
+    const key=i+":"+k;if(standalone.has(key))return standalone.get(key);
+    const alone=depth=>chains.map((_,ci)=>ci===i?depth:0);
+    const value=estimate(alone(k+1))-estimate(alone(k));
+    standalone.set(key,value);return value;
+  };
+  // Grow n one level at a time while the set stays inside the limit, choosing the next by `strategy`.
+  const grow=(start,strategy,random,frozen)=>{
+    let n=start.slice();
+    while(searchOpen()){
+      const options=[];
+      chains.forEach((c,i)=>{
+        if(frozen&&frozen.has(i))return;
+        const k=n[i];if(k>=c.levels.length||!allowed(n,i,k))return;
+        const next=n.slice();next[i]=k+1;
+        const eta=estimate(next);
+        if(eta<=limit)options.push({i,next,eta,prio:c.prio!=null?c.prio:FIT_UNRANKED});
+      });
+      if(!options.length)break;
+      let pick;
+      if(strategy==="order")pick=options.reduce((a,b)=>b.prio<a.prio||(b.prio===a.prio&&b.eta<a.eta)?b:a);
+      else if(strategy==="standalone")pick=options.reduce((a,b)=>standaloneHours(b.i,n[b.i])<standaloneHours(a.i,n[a.i])?b:a);
+      else if(strategy==="random"){options.sort((a,b)=>a.eta-b.eta);pick=options[Math.floor(random()*Math.min(3,options.length))];}
+      else pick=options.reduce((a,b)=>b.eta<a.eta||(b.eta===a.eta&&b.prio<a.prio)?b:a);
+      n=pick.next;
+    }
+    return n;
+  };
+  // Drop one chain's last level and refill from the rest; keep any refill that scores better.
+  const improve=(n,random)=>{
+    let best=score(n),moved=true;
+    while(moved&&searchOpen()){
+      moved=false;
+      const order=chains.map((_,i)=>i).filter(i=>best.n[i]>0);
+      if(random)order.sort(()=>random()-0.5);
+      for(const i of order){
+        if(!searchOpen())break;
+        const dropped=best.n.slice();dropped[i]-=1;
+        const refilled=score(grow(settle(dropped),"marginal",null,new Set([i])));
+        if(refilled.eta<=limit&&better(refilled,best)){best=refilled;moved=true;break;}
+      }
+    }
+    return best;
+  };
+  // A set cut back inside the limit by dropping, each time, the last level that saves the most.
+  const shrink=n=>{
+    let current=score(settle(n));
+    while(current.count>0&&!(current.eta<=limit)){
+      let next=null;
+      current.n.forEach((k,i)=>{
+        if(!k)return;const trial=current.n.slice();trial[i]=k-1;
+        const cut=score(settle(trial));
+        if(!next||cut.eta<next.eta||(cut.eta===next.eta&&better(cut,next)))next=cut;
+      });
+      current=next;
+    }
+    return current;
+  };
+  const strategy=FIT_STRATEGIES[strategyIndex%FIT_STRATEGIES.length];
+  const zero=chains.map(()=>0);
+  const space=chains.reduce((product,c)=>product*(c.levels.length+1),1);
+  let exhaustive=space<=FIT_EXHAUSTIVE_SETS;
+  // The best set under the current limit. Few enough sets are simply all tried; otherwise the shard's
+  // strategy, then seeded random restarts until they keep landing on sets already scored.
+  const search=seed=>{
+    let best=score(zero);
+    if(exhaustive){
+      const n=zero.slice();
+      for(let index=0;index<space;index++){
+        let rest=index;chains.forEach((c,i)=>{n[i]=rest%(c.levels.length+1);rest=Math.floor(rest/(c.levels.length+1));});
+        if(settle(n).join(",")!==n.join(","))continue;
+        const candidate=score(n.slice());
+        if(!Number.isFinite(candidate.eta)&&!searchOpen()){exhaustive=false;break;}
+        if(candidate.eta<=limit&&better(candidate,best))best=candidate;
+      }
+      return best;
+    }
+    best=improve(grow(zero,strategy,fitRandom(strategyIndex+1),null),strategy==="random"?fitRandom(strategyIndex+101):null);
+    if(seed){const fitted=improve(shrink(seed.n).n,null);if(fitted.eta<=limit&&better(fitted,best))best=fitted;}
+    for(let restart=1,idle=0;searchOpen()&&idle<FIT_IDLE_RESTARTS;restart++){
+      const before=tried,random=fitRandom((strategyIndex+1)*1000+restart);
+      const candidate=improve(grow(zero,"random",random,null),random);
+      if(candidate.eta<=limit&&better(candidate,best))best=candidate;
+      idle=tried===before?idle+1:0;
+    }
+    return best;
+  };
+  // A set run as a real plan, crafted together, on its own slice of what is left of the clock.
+  const verifyRun=(n,deadline)=>{
+    const perProject=[],gross={};ALLITEMS.forEach(it=>gross[it]=DEC_ZERO);
+    n.forEach((k,i)=>{
+      if(!k)return;const c=chains[i],sub={};ALLITEMS.forEach(it=>sub[it]=DEC_ZERO);
+      for(let j=0;j<k;j++)ALLITEMS.forEach(it=>{sub[it]=sub[it].add(c.levels[j].sub[it]);});
+      ALLITEMS.forEach(it=>{gross[it]=gross[it].add(sub[it]);});
+      perProject.push({id:c.id,name:c.name,catId:c.catId,prio:c.prio,from:c.start+1,to:c.start+k,levels:c.levelCount,sub});
+    });
+    const runControl=projectCandidateControl(control,deadline);
+    const runOptions={staticControl:isStatic?runControl:null,scheduleControl:isStatic?null:runControl,lpMemo,
+      idleWork:isStatic?{budget:Math.max((deadline-control.currentTime())*STATIC_FILL_TIME_SHARE,STATIC_FILL_TIME_FLOOR),options:testOptions,control:runControl}:null};
+    const run=solveProjectRun(false,projNetVec(gross,inv),perProject,{readStability:false,rememberStability:false,stabilityCache:{}},runOptions);
+    delete run._stabilityUpdates;
+    return {run,perProject};
+  };
+  /* Check, then move the limit. A set that ran over shows how far its estimate sat below the real
+   * plan, so the next limit is scaled down by that much; after that the limit bisects between the
+   * highest one whose set ran on time and the lowest one whose set did not. A set already checked is
+   * not checked again — its answer moves the bracket directly. */
+  let candidate=search(null),verified=null,okLimit=0,failLimit=Infinity,checks=0;
+  const outcomes=new Map();
+  for(let round=0;round<FIT_MAX_ROUNDS&&candidate.count>0&&!control.isStopped();round++){
+    const key=candidate.n.join(",");
+    let outcome=outcomes.get(key);
+    if(!outcome){
+      if(checks>=FIT_MAX_CHECKS)break;
+      const now=control.readNow(),remaining=control.deadline-now;if(!(remaining>0))break;
+      const attempt=verifyRun(candidate.n,now+remaining*FIT_CHECK_SHARE);checks++;
+      const real=projectRunExecutable(attempt.run)?attempt.run.eta:Infinity;
+      outcome={ok:real<=hours+etaCompareEpsilon(real,hours),real,attempt};
+      outcomes.set(key,outcome);
+      if(outcome.ok){
+        const entry=Object.assign({},candidate,{run:attempt.run,perProject:attempt.perProject});
+        if(!verified||better(entry,verified))verified=entry;
+      }
+    }
+    if(outcome.ok){okLimit=Math.max(okLimit,limit);if(failLimit===Infinity)break;}
+    else failLimit=Math.min(failLimit,limit);
+    let next=!outcome.ok&&Number.isFinite(outcome.real)&&candidate.eta>0
+      ?Math.min(limit*FIT_RESCALE_CAP,candidate.eta*hours/outcome.real):(okLimit+failLimit)/2;
+    if(!(next>okLimit&&next<failLimit))next=(okLimit+failLimit)/2;
+    if(!Number.isFinite(next)||failLimit-okLimit<hours*FIT_LIMIT_TOLERANCE)break;
+    limit=next;
+    searchUntil=control.currentTime()+Math.max(0,control.deadline-control.currentTime())*FIT_REFINE_SHARE;
+    candidate=search(candidate);
+  }
+  const chosen=verified||candidate;
+  const run=verified?verified.run:null;
+  // A project finishes with the wave it is crafted in; one combined phase finishes everything at once.
+  const finish={};
+  if(run){
+    const layers=run.phases.length>1?unlockLayers(verified.perProject):verified.perProject.map(()=>0);
+    const ranks=[...new Set(layers)].sort((a,b)=>a-b);
+    verified.perProject.forEach((p,i)=>{const ph=run.phases[ranks.indexOf(layers[i])];finish[p.id]=ph&&Number.isFinite(ph.doneAt)?ph.doneAt:run.eta;});
+  }
+  return {empty:false,mode:"project",task:"fit",hours,strategy:exhaustive?"every set":strategy,exhaustive,tried,checks,
+    selection:chains.map((c,i)=>({id:c.id,name:c.name,ledger:c.ledger,prio:c.prio,taken:chosen.n[i],remaining:c.levels.length,
+      fromLevel:c.start+1,toLevel:c.start+chosen.n[i],levelCount:c.levelCount,finish:finish[c.id]!=null?finish[c.id]:null})),
+    count:chosen.count,rank:chosen.rank,estimateEta:Number.isFinite(chosen.eta)?chosen.eta:null,
+    verified:!!verified||chosen.count===0,eta:run?run.eta:(chosen.count===0?0:null),
+    deadlineReached:control.deadlineReached(),ms:performance.now()-t0};
+}
 
 /* `shard` is a real parameter and deliberately not a member of testOptions: testOptions is the
  * direct-source test seam and js/solver.js's own contract says it is never posted through the Worker

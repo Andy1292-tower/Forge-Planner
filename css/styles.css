@@ -608,6 +608,19 @@ footer a:hover,.contrib-help a:hover{text-decoration:underline}
 .settings-section-title{margin-bottom:8px;font-size:10.5px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--ink3)}
 .settings-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .settings-actions .btn{width:100%;justify-content:center}
+/* Selling again — the Project plan's note on when the best sell item is free to sell */
+.sell-again{margin:0 0 14px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg2)}
+.sell-again ul{margin:6px 0 0;padding-left:18px;font-size:11.5px;color:var(--ink2);line-height:1.55}
+.sell-again li b{color:var(--ink)}
+.sell-again-pick{display:flex;align-items:center;gap:8px;margin:2px 0 4px}
+.sell-again-pick select{max-width:240px;padding:5px 7px;font-size:11.5px;height:30px}
+/* What fits in a time limit */
+.fit-controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px}
+.fit-field{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink2)}
+.fit-field input{width:72px;padding:5px 7px;font-size:12px;height:30px;text-align:right}
+.fit-field select{padding:5px 7px;font-size:11.5px;height:30px}
+.fit-table td,.fit-table th{font-size:11.5px}
+.fit-panel .spinner{width:12px;height:12px;vertical-align:-2px;margin-right:4px}
 /* Plan-start anchor — inline in the Project-mode panel (promoted from the old step-by-step modal). */
 .plan-anchor{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;margin-bottom:12px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg2)}
 .plan-anchor label{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink3);font-weight:600}
@@ -742,12 +755,27 @@ footer a:hover,.contrib-help a:hover{text-decoration:underline}
 .proj-first{display:flex;align-items:center;gap:4px;cursor:pointer;font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:var(--ink3)}
 .proj-first .pfirst{width:15px;height:15px;margin-top:0}
 .proj-prio{display:flex;align-items:center;gap:4px;font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:var(--ink3)}
-.proj-prio input{width:36px;text-align:center;padding:4px 5px}
+.proj-prio select{width:54px;padding:4px 5px;height:28px;font-size:11.5px}
 /* Order is only consulted when projects run one at a time — dimmed (and the input disabled) when
    that toggle is off, so it reads as "not applicable" rather than "typed a number, nothing happened".
    Mirrors the .seq-toggle.disabled treatment on the unlock-gating checkbox. */
 .proj-prio.disabled{opacity:.45}
-.proj-prio.disabled input{cursor:default}
+.proj-prio.disabled select{cursor:default}
+/* Projects sub-tabs: an underline strip, so they read as sections of the Projects tab above them */
+.proj-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:4px 0 14px;border-bottom:1px solid var(--line2)}
+.proj-tabs button{min-width:0;min-height:var(--target);padding:8px 6px;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;
+  background:transparent;color:var(--ink2);font-family:"Chakra Petch",sans-serif;font-size:11.5px;font-weight:600;letter-spacing:.5px;cursor:pointer}
+.proj-tabs button:hover{color:var(--amber)}
+.proj-tabs button[aria-selected="true"]{color:var(--ember);border-bottom-color:var(--copper)}
+/* ledger cards */
+.ledger-card .proj-h{grid-template-columns:40px 24px 1fr auto}
+.ledger-portrait{width:40px;height:40px;border-radius:50%;object-fit:cover;background:var(--surface2);border:1px solid var(--line)}
+.ledger-card .pname-static{font-size:13.5px;font-weight:600;color:var(--ink);padding:4px 2px;min-width:0}
+.ledger-card.unpicked .pname-static{color:var(--ink2)}
+.ledger-card.unpicked .ledger-portrait{opacity:.7}
+.ledger-pick{max-width:230px;padding:5px 7px;font-size:11.5px;height:30px}
+.ledger-next{font-size:11px;padding:5px 10px}
+.ledger-card .cat-lvl{grid-template-columns:42px 1fr}
 /* project catalog picker */
 .cat-panel{border:1px solid var(--line);border-radius:7px;background:var(--bg2);margin-bottom:14px;overflow:hidden}
 .cat-panel>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;font-size:12.5px;font-weight:600;color:var(--ink);user-select:none}
@@ -857,8 +885,10 @@ button.btn.step-code{padding:4px 10px;font-size:11px}
     grid-template-areas:"chevron include identity" "tools tools tools";
     align-items:center
   }
-  .proj-h>.pchev{grid-area:chevron}
-  .proj-h>input[type=checkbox]{grid-area:include}
+  .proj-h>.pchev,.proj-h>.ledger-portrait{grid-area:chevron}
+  .ledger-card .proj-h{grid-template-columns:40px 24px minmax(140px,1fr)}
+  .ledger-card .ledger-pick{flex:1 1 160px;max-width:none}
+  .proj-h>input[type=checkbox],.proj-h>.ledger-slot{grid-area:include}
   .proj-h>.pname,.proj-h>.pname-static{grid-area:identity;min-width:140px}
   .proj-h>.proj-tools{grid-area:tools;width:100%;justify-content:flex-start;padding-top:var(--space-sm);border-top:1px solid var(--line)}
 }

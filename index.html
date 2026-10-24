@@ -227,8 +227,9 @@
       </section>
 
       <section id="inputsProjectsPanel" role="tabpanel" aria-labelledby="inputsProjectsTab" hidden>
-        <p class="help" style="margin-bottom:10px">Build named <b>projects</b> — each a list of <b>levels</b>, each level a set of item costs. Tick the ones to run and set each project's <b>from → to</b> level; <b>Project plan</b> mode sums those level costs (minus your inventory) and asks for a pipelined craft schedule. Executable results are replay-checked; blocked results show a labeled diagnostic instead of run instructions. Accepts game notation (<b>1.2m</b>, <b>3.4qa</b>). A one-level project is just a flat needs-list.</p>
+        <p class="help" style="margin-bottom:10px">Add <b>projects</b> from the catalog, pick the ledger each character is on under <b>Ledgers</b>, or build your own under <b>Custom</b>. Tick the ones to run; <b>Project plan</b> mode sums their costs (minus your inventory) and asks for a pipelined craft schedule. Executable results are replay-checked; blocked results show a labeled diagnostic instead of run instructions. Accepts game notation (<b>1.2m</b>, <b>3.4qa</b>).</p>
         <label class="seq-toggle"><input type="checkbox" id="projSeqToggle"><span>Complete projects <b>one at a time</b> — required material unlocks first, then your numeric order, then estimated completion time. Uncheck to craft everything together in a shared schedule.</span></label>
+        <label class="seq-toggle"><input type="checkbox" id="projBatchToggle"><span>Craft projects that share an <b>order</b> number together, as one project. Only applies when “one at a time” is on.</span></label>
         <label class="seq-toggle"><input type="checkbox" id="projGateToggle"><span>Craft everything in <b>one phase</b> — ignore unlock ordering (waves) and run the whole list at once. Only applies when “one at a time” is off; use when you’ve already unlocked the needed materials.</span></label>
         <div class="fl" style="display:block;margin-bottom:14px">
           <label for="projectStability">Line-job policy</label>
@@ -239,14 +240,30 @@
           <p class="help" id="projectStabilityHelp" style="margin-top:6px">Prefer current keeps a phase's existing jobs while their throughput stays within 5% of a fresh solve. Re-optimization can improve phase throughput, but changed warm-ups or phase order mean it may not finish the complete schedule sooner.</p>
         </div>
 
-        <details class="cat-panel" id="catPanel">
-          <summary><span class="cat-sum-lbl">Browse project catalog</span><span class="cat-sum-meta" id="catCount"></span></summary>
-          <input type="text" id="catSearch" class="cat-search" placeholder="Search projects…" aria-label="Search project catalog">
-          <div id="catList" class="cat-list"></div>
-        </details>
-
-        <div id="projList"></div>
-        <button class="btn ghost" id="projAdd" style="width:100%;justify-content:center;margin-top:8px">+ New custom project</button>
+        <div class="proj-tabs" role="tablist" aria-label="Project sources">
+          <button type="button" id="projTabCatalog" role="tab" aria-selected="true" aria-controls="projPanelCatalog" tabindex="0">Catalog</button>
+          <button type="button" id="projTabLedgers" role="tab" aria-selected="false" aria-controls="projPanelLedgers" tabindex="-1">Ledgers</button>
+          <button type="button" id="projTabCustom" role="tab" aria-selected="false" aria-controls="projPanelCustom" tabindex="-1">Custom</button>
+        </div>
+        <div id="projLists">
+          <div id="projPanelCatalog" role="tabpanel" aria-labelledby="projTabCatalog">
+            <details class="cat-panel" id="catPanel">
+              <summary><span class="cat-sum-lbl">Browse project catalog</span><span class="cat-sum-meta" id="catCount"></span></summary>
+              <input type="text" id="catSearch" class="cat-search" placeholder="Search projects…" aria-label="Search project catalog">
+              <div id="catList" class="cat-list"></div>
+            </details>
+            <div id="projListCatalog"></div>
+          </div>
+          <div id="projPanelLedgers" role="tabpanel" aria-labelledby="projTabLedgers" hidden>
+            <p class="help" style="margin-bottom:10px">Pick the ledger each character is on. Its craftable items go into the plan; mined resources and potions it asks for are listed but not planned. Choose <b>Not listed</b> to type in a ledger the planner doesn't have yet, and press <b>Turned in</b> to move to the next one.</p>
+            <div id="projListLedgers"></div>
+          </div>
+          <div id="projPanelCustom" role="tabpanel" aria-labelledby="projTabCustom" hidden>
+            <p class="help" style="margin-bottom:10px">Build your own <b>project</b> — a list of <b>levels</b>, each level a set of item costs. Set its <b>from → to</b> level to plan part of it. A one-level project is just a flat needs-list.</p>
+            <div id="projListCustom"></div>
+            <button class="btn ghost" id="projAdd" style="width:100%;justify-content:center;margin-top:8px">+ New custom project</button>
+          </div>
+        </div>
       </section>
 
       <section id="inputsPricesPanel" role="tabpanel" aria-labelledby="inputsPricesTab" hidden>
@@ -435,6 +452,7 @@
 <script src="js/boot.js"></script>
 <script src="js/decimal.js"></script>
 <script src="js/catalog.js"></script>
+<script src="js/ledgers.js"></script>
 <script src="js/core.js"></script>
 <script src="js/fields.js"></script>
 <script src="js/state.js"></script>

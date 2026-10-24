@@ -165,10 +165,15 @@ test("Manual offers Game code only when a line is busy", () => {
 // stepPlanHtml lives in events.js, which wires the live page as it loads; slice the renderer out.
 const eventsSrc = read("js/events.js");
 const stepStart = eventsSrc.indexOf("function stepPlanHtml(res){"), stepEnd = eventsSrc.indexOf("// ── Plan-start", stepStart);
+// Its clock formatter is results.js's, shared with the sell-again card; take the real one.
+const resultsSrc = read("js/results.js");
+const clockStart = resultsSrc.indexOf("function fmtPlanClock("), clockEnd = resultsSrc.indexOf("\n}\n", clockStart) + 2;
+const stepState = { planStart: Date.UTC(2026, 9, 9, 12), projLineMode: "split" };
+const fmtPlanClock = Function("S", resultsSrc.slice(clockStart, clockEnd) + "\nreturn fmtPlanClock;")(stepState);
 const stepPlanHtml = Function("S", "fmtDuration", "htmlText", "htmlAttribute", "disp", "RAWS", "MINED_CRAFTS", "compressionLabel",
-  "minedUsageNote", "projectStepLoadouts", eventsSrc.slice(stepStart, stepEnd) + "\nreturn stepPlanHtml;")(
-  { planStart: Date.UTC(2026, 9, 9, 12), projLineMode: "split" }, h => h + "h", api("htmlText"), api("htmlAttribute"), String,
-  api("RAWS"), {}, api("compressionLabel"), () => "", api("projectStepLoadouts"));
+  "minedUsageNote", "projectStepLoadouts", "fmtPlanClock", eventsSrc.slice(stepStart, stepEnd) + "\nreturn stepPlanHtml;")(
+  stepState, h => h + "h", api("htmlText"), api("htmlAttribute"), String,
+  api("RAWS"), {}, api("compressionLabel"), () => "", api("projectStepLoadouts"), fmtPlanClock);
 const entry = (item, lvl, start, end, eta) => ({ item, lvl, frac: (end - start) / eta, start, end, outHr: 1, cons: [] });
 const stepRes = (overrides = {}) => ({
   empty: false, phases: [{}], feasible: true, lpFeasible: true, eta: 4,

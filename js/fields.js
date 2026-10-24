@@ -14,7 +14,7 @@
  * CONFIGURATION fields ("number"/"integer") keep their ranges. Line speed, turbo, duplication %,
  * margin, base craft time and the solve budget describe machinery with a fixed physical ceiling,
  * and a float64 will always hold them. */
-const CURRENT_SCHEMA_VERSION=6;
+const CURRENT_SCHEMA_VERSION=7;
 const CURRENT_BASE_TIME_REVISION=3;
 const STATE_LIMITS=Object.freeze({
   maxBytes:2*1024*1024,
@@ -61,6 +61,8 @@ const FIELD_SCHEMA=Object.freeze({
   dupeUncapped:_field("number",_FIELD_DEFAULTS.dupe,{min:0,max:1e6,allowBlank:false,notation:"decimal",inputMode:"decimal",label:"duplication chance"}),
   margin:_field("number",_FIELD_DEFAULTS.margin,{min:0,max:20,allowBlank:false,notation:"decimal",inputMode:"decimal",label:"May-work margin"}),
   solveBudget:_field("integer",_FIELD_DEFAULTS.solveBudget,{min:200,max:60000,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"solve time in milliseconds"}),
+  fitHours:_field("number",_FIELD_DEFAULTS.fitHours,{min:0.1,max:100000,allowBlank:false,notation:"decimal",inputMode:"decimal",label:"hours to finish within"}),
+  fitBudget:_field("integer",_FIELD_DEFAULTS.fitBudget,{min:10000,max:300000,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"fit-in-time search time in milliseconds"}),
   baseTime:_field("number",null,{min:1e-6,max:1e15,allowBlank:false,notation:"decimal",inputMode:"decimal",label:"base craft time"}),
   baseTimeRev:_field("integer",CURRENT_BASE_TIME_REVISION,{min:0,max:CURRENT_BASE_TIME_REVISION+10,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"base-time revision"}),
   recipeCost:_field("decimal",null,{min:0,allowBlank:true,notation:"decimal",inputMode:"decimal",maxDraftLength:DISPLAY_TEXT_MAX_LENGTH,label:"recipe cost"}),
@@ -95,6 +97,7 @@ const FIELD_SCHEMA=Object.freeze({
   projectIndex:_field("integer",1,{min:1,max:1e6,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"project level"}),
   projectPriority:_field("integer",null,{min:1,max:1e6,allowBlank:true,notation:"decimal",inputMode:"numeric",label:"project order"}),
   projectDone:_field("integer",0,{min:0,max:1e6,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"completed project levels"}),
+  ledgerNumber:_field("integer",null,{min:1,max:1e6,allowBlank:true,notation:"decimal",inputMode:"numeric",label:"ledger number"}),
   item:_field("enum",PRODUCTS[0],{values:Object.freeze(ALLITEMS.slice()),allowBlank:false,label:"item"}),
   manualJob:_field("enum","Idle",{values:Object.freeze(["Idle",...ALLITEMS]),allowBlank:false,label:"Manual job"}),
   timestamp:_field("number",null,{min:0,max:Number.MAX_SAFE_INTEGER,allowBlank:true,notation:"decimal",inputMode:"numeric",label:"time"})

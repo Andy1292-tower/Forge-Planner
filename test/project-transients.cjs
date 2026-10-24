@@ -374,8 +374,10 @@ const renderState = {planStart:1,projects:[],inventory:{Bits:40000}};
 let projRows = "";
 const renderProjectResults = Function("S","mutateState","save","projectForgieNote","projPlanAnchorHtml","htmlText","disp","fmtDuration",
   "stepsProjControls","stepPlanHtml","ALLITEMS","num","resultMinedUsage","minedUsageNote","lineAssignTableHtml","idleLinesNote","projectStabilityHtml","projOrderHeader","projLineModeHtml","staticHeldFeederItems",
+  "sellAgainHtml","fitBoxHtml",
   `let _lastProjectRes=null,_breakdownOpen=false,_projAdjustOpen=false;${resultsSrc.slice(renderStart,renderEnd)};return renderProjectResults;`)(
-    renderState,()=>{},()=>{},()=>"",()=>"",String,testDisp,()=>"1h",()=>projRows,()=>partialCopy,[],Number,()=>[],()=>"",()=>"",()=>"",()=>"",()=>"Order",()=>"",()=>[]);
+    renderState,()=>{},()=>{},()=>"",()=>"",String,testDisp,()=>"1h",()=>projRows,()=>partialCopy,[],Number,()=>[],()=>"",()=>"",()=>"",()=>"",()=>"Order",()=>"",()=>[],
+    ()=>({html:""}),()=>"");
 const bitsEl={innerHTML:""},bitsStat={textContent:""};
 renderProjectResults({empty:false,sequenced:false,waved:false,single:true,feasible:true,lpFeasible:true,partial:false,
   eta:3,workEta:2,ms:1,perProject:[],phases:[{name:"Frames",eta:2,demandSub:{}}],executionPhases:[partialBitsPhase],

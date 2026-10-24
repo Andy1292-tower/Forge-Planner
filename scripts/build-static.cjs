@@ -7,6 +7,7 @@ const path = require("path");
 const PAGE_SCRIPTS = [
   "decimal.js",
   "catalog.js",
+  "ledgers.js",
   "core.js",
   "fields.js",
   "state.js",
@@ -33,6 +34,12 @@ const LOADOUT_ICON_FILES = [
   "loadout-reinforced-concrete.png", "loadout-batteries.png", "loadout-ingots.png", "loadout-plates.png",
   "loadout-rods.png", "loadout-frames.png", "loadout-wire.png",
 ];
+// Ledger character portraits. js/ledgers.js names each one once, commented-out characters included,
+// so the set is whatever assets/ holds under that prefix.
+const LEDGER_PORTRAIT = /^ledger-[a-z0-9-]+\.webp$/;
+function ledgerPortraitFiles(sourceRoot) {
+  return fs.readdirSync(path.join(sourceRoot, "assets")).filter(file => LEDGER_PORTRAIT.test(file)).sort();
+}
 const IMAGE_FILES = ["favicon.png", "dupe.jpg", "speed.jpg", ...LOADOUT_ICON_FILES];
 const HASH_LENGTH = 16;
 const BUILD_STAMP_PLACEHOLDER = "__FORGE_BUILD_ID__";
@@ -225,12 +232,16 @@ function buildApp(sourceRoot, assetUrls) {
   for (const file of LOADOUT_ICON_FILES) {
     app = replaceExactly(app, `assets/${file}`, assetUrls[path.basename(file, ".png")], 1, `loadout icon ${file}`);
   }
+  for (const file of ledgerPortraitFiles(sourceRoot)) {
+    app = replaceExactly(app, `assets/${file}`, assetUrls[path.basename(file, ".webp")], 1, `ledger portrait ${file}`);
+  }
   assertSingleConstructionPath(app);
   assertSolverWorkerBootstrap(app);
   if (/importScripts\s*\(/.test(app)) throw new Error("The app still contains a network-importing Worker");
   if (WORKER_SCRIPT_URL.test(app)) throw new Error("The app still references a Worker URL");
   if (/assets\/speed\.jpg/.test(app)) throw new Error("The app still references the unhashed speed image");
   if (/assets\/loadout-/.test(app)) throw new Error("The app still references an unhashed loadout icon");
+  if (/assets\/ledger-/.test(app)) throw new Error("The app still references an unhashed ledger portrait");
   if (ROOT_RELATIVE_OWNED_URL.test(app)) throw new Error("The app contains a root-relative owned asset URL");
   if (ANALYTICS_SIGNATURE.test(app)) throw new Error("The app contains a Vercel Analytics signature");
   return Buffer.from(app);
@@ -351,7 +362,7 @@ function buildStaticSite({ sourceRoot, outputRoot } = {}) {
 
   try {
     const imageUrls = {};
-    for (const file of IMAGE_FILES) {
+    for (const file of [...IMAGE_FILES, ...ledgerPortraitFiles(source)]) {
       const extension = path.extname(file).slice(1);
       const stem = path.basename(file, path.extname(file));
       imageUrls[stem] = emitHashed(stage, stem, extension, read(path.join(source, "assets", file)));

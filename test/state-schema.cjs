@@ -77,8 +77,21 @@ function storageWith(entries = {}, failSet) {
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
 
+test("the batch setting saves as a boolean and defaults off", () => {
+  const ticked = currentState();ticked.projectBatch = true;
+  const kept = api("validateAndMigrate")(ticked);
+  assert.equal(kept.ok, true, kept.errors && kept.errors.join("; "));
+  assert.equal(kept.state.projectBatch, true);
+  const absent = currentState();delete absent.projectBatch;
+  assert.equal(api("validateAndMigrate")(absent).state.projectBatch, false);
+  const bad = currentState();bad.projectBatch = "yes";
+  const rejected = api("validateAndMigrate")(bad);
+  assert.equal(rejected.ok, false);
+  assert.ok(rejected.errors.some(error => /projectBatch/.test(error)), rejected.errors.join("; "));
+});
+
 test("exports a current schema and pure field descriptors", () => {
-  assert.equal(api("CURRENT_SCHEMA_VERSION"), 6);
+  assert.equal(api("CURRENT_SCHEMA_VERSION"), 7);
   assert.equal(api("LSKEY"), "forgePlannerState_v3");
   const schema = api("FIELD_SCHEMA");
   assert.equal(schema.dupe.type, "number");
@@ -118,7 +131,7 @@ test("strict v1 migration defaults Project line jobs without weakening old requi
   let result = api("validateAndMigrate")(v1);
   assert.equal(result.ok, true, JSON.stringify(result.errors));
   assert.equal(result.sourceVersion, 1);
-  assert.equal(result.state.schemaVersion, 6);
+  assert.equal(result.state.schemaVersion, 7);
   assert.equal(result.state.projectStability, "prefer-current");
 
   delete v1.targets;
@@ -135,7 +148,7 @@ test("older schemas migrate once to 10 seconds while current user choices remain
     const result = api("validateAndMigrate")(candidate);
     assert.equal(result.ok, true, JSON.stringify(result.errors));
     assert.equal(result.sourceVersion, sourceVersion);
-    assert.equal(result.state.schemaVersion, 6);
+    assert.equal(result.state.schemaVersion, 7);
     assert.equal(result.state.solveBudget, 10000);
   }
 
@@ -146,7 +159,7 @@ test("older schemas migrate once to 10 seconds while current user choices remain
   assert.equal(result.state.solveBudget, 2000);
   result = api("parseStoredState")(JSON.stringify(result.state));
   assert.equal(result.recovery, null);
-  assert.equal(result.state.schemaVersion, 6);
+  assert.equal(result.state.schemaVersion, 7);
   assert.equal(result.state.solveBudget, 2000);
 });
 
@@ -348,7 +361,7 @@ test("schema v3 scalar incomes migrate without changing hourly budgets or solve 
 
   assert.equal(result.ok, true, JSON.stringify(result.errors));
   assert.equal(result.sourceVersion, 3);
-  assert.equal(result.state.schemaVersion, 6);
+  assert.equal(result.state.schemaVersion, 7);
   assert.equal(result.state.solveBudget, 2345);
   // Both v3 scalars were per-minute figures and both now land on the per-second source, so the
   // hourly budgets they described come back unchanged. Their saved text read in per-minute units,
@@ -728,7 +741,7 @@ test("successful boot upgrades the existing key and retains the exact previous-g
   assert.equal(result.recovery, null);
   assert.equal(storage.value("forgePlannerState_v3_previous_good"), legacyRaw);
   const upgraded = JSON.parse(storage.value("forgePlannerState_v3"));
-  assert.equal(upgraded.schemaVersion, 6);
+  assert.equal(upgraded.schemaVersion, 7);
   assert.equal(upgraded.solveBudget, 10000);
   assert.equal(upgraded.dupe, 17.25);
 });
@@ -757,7 +770,7 @@ test("v3 startup migrates in place while rotating exact primary bytes and preser
   const upgradedRaw = storage.value("forgePlannerState_v3");
   assert.notEqual(upgradedRaw, primaryRaw);
   const upgraded = JSON.parse(upgradedRaw);
-  assert.equal(upgraded.schemaVersion, 6);
+  assert.equal(upgraded.schemaVersion, 7);
   assert.equal(upgraded.solveBudget, 2345);
   assert.equal(upgraded.minedIncome.Vespium.resourcesTradingPerSec, 2);
   assert.equal(upgraded.minedIncome.Hydracite.resourcesTradingPerSec, 1);

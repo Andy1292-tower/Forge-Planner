@@ -136,6 +136,18 @@ function lifecycleHarness(options = {}) {
       delete context.__request;
       delete context.__callback;
     },
+    // A follow-up: the page shows `pageState` while the service solves `options.stateSnapshot`.
+    callAsPage(pageState, options, callback) {
+      context.__page = pageState;
+      context.__request = options;
+      context.__callback = callback;
+      vm.runInContext("S = globalThis.__page; stateRevision = globalThis.__request.stateRevision;" +
+        "globalThis.__request.follow = { mode: S.mode, key: solveStateKey(S) };" +
+        "solveService.request(globalThis.__request, globalThis.__callback)", context);
+      delete context.__page;
+      delete context.__request;
+      delete context.__callback;
+    },
     setCurrent(mode, revision) {
       context.__mode = mode;
       context.__revision = revision;
@@ -404,6 +416,126 @@ function primeCreditsCache(storage, state = creditsState(), now = 1_000) {
 
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
+
+test("a follow-up Credits solve serves the Project page without its overlay, and fills the Credits cache", () => {
+  const storage = new Map();
+  const harness = lifecycleHarness({ storage });
+  const page = creditsState({ mode: "project" }), credits = creditsState();
+  const delivered = [];
+  harness.callAsPage(page, { mode: "credits", stateRevision: 3, budget: credits.solveBudget, stateSnapshot: credits },
+    (result, error) => delivered.push({ result, error }));
+
+  assert.equal(harness.workers.length, 1);
+  assert.equal(harness.workers[0].messages[0].mode, "credits");
+  assert.equal(harness.workers[0].messages[0].state.mode, "credits");
+  assert.equal(harness.elements.solveOverlay.hidden, true, "the plan on screen is not covered while ranking");
+  assert.equal(harness.status().mode, "project", "it is current against the page's own mode");
+  assert.equal(harness.status().current, true);
+
+  harness.workers[0].emitMessage(workerResponse(harness.workers[0], { res: cachedCreditsResult("follow") }));
+  assert.equal(delivered.length, 1);
+  assert.equal(delivered[0].result.marker, "follow");
+  assert.equal(delivered[0].error, null);
+
+  const later = lifecycleHarness({ storage }), hits = [];
+  later.callRequest({ mode: "credits", stateRevision: 4, budget: credits.solveBudget, stateSnapshot: credits },
+    result => hits.push(result));
+  assert.equal(later.workers.length, 0, "Credits mode reuses the ranking the follow-up solved");
+  assert.equal(hits[0].marker, "follow");
+});
+
+test("a follow-up is dropped when the page's accepted state moves on", () => {
+  const harness = lifecycleHarness();
+  const credits = creditsState(), delivered = [];
+  harness.callAsPage(creditsState({ mode: "project" }), { mode: "credits", stateRevision: 3, budget: credits.solveBudget,
+    stateSnapshot: credits }, (result, error) => delivered.push({ result, error }));
+  harness.mutateCurrent(state => { state.sellPrice = { Frames: 999 }; });
+  harness.workers[0].emitMessage(workerResponse(harness.workers[0], { res: cachedCreditsResult("stale") }));
+  assert.deepEqual(delivered, []);
+  assert.equal(harness.status().active, false);
+});
+
+test("a follow-up whose Worker fails reports the failure instead of solving the page's own mode", () => {
+  let synchronous = 0;
+  const harness = lifecycleHarness({ optimize: () => { synchronous += 1;return { mode: "project" }; } });
+  const credits = creditsState(), delivered = [];
+  harness.callAsPage(creditsState({ mode: "project" }), { mode: "credits", stateRevision: 3, budget: credits.solveBudget,
+    stateSnapshot: credits }, (result, error) => delivered.push({ result, error }));
+  harness.workers[0].emitError("worker crashed");
+  harness.flushTimers();
+  assert.equal(synchronous, 0, "the synchronous fallback would solve Project plan, not the ranking");
+  assert.equal(delivered.length, 1);
+  assert.equal(delivered[0].result, null);
+  assert.ok(delivered[0].error, "the card is told the ranking failed");
+  assert.equal(harness.elements.solveFallback.hidden, true);
+});
+
+function fitRequest(revision, onDrop) {
+  return { mode: "project", task: "fit", quiet: true, stateRevision: revision, budget: 30000, onDrop,
+    stateSnapshot: { mode: "project", solveBudget: 200, fitBudget: 30000 } };
+}
+function fitAnswer(count, eta) {
+  return { mode: "project", task: "fit", count, verified: true, eta, rank: 0, tried: 10, ms: 5 };
+}
+
+test("fit-in-time fans out across the cores on a page whose ordinary solves use one Worker", () => {
+  const harness = lifecycleHarness({ hardwareConcurrency: 5 });
+  const delivered = [];
+  harness.callRequest(fitRequest(1), (result, error) => delivered.push({ result, error }));
+  assert.equal(harness.workers.length, 4);
+  harness.workers.forEach((worker, index) => {
+    assert.equal(worker.messages[0].task, "fit");
+    assert.deepEqual(worker.messages[0].shard, { index, count: 4 });
+  });
+  assert.equal(harness.elements.solveOverlay.hidden, true, "the search runs under its own box, not the overlay");
+
+  [[3, 9], [5, 8], [5, 7], [4, 1]].forEach(([count, eta], index) =>
+    harness.workers[index].emitMessage(workerResponse(harness.workers[index], { res: fitAnswer(count, eta) })));
+  assert.equal(delivered.length, 1);
+  assert.equal(delivered[0].result.count, 5);
+  assert.equal(delivered[0].result.eta, 7);
+  assert.equal(delivered[0].result.tried, 40);
+  assert.deepEqual(harness.workers.map(worker => worker.terminated), [false, true, true, true],
+    "the extra Workers are handed back, keeping one for the next ordinary solve");
+  assert.equal(harness.status().poolSize, 1);
+});
+
+test("with parallel solving switched off, fit-in-time keeps to one Worker", () => {
+  const harness = poolFlagHarness("off", { hardwareConcurrency: 5 });
+  harness.callRequest(fitRequest(1), () => {});
+  assert.equal(harness.workers.length, 1);
+  assert.equal(harness.workers[0].messages[0].task, "fit");
+  assert.equal(harness.workers[0].messages[0].shard, undefined);
+});
+
+test("a fit-in-time search hears when a later solve supersedes it", () => {
+  const harness = lifecycleHarness({ hardwareConcurrency: 3 });
+  const drops = [];
+  harness.callRequest(fitRequest(1, reason => drops.push(reason)), () => assert.fail("a superseded search delivers nothing"));
+  harness.callRequest(request("project", 2, "plan"), () => {});
+  harness.flushTimers();
+  assert.deepEqual(drops, ["superseded"]);
+  assert.ok(harness.workers.slice(0, 2).every(worker => worker.terminated), "the superseded search's Workers stop");
+});
+
+test("a failed fit-in-time shard ends the search without a synchronous solve", () => {
+  let synchronous = 0;
+  const harness = lifecycleHarness({ hardwareConcurrency: 3, optimize: () => { synchronous += 1;return {}; } });
+  const delivered = [];
+  harness.callRequest(fitRequest(1), (result, error) => delivered.push({ result, error }));
+  harness.workers[0].emitError("worker crashed");
+  harness.flushTimers();
+  assert.equal(synchronous, 0);
+  assert.equal(delivered.length, 1);
+  assert.ok(delivered[0].error);
+  assert.ok(harness.workers.every(worker => worker.terminated), "the shard still searching is stopped too");
+});
+
+test("a fit task is only accepted on a Project request", () => {
+  const harness = lifecycleHarness();
+  assert.throws(() => harness.callRequest(Object.assign(fitRequest(1), { mode: "items",
+    stateSnapshot: { mode: "items", solveBudget: 200 } }), () => {}), /task must be "fit" on a Project request/);
+});
 
 test("a completed capped Items solve is reused after the service is recreated", () => {
   const storage = new Map();
@@ -1857,6 +1989,9 @@ function schedulerHarness(options = {}) {
     clearStaleUI() { vm.runInContext("clearStaleUI()", context); },
     toggleProject(on) { vm.runInContext(`commitProjectInclusion(st=>{st.projectOn=${on === true};})`, context); },
     markLevelsDone(count) { vm.runInContext(`commitProjectProgress(st=>{st.projectDone=${Number(count)};})`, context); },
+    editInput(cause, readers) {
+      vm.runInContext(`S.edits=(S.edits||0)+1;stateRevision+=1;markInputEdited(${JSON.stringify(cause)},${readers || "undefined"})`, context);
+    },
     staleBar() { return { hidden: staleBar.hidden, message: staleMessage.textContent, dimmed: resultsClasses.has("stale") }; },
     planTop() { return resultsElement.getBoundingClientRect().top; },
     scrolls() { return scrolls.slice(); },
@@ -2268,6 +2403,68 @@ test("checking a level off outside Project plan persists quietly", () => {
   assert.deepEqual(harness.counts(), { saves: 1, renders: 0, requests: 0, cancels: 0 });
   assert.equal(harness.state().projectDone, 2);
   assert.deepEqual(harness.staleBar(), { hidden: true, message: "", dimmed: false });
+});
+
+test("an input edit marks the plan out of date instead of solving", () => {
+  const harness = schedulerHarness({ mode: "project" });
+  harness.editInput("forgie");
+  harness.editInput("inventory", "READ_BY_PROJECT");
+  harness.advance(600);   // nothing is scheduled: the batch resolves on Resimulate
+
+  assert.deepEqual(harness.counts(), { saves: 2, renders: 0, requests: 0, cancels: 0 });
+  assert.equal(harness.storedState().edits, 2, "each edit persists immediately");
+  assert.deepEqual(harness.staleBar(), {
+    hidden: false,
+    message: "Plan out of date — Lil' Forgie rates and inventory changed. Press Resimulate to update it.",
+    dimmed: true,
+  });
+  harness.doSolve();
+  assert.deepEqual(harness.counts(), { saves: 2, renders: 1, requests: 0, cancels: 0 });
+});
+
+test("an input the current mode never reads only saves", () => {
+  for (const [mode, readers] of [["items", "READ_BY_PROJECT"], ["credits", "READ_BY_PROJECT"], ["items", "READ_BY_PRICES"]]) {
+    const harness = schedulerHarness({ mode });
+    harness.editInput("prices", readers);
+    harness.advance(600);
+    assert.deepEqual(harness.counts(), { saves: 1, renders: 0, requests: 0, cancels: 0 }, `${mode} / ${readers}`);
+    assert.deepEqual(harness.staleBar(), { hidden: true, message: "", dimmed: false }, `${mode} / ${readers}`);
+  }
+});
+
+test("Manual repaints at once for an input it reads", () => {
+  const harness = schedulerHarness({ mode: "manual" });
+  harness.editInput("forgie");
+  assert.deepEqual(harness.counts(), { saves: 1, renders: 1, requests: 0, cancels: 0 });
+  assert.equal(harness.staleBar().hidden, true);
+
+  harness.editInput("inventory", "READ_BY_PROJECT");
+  assert.deepEqual(harness.counts(), { saves: 2, renders: 1, requests: 0, cancels: 0 });
+});
+
+test("only the Outputs card still re-solves as you type", () => {
+  const source = fs.readFileSync(path.join(root, "js", "events.js"), "utf8");
+  const calls = [...source.matchAll(/scheduleSolve\(\)/g)].map(match => {
+    const line = source.slice(source.lastIndexOf("\n", match.index) + 1, source.indexOf("\n", match.index));
+    return line.trim();
+  });
+  assert.deepEqual(calls, [
+    "function scheduleSolve(){schedulePersist();clearTimeout(renderT);renderT=setTimeout(doSolve,500);}",
+    'function solveForOutputMix(){if(S.mode==="items")scheduleSolve();}',
+    'function solveForMargin(){if(S.mode==="items"||S.mode==="credits")scheduleSolve();}',
+  ]);
+  for (const [block, cause] of [
+    ['getElementById("forgieRows").addEventListener', "forgie"], ['getElementById("forgieClear").addEventListener', "forgie"],
+    ['getElementById("priceRows").addEventListener', "prices"], ['getElementById("priceClear").addEventListener', "prices"],
+    ['getElementById("invRows").addEventListener', "inventory"], ['getElementById("projInvClear").addEventListener', "inventory"],
+    ['getElementById("minedModal").addEventListener("input"', "mined"],
+    ['getElementById("infusionModal").addEventListener', "infusion"], ['getElementById("recipes").addEventListener', "recipes"],
+  ]) {
+    const start = source.indexOf(block);
+    assert.ok(start >= 0, `${block} remains wired`);
+    const handler = source.slice(start, source.indexOf("\n});", start));
+    assert.match(handler, new RegExp(`markInputEdited\\("${cause}"`), `${block} marks the plan out of date`);
+  }
 });
 
 test("opening Progress never invokes the synchronous Project optimizer", () => {

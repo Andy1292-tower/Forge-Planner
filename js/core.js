@@ -106,6 +106,31 @@ function catalogLevelsToState(levels){
     costs:(level.costs||[]).map(cost=>Object.assign({},cost,{qty:toDec(cost.qty)}))
   }));
 }
+/* ---- ledgers ----
+   A ledger card is a project tagged with its character (ledgerId) and the ledger it is on (ledgerNo,
+   1-based). A listed ledger's costs are refreshed from LEDGER_CHARACTERS on every normalize, the way
+   a catalog project's levels are. ledgerNo null means the costs were typed in, for a ledger the data
+   does not have yet. Either way a ledger is one level. LEDGER_CHARACTERS is page-only data, so a
+   realm without it (the solver Worker) leaves ledger projects exactly as they arrive. */
+const LEDGERS=typeof LEDGER_CHARACTERS!=="undefined"&&Array.isArray(LEDGER_CHARACTERS)?LEDGER_CHARACTERS:[];
+function ledgerCharacter(ledgerId){return LEDGERS.find(c=>c.ledgerId===ledgerId)||null;}
+function ledgerEntry(ledgerId,ledgerNo){
+  const character=ledgerCharacter(ledgerId);
+  return character&&Number.isInteger(ledgerNo)&&ledgerNo>=1?character.ledgers[ledgerNo-1]||null:null;
+}
+function ledgerProjectName(name,ledgerNo){return ledgerNo!=null?`${name} ledger #${ledgerNo}`:`${name} ledger`;}
+function normalizeLedgerProject(p){
+  if(!p.ledgerId)return;
+  if(p.ledgerNo===undefined)p.ledgerNo=null;
+  const character=ledgerCharacter(p.ledgerId);
+  if(character){
+    const entry=p.ledgerNo!=null?ledgerEntry(p.ledgerId,p.ledgerNo):null;
+    if(entry)p.levels=catalogLevelsToState([{costs:entry.costs}]);else p.ledgerNo=null;
+    p.name=ledgerProjectName(character.name,p.ledgerNo);
+  }
+  if(Array.isArray(p.levels)&&p.levels.length>1)p.levels=p.levels.slice(0,1);
+  p.from=1;p.to=1;
+}
 // Free supply of a mined resource, per hour. A Decimal: a late-game Vespium rig income is already
 // around 1e99/min, and it is the single largest number the solver has to carry.
 function minedBudgetHr(resource,state=S){
@@ -257,8 +282,8 @@ function defaults(){
     minedIncome:blankSources(),
     minedIncomeText:blankSourceText(),
     targets:tg,targetMode:"ratio",targetSaved:[],targetActiveId:null,
-    projects:[],inventory:nulls(INVENTORY_ITEMS),inventoryText:{},projectSeq:true,projectGate:true,projectStability:"prefer-current",projLineMode:"split",
-    planStart:null,
+    projects:[],inventory:nulls(INVENTORY_ITEMS),inventoryText:{},projectSeq:true,projectGate:true,projectBatch:false,projectStability:"prefer-current",projLineMode:"split",
+    planStart:null,fitHours:48,fitBudget:60000,
     manual:[],manualSaved:[],manualActiveId:null
   };
 }
@@ -418,18 +443,22 @@ function normalize(st){
   delete st.gelLines;delete st.gelComp;
   if(st.mode!=="credits"&&st.mode!=="items"&&st.mode!=="project"&&st.mode!=="manual")st.mode="items";
   if(!Array.isArray(st.projects))st.projects=[];
+  st.projects.forEach(normalizeLedgerProject);
   st.projects.forEach(p=>{if(!p.id)p.id="p"+Math.random().toString(36).slice(2,9);if(typeof p.name!=="string")p.name="Project";p.on=p.on!==false;if(p.prio!=null){const _pr=Math.floor(Number(p.prio));p.prio=_pr>=1?_pr:null;}else p.prio=p.first?1:null;delete p.first;if(p.catId&&typeof PROJECT_CATALOG!=="undefined"&&Array.isArray(PROJECT_CATALOG)){const _src=PROJECT_CATALOG.find(c=>c.catId===p.catId);if(_src){p.levels=catalogLevelsToState(_src.levels);p.name=_src.name;p.description=_src.description||"";}}if(!Array.isArray(p.levels)||p.levels.length===0)p.levels=[{costs:[]}];p.levels.forEach(L=>{if(!Array.isArray(L.costs))L.costs=[];L.costs.forEach(c=>{if(!RAWS.includes(c.item)&&!PRODUCTS.includes(c.item))c.item=PRODUCTS[0];const _q=toDec(c.qty);c.qty=_q!==null&&_q.gte(DEC_ZERO)?_q:null;});});p.from=Math.max(1,Math.min(p.levels.length,Math.floor(Number(p.from)||1)));p.to=Math.max(p.from,Math.min(p.levels.length,Math.floor(Number(p.to)||p.levels.length)));p.done=Math.max(0,Math.min(p.to-p.from+1,Math.floor(Number(p.done)||0)));});
   if(!st.inventory)st.inventory={};
   INVENTORY_ITEMS.forEach(it=>{st.inventory[it]=toDec(st.inventory[it]);});
   if(!st.inventoryText)st.inventoryText={};
   if(typeof st.projectSeq!=="boolean")st.projectSeq=true;
   if(typeof st.projectGate!=="boolean")st.projectGate=true;
+  if(typeof st.projectBatch!=="boolean")st.projectBatch=false;
   if(st.projectStability!=="reoptimize"&&st.projectStability!=="prefer-current")st.projectStability="prefer-current";
   if(st.projLineMode!=="static")st.projLineMode="split";
   if(!Array.isArray(st.manualSaved))st.manualSaved=[];
   st.manualSaved=st.manualSaved.filter(p=>p&&typeof p==="object"&&Array.isArray(p.config)).map(p=>({id:typeof p.id==="string"?p.id:("m"+Math.random().toString(36).slice(2,9)),name:typeof p.name==="string"?p.name:"Setup",config:p.config.map(c=>({job:(c&&ALLITEMS.includes(c.job))?c.job:"Idle",lvl:(c&&LEVELS.includes(c.lvl))?c.lvl:1,sell:!!(c&&c.sell)}))}));
   if(typeof st.manualActiveId!=="string")st.manualActiveId=null;
   if(typeof st.planStart!=="number"||!isFinite(st.planStart))st.planStart=null;
+  st.fitHours=boundedPersistedField("fitHours",st.fitHours,48,0.1,100000);
+  st.fitBudget=boundedPersistedField("fitBudget",st.fitBudget,60000,10000,300000,true);
   syncManual(st);
   return st;
 }
