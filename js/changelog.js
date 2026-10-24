@@ -10,6 +10,8 @@
  * left out rather than padded in.
  */
 const CHANGELOG=[
+  {version:"2026.10.24.3",date:"2026-10-24",groups:{
+    Fixed:["Selling again could say a plan used none of your stock of an item, and that you could only sell it once the whole plan finished, when a crafter kept making that item after the plan had enough. It now keeps back the stock the plan counts toward what it needs, and gives the time the plan has made the rest; anything made after that is spare."]}},
   {version:"2026.10.24.2",date:"2026-10-24",groups:{
     Added:[
       "Include next, on a ledger card. Enter how many of the character's following ledgers to plan along with the one they are on, and Project plan crafts them together in one run. Turned in moves the whole run on by one ledger. What fits in a time limit counts each included ledger, and Use this selection sets Include next to the ones that fit.",
