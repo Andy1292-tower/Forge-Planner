@@ -158,7 +158,7 @@ function projOrderMode(res){
 function projOrderHeader(res){
   if(res.progressWaves)return 'Order: <b style="color:var(--ink2)">projects grouped into faster stages</b> — keeping useful stages after progress is marked complete. Finish each stage before starting the next.';
   switch(projOrderMode(res)){
-    case "seq":return 'Order: <b style="color:var(--ink2)">one project at a time</b> — unlocks first, then order numbers, then estimated completion time. Change this in the <b>Projects</b> tab of <b>Projects+Prices</b>.';
+    case "seq":return 'Order: <b style="color:var(--ink2)">one project at a time</b> — unlocks first, then order numbers'+(res.orderBatchSetting?' (projects sharing a number together)':'')+', then estimated completion time. Change this in the <b>Projects</b> tab of <b>Projects+Prices</b>.';
     case "single":return 'Order: <b style="color:var(--ink2)">all projects in one phase</b> — unlock ordering off. Change this in the <b>Projects</b> tab of <b>Projects+Prices</b>.';
     case "waves":return 'Order: <b style="color:var(--ink2)">all together, in unlock waves</b> — material unlocks first, then the rest. Change this in the <b>Projects</b> tab of <b>Projects+Prices</b>.';
     default:return 'Order: <b style="color:var(--ink2)">all projects together</b> in one shared '+(res.projLineMode==="static"?'set &amp; forget':'line-switching')+' schedule. Change this in the <b>Projects</b> tab of <b>Projects+Prices</b>.';

@@ -742,12 +742,12 @@ footer a:hover,.contrib-help a:hover{text-decoration:underline}
 .proj-first{display:flex;align-items:center;gap:4px;cursor:pointer;font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:var(--ink3)}
 .proj-first .pfirst{width:15px;height:15px;margin-top:0}
 .proj-prio{display:flex;align-items:center;gap:4px;font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:var(--ink3)}
-.proj-prio input{width:36px;text-align:center;padding:4px 5px}
+.proj-prio select{width:54px;padding:4px 5px;height:28px;font-size:11.5px}
 /* Order is only consulted when projects run one at a time — dimmed (and the input disabled) when
    that toggle is off, so it reads as "not applicable" rather than "typed a number, nothing happened".
    Mirrors the .seq-toggle.disabled treatment on the unlock-gating checkbox. */
 .proj-prio.disabled{opacity:.45}
-.proj-prio.disabled input{cursor:default}
+.proj-prio.disabled select{cursor:default}
 /* Projects sub-tabs: an underline strip, so they read as sections of the Projects tab above them */
 .proj-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:4px 0 14px;border-bottom:1px solid var(--line2)}
 .proj-tabs button{min-width:0;min-height:var(--target);padding:8px 6px;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;

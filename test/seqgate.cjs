@@ -603,6 +603,44 @@ const runner = `
       " hasCaution="+(el.innerHTML.indexOf("may need more lines")>=0));
   }
 
+  /* ---- batching: projects sharing an order number are one phase when the box is ticked --------
+   * Off, a shared number is only a tie, broken by estimated time. On, the shared number is one
+   * project: its costs are summed and crafted from one pool. Unlock precedence still splits a batch
+   * that holds an unlock and its consumer. Batching only means anything one at a time. */
+  {
+    const three = () => [P("a","A",[["Glass",100]],1), P("b","B",[["Bricks",100]],1), P("c","C",[["Glass",50]],2)];
+    const off = run(three(), {projectSeq:true, projectBatch:false});
+    record("batch: off, a shared order number is still one phase per project",
+      off.phases.length === 3 && off.phases.every(ph => !ph.members),
+      "phases=" + off.phases.map(ph => ph.name).join(" | "));
+
+    const on = run(three(), {projectSeq:true, projectBatch:true});
+    const first = on.phases[0] || {};
+    record("batch: on, projects sharing a number are one phase crafting both lists",
+      on.phases.length === 2 && first.name === "A + B" && JSON.stringify(first.members) === '["A","B"]' &&
+      first.prio === 1 && qtyEq(first.demandSub.Glass, 100) && qtyEq(first.demandSub.Bricks, 100) &&
+      on.phases[1].name === "C" && on.orderBatchSetting === true && on.feasible === true,
+      "phases=" + on.phases.map(ph => ph.name + "#" + ph.prio).join(" | ") + " feasible=" + on.feasible);
+    record("batch: the batched phase is keyed by its members, so line stability follows them",
+      on.phases[0].phaseKey !== on.phases[1].phaseKey && String(on.phases[0].phaseKey).indexOf("a+b") >= 0,
+      "keys=" + on.phases.map(ph => ph.phaseKey).join(" | "));
+
+    const together = run(three(), {projectSeq:false, projectGate:true, projectBatch:true});
+    const together0 = run(three(), {projectSeq:false, projectGate:true, projectBatch:false});
+    record("batch: has no effect when projects are not run one at a time",
+      together.phases.length === together0.phases.length && together.orderBatchSetting === false &&
+      together.phases.map(ph => ph.name).join("|") === together0.phases.map(ph => ph.name).join("|"),
+      "on=" + together.phases.map(ph => ph.name).join(" | ") + " off=" + together0.phases.map(ph => ph.name).join(" | "));
+
+    const gated = run([P("ff","Frame Factory",[["Glass",50]],1,"frame-factory"),
+                       P("fr","Frames user",[["Frames",10]],1), P("g","Glass user",[["Bricks",20]],1)],
+                      {projectSeq:true, projectBatch:true});
+    record("batch: an unlock and its consumer in one batch still run in unlock order",
+      gated.phases.length === 2 && gated.phases[0].name === "Frame Factory + Glass user" &&
+      gated.phases[1].name === "Frames user",
+      "phases=" + gated.phases.map(ph => ph.name).join(" | "));
+  }
+
   /* ---- review follow-up: the line-plan toggle carries aria-pressed on BOTH buttons, and the
    * order caption names the active mode without making an optimization claim. */
   {

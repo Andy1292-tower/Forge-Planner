@@ -77,6 +77,19 @@ function storageWith(entries = {}, failSet) {
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
 
+test("the batch setting saves as a boolean and defaults off", () => {
+  const ticked = currentState();ticked.projectBatch = true;
+  const kept = api("validateAndMigrate")(ticked);
+  assert.equal(kept.ok, true, kept.errors && kept.errors.join("; "));
+  assert.equal(kept.state.projectBatch, true);
+  const absent = currentState();delete absent.projectBatch;
+  assert.equal(api("validateAndMigrate")(absent).state.projectBatch, false);
+  const bad = currentState();bad.projectBatch = "yes";
+  const rejected = api("validateAndMigrate")(bad);
+  assert.equal(rejected.ok, false);
+  assert.ok(rejected.errors.some(error => /projectBatch/.test(error)), rejected.errors.join("; "));
+});
+
 test("exports a current schema and pure field descriptors", () => {
   assert.equal(api("CURRENT_SCHEMA_VERSION"), 7);
   assert.equal(api("LSKEY"), "forgePlannerState_v3");

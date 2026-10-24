@@ -279,12 +279,14 @@ test("source contracts enforce parse-before-mutation and persisted accepted fiel
   assert.match(dom, /aria-live["']?,?[\s\S]*polite|setAttribute\(["']aria-live["'],["']polite["']\)/);
   assert.match(dom, /aria-describedby/);
   assert.match(render, /FIELD_SCHEMA\.lineSpeed/);
-  for (const rule of ["margin", "targetWeight", "sellPrice", "forgie", "minedIncome", "inventory", "projectQuantity", "projectPriority"]) {
+  for (const rule of ["margin", "targetWeight", "sellPrice", "forgie", "minedIncome", "inventory", "projectQuantity"]) {
     const handler = new RegExp(`commitFieldDraft\\([^\\n]*FIELD_SCHEMA\\.${rule}[^\\n]*\\);[\\s\\S]{0,240}result\\.committed[^\\n]*(?:save|markInputEdited)\\(`);
     assert.match(events, handler, `${rule} must persist its accepted value immediately`);
   }
   assert.match(events, /d\.fld!=="baseT"\)return;[\s\S]{0,400}FIELD_SCHEMA\.baseTime[\s\S]{0,400}result\.committed\)(?:\{save\(\)|markInputEdited\()/,
     "base times must persist accepted values immediately");
+  // Project order is a dropdown: its value still passes the projectPriority rule before it is accepted.
+  assert.match(events, /data-pprio[\s\S]{0,200}validateFieldValue\(FIELD_SCHEMA\.projectPriority[\s\S]{0,200}mutateState[\s\S]{0,120}markInputEdited\(/);
   // markInputEdited persists before it marks the plan stale or repaints Manual.
   assert.match(events, /function markInputEdited\([^)]*\)\{[^}]*save\(\)[\s\S]{0,120}doSolve\(\)[\s\S]{0,60}markStale\(/);
   assert.match(events, /function markStale\([^)]*\)\{[^}]*persistNow\(\)/);

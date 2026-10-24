@@ -282,7 +282,7 @@ function defaults(){
     minedIncome:blankSources(),
     minedIncomeText:blankSourceText(),
     targets:tg,targetMode:"ratio",targetSaved:[],targetActiveId:null,
-    projects:[],inventory:nulls(INVENTORY_ITEMS),inventoryText:{},projectSeq:true,projectGate:true,projectStability:"prefer-current",projLineMode:"split",
+    projects:[],inventory:nulls(INVENTORY_ITEMS),inventoryText:{},projectSeq:true,projectGate:true,projectBatch:false,projectStability:"prefer-current",projLineMode:"split",
     planStart:null,
     manual:[],manualSaved:[],manualActiveId:null
   };
@@ -450,6 +450,7 @@ function normalize(st){
   if(!st.inventoryText)st.inventoryText={};
   if(typeof st.projectSeq!=="boolean")st.projectSeq=true;
   if(typeof st.projectGate!=="boolean")st.projectGate=true;
+  if(typeof st.projectBatch!=="boolean")st.projectBatch=false;
   if(st.projectStability!=="reoptimize"&&st.projectStability!=="prefer-current")st.projectStability="prefer-current";
   if(st.projLineMode!=="static")st.projLineMode="split";
   if(!Array.isArray(st.manualSaved))st.manualSaved=[];

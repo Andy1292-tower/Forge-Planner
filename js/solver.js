@@ -3439,6 +3439,29 @@ function putIdleLinesToWork(ph,laterProjects,inventory,context,runOptions,phaseI
   fillIdleLinesWithOwnDemand(ph,inventory,context,control,baseline,deadline);
   fillIdleLinesAhead(ph,laterProjects,inventory,context,control,deadline);
 }
+/* What one-at-a-time mode schedules, one entry per phase. Each project is its own unit, unless
+ * batching is on: then projects sharing an order number are one unit, their costs summed and
+ * crafted from one pool in a single phase. Unlock precedence still holds inside a batch, so a batch
+ * that spans unlock layers is one unit per layer. A batched unit's id is its member ids joined,
+ * like a wave's, so line stability follows the same members across edits. */
+function projectScheduleUnits(perProject,layer,batch){
+  const single=(p,i)=>({p,layer:layer[i],members:null});
+  if(!batch)return perProject.map(single);
+  const groups=new Map(),units=[];
+  perProject.forEach((p,i)=>{
+    if(p.prio==null){units.push(single(p,i));return;}
+    const key=p.prio+":"+layer[i];
+    if(!groups.has(key)){const unit={layer:layer[i],list:[]};groups.set(key,unit);units.push(unit);}
+    groups.get(key).list.push(p);
+  });
+  return units.map(unit=>{
+    if(!unit.list)return unit;
+    if(unit.list.length===1)return {p:unit.list[0],layer:unit.layer,members:null};
+    const sub={};ALLITEMS.forEach(it=>sub[it]=unit.list.reduce((sum,m)=>sum.add(toDec0(m.sub[it])),DEC_ZERO));
+    const p={id:unit.list.map(m=>m.id).sort().join("+"),name:unit.list.map(m=>m.name).join(" + "),prio:unit.list[0].prio,sub};
+    return {p,layer:unit.layer,members:unit.list};
+  });
+}
 function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
   const layer=runOptions&&runOptions.progressLayers||unlockLayers(perProject);
   const maxL=perProject.length?Math.max.apply(null,layer):0;
@@ -3540,10 +3563,11 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
   // in Line switching, the run control that now bounds every other LP in the run. In Set & forget
   // the control belongs to the discrete search and these estimates stay off it, as they always have.
   const estimateOptions={scheduleControl:runOptions&&runOptions.scheduleControl,lpMemo:runOptions&&runOptions.lpMemo};
-  const cost=perProject.map(p=>{const netDemand=projNetVec(p.sub,invInit),avail=runIsStatic(runOptions)?{}:projAvailVec(p.sub,invInit);
+  const units=projectScheduleUnits(perProject,layer,S.projectBatch===true);
+  const cost=units.map(({p})=>{const netDemand=projNetVec(p.sub,invInit),avail=runIsStatic(runOptions)?{}:projAvailVec(p.sub,invInit);
     const ph=solvePhaseFor(netDemand,p.name,avail,false,null,estimateOptions);return ph.feasible?ph.eta:Infinity;});
-  const order=perProject.map((p,i)=>({p,i})).sort((a,b)=>{
-    if(layer[a.i]!==layer[b.i])return layer[a.i]-layer[b.i];   // unlock precedence (hard)
+  const order=units.map((unit,i)=>({p:unit.p,members:unit.members,layer:unit.layer,i})).sort((a,b)=>{
+    if(a.layer!==b.layer)return a.layer-b.layer;               // unlock precedence (hard)
     const pa=a.p.prio,pb=b.p.prio;
     if(pa!=null&&pb!=null){if(pa!==pb)return pa-pb;}            // manual order, lower first
     else if(pa!=null)return -1;
@@ -3553,10 +3577,11 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
     return ca-cb;                                               // else cheapest makespan
   });
   let cum=0;const phases=[];
-  order.forEach(({p},index)=>{
+  order.forEach(({p,members},index)=>{
     const inv0=Object.assign({},exactInventory),sliced=slicedRunOptions(index,order.length);
     const ph=solveExecutableProjectPhase(p.sub,p.name,exactInventory,stabilityPolicy,p.id,sliced);
     ph.semanticIndex=phases.length;ph.prio=(p.prio!=null?p.prio:null);ph.demandSub=p.sub;ph.invStart=inv0;
+    if(members)ph.members=members.map(m=>m.name);
     // Ordering above is settled before any of this, so a fill can never reshuffle the queue it is
     // banking for: it only puts lines this phase left idle to work on this project, then on what
     // comes next.
@@ -3645,7 +3670,7 @@ function solveProjectRun(seq,net,perProject,stabilityPolicy,runOptions){
   const main=phases[0]||{plan:[],balance:[],rate:{},demandItems:[],bottleneck:null};
   const stabilityUpdates=phases.filter(ph=>ph.feasible&&ph.preProducedConverged!==false&&ph.stabilityUpdate).map(ph=>ph.stabilityUpdate);
   return {empty:false,mode:"project",projLineMode:S.projLineMode==="static"?"static":"split",sequenced:seq,waved,single,
-    orderSeqSetting:S.projectSeq!==false,orderGateSetting:S.projectGate!==false,
+    orderSeqSetting:S.projectSeq!==false,orderGateSetting:S.projectGate!==false,orderBatchSetting:S.projectSeq!==false&&S.projectBatch===true,
     phases,executionPhases:executable.phases,perProject,net,
     plan:main.plan,balance:main.balance,
     demandItems:(seq||waved)?ALLITEMS.filter(it=>net[it]>1e-9):main.demandItems,

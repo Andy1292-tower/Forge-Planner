@@ -11,9 +11,13 @@
  */
 const CHANGELOG=[
   {version:"2026.10.24",date:"2026-10-24",groups:{
-    Added:["Ledgers, in Projects+Prices → Projects. Each character who posts ledgers on the Exchange has a card: pick the ledger they are on and its craftable items go into your Project plan, with any mined resources or potions it also asks for listed beside them. Turned in moves the card to the next ledger. For a ledger the planner doesn't have yet, choose Not listed and type its items in."],
+    Added:[
+      "Ledgers, in Projects+Prices → Projects. Each character who posts ledgers on the Exchange has a card: pick the ledger they are on and its craftable items go into your Project plan, with any mined resources or potions it also asks for listed beside them. Turned in moves the card to the next ledger. For a ledger the planner doesn't have yet, choose Not listed and type its items in.",
+      "Batch projects that share an order number. With one at a time on and the new box ticked, projects with the same order number are crafted together as one project."
+    ],
     Changed:[
       "The Projects tab is split into Catalog, Ledgers and Custom.",
+      "A project's order is picked from a list of 1 to 10. With the list selected, typing a number picks it.",
       "Editing Lil' Forgie rates, inventory, sell prices, projects, mined income, Infusion Upgrades or base craft times no longer re-plans while you type. The plan is marked out of date, and Resimulate updates it once you are done. Manual still updates as you go."
     ]}},
   {version:"2026.10.22",date:"2026-10-22",groups:{

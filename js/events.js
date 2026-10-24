@@ -791,14 +791,21 @@ function projStepper(p,pi){
 }
 function projectFieldIds(p,scope="project"){
   const base=`field-${scope}-${fieldDomToken(p&&p.id)}`;
-  return {from:`${base}-from-error`,to:`${base}-to-error`,priority:`${base}-priority-error`};
+  return {from:`${base}-from-error`,to:`${base}-to-error`};
 }
-function projPrioField(p,pi,errorId){
+// Order numbers 1–10 cover any list a player runs; a save carrying a higher number keeps it as one
+// more option rather than having it changed underneath them. Typing a digit on the focused select
+// picks that number, and 1 then 0 picks 10.
+const PROJECT_ORDER_CHOICES=Object.freeze([1,2,3,4,5,6,7,8,9,10]);
+function projPrioField(p,pi){
   const disabled=S.projectSeq===false;
   const title=disabled
     ?"Turn on Complete projects one at a time to set a manual order."
     :"Numbered projects run first in numeric order after required material unlocks. Leave blank to use the planner's estimated order.";
-  return `<label class="proj-prio${disabled?" disabled":""}" title="${htmlAttribute(title)}"><input type="number" class="pprio" ${htmlFieldInputAttributes(FIELD_SCHEMA.projectPriority)} data-pprio="${pi}" value="${p.prio!=null?p.prio:""}" placeholder="–" data-field-error="${errorId}" aria-label="${htmlAttribute(p.name)} schedule order"${disabled?" disabled":""}>order</label>`;
+  const choices=p.prio!=null&&!PROJECT_ORDER_CHOICES.includes(p.prio)?[...PROJECT_ORDER_CHOICES,p.prio]:PROJECT_ORDER_CHOICES;
+  const options=[`<option value=""${p.prio==null?" selected":""}>–</option>`,
+    ...choices.map(n=>`<option value="${n}"${p.prio===n?" selected":""}>${n}</option>`)].join("");
+  return `<label class="proj-prio${disabled?" disabled":""}" title="${htmlAttribute(title)}"><select class="pprio" data-pprio="${pi}" aria-label="${htmlAttribute(p.name)} schedule order"${disabled?" disabled":""}>${options}</select>order</label>`;
 }
 function projectRangeRule(p,endpoint){
   const count=Math.max(1,(p&&p.levels||[]).length);
@@ -847,11 +854,11 @@ function compactProjCard(p,pi){
       <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule" aria-label="Include ${htmlAttribute(p.name)} in schedule">
       <span class="pname-static">${htmlText(p.name)}${desc}</span>
       <div class="proj-tools">
-        ${projPrioField(p,pi,ids.priority)}
+        ${projPrioField(p,pi)}
         ${range}
         ${projStepper(p,pi)}
         <button class="iconbtn" data-pdel="${pi}" title="Remove from Projects" aria-label="Remove ${htmlAttribute(p.name)} from Projects">×</button>
-        <div class="proj-field-errors">${single?"":`<div class="field-error" id="${ids.from}" aria-live="polite" aria-atomic="true"></div><div class="field-error" id="${ids.to}" aria-live="polite" aria-atomic="true"></div>`}<div class="field-error" id="${ids.priority}" aria-live="polite" aria-atomic="true"></div></div>
+        ${single?"":`<div class="proj-field-errors"><div class="field-error" id="${ids.from}" aria-live="polite" aria-atomic="true"></div><div class="field-error" id="${ids.to}" aria-live="polite" aria-atomic="true"></div></div>`}
       </div>
     </div>
     <div class="proj-b" id="${bodyId}"><div class="cat-lvls">${view}</div></div>
@@ -877,12 +884,12 @@ function projCard(p,pi){
       <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule" aria-label="Include ${htmlAttribute(p.name)} in schedule">
       <input type="text" class="pname" data-pname="${pi}" value="${htmlAttribute(p.name)}" placeholder="Project name" aria-label="Project name">
       <div class="proj-tools">
-        ${projPrioField(p,pi,ids.priority)}
+        ${projPrioField(p,pi)}
         <span class="proj-lvls">lv <input type="number" ${htmlFieldInputAttributes(fromRule)} data-pfrom="${pi}" value="${p.from||1}" data-field-error="${ids.from}" aria-label="${htmlAttribute(p.name)} starting level"> → <input type="number" ${htmlFieldInputAttributes(toRule)} data-pto="${pi}" value="${p.to||lv.length||1}" data-field-error="${ids.to}" aria-label="${htmlAttribute(p.name)} ending level"></span>
         ${projStepper(p,pi)}
         <button class="iconbtn" data-pdup="${pi}" title="Duplicate" aria-label="Duplicate ${htmlAttribute(p.name)}" style="font-size:13px">⧉</button>
         <button class="iconbtn" data-pdel="${pi}" title="Delete project" aria-label="Delete ${htmlAttribute(p.name)}">×</button>
-        <div class="proj-field-errors"><div class="field-error" id="${ids.from}" aria-live="polite" aria-atomic="true"></div><div class="field-error" id="${ids.to}" aria-live="polite" aria-atomic="true"></div><div class="field-error" id="${ids.priority}" aria-live="polite" aria-atomic="true"></div></div>
+        <div class="proj-field-errors"><div class="field-error" id="${ids.from}" aria-live="polite" aria-atomic="true"></div><div class="field-error" id="${ids.to}" aria-live="polite" aria-atomic="true"></div></div>
       </div>
     </div>
     <div class="proj-b" id="${bodyId}">
@@ -932,18 +939,16 @@ function ledgerCard(character,p,pi){
         <div class="proj-tools">${pick}</div></div>
     </div>`;
   }
-  const ids=projectFieldIds(p,"ledger");
   return `<div class="proj ledger-card open" data-ledger-id="${id}" data-pi="${pi}">
     <div class="proj-h">
       ${portrait}
       <input type="checkbox" data-pon="${pi}" ${p.on?"checked":""} title="Include in schedule" aria-label="Include ${htmlAttribute(p.name)} in schedule">
       <span class="pname-static">${name}</span>
       <div class="proj-tools">
-        ${projPrioField(p,pi,ids.priority)}
+        ${projPrioField(p,pi)}
         ${pick}
         <button class="btn ghost ledger-next" type="button" data-ledger-next="${pi}" title="Move to the next ledger once you have handed this one in">Turned in</button>
         <button class="iconbtn" data-pdel="${pi}" title="Remove from Projects" aria-label="Remove ${htmlAttribute(p.name)} from Projects">×</button>
-        <div class="proj-field-errors"><div class="field-error" id="${ids.priority}" aria-live="polite" aria-atomic="true"></div></div>
       </div>
     </div>
     <div class="proj-b">${ledgerBodyHtml(p,pi)}</div>
@@ -1019,12 +1024,14 @@ function renderProjects(){
     ||`<div class="proj-mini" style="padding:6px 2px">No custom projects yet — add one to build your own needs-list.</div>`;
   renderLedgers();
   const st=document.getElementById("projSeqToggle");if(st)st.checked=S.projectSeq!==false;
+  const bt=document.getElementById("projBatchToggle");if(bt){bt.checked=S.projectBatch===true;bt.disabled=S.projectSeq===false;bt.closest(".seq-toggle").classList.toggle("disabled",bt.disabled);}
   const gt=document.getElementById("projGateToggle");if(gt){gt.checked=S.projectGate===false;gt.disabled=S.projectSeq!==false;gt.closest(".seq-toggle").classList.toggle("disabled",gt.disabled);}
   const stability=document.getElementById("projectStability");if(stability)stability.value=S.projectStability==="reoptimize"?"reoptimize":"prefer-current";
   renderInv();
   if(typeof renderCatalog==="function")renderCatalog();
 }
 document.getElementById("projSeqToggle").addEventListener("change",e=>{mutateState(st=>{st.projectSeq=e.target.checked;});renderProjects();markInputEdited("schedule",READ_BY_PROJECT);});
+document.getElementById("projBatchToggle").addEventListener("change",e=>{mutateState(st=>{st.projectBatch=e.target.checked;});markInputEdited("schedule",READ_BY_PROJECT);});
 document.getElementById("projGateToggle").addEventListener("change",e=>{mutateState(st=>{st.projectGate=!e.target.checked;});markInputEdited("schedule",READ_BY_PROJECT);});
 document.getElementById("projectStability").addEventListener("change",e=>{
   const value=e.target.value;if(value!=="prefer-current"&&value!=="reoptimize")return;
@@ -1149,7 +1156,6 @@ document.getElementById("projLists").addEventListener("input",e=>{
     const result=commitProjectRangeDrafts(fromInput,toInput,p);
     if(result.committed)markInputEdited("projectCosts",READ_BY_PROJECT);return;
   }
-  if((v=g("data-pprio"))!=null){const pi=+v,p=S.projects[pi];if(!p)return;const result=commitFieldDraft(t,FIELD_SCHEMA.projectPriority,p.prio,(st,value)=>{st.projects[pi].prio=value;});if(result.committed)markInputEdited("schedule",READ_BY_PROJECT);return;}
   if((v=g("data-cqty"))!=null){const[pi,li,ci]=v.split("_").map(Number),cost=S.projects[pi].levels[li].costs[ci];const result=commitFieldDraft(t,FIELD_SCHEMA.projectQuantity,cost.qty,(st,value)=>{st.projects[pi].levels[li].costs[ci].qty=value;});if(result.committed)markInputEdited("projectCosts",READ_BY_PROJECT);return;}
 });
 document.getElementById("projLists").addEventListener("change",e=>{
@@ -1158,6 +1164,11 @@ document.getElementById("projLists").addEventListener("change",e=>{
   // Resimulate bar apply the whole batch, rather than re-solving between them.
   if((v=g("data-pon"))!=null){commitProjectInclusion(st=>{st.projects[+v].on=t.checked;});return;}
   if((v=g("data-ledger-no"))!=null){pickLedger(v,t.value);return;}
+  if((v=g("data-pprio"))!=null){
+    const pi=+v,p=S.projects[pi],checked=validateFieldValue(FIELD_SCHEMA.projectPriority,t.value===""?null:Number(t.value));
+    if(!p||!checked.valid){t.value=p&&p.prio!=null?String(p.prio):"";return;}
+    mutateState(st=>{st.projects[pi].prio=checked.value;});markInputEdited("schedule",READ_BY_PROJECT);return;
+  }
   if((v=g("data-citem"))!=null){const[pi,li,ci]=v.split("_").map(Number);mutateState(st=>{st.projects[pi].levels[li].costs[ci].item=t.value;});markInputEdited("projectCosts",READ_BY_PROJECT);return;}
 });
 document.getElementById("invRows").addEventListener("input",e=>{
