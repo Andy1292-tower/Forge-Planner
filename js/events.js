@@ -89,7 +89,9 @@ function commitFieldDraft(input,rule,previousValue,mutator){
 // recompute once. Any actual repaint (resimulate, mode switch, …) clears the stale UI.
 // The bar names what was changed, so a plan left stale is still legible after a tab switch;
 // batching two kinds of edit before resimulating names both.
-const STALE_CAUSES={lines:"crafter line inputs",projects:"project selection",progress:"project completion"};
+const STALE_CAUSES={lines:"crafter line inputs",projects:"project selection",progress:"project completion",
+  projectCosts:"project details",schedule:"project schedule settings",inventory:"inventory",prices:"sell prices",
+  forgie:"Lil' Forgie rates",mined:"mined resource income",infusion:"Infusion Upgrades",recipes:"base craft times"};
 const staleCauses=new Set();
 // "a", "a and b", "a, b and c" — three kinds of edit can now be batched before one Resimulate, and
 // "a and b and c" reads like a stutter.
@@ -136,6 +138,18 @@ function commitProjectInclusion(mutator){
 function commitProjectProgress(mutator){
   mutateState(mutator);
   if(S.mode==="project")markStale("progress");else save();
+}
+// Every other planner input follows the same rule as the line fields: the edit saves and marks the
+// shown plan out of date, and Resimulate solves once for the whole batch. `readers` lists the modes
+// whose result reads the edited input; anywhere else the edit only saves. Manual has no solve to
+// defer, so an input it reads repaints it at once.
+const READ_BY_EVERY_MODE=Object.freeze(["items","credits","project","manual"]);
+const READ_BY_PROJECT=Object.freeze(["project"]);
+const READ_BY_PRICES=Object.freeze(["credits","manual"]);
+function markInputEdited(cause,readers){
+  if(!(readers||READ_BY_EVERY_MODE).includes(S.mode)){save();return;}
+  if(S.mode==="manual"){doSolve();return;}
+  markStale(cause);
 }
 // The mirror of the above, for the Outputs card. Nothing in it is read by every mode, and the card
 // is not mode-gated, so without a guard a tick would spend the whole solve budget re-deriving a plan
@@ -303,7 +317,7 @@ document.getElementById("targetPresetBar").addEventListener("click",e=>{
 document.getElementById("recipes").addEventListener("input",e=>{
   const d=e.target.dataset;if(!d.res||d.fld!=="baseT")return;
   const result=commitFieldDraft(e.target,FIELD_SCHEMA.baseTime,S.baseTime[d.res],(st,value)=>{st.baseTime[d.res]=value;});
-  if(result.committed){save();scheduleSolve();}
+  if(result.committed)markInputEdited("recipes");
 });
 
 /* export / import / reset */
@@ -509,12 +523,12 @@ inputsTabs.addEventListener("keydown",event=>{
 document.getElementById("priceClear").addEventListener("click",()=>{
   if(!confirm("Clear all sell prices?"))return;
   mutateState(st=>{PRICEABLE_ITEMS.forEach(it=>{st.sellPrice[it]=null;st.priceText[it]="";});});
-  renderPrices();save();scheduleSolve();
+  renderPrices();markInputEdited("prices",READ_BY_PRICES);
 });
 document.getElementById("priceRows").addEventListener("input",e=>{
   const it=e.target.dataset.price;if(!it)return;
   const result=commitFieldDraft(e.target,FIELD_SCHEMA.sellPrice,S.sellPrice[it],(st,value,raw)=>{st.priceText[it]=raw;st.sellPrice[it]=value;});
-  if(result.committed){save();scheduleSolve();}
+  if(result.committed)markInputEdited("prices",READ_BY_PRICES);
 });
 
 /* ---------- Lil' Forgie supply modal ---------- */
@@ -528,12 +542,12 @@ function closeForgie(){forgieDialog.close();}
 document.getElementById("forgieClear").addEventListener("click",()=>{
   if(!confirm("Clear all Lil' Forgie supply rates?"))return;
   mutateState(st=>{[...RAWS,...PRODUCTS].forEach(it=>{st.forgie[it]=null;st.forgieText[it]="";});});
-  renderForgie();save();scheduleSolve();
+  renderForgie();markInputEdited("forgie");
 });
 document.getElementById("forgieRows").addEventListener("input",e=>{
   const it=e.target.dataset.forgie;if(!it)return;
   const result=commitFieldDraft(e.target,FIELD_SCHEMA.forgie,S.forgie[it],(st,value,raw)=>{st.forgieText[it]=raw;st.forgie[it]=value;});
-  if(result.committed){save();scheduleSolve();}
+  if(result.committed)markInputEdited("forgie");
 });
 
 /* ---------- Infusion Upgrades modal ---------- */
@@ -570,7 +584,7 @@ document.getElementById("infusionModal").addEventListener("change",e=>{
   save();
   renderRecipes();
   renderInputState();
-  scheduleSolve();
+  markInputEdited("infusion");
 });
 
 /* ---------- mined resources modal ---------- */
@@ -581,7 +595,7 @@ function closeMined(){minedDialog.close();}
 document.getElementById("minedModal").addEventListener("input",e=>{
   const resource=e.target.dataset.minedResource,source=e.target.dataset.minedSource;if(!resource||!source)return;
   const result=commitFieldDraft(e.target,FIELD_SCHEMA.minedIncome,S.minedIncome[resource][source],(st,value,raw)=>{st.minedIncomeText[resource][source]=raw;st.minedIncome[resource][source]=value;});
-  if(result.committed){save();renderMinedResources();scheduleSolve();}
+  if(result.committed){save();renderMinedResources();markInputEdited("mined");}
 });
 
 /* ---------- settings modal (max solve time) ---------- */
@@ -901,9 +915,12 @@ function renderProjects(){
   renderInv();
   if(typeof renderCatalog==="function")renderCatalog();
 }
-document.getElementById("projSeqToggle").addEventListener("change",e=>{mutateState(st=>{st.projectSeq=e.target.checked;});renderProjects();save();scheduleSolve();});
-document.getElementById("projGateToggle").addEventListener("change",e=>{mutateState(st=>{st.projectGate=!e.target.checked;});save();scheduleSolve();});
-document.getElementById("projectStability").addEventListener("change",e=>{setProjectStabilityPolicy(e.target.value);});
+document.getElementById("projSeqToggle").addEventListener("change",e=>{mutateState(st=>{st.projectSeq=e.target.checked;});renderProjects();markInputEdited("schedule",READ_BY_PROJECT);});
+document.getElementById("projGateToggle").addEventListener("change",e=>{mutateState(st=>{st.projectGate=!e.target.checked;});markInputEdited("schedule",READ_BY_PROJECT);});
+document.getElementById("projectStability").addEventListener("change",e=>{
+  const value=e.target.value;if(value!=="prefer-current"&&value!=="reoptimize")return;
+  mutateState(st=>{st.projectStability=value;});markInputEdited("schedule",READ_BY_PROJECT);
+});
 
 /* ---------- project catalog (static, read-only source list) ---------- */
 const CATALOG=(typeof PROJECT_CATALOG!=="undefined"&&Array.isArray(PROJECT_CATALOG))?PROJECT_CATALOG:[];
@@ -918,7 +935,7 @@ function addCatalogProject(catId){
       levels:catalogLevelsToState(src.levels),_open:false
     });
   });
-  renderProjects();renderCatalog();save();scheduleSolve();
+  renderProjects();renderCatalog();markInputEdited("projects",READ_BY_PROJECT);
 }
 function renderCatalog(){
   const list=document.getElementById("catList");if(!list)return;
@@ -946,31 +963,31 @@ if(catSearchEl)catSearchEl.addEventListener("input",e=>{catQuery=e.target.value;
 
 document.getElementById("projAdd").addEventListener("click",()=>{
   mutateState(st=>{st.projects.push({id:newId(),name:"New project",on:true,prio:null,from:1,to:1,done:0,levels:[{costs:[]}],_open:true});});
-  renderProjects();save();scheduleSolve();
+  renderProjects();markInputEdited("projects",READ_BY_PROJECT);
 });
 document.getElementById("projClear").addEventListener("click",()=>{
   if(!(S.projects||[]).length)return;
   if(!confirm("Remove all projects? This clears every added catalog project and custom project."))return;
   mutateState(st=>{st.projects=[];});
-  renderProjects();save();scheduleSolve();
+  renderProjects();markInputEdited("projects",READ_BY_PROJECT);
 });
 document.getElementById("projInvClear").addEventListener("click",()=>{
   if(!confirm("Clear all inventory amounts?"))return;
   mutateState(st=>{INVENTORY_ITEMS.forEach(it=>{st.inventory[it]=null;st.inventoryText[it]="";});});
-  renderInv();save();scheduleSolve();
+  renderInv();markInputEdited("inventory",READ_BY_PROJECT);
 });
 document.getElementById("projList").addEventListener("click",e=>{
   const t=e.target,g=a=>t.getAttribute(a);
   let v;
   if((v=g("data-ptoggle"))!=null){mutateState(st=>{st.projects[+v]._open=!st.projects[+v]._open;});schedulePersist();renderProjects();const disclosure=document.querySelector(`[data-ptoggle="${v}"]`);if(disclosure)disclosure.focus();return;}
-  if((v=g("data-pdel"))!=null){if(confirm("Delete this project?")){mutateState(st=>{st.projects.splice(+v,1);});renderProjects();save();scheduleSolve();}return;}
-  if((v=g("data-pdup"))!=null){mutateState(st=>{const c=JSON.parse(JSON.stringify(st.projects[+v]));c.id=newId();c.name=(c.name||"Project")+" copy";c._open=true;st.projects.splice(+v+1,0,c);});renderProjects();save();scheduleSolve();return;}
-  if((v=g("data-paddlvl"))!=null){mutateState(st=>{const p=st.projects[+v];p.levels.push({costs:[]});p.to=p.levels.length;});renderProjects();save();scheduleSolve();return;}
-  if((v=g("data-pdellvl"))!=null){const pi=+v,li=+g("data-li");mutateState(st=>{const p=st.projects[pi];p.levels.splice(li,1);if(p.levels.length===0)p.levels.push({costs:[]});if(p.to>p.levels.length)p.to=p.levels.length;if(p.from>p.levels.length)p.from=p.levels.length;});renderProjects();save();scheduleSolve();return;}
-  if((v=g("data-paddcost"))!=null){const pi=+v,li=+g("data-li");mutateState(st=>{st.projects[pi].levels[li].costs.push({item:PRODUCTS[0],qty:null});});renderProjects();save();scheduleSolve();return;}
-  if((v=g("data-cdel"))!=null){const[pi,li,ci]=v.split("_").map(Number);mutateState(st=>{st.projects[pi].levels[li].costs.splice(ci,1);});renderProjects();save();scheduleSolve();return;}
+  if((v=g("data-pdel"))!=null){if(confirm("Delete this project?")){mutateState(st=>{st.projects.splice(+v,1);});renderProjects();markInputEdited("projects",READ_BY_PROJECT);}return;}
+  if((v=g("data-pdup"))!=null){mutateState(st=>{const c=JSON.parse(JSON.stringify(st.projects[+v]));c.id=newId();c.name=(c.name||"Project")+" copy";c._open=true;st.projects.splice(+v+1,0,c);});renderProjects();markInputEdited("projects",READ_BY_PROJECT);return;}
+  if((v=g("data-paddlvl"))!=null){mutateState(st=>{const p=st.projects[+v];p.levels.push({costs:[]});p.to=p.levels.length;});renderProjects();markInputEdited("projectCosts",READ_BY_PROJECT);return;}
+  if((v=g("data-pdellvl"))!=null){const pi=+v,li=+g("data-li");mutateState(st=>{const p=st.projects[pi];p.levels.splice(li,1);if(p.levels.length===0)p.levels.push({costs:[]});if(p.to>p.levels.length)p.to=p.levels.length;if(p.from>p.levels.length)p.from=p.levels.length;});renderProjects();markInputEdited("projectCosts",READ_BY_PROJECT);return;}
+  if((v=g("data-paddcost"))!=null){const pi=+v,li=+g("data-li");mutateState(st=>{st.projects[pi].levels[li].costs.push({item:PRODUCTS[0],qty:null});});renderProjects();markInputEdited("projectCosts",READ_BY_PROJECT);return;}
+  if((v=g("data-cdel"))!=null){const[pi,li,ci]=v.split("_").map(Number);mutateState(st=>{st.projects[pi].levels[li].costs.splice(ci,1);});renderProjects();markInputEdited("projectCosts",READ_BY_PROJECT);return;}
   // +1/−1 level completion on a shopping-list card (issue #87 item 3) — clamped to the from→to span.
-  if((v=g("data-psinc"))!=null||(v=g("data-psdec"))!=null){const inc=g("data-psinc")!=null,p=S.projects[+v];if(!p)return;mutateState(()=>{const {span}=projSpan(p);p.done=Math.max(0,Math.min(span,projDone(p)+(inc?1:-1)));});renderProjects();save();scheduleSolve();return;}
+  if((v=g("data-psinc"))!=null||(v=g("data-psdec"))!=null){const inc=g("data-psinc")!=null,p=S.projects[+v];if(!p)return;mutateState(()=>{const {span}=projSpan(p);p.done=Math.max(0,Math.min(span,projDone(p)+(inc?1:-1)));});renderProjects();markInputEdited("progress",READ_BY_PROJECT);return;}
 });
 document.getElementById("projList").addEventListener("input",e=>{
   const t=e.target,g=a=>t.getAttribute(a);let v;
@@ -978,29 +995,29 @@ document.getElementById("projList").addEventListener("input",e=>{
     mutateState(st=>{st.projects[+v].name=t.value;});
     const disclosure=t.closest(".proj").querySelector("[data-ptoggle]");
     if(disclosure){const label=`${S.projects[+v]._open?"Hide":"Show"} level costs for ${t.value.trim()||"untitled project"}`;disclosure.setAttribute("aria-label",label);disclosure.title=label;}
-    save();scheduleSolve();return;
+    markInputEdited("projectCosts",READ_BY_PROJECT);return;
   }
   if((v=g("data-pfrom"))!=null||(v=g("data-pto"))!=null){
     const pi=+v,p=S.projects[pi],card=t.closest(".proj");if(!p||!card)return;
     const fromInput=card.querySelector(`[data-pfrom="${pi}"]`),toInput=card.querySelector(`[data-pto="${pi}"]`);
     if(!fromInput||!toInput)return;
     const result=commitProjectRangeDrafts(fromInput,toInput,p);
-    if(result.committed){save();scheduleSolve();}return;
+    if(result.committed)markInputEdited("projectCosts",READ_BY_PROJECT);return;
   }
-  if((v=g("data-pprio"))!=null){const pi=+v,p=S.projects[pi];if(!p)return;const result=commitFieldDraft(t,FIELD_SCHEMA.projectPriority,p.prio,(st,value)=>{st.projects[pi].prio=value;});if(result.committed){save();scheduleSolve();}return;}
-  if((v=g("data-cqty"))!=null){const[pi,li,ci]=v.split("_").map(Number),cost=S.projects[pi].levels[li].costs[ci];const result=commitFieldDraft(t,FIELD_SCHEMA.projectQuantity,cost.qty,(st,value)=>{st.projects[pi].levels[li].costs[ci].qty=value;});if(result.committed){save();scheduleSolve();}return;}
+  if((v=g("data-pprio"))!=null){const pi=+v,p=S.projects[pi];if(!p)return;const result=commitFieldDraft(t,FIELD_SCHEMA.projectPriority,p.prio,(st,value)=>{st.projects[pi].prio=value;});if(result.committed)markInputEdited("schedule",READ_BY_PROJECT);return;}
+  if((v=g("data-cqty"))!=null){const[pi,li,ci]=v.split("_").map(Number),cost=S.projects[pi].levels[li].costs[ci];const result=commitFieldDraft(t,FIELD_SCHEMA.projectQuantity,cost.qty,(st,value)=>{st.projects[pi].levels[li].costs[ci].qty=value;});if(result.committed)markInputEdited("projectCosts",READ_BY_PROJECT);return;}
 });
 document.getElementById("projList").addEventListener("change",e=>{
   const t=e.target,g=a=>t.getAttribute(a);let v;
   // Ticking projects in or out is batched work — accept and persist each tick, then let the
   // Resimulate bar apply the whole batch, rather than re-solving between them.
   if((v=g("data-pon"))!=null){commitProjectInclusion(st=>{st.projects[+v].on=t.checked;});return;}
-  if((v=g("data-citem"))!=null){const[pi,li,ci]=v.split("_").map(Number);mutateState(st=>{st.projects[pi].levels[li].costs[ci].item=t.value;});save();scheduleSolve();return;}
+  if((v=g("data-citem"))!=null){const[pi,li,ci]=v.split("_").map(Number);mutateState(st=>{st.projects[pi].levels[li].costs[ci].item=t.value;});markInputEdited("projectCosts",READ_BY_PROJECT);return;}
 });
 document.getElementById("invRows").addEventListener("input",e=>{
   const it=e.target.getAttribute("data-inv");if(!it)return;
   const result=commitFieldDraft(e.target,FIELD_SCHEMA.inventory,S.inventory[it],(st,value,raw)=>{st.inventoryText[it]=raw;st.inventory[it]=value;});
-  if(result.committed){save();scheduleSolve();}
+  if(result.committed)markInputEdited("inventory",READ_BY_PROJECT);
 });
 
 /* ---------- Progress tracker modal ---------- */
@@ -1070,7 +1087,7 @@ function setProjDone(pid,newDone){
   const p=(S.projects||[]).find(x=>x.id===pid);if(!p)return;
   const {span}=projSpan(p);
   mutateState(()=>{p.done=Math.max(0,Math.min(span,Math.floor(newDone)));});
-  persistNow();scheduleSolve();renderProgress();
+  markInputEdited("progress",READ_BY_PROJECT);renderProgress();
 }
 const progressDialog=dialogController.register({root:document.getElementById("progModal"),panel:document.querySelector("#progModal .modal"),opener:null,initialFocus:()=>document.getElementById("progDone"),onOpen:renderProgress});
 function openProgress(invoker){progressDialog.open(invoker);}
@@ -1090,7 +1107,7 @@ document.getElementById("progResetAll").addEventListener("click",()=>{
   if(!(S.projects||[]).some(p=>projDone(p)>0))return;
   if(!confirm("Reset completed-level progress on all projects?"))return;
   mutateState(st=>{(st.projects||[]).forEach(p=>{p.done=0;});});
-  persistNow();scheduleSolve();renderProgress();
+  markInputEdited("progress",READ_BY_PROJECT);renderProgress();
 });
 
 /* ---------- Step-by-step plan modal ---------- */
@@ -1274,16 +1291,15 @@ document.getElementById("results").addEventListener("change",e=>{
   const t=e.target;if(!t||!t.getAttribute)return;let v;
   // Plan-start anchor: display-only, so repaint from cache (no solve).
   if(t.id==="spStart"){const val=t.value,ms=val?new Date(val).getTime():null;if(!val||!isNaN(ms))mutateState(st=>{st.planStart=ms;});save();repaintProject();return;}
-  // Inline project controls — same fields as Projects / Track progress, kept in sync. These change
-  // demand, so re-solve; doSolve() rebuilds #results (and thus the plan) right away.
-  // Except the on/off tick: solving there would rebuild this very panel under the pointer, one solve
-  // per tick, so it only marks the plan stale and the Resimulate bar above applies the batch.
+  // Inline project controls — same fields as Projects / Track progress, kept in sync. Like every
+  // other planner input they only mark the plan stale: solving here would rebuild this very panel
+  // under the pointer, and the Resimulate bar above applies the batch.
   if((v=t.getAttribute("data-spon"))!=null){const p=stepsProj(v);if(p)commitProjectInclusion(()=>{p.on=t.checked;});return;}
   if((v=t.getAttribute("data-spfrom"))!=null||(v=t.getAttribute("data-spto"))!=null){
     const p=stepsProj(v),row=t.closest(".proj-inline-row");if(!p||!row)return;
     const fromInput=row.querySelector("[data-spfrom]"),toInput=row.querySelector("[data-spto]");
     if(!fromInput||!toInput)return;
-    const result=commitProjectRangeDrafts(fromInput,toInput,p);if(result.committed)doSolve();return;
+    const result=commitProjectRangeDrafts(fromInput,toInput,p);if(result.committed)markInputEdited("projectCosts",READ_BY_PROJECT);return;
   }
   // Manual-mode dropdowns also live inside #results (re-rendered each change)
   if(t.id==="manualPreset"){if(t.value)loadManualPreset(t.value);return;}

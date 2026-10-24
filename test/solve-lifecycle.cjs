@@ -1857,6 +1857,9 @@ function schedulerHarness(options = {}) {
     clearStaleUI() { vm.runInContext("clearStaleUI()", context); },
     toggleProject(on) { vm.runInContext(`commitProjectInclusion(st=>{st.projectOn=${on === true};})`, context); },
     markLevelsDone(count) { vm.runInContext(`commitProjectProgress(st=>{st.projectDone=${Number(count)};})`, context); },
+    editInput(cause, readers) {
+      vm.runInContext(`S.edits=(S.edits||0)+1;stateRevision+=1;markInputEdited(${JSON.stringify(cause)},${readers || "undefined"})`, context);
+    },
     staleBar() { return { hidden: staleBar.hidden, message: staleMessage.textContent, dimmed: resultsClasses.has("stale") }; },
     planTop() { return resultsElement.getBoundingClientRect().top; },
     scrolls() { return scrolls.slice(); },
@@ -2268,6 +2271,68 @@ test("checking a level off outside Project plan persists quietly", () => {
   assert.deepEqual(harness.counts(), { saves: 1, renders: 0, requests: 0, cancels: 0 });
   assert.equal(harness.state().projectDone, 2);
   assert.deepEqual(harness.staleBar(), { hidden: true, message: "", dimmed: false });
+});
+
+test("an input edit marks the plan out of date instead of solving", () => {
+  const harness = schedulerHarness({ mode: "project" });
+  harness.editInput("forgie");
+  harness.editInput("inventory", "READ_BY_PROJECT");
+  harness.advance(600);   // nothing is scheduled: the batch resolves on Resimulate
+
+  assert.deepEqual(harness.counts(), { saves: 2, renders: 0, requests: 0, cancels: 0 });
+  assert.equal(harness.storedState().edits, 2, "each edit persists immediately");
+  assert.deepEqual(harness.staleBar(), {
+    hidden: false,
+    message: "Plan out of date — Lil' Forgie rates and inventory changed. Press Resimulate to update it.",
+    dimmed: true,
+  });
+  harness.doSolve();
+  assert.deepEqual(harness.counts(), { saves: 2, renders: 1, requests: 0, cancels: 0 });
+});
+
+test("an input the current mode never reads only saves", () => {
+  for (const [mode, readers] of [["items", "READ_BY_PROJECT"], ["credits", "READ_BY_PROJECT"], ["items", "READ_BY_PRICES"]]) {
+    const harness = schedulerHarness({ mode });
+    harness.editInput("prices", readers);
+    harness.advance(600);
+    assert.deepEqual(harness.counts(), { saves: 1, renders: 0, requests: 0, cancels: 0 }, `${mode} / ${readers}`);
+    assert.deepEqual(harness.staleBar(), { hidden: true, message: "", dimmed: false }, `${mode} / ${readers}`);
+  }
+});
+
+test("Manual repaints at once for an input it reads", () => {
+  const harness = schedulerHarness({ mode: "manual" });
+  harness.editInput("forgie");
+  assert.deepEqual(harness.counts(), { saves: 1, renders: 1, requests: 0, cancels: 0 });
+  assert.equal(harness.staleBar().hidden, true);
+
+  harness.editInput("inventory", "READ_BY_PROJECT");
+  assert.deepEqual(harness.counts(), { saves: 2, renders: 1, requests: 0, cancels: 0 });
+});
+
+test("only the Outputs card still re-solves as you type", () => {
+  const source = fs.readFileSync(path.join(root, "js", "events.js"), "utf8");
+  const calls = [...source.matchAll(/scheduleSolve\(\)/g)].map(match => {
+    const line = source.slice(source.lastIndexOf("\n", match.index) + 1, source.indexOf("\n", match.index));
+    return line.trim();
+  });
+  assert.deepEqual(calls, [
+    "function scheduleSolve(){schedulePersist();clearTimeout(renderT);renderT=setTimeout(doSolve,500);}",
+    'function solveForOutputMix(){if(S.mode==="items")scheduleSolve();}',
+    'function solveForMargin(){if(S.mode==="items"||S.mode==="credits")scheduleSolve();}',
+  ]);
+  for (const [block, cause] of [
+    ['getElementById("forgieRows").addEventListener', "forgie"], ['getElementById("forgieClear").addEventListener', "forgie"],
+    ['getElementById("priceRows").addEventListener', "prices"], ['getElementById("priceClear").addEventListener', "prices"],
+    ['getElementById("invRows").addEventListener', "inventory"], ['getElementById("projInvClear").addEventListener', "inventory"],
+    ['getElementById("minedModal").addEventListener("input"', "mined"],
+    ['getElementById("infusionModal").addEventListener', "infusion"], ['getElementById("recipes").addEventListener', "recipes"],
+  ]) {
+    const start = source.indexOf(block);
+    assert.ok(start >= 0, `${block} remains wired`);
+    const handler = source.slice(start, source.indexOf("\n});", start));
+    assert.match(handler, new RegExp(`markInputEdited\\("${cause}"`), `${block} marks the plan out of date`);
+  }
 });
 
 test("opening Progress never invokes the synchronous Project optimizer", () => {

@@ -280,11 +280,14 @@ test("source contracts enforce parse-before-mutation and persisted accepted fiel
   assert.match(dom, /aria-describedby/);
   assert.match(render, /FIELD_SCHEMA\.lineSpeed/);
   for (const rule of ["margin", "targetWeight", "sellPrice", "forgie", "minedIncome", "inventory", "projectQuantity", "projectPriority"]) {
-    const handler = new RegExp(`commitFieldDraft\\([^\\n]*FIELD_SCHEMA\\.${rule}[^\\n]*\\);[\\s\\S]{0,240}result\\.committed[^\\n]*save\\(\\)`);
+    const handler = new RegExp(`commitFieldDraft\\([^\\n]*FIELD_SCHEMA\\.${rule}[^\\n]*\\);[\\s\\S]{0,240}result\\.committed[^\\n]*(?:save|markInputEdited)\\(`);
     assert.match(events, handler, `${rule} must persist its accepted value immediately`);
   }
-  assert.match(events, /d\.fld!=="baseT"\)return;[\s\S]{0,400}FIELD_SCHEMA\.baseTime[\s\S]{0,400}result\.committed\)\{save\(\)/,
+  assert.match(events, /d\.fld!=="baseT"\)return;[\s\S]{0,400}FIELD_SCHEMA\.baseTime[\s\S]{0,400}result\.committed\)(?:\{save\(\)|markInputEdited\()/,
     "base times must persist accepted values immediately");
+  // markInputEdited persists before it marks the plan stale or repaints Manual.
+  assert.match(events, /function markInputEdited\([^)]*\)\{[^}]*save\(\)[\s\S]{0,120}doSolve\(\)[\s\S]{0,60}markStale\(/);
+  assert.match(events, /function markStale\([^)]*\)\{[^}]*persistNow\(\)/);
   assert.doesNotMatch(events, /data-fld="cost"|st\.prodCost\[/,
     "recipe costs are derived and read-only: nothing may commit a typed cost back into state");
   assert.doesNotMatch(css, /\.field-error:empty\s*\{[^}]*display\s*:\s*none/,
