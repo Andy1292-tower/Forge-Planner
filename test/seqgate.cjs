@@ -643,39 +643,39 @@ const runner = `
   }
 
   /* ---- selling again: what the plan needs, and when it has made it ---------------------------
-   * Keep-on-hand is the stock the plan counts toward what it needs; the item is free to sell once
-   * the plan has made the rest. Glass: 500 held against a 100 cost, so 100 kept and free now.
-   * Plates: none held, crafted by the last phase, free when that making is done. Batteries: never
-   * used. */
+   * Keep-on-hand is all the plan needs of the item; the stock held counts toward it, and the item
+   * is free to sell once the plan has made the rest. Glass: 500 held against a 100 cost, so 100
+   * kept and free now. Plates: none held, crafted by the last phase, free when that making is done.
+   * Batteries: never used. */
   {
     const res = run([P("a","A",[["Glass",100]],1), P("b","B",[["Plates",100]],2)],
                     {projectSeq:true, inventory:{Glass:500}});
     const glass = sellAgainTiming(res, "Glass"), plates = sellAgainTiming(res, "Plates"), batteries = sellAgainTiming(res, "Batteries");
     record("sell again: stock that covers the whole need is free now, above what is held back",
-      res.feasible === true && glass.used && glass.freeAt === 0 && Math.abs(glass.keep - 100) < 1e-9 && Math.abs(glass.required - 100) < 1e-9,
-      "freeAt=" + glass.freeAt + " keep=" + glass.keep + " required=" + glass.required);
+      res.feasible === true && glass.used && glass.freeAt === 0 && Math.abs(glass.counted - 100) < 1e-9 && Math.abs(glass.required - 100) < 1e-9,
+      "freeAt=" + glass.freeAt + " counted=" + glass.counted + " required=" + glass.required);
     record("sell again: an item the plan crafts is free once it has made what it needs",
-      plates.used && plates.keep === 0 && Math.abs(plates.required - 100) < 1e-9 && plates.freeAt > 0 && plates.freeAt <= res.eta + 1e-9,
-      "freeAt=" + plates.freeAt + " eta=" + res.eta + " keep=" + plates.keep);
+      plates.used && plates.counted === 0 && Math.abs(plates.required - 100) < 1e-9 && plates.freeAt > 0 && plates.freeAt <= res.eta + 1e-9,
+      "freeAt=" + plates.freeAt + " eta=" + res.eta + " counted=" + plates.counted);
     record("sell again: an item the plan never uses is free now",
-      !batteries.used && batteries.freeAt === null && batteries.keep === 0,
-      "used=" + batteries.used + " keep=" + batteries.keep);
+      !batteries.used && batteries.freeAt === null && batteries.counted === 0,
+      "used=" + batteries.used + " counted=" + batteries.counted);
   }
 
   /* ---- selling again: a line that keeps making past the need -------------------------------
    * The shape of a Set & forget phase longer than its Batteries need: 114,930 held, 1,000,000
    * charged at the end, one line making 25,975.68/hr for all 25 hours and Lil' Forgie 14,373.64/hr.
-   * The stock never dips, but the plan still counts it: keep 114,930, and the other 885,070 are made
-   * at 21.935 h, well before the phase ends. */
+   * The stock never dips, but the plan still needs all 1,000,000: the 114,930 held count toward it,
+   * and the other 885,070 are made at 21.935 h, well before the phase ends. */
   {
     build([P("w","W",[["Batteries",1000000]])], {forgie:Object.assign(defaults().forgie,{Batteries:"14373.64"})});
     const longPhase = {eta:25, scheduleValidation:{phases:[{kind:"project", eta:25, demandSub:{Batteries:1000000},
       plan:[{line:7, entries:[{item:"Batteries", lvl:2, outHr:25975.68, frac:1, start:0, end:25, cons:[]}]}]}],
       boundaries:[{inventory:{Batteries:114930}}]}};
     const t = sellAgainTiming(longPhase, "Batteries"), expected = 885070 / (25975.68 + 14373.64);
-    record("sell again: stock the plan counts on is kept even when the phase overproduces",
-      t.used && t.keep === 114930 && t.required === 1000000 && Math.abs(t.freeAt - expected) < 1e-9 && t.freeAt < 25,
-      "keep=" + t.keep + " freeAt=" + t.freeAt + " expected=" + expected);
+    record("sell again: the whole need is kept, stock included, even when the phase overproduces",
+      t.used && t.required === 1000000 && t.counted === 114930 && Math.abs(t.freeAt - expected) < 1e-9 && t.freeAt < 25,
+      "required=" + t.required + " counted=" + t.counted + " freeAt=" + t.freeAt + " expected=" + expected);
   }
 
   /* ---- review follow-up: the line-plan toggle carries aria-pressed on BOTH buttons, and the

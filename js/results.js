@@ -309,14 +309,15 @@ function sellRankingPending(key){
 /* What the replayed schedule asks of `item`, and when it stops asking.
  *
  * `required` is everything the plan spends of it: project costs, pre-produced reserves, and what its
- * own crafts consume. The plan counts your stock toward that first, so `keep` is the smaller of the
- * two — the stock to hold back. The rest the plan makes, on its lines and from Lil' Forgie, and
- * `freeAt` is the hour that making is done: past it, every new one is spare. Stock and what is
+ * own crafts consume — what you have to keep on hand until the plan spends it. The plan counts your
+ * stock toward that first (`counted`), and makes the rest on its lines and from Lil' Forgie;
+ * `freeAt` is the hour that making is done. Until then none of the item is spare, and from then on
+ * anything above what is still owed is. Stock and what is
  * still owed fall together as the plan spends, so only production closes that gap, and it is
  * closed for good the first time it is closed. A line set to one job for the whole phase can keep
  * making the item after that; those are the spare ones.
  *
- * A mined resource is not held as stock in the replay: its `keep` is null, and it is free once the
+ * A mined resource is not held as stock in the replay: its `counted` is null, and it is free once the
  * last phase drawing on it ends. */
 function sellAgainTiming(res,item){
   const validation=res.scheduleValidation||{},phases=validation.phases||[],boundaries=validation.boundaries||[];
@@ -336,11 +337,11 @@ function sellAgainTiming(res,item){
   });
   const tracked=boundaries.length>0&&Object.prototype.hasOwnProperty.call(boundaries[0].inventory||{},item);
   const tolerance=Math.max(1e-8,required*1e-12);
-  if(!tracked)return {used:required>tolerance,required,keep:null,freeAt:required>tolerance?lastDraw:null,end};
-  if(!(required>tolerance))return {used:false,required:0,keep:0,freeAt:null,end};
-  const stock=Math.max(0,Number(boundaries[0].inventory[item])||0),keep=Math.min(stock,required);
-  const toMake=required-keep;
-  if(!(toMake>tolerance))return {used:true,required,keep,freeAt:0,end};
+  if(!tracked)return {used:required>tolerance,required,counted:null,freeAt:required>tolerance?lastDraw:null,end};
+  if(!(required>tolerance))return {used:false,required:0,counted:0,freeAt:null,end};
+  const stock=Math.max(0,Number(boundaries[0].inventory[item])||0),counted=Math.min(stock,required);
+  const toMake=required-counted;
+  if(!(toMake>tolerance))return {used:true,required,counted,freeAt:0,end};
   const forgie=typeof forgieHr==="function"&&typeof supplyRate==="function"?Math.max(0,Number(supplyRate(forgieHr(item)))||0):0;
   const times=[...new Set([0,end,...runs.flatMap(run=>[run.from,run.to]),...drops.map(drop=>drop.at)])].filter(t=>t>=0&&t<=end).sort((a,b)=>a-b);
   let made=0,freeAt=end;
@@ -353,7 +354,7 @@ function sellAgainTiming(res,item){
     if(rate>0&&made+rate*(next-t)>=toMake-tolerance){freeAt=t+(toMake-made)/rate;break;}
     made+=rate*(next-t);
   }
-  return {used:true,required,keep,freeAt,end};
+  return {used:true,required,counted,freeAt,end};
 }
 function sellAgainHtml(res){
   const ranking=projectSellRanking();
@@ -369,15 +370,13 @@ function sellAgainHtml(res){
   const chosen=choices.find(c=>c.item===_sellItemChoice)||choices[0];
   const name=htmlText(minedDisplayName(chosen.item)),timing=sellAgainTiming(res,chosen.item);
   const options=choices.map((c,i)=>`<option value="${htmlAttribute(c.item)}"${c===chosen?" selected":""}>${htmlText(minedDisplayName(c.item))}${i===0?" (best)":""}</option>`).join("");
-  const rows=[],need=`<b>${disp(timing.required)}</b>`;
+  const rows=[],need=`<b>${disp(timing.required)} ${name}</b>`;
   if(!timing.used)rows.push(`<li><b>Now</b> — this plan never uses ${name}.</li>`);
-  else if(timing.keep===null)rows.push(`<li>From <b>${fmtPlanClock(timing.freeAt)}</b>, when the plan stops drawing on ${name}.</li>`);
-  else if(timing.freeAt===0)rows.push(`<li><b>Now</b>, above what you hold back: your stock already covers the ${need} ${name} the plan needs. Keep <b>${disp(timing.keep)}</b> for it and sell the rest.</li>`);
+  else if(timing.counted===null)rows.push(`<li>From <b>${fmtPlanClock(timing.freeAt)}</b>, when the plan stops drawing on ${name}.</li>`);
+  else if(timing.freeAt===0)rows.push(`<li><b>Now</b>, above ${need}: your stock already covers what the plan needs. Keep ${need} on hand until the plan spends them, and sell the rest.</li>`);
   else{
-    rows.push(`<li>From <b>${fmtPlanClock(timing.freeAt)}</b> — by then the plan has made all ${need} ${name} it needs, and any made after that are spare.</li>`);
-    rows.push(timing.keep>0
-      ?`<li>Until then, keep <b>${disp(timing.keep)} ${name}</b> on hand: the plan counts your stock toward those ${need}.</li>`
-      :`<li>You hold no ${name}, so there is nothing to keep back.</li>`);
+    rows.push(`<li>From <b>${fmtPlanClock(timing.freeAt)}</b> — by then you hold all ${need} the plan needs, and any made after that are spare.</li>`);
+    rows.push(`<li>Keep ${need} on hand until the plan spends them. Until <b>${fmtPlanClock(timing.freeAt)}</b> that means selling none: the plan needs ${timing.counted>0?`the <b>${disp(timing.counted)}</b> you hold now and `:""}every one it makes.</li>`);
   }
   rows.push(`<li><b>${disp(chosen.credits)} credits/hr</b> selling ${name} once your lines are free${timing.end>0?` at <b>${fmtPlanClock(timing.end)}</b>`:""} — the Max credits/hr plan for it.</li>`);
   return {html:`<div class="sell-again">${head}
