@@ -392,6 +392,11 @@ const solveService=(()=>{
   let expectedRevision=null;
   let expectedKey=null;
   let expectedDailyCacheKey=null;
+  // A follow-up solves a different mode than the page shows (see request), so the page synchronously
+  // re-solving its own mode is not a fallback for it.
+  let expectedFollow=false;
+  // The mode the Worker was asked to solve, which a follow-up's expectedMode (the page's) is not.
+  let expectedSolveMode=null;
   let callback=null;
   /* Slot records, not one owned Worker: {worker,busy}. Membership in this array is the identity a
    * late message or error is checked against, so a disposed Worker's events are ignored by the same
@@ -514,7 +519,7 @@ const solveService=(()=>{
     const priced=Object.keys(prices).filter(item=>(Number(prices[item])||0)>0).length;
     return Math.max(1,Math.min(poolCap(),priced));
   }
-  function clearRequest(){callback=null;expectedMode=null;expectedRevision=null;expectedKey=null;expectedDailyCacheKey=null;pendingShards=null;clearFallbackTimer();}
+  function clearRequest(){callback=null;expectedMode=null;expectedRevision=null;expectedKey=null;expectedDailyCacheKey=null;expectedFollow=false;expectedSolveMode=null;pendingShards=null;clearFallbackTimer();}
   function cancel(reason){
     generation+=1;
     lastReason=String(reason||"cancelled");
@@ -543,10 +548,13 @@ const solveService=(()=>{
     expectedRevision=null;
     expectedKey=null;
     expectedDailyCacheKey=null;
+    expectedFollow=false;
+    expectedSolveMode=null;
     overlay(false);
     if(done)done(result,error||null,metadata||null);
   }
   function runFallback(requestGeneration,reason){
+    if(expectedFollow){deliver(requestGeneration,null,{message:reason});return;}
     fallbackNotice(true,reason);
     clearFallbackTimer();
     fallbackTimer=setTimeout(()=>{
@@ -584,7 +592,7 @@ const solveService=(()=>{
       const data=event.data||{};
       if(!ownsSlot(slot)||data.generation!==generation)return;
       if(!isCurrent(data.generation)){cancel("accepted state changed before Worker completion");return;}
-      if(data.mode!==expectedMode||data.stateRevision!==expectedRevision){
+      if(data.mode!==expectedSolveMode||data.stateRevision!==expectedRevision){
         workerFailed(slot,data.generation,"Worker response did not match the requested mode and revision");
         return;
       }
@@ -625,7 +633,7 @@ const solveService=(()=>{
         if(pending.entries.length<pending.count)return;
         const entries=pending.entries;pendingShards=null;
         applySoloCache(mergeSoloCaches(entries.map(entry=>({shard:entry.shard,res:{__solo:entry.solo}}))));
-        deliver(data.generation,mergeShardResults(expectedMode,entries),null);
+        deliver(data.generation,mergeShardResults(expectedSolveMode,entries),null);
         return;
       }
       applySoloCache(solo);
@@ -678,10 +686,19 @@ const solveService=(()=>{
       throw new TypeError("solveService.request shard must be {index,count} with 0 <= index < count");
     }
 
+    /* A follow-up solves another mode on the page's behalf — Project plan asks for the Credits
+     * ranking its sell-again card reads — without leaving the mode the page shows. It stays current
+     * while the PAGE's mode and accepted state are what they were when it was asked, so `follow`
+     * names those, and it runs without the solving overlay over the plan already on screen. */
+    const follow=options.follow===undefined||options.follow===null?null:options.follow;
+    if(follow!==null&&!(typeof follow.mode==="string"&&typeof follow.key==="string")){
+      throw new TypeError("solveService.request follow must be {mode,key} for the page state it serves");
+    }
     const dailyCacheKey=(mode==="items"||mode==="credits")?dailySolveConditionKey(dispatchedState):null;
     const requestGeneration=++generation;
     clearFallbackTimer();
-    callback=done;expectedMode=mode;expectedRevision=revision;expectedKey=stateKey;expectedDailyCacheKey=dailyCacheKey;
+    callback=done;expectedMode=follow?follow.mode:mode;expectedRevision=revision;expectedKey=follow?follow.key:stateKey;
+    expectedDailyCacheKey=dailyCacheKey;expectedFollow=follow!==null;expectedSolveMode=mode;
 
     // optimize() is synchronous inside the Worker. Superseding busy work requires termination;
     // a healthy idle Worker may be reused and receives a fresh stability snapshot below.
@@ -691,7 +708,7 @@ const solveService=(()=>{
       const cached=readDailySolveCache(dailyCacheKey,mode);
       if(cached){lastReason="Daily solve cache hit";deliver(requestGeneration,cached.result,null,{cached:true,savedAt:cached.savedAt});return requestGeneration;}
     }
-    overlay(true);
+    if(!follow)overlay(true);
     if(!shouldTryWorker()){
       runFallback(requestGeneration,typeof Worker==="undefined"?"Worker is unavailable":"Worker retry is cooling down");
       return requestGeneration;

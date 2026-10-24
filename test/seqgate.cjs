@@ -641,6 +641,26 @@ const runner = `
       "phases=" + gated.phases.map(ph => ph.name).join(" | "));
   }
 
+  /* ---- selling again: read off the replayed schedule ---------------------------------------
+   * Glass is spent from stock by the first phase and never touched again; Plates are crafted and
+   * spent by the last; Batteries never appear. Keep-on-hand is how far the plan draws the stock on
+   * hand down, so 500 Glass held against a 100 Glass cost keeps 100. */
+  {
+    const res = run([P("a","A",[["Glass",100]],1), P("b","B",[["Plates",100]],2)],
+                    {projectSeq:true, inventory:{Glass:500}});
+    const aDone = (res.executionPhases.find(ph => ph.kind === "project" && ph.name === "A") || {}).doneAt;
+    const glass = sellAgainTiming(res, "Glass"), plates = sellAgainTiming(res, "Plates"), batteries = sellAgainTiming(res, "Batteries");
+    record("sell again: an item spent early is free once its last phase ends",
+      res.feasible === true && glass.lastUse === aDone && glass.phaseName === "A" && Math.abs(glass.keep - 100) < 1e-9,
+      "lastUse=" + glass.lastUse + " aDone=" + aDone + " phase=" + glass.phaseName + " keep=" + glass.keep);
+    record("sell again: an item the last phase crafts is free when the schedule ends",
+      Math.abs(plates.lastUse - res.eta) < 1e-9 && plates.phaseName === "B" && plates.keep === 0 && plates.end === res.eta,
+      "lastUse=" + plates.lastUse + " eta=" + res.eta + " keep=" + plates.keep);
+    record("sell again: an item the plan never uses is free now",
+      batteries.lastUse === null && batteries.keep === 0,
+      "lastUse=" + batteries.lastUse + " keep=" + batteries.keep);
+  }
+
   /* ---- review follow-up: the line-plan toggle carries aria-pressed on BOTH buttons, and the
    * order caption names the active mode without making an optimization claim. */
   {

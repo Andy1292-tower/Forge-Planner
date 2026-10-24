@@ -136,6 +136,18 @@ function lifecycleHarness(options = {}) {
       delete context.__request;
       delete context.__callback;
     },
+    // A follow-up: the page shows `pageState` while the service solves `options.stateSnapshot`.
+    callAsPage(pageState, options, callback) {
+      context.__page = pageState;
+      context.__request = options;
+      context.__callback = callback;
+      vm.runInContext("S = globalThis.__page; stateRevision = globalThis.__request.stateRevision;" +
+        "globalThis.__request.follow = { mode: S.mode, key: solveStateKey(S) };" +
+        "solveService.request(globalThis.__request, globalThis.__callback)", context);
+      delete context.__page;
+      delete context.__request;
+      delete context.__callback;
+    },
     setCurrent(mode, revision) {
       context.__mode = mode;
       context.__revision = revision;
@@ -404,6 +416,59 @@ function primeCreditsCache(storage, state = creditsState(), now = 1_000) {
 
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
+
+test("a follow-up Credits solve serves the Project page without its overlay, and fills the Credits cache", () => {
+  const storage = new Map();
+  const harness = lifecycleHarness({ storage });
+  const page = creditsState({ mode: "project" }), credits = creditsState();
+  const delivered = [];
+  harness.callAsPage(page, { mode: "credits", stateRevision: 3, budget: credits.solveBudget, stateSnapshot: credits },
+    (result, error) => delivered.push({ result, error }));
+
+  assert.equal(harness.workers.length, 1);
+  assert.equal(harness.workers[0].messages[0].mode, "credits");
+  assert.equal(harness.workers[0].messages[0].state.mode, "credits");
+  assert.equal(harness.elements.solveOverlay.hidden, true, "the plan on screen is not covered while ranking");
+  assert.equal(harness.status().mode, "project", "it is current against the page's own mode");
+  assert.equal(harness.status().current, true);
+
+  harness.workers[0].emitMessage(workerResponse(harness.workers[0], { res: cachedCreditsResult("follow") }));
+  assert.equal(delivered.length, 1);
+  assert.equal(delivered[0].result.marker, "follow");
+  assert.equal(delivered[0].error, null);
+
+  const later = lifecycleHarness({ storage }), hits = [];
+  later.callRequest({ mode: "credits", stateRevision: 4, budget: credits.solveBudget, stateSnapshot: credits },
+    result => hits.push(result));
+  assert.equal(later.workers.length, 0, "Credits mode reuses the ranking the follow-up solved");
+  assert.equal(hits[0].marker, "follow");
+});
+
+test("a follow-up is dropped when the page's accepted state moves on", () => {
+  const harness = lifecycleHarness();
+  const credits = creditsState(), delivered = [];
+  harness.callAsPage(creditsState({ mode: "project" }), { mode: "credits", stateRevision: 3, budget: credits.solveBudget,
+    stateSnapshot: credits }, (result, error) => delivered.push({ result, error }));
+  harness.mutateCurrent(state => { state.sellPrice = { Frames: 999 }; });
+  harness.workers[0].emitMessage(workerResponse(harness.workers[0], { res: cachedCreditsResult("stale") }));
+  assert.deepEqual(delivered, []);
+  assert.equal(harness.status().active, false);
+});
+
+test("a follow-up whose Worker fails reports the failure instead of solving the page's own mode", () => {
+  let synchronous = 0;
+  const harness = lifecycleHarness({ optimize: () => { synchronous += 1;return { mode: "project" }; } });
+  const credits = creditsState(), delivered = [];
+  harness.callAsPage(creditsState({ mode: "project" }), { mode: "credits", stateRevision: 3, budget: credits.solveBudget,
+    stateSnapshot: credits }, (result, error) => delivered.push({ result, error }));
+  harness.workers[0].emitError("worker crashed");
+  harness.flushTimers();
+  assert.equal(synchronous, 0, "the synchronous fallback would solve Project plan, not the ranking");
+  assert.equal(delivered.length, 1);
+  assert.equal(delivered[0].result, null);
+  assert.ok(delivered[0].error, "the card is told the ranking failed");
+  assert.equal(harness.elements.solveFallback.hidden, true);
+});
 
 test("a completed capped Items solve is reused after the service is recreated", () => {
   const storage = new Map();

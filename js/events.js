@@ -145,7 +145,7 @@ function commitProjectProgress(mutator){
 // defer, so an input it reads repaints it at once.
 const READ_BY_EVERY_MODE=Object.freeze(["items","credits","project","manual"]);
 const READ_BY_PROJECT=Object.freeze(["project"]);
-const READ_BY_PRICES=Object.freeze(["credits","manual"]);
+const READ_BY_PRICES=Object.freeze(["credits","project","manual"]);
 function markInputEdited(cause,readers){
   if(!(readers||READ_BY_EVERY_MODE).includes(S.mode)){save();return;}
   if(S.mode==="manual"){doSolve();return;}
@@ -1354,14 +1354,7 @@ function stepPlanHtml(res){
   if(!valid)return h;
   const _ps=(S.planStart!=null&&isFinite(S.planStart))?new Date(S.planStart):null;
   const now=(_ps&&!isNaN(_ps.getTime()))?_ps:new Date();
-  const fmtClock=h=>{
-    if(!isFinite(h)||h<0)return "";
-    const d=new Date(now.getTime()+h*3600000);
-    let t=d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
-    const dayDiff=Math.round((new Date(d.getFullYear(),d.getMonth(),d.getDate())-new Date(now.getFullYear(),now.getMonth(),now.getDate()))/86400000);
-    if(dayDiff>0)t+=` (${d.toLocaleDateString([],{month:"short",day:"numeric"})})`;   // show the actual date when it lands on a later day, not "+Nd"
-    return t;
-  };
+  const fmtClock=h=>fmtPlanClock(h,now);
   let phaseStart=0;
   const allBoundaries=res.scheduleValidation.boundaries||[];
   execution.forEach((ph,i)=>{
@@ -1449,6 +1442,7 @@ document.getElementById("results").addEventListener("input",e=>{
 document.getElementById("results").addEventListener("change",e=>{
   const t=e.target;if(!t||!t.getAttribute)return;let v;
   // Plan-start anchor: display-only, so repaint from cache (no solve).
+  if(t.id==="sellAgainItem"){_sellItemChoice=t.value;repaintProject();const pick=document.getElementById("sellAgainItem");if(pick)pick.focus();return;}
   if(t.id==="spStart"){const val=t.value,ms=val?new Date(val).getTime():null;if(!val||!isNaN(ms))mutateState(st=>{st.planStart=ms;});save();repaintProject();return;}
   // Inline project controls — same fields as Projects / Track progress, kept in sync. Like every
   // other planner input they only mark the plan stale: solving here would rebuild this very panel
