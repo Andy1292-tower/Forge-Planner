@@ -3846,6 +3846,11 @@ function optimizeProjectTop(testOptions){
  * unlock their levels wait on; the search fits the rest around them. When they alone miss the
  * limit, the answer is that set and says so.
  *
+ * Past the limit, two optional readings share one set of checks, and the last FIT_EXTRA_SHARE of the
+ * search time when either is on. Each candidate is the answer plus one more finished level of one
+ * project or ledger, checked as a full plan. S.fitNext reports the quickest of them when it lands
+ * within FIT_NEXT_WINDOW hours of the limit; S.fitExtra lists every one inside S.fitExtraHours.
+ *
  * Each shard starts the search from a different order (FIT_STRATEGIES) and spends what is left of
  * its search time on seeded random restarts; the page keeps the best verified answer. */
 const FIT_STRATEGIES=Object.freeze(["marginal","order","standalone","random"]);
@@ -3859,6 +3864,9 @@ const FIT_CHECK_SHARE=0.5;       // of the time left, one check may spend
 const FIT_REFINE_SHARE=0.25;     // of the time left, one re-search may spend
 const FIT_RESCALE_CAP=0.98;      // a rescale always lowers the limit by at least this much
 const FIT_LIMIT_TOLERANCE=0.01;  // of the hours: a bracket this narrow is settled
+const FIT_NEXT_WINDOW=12;        // hours past the limit the next step may run
+const FIT_EXTRA_SHARE=0.3;       // of the search time, kept back for what lies past the limit
+const FIT_EXTRA_CHECKS=8;        // full plan checks those may spend
 function fitChains(){
   const chains=[];
   (S.projects||[]).forEach(p=>{
@@ -4062,6 +4070,11 @@ function optimizeFit(testOptions,shard){
    * plan, so the next limit is scaled down by that much; after that the limit bisects between the
    * highest one whose set ran on time and the lowest one whose set did not. A set already checked is
    * not checked again — its answer moves the bracket directly. */
+  const nextOn=S.fitNext===true,extraOn=S.fitExtra===true;
+  const extraHours=boundedPersistedField("fitExtraHours",S.fitExtraHours,12,0.5,1000);
+  const pastOn=nextOn||extraOn,pastWindow=Math.max(nextOn?FIT_NEXT_WINDOW:0,extraOn?extraHours:0);
+  // The answer's own checks stop short of the deadline when what lies past it needs time of its own.
+  const answerDeadline=pastOn?control.deadline-budget*FIT_EXTRA_SHARE:control.deadline;
   let candidate=search(null),verified=null,okLimit=0,failLimit=Infinity,checks=0,forcedOver=null;
   const outcomes=new Map();
   for(let round=0;round<FIT_MAX_ROUNDS&&candidate.count>0&&!control.isStopped();round++){
@@ -4069,7 +4082,7 @@ function optimizeFit(testOptions,shard){
     let outcome=outcomes.get(key);
     if(!outcome){
       if(checks>=FIT_MAX_CHECKS)break;
-      const now=control.readNow(),remaining=control.deadline-now;if(!(remaining>0))break;
+      const now=control.readNow(),remaining=answerDeadline-now;if(!(remaining>0))break;
       const attempt=verifyRun(candidate.n,now+remaining*FIT_CHECK_SHARE);checks++;
       const real=projectRunExecutable(attempt.run)?attempt.run.eta:Infinity;
       outcome={ok:real<=hours+etaCompareEpsilon(real,hours),real,attempt};
@@ -4088,7 +4101,7 @@ function optimizeFit(testOptions,shard){
     if(!(next>okLimit&&next<failLimit))next=(okLimit+failLimit)/2;
     if(!Number.isFinite(next)||failLimit-okLimit<hours*FIT_LIMIT_TOLERANCE)break;
     limit=next;
-    searchUntil=control.currentTime()+Math.max(0,control.deadline-control.currentTime())*FIT_REFINE_SHARE;
+    searchUntil=control.currentTime()+Math.max(0,answerDeadline-control.currentTime())*FIT_REFINE_SHARE;
     candidate=search(candidate);
   }
   const chosen=verified||candidate;
@@ -4100,6 +4113,44 @@ function optimizeFit(testOptions,shard){
     const ranks=[...new Set(layers)].sort((a,b)=>a-b);
     verified.perProject.forEach((p,i)=>{const ph=run.phases[ranks.indexOf(layers[i])];finish[p.id]=ph&&Number.isFinite(ph.doneAt)?ph.doneAt:run.eta;});
   }
+  /* Past the limit. Each chain offers its next level that finishes something — a ledger with
+   * nothing to craft is stepped over to the one after it — added to the answer on its own. The
+   * estimate, a floor on any real plan, rules out whatever cannot land inside the extra hours; the
+   * rest are checked as full plans, quickest estimate first, while the time lasts. One the clock
+   * ran out on is listed by its estimate and marked unchecked. */
+  let next=null,extra=null;
+  if(pastOn&&!forcedOver&&(verified||chosen.count===0)){
+    const base=chosen.n,window=hours+pastWindow,options=[];
+    chains.forEach((c,i)=>{
+      let k=base[i];
+      while(k<c.levels.length&&allowed(base,i,k)){k++;if(c.prefix[k]>c.prefix[base[i]])break;}
+      if(c.prefix[k]>c.prefix[base[i]]){const n=base.slice();n[i]=k;options.push({i,n});}
+    });
+    options.forEach(option=>{option.eta=estimate(option.n);});
+    const viable=options.filter(option=>option.eta<=window).sort((a,b)=>a.eta-b.eta);
+    const items=[];
+    viable.forEach((option,index)=>{
+      const c=chains[option.i],now=control.readNow(),remaining=control.deadline-now,left=viable.length-index;
+      const entry={id:c.id,name:c.name,ledger:c.ledger,levelCount:c.levels.length,taken:option.n[option.i],
+        fromLevel:c.start+base[option.i]+1,toLevel:c.start+option.n[option.i],checked:false,eta:option.eta};
+      if(index<FIT_EXTRA_CHECKS&&!control.isStopped()&&remaining>0){
+        const attempt=verifyRun(option.n,now+remaining/Math.min(left,FIT_EXTRA_CHECKS-index));checks++;
+        const real=projectRunExecutable(attempt.run)?attempt.run.eta:Infinity;
+        if(!(real<=window))return;
+        Object.assign(entry,{checked:true,eta:real});
+      }
+      entry.over=Math.max(0,entry.eta-hours);
+      items.push(entry);
+    });
+    items.sort((a,b)=>Number(b.checked)-Number(a.checked)||a.eta-b.eta);
+    const everything=!options.length&&chains.every((c,i)=>base[i]===c.levels.length);
+    if(nextOn){
+      const quickest=items.find(item=>item.checked&&item.eta<=hours+FIT_NEXT_WINDOW);
+      const unchecked=items.some(item=>!item.checked&&item.eta<=hours+FIT_NEXT_WINDOW);
+      next=everything?{status:"all"}:quickest?Object.assign({status:"found"},quickest):{status:unchecked?"time":"none"};
+    }
+    if(extraOn)extra={hours:extraHours,status:everything?"all":"listed",items:items.filter(item=>item.eta<=hours+extraHours)};
+  }
   return {empty:false,mode:"project",task:"fit",hours,strategy:exhaustive?"every set":strategy,exhaustive,tried,checks,
     selection:chains.map((c,i)=>({id:c.id,name:c.name,ledger:c.ledger,prio:c.prio,taken:chosen.n[i],remaining:c.levels.length,
       finished:c.prefix[chosen.n[i]],required:required[i],
@@ -4107,6 +4158,7 @@ function optimizeFit(testOptions,shard){
     count:chosen.count,rank:chosen.rank,estimateEta:Number.isFinite(chosen.eta)?chosen.eta:null,
     verified:!!verified||chosen.count===0,eta:run?run.eta:(chosen.count===0?0:null),
     forcedOver:forcedOver?{real:forcedOver.real,estimate:Number.isFinite(candidate.eta)?candidate.eta:null}:null,
+    next,extra,
     deadlineReached:control.deadlineReached(),ms:performance.now()-t0};
 }
 

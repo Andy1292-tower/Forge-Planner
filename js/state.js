@@ -488,6 +488,9 @@ function validateAndMigrate(candidate){
     const forced=_array(_readData(candidate,"fitForced","fitForced",errors),"fitForced",errors,STATE_LIMITS.maxProjects);
     if(forced)out.fitForced=forced.map((id,index)=>_string(id,FIELD_SCHEMA.id,"fitForced["+index+"]",errors));
   }
+  if(_own(candidate,"fitNext"))out.fitNext=_boolean(_readData(candidate,"fitNext","fitNext",errors),"fitNext",errors);
+  if(_own(candidate,"fitExtra"))out.fitExtra=_boolean(_readData(candidate,"fitExtra","fitExtra",errors),"fitExtra",errors);
+  if(_own(candidate,"fitExtraHours"))out.fitExtraHours=_number(_readData(candidate,"fitExtraHours","fitExtraHours",errors),FIELD_SCHEMA.fitExtraHours,"fitExtraHours",errors);
   if(_own(candidate,"fitBudget"))out.fitBudget=_number(_readData(candidate,"fitBudget","fitBudget",errors),FIELD_SCHEMA.fitBudget,"fitBudget",errors);
   if(_own(candidate,"planStart"))out.planStart=_number(_readData(candidate,"planStart","planStart",errors),FIELD_SCHEMA.timestamp,"planStart",errors);
 

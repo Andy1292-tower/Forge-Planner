@@ -300,7 +300,7 @@ function defaults(){
     minedIncomeText:blankSourceText(),
     targets:tg,targetMode:"ratio",targetSaved:[],targetActiveId:null,
     projects:[],inventory:nulls(INVENTORY_ITEMS),inventoryText:{},projectSeq:true,projectGate:true,projectBatch:false,projectStability:"prefer-current",projLineMode:"split",
-    planStart:null,fitHours:48,fitBudget:60000,fitForced:[],
+    planStart:null,fitHours:48,fitBudget:60000,fitForced:[],fitNext:false,fitExtra:false,fitExtraHours:12,
     manual:[],manualSaved:[],manualActiveId:null
   };
 }
@@ -476,6 +476,8 @@ function normalize(st){
   if(typeof st.planStart!=="number"||!isFinite(st.planStart))st.planStart=null;
   st.fitHours=boundedPersistedField("fitHours",st.fitHours,48,0.1,100000);
   st.fitBudget=boundedPersistedField("fitBudget",st.fitBudget,60000,10000,300000,true);
+  st.fitNext=st.fitNext===true;st.fitExtra=st.fitExtra===true;
+  st.fitExtraHours=boundedPersistedField("fitExtraHours",st.fitExtraHours,12,0.5,1000);
   // Must-finish projects for the fit-in-time search: ids of projects still in the list, once each.
   const _projectIds=new Set(st.projects.map(p=>p.id));
   st.fitForced=Array.isArray(st.fitForced)?[...new Set(st.fitForced.filter(id=>typeof id==="string"&&_projectIds.has(id)))]:[];

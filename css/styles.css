@@ -626,6 +626,10 @@ footer a:hover,.contrib-help a:hover{text-decoration:underline}
 .fit-chip-x{min-width:var(--compact-target);min-height:var(--compact-target);border:0;background:transparent;color:var(--ink3);cursor:pointer;font-size:13px;line-height:1}
 .fit-chip-x:hover{color:var(--danger)}
 .fit-forced select{max-width:220px;padding:4px 7px;font-size:11.5px;height:28px}
+.fit-past{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.fit-check{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11.5px;color:var(--ink2);cursor:pointer}
+.fit-check input[type=text]{width:56px;padding:4px 6px;height:28px;font-size:11.5px;text-align:right}
+.fit-next{margin-top:8px;font-size:12px;color:var(--ink2);line-height:1.5}
 .fit-panel .spinner{width:12px;height:12px;vertical-align:-2px;margin-right:4px}
 /* Plan-start anchor — inline in the Project-mode panel (promoted from the old step-by-step modal). */
 .plan-anchor{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;margin-bottom:12px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg2)}
@@ -755,9 +759,9 @@ footer a:hover,.contrib-help a:hover{text-decoration:underline}
 .seq-toggle{display:flex;gap:8px;align-items:flex-start;margin-bottom:14px;cursor:pointer;font-size:11.5px;color:var(--ink2);line-height:1.45}
 .seq-toggle.disabled{opacity:.45;cursor:default}
 .seq-toggle.disabled input{cursor:default}
-.seq-toggle input,.proj-first .pfirst{appearance:none;width:16px;height:16px;border:1px solid var(--line2);border-radius:4px;background:var(--surface2);cursor:pointer;position:relative;flex:0 0 auto;margin-top:1px}
-.seq-toggle input:checked,.proj-first .pfirst:checked{background:var(--copper);border-color:var(--copper)}
-.seq-toggle input:checked::after,.proj-first .pfirst:checked::after{content:"";position:absolute;left:5px;top:1px;width:4px;height:9px;border:solid #15110a;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.seq-toggle input,.proj-first .pfirst,.fit-check input[type=checkbox]{appearance:none;width:16px;height:16px;border:1px solid var(--line2);border-radius:4px;background:var(--surface2);cursor:pointer;position:relative;flex:0 0 auto;margin-top:1px}
+.seq-toggle input:checked,.proj-first .pfirst:checked,.fit-check input[type=checkbox]:checked{background:var(--copper);border-color:var(--copper)}
+.seq-toggle input:checked::after,.proj-first .pfirst:checked::after,.fit-check input[type=checkbox]:checked::after{content:"";position:absolute;left:5px;top:1px;width:4px;height:9px;border:solid #15110a;border-width:0 2px 2px 0;transform:rotate(45deg)}
 .proj-first{display:flex;align-items:center;gap:4px;cursor:pointer;font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:var(--ink3)}
 .proj-first .pfirst{width:15px;height:15px;margin-top:0}
 .proj-prio{display:flex;align-items:center;gap:4px;font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:var(--ink3)}

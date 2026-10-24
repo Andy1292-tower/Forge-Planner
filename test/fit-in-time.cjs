@@ -38,13 +38,14 @@ function P(id, name, levels, extra) {
   return Object.assign({ id, name, on: true, prio: null, from: 1, to: levels.length, done: 0,
     levels: levels.map(costs => ({ costs: costs.map(([item, qty]) => ({ item, qty })) })) }, extra || {});
 }
-function fit(projects, hours, forced) {
-  page.__setup = { lines: LINES, projects, hours, forced: forced || [] };
+function fit(projects, hours, forced, past) {
+  page.__setup = { lines: LINES, projects, hours, forced: forced || [], past: past || {} };
   const out = vm.runInContext(`(function(){
     const s=defaults();s.dupe=0;s.margin=0;s.mode="project";
     s.lines=JSON.parse(JSON.stringify(globalThis.__setup.lines));
     s.projects=JSON.parse(JSON.stringify(globalThis.__setup.projects));
     s.fitHours=globalThis.__setup.hours;s.fitForced=globalThis.__setup.forced.slice();
+    Object.assign(s,globalThis.__setup.past);
     normalize(s);syncManual(s);S=s;
     return JSON.parse(JSON.stringify(optimizeFit({now:()=>0})));
   })()`, page);
@@ -200,6 +201,62 @@ test("the must-finish list saves as project ids, keeps only projects still liste
   assert.deepEqual(out.forced, ["a"]);
   assert.equal(out.badOk, false);
   assert.equal(out.sameKey, true, "the must-finish list is a question for the search, not a plan input");
+});
+
+const D = P("d", "D", [[["Glass", 3000]]]);
+
+test("the next thing past the limit is the quickest one more step, checked as a full plan", () => {
+  const ab = fit([A, B], 100000), abd = fit([A, B, D], 100000), abc = fit([A, B, C], 100000);
+  const hours = ab.eta * 1.001;
+  assert.ok(abd.eta < abc.eta, "D is the quicker addition");
+  const res = fit([A, B, C, D], hours, [], { fitNext: true });
+  assert.deepEqual(res.selection.map(r => r.taken), [1, 1, 0, 0], "the answer itself is unchanged");
+  assert.equal(res.next.status, "found");
+  assert.equal(res.next.id, "d");
+  assert.equal(res.next.checked, true);
+  assert.ok(Math.abs(res.next.eta - abd.eta) < 1e-6 * abd.eta, `${res.next.eta} vs ${abd.eta}`);
+  assert.ok(Math.abs(res.next.over - (abd.eta - hours)) < 1e-9);
+  assert.equal(res.extra, null, "the extra-hours list is off");
+});
+
+test("with extra hours, every next step inside them is listed with its plan time", () => {
+  const ab = fit([A, B], 100000), abd = fit([A, B, D], 100000), abc = fit([A, B, C], 100000);
+  const hours = ab.eta * 1.001;
+  const wide = fit([A, B, C, D], hours, [], { fitExtra: true, fitExtraHours: 1000 });
+  assert.equal(wide.extra.hours, 1000);
+  assert.deepEqual(wide.extra.items.map(item => item.id), ["d", "c"], "quickest first");
+  assert.ok(wide.extra.items.every(item => item.checked));
+  assert.ok(Math.abs(wide.extra.items[1].eta - abc.eta) < 1e-6 * abc.eta);
+  assert.equal(wide.next, null, "the single next step is off");
+  const narrow = fit([A, B, C, D], hours, [], { fitExtra: true, fitExtraHours: Math.max(0.5, (abd.eta - hours) * 1.5) });
+  assert.ok(narrow.extra.items.every(item => item.eta <= hours + narrow.extra.hours));
+  assert.ok(!narrow.extra.items.some(item => item.id === "c") || abc.eta <= hours + narrow.extra.hours);
+});
+
+test("past the limit says when nothing is left, and when nothing lands inside the window", () => {
+  const all = fit([A, B], 100000, [], { fitNext: true, fitExtra: true, fitExtraHours: 5 });
+  assert.equal(all.next.status, "all");
+  assert.equal(all.extra.status, "all");
+  // Sized from C's own time, so this project alone takes about 20 hours on these lines.
+  const c = fit([C], 100000), far = P("e", "E", [[["Glass", Math.round(1000000 * 20 / c.eta)]]]);
+  const e = fit([far], 100000);
+  assert.ok(e.eta > 12.6, `E takes ${e.eta}`);
+  const none = fit([far], 0.1, [], { fitNext: true, fitExtra: true, fitExtraHours: 0.5 });
+  assert.equal(none.count, 0);
+  assert.equal(none.next.status, "none");
+  assert.deepEqual(none.extra.items, []);
+  assert.equal(none.extra.status, "listed");
+});
+
+test("the past-the-limit settings save on their own and never move a plan", () => {
+  const out = JSON.parse(vm.runInContext(`(function(){
+    const s=normalize(defaults());s.schemaVersion=CURRENT_SCHEMA_VERSION;s.baseTimeRev=3;
+    const on=Object.assign(JSON.parse(JSON.stringify(s)),{fitNext:true,fitExtra:true,fitExtraHours:6});
+    const kept=validateAndMigrate(on),bad=validateAndMigrate(Object.assign(JSON.parse(JSON.stringify(s)),{fitExtraHours:2000}));
+    return JSON.stringify({ok:kept.ok,next:kept.state.fitNext,extra:kept.state.fitExtra,hours:kept.state.fitExtraHours,
+      defaults:[s.fitNext,s.fitExtra,s.fitExtraHours],badOk:bad.ok,sameKey:solveStateKey(on)===solveStateKey(s)});
+  })()`, page));
+  assert.deepEqual(out, { ok: true, next: true, extra: true, hours: 6, defaults: [false, false, 12], badOk: false, sameKey: true });
 });
 
 test("the shard merge keeps a checked answer, then the most finished, then the shortest", () => {

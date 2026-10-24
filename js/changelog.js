@@ -10,6 +10,8 @@
  * left out rather than padded in.
  */
 const CHANGELOG=[
+  {version:"2026.10.24.4",date:"2026-10-24",groups:{
+    Added:["Past the limit, in What fits in a time limit. Tick Show the next thing past the limit to see the next project level or ledger you would finish and how long the plan takes with it, when that is within 12 hours of your limit. Tick List what else finishes to choose how many extra hours to look through and see every next step that lands inside them, each with its plan time."]}},
   {version:"2026.10.24.3",date:"2026-10-24",groups:{
     Fixed:["Selling again could say a plan used none of your stock of an item, and that you could only sell it once the whole plan finished, when a crafter kept making that item after the plan had enough. It now tells you to keep everything the plan needs, counting what you already hold, and gives the time the plan has made the rest; anything made after that is spare."]}},
   {version:"2026.10.24.2",date:"2026-10-24",groups:{
