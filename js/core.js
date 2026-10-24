@@ -112,8 +112,8 @@ function catalogLevelsToState(levels){
    (ledgerAhead). A listed ledger's costs are refreshed from LEDGER_CHARACTERS on every normalize, the
    way a catalog project's levels are: one level for the current ledger, then one for each following
    ledger the data has, in order. ledgerNo null means the costs were typed in, for a ledger the data
-   does not have yet, and that is always one level. LEDGER_CHARACTERS is page-only data, so a realm
-   without it (the solver Worker) leaves ledger projects exactly as they arrive. */
+   does not have yet, and that is always one level. The page and the solver Worker both load
+   LEDGER_CHARACTERS; a realm without it leaves ledger projects exactly as they arrive. */
 const LEDGERS=typeof LEDGER_CHARACTERS!=="undefined"&&Array.isArray(LEDGER_CHARACTERS)?LEDGER_CHARACTERS:[];
 function ledgerCharacter(ledgerId){return LEDGERS.find(c=>c.ledgerId===ledgerId)||null;}
 function ledgerEntry(ledgerId,ledgerNo){

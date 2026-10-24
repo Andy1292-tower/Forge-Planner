@@ -95,11 +95,12 @@ const { materialize } = require("./corpus.cjs");
 const ROOT = path.join(__dirname, "..", "..");
 
 /* catalog.js first: core.js normalize() rehydrates a project's levels from PROJECT_CATALOG when it
- * carries a catId, and the reference save does. The remaining six are exactly the Worker's
+ * carries a catId, and the reference save does. The remaining seven are exactly the Worker's
  * importScripts list, so the realm below is the one the app actually solves in. */
 const SOURCES = [
   "js/catalog.js",
   "js/decimal.js",
+  "js/ledgers.js",
   "js/core.js",
   "js/fields.js",
   "js/state.js",

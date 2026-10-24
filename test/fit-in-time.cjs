@@ -109,13 +109,17 @@ test("levels already marked done are not offered again", () => {
   assert.equal(d.toLevel, 3);
 });
 
-test("a ledger counts once, and a ledger with nothing to craft is not offered", () => {
-  const ledger = P("l1", "Tank", [[]], { ledgerId: "tank-timmerson", ledgerNo: 1 });        // Concrete 250
-  const mined = P("l2", "Clank", [[]], { ledgerId: "clank", ledgerNo: 14 });                  // Scorchium only
+test("a ledger counts once, and a ledger with nothing to craft counts for nothing", () => {
+  const ledger = P("l1", "Tank", [[]], { ledgerId: "tank-timmerson", ledgerNo: 1 });        // #3 Concrete 250
+  const mined = P("l2", "Clank", [[]], { ledgerId: "clank", ledgerNo: 14 });                  // #171 Scorchium only
   const res = fit([ledger, mined], 100000);
-  assert.deepEqual(res.selection.map(r => r.id), ["l1"]);
   assert.equal(row(res, "l1").ledger, true);
-  assert.equal(res.count, 1);
+  assert.equal(row(res, "l1").finished, row(res, "l1").taken, "each Tank ledger taken counts once");
+  // Clank's #171 asks for nothing craftable, but the ledgers after it do, so the card stays in.
+  const clank = row(res, "l2");
+  assert.equal(clank.firstNumber, 171);
+  assert.equal(clank.finished, Math.max(0, clank.taken - 1), "#171 itself finishes nothing");
+  assert.equal(res.count, row(res, "l1").finished + clank.finished);
 });
 
 test("a level with nothing to craft keeps its place in its chain but finishes nothing", () => {
@@ -248,6 +252,59 @@ test("past the limit says when nothing is left, and when nothing lands inside th
   assert.equal(none.extra.status, "listed");
 });
 
+test("the answer picks from every project in the list, ticked or not", () => {
+  const abd = fit([A, B, D], 100000), off = Object.assign({}, D, { on: false });
+  const res = fit([A, B, off], abd.eta * 1.001);
+  assert.deepEqual(res.selection.map(r => [r.id, r.taken, r.ticked]), [["a", 1, true], ["b", 1, true], ["d", 1, false]]);
+  assert.equal(res.count, 3);
+  assert.equal(res.verified, true);
+});
+
+test("the answer goes past a project's chosen levels, and Must finish holds to them", () => {
+  const two = P("f", "F", [[["Glass", 2000]], [["Glass", 2000]]], { to: 1 });
+  const res = fit([two], 100000);
+  assert.deepEqual([row(res, "f").taken, row(res, "f").chosen, row(res, "f").toLevel], [2, 1, 2]);
+  const lone = fit([P("g", "G", [[["Glass", 2000]]])], 100000);
+  const forced = fit([two, C], lone.eta * 1.001, ["f"]);
+  assert.equal(row(forced, "f").required, "chosen");
+  assert.ok(row(forced, "f").taken >= 1, "the level the card asks for is always in");
+});
+
+test("a ledger runs on into the character's following ledgers, named by number", () => {
+  const tank = P("l1", "Tank", [[]], { ledgerId: "tank-timmerson", ledgerNo: 1 });  // #3 Concrete 250, #7 Ingots 100, ...
+  const numbers = vm.runInContext(`ledgerCharacter("tank-timmerson").ledgers.map(ledgerNumber)`, page);
+  const all = fit([tank], 100000), r = row(all, "l1");
+  assert.deepEqual([r.name, r.chosen, r.firstNumber], ["Tank Timmerson", 1, 3]);
+  assert.ok(r.taken >= 2, `takes ${r.taken}`);
+  assert.equal(r.lastNumber, numbers[r.taken - 1]);
+  // Just under that plan's time, the answer stops a ledger short and the one after it is listed.
+  const short = fit([tank], all.eta * 0.999, [], { fitExtra: true, fitExtraHours: 1000 }), s = row(short, "l1");
+  assert.ok(s.taken < r.taken);
+  const after = short.inside.concat(short.extra.items)[0];
+  assert.deepEqual([after.name, after.ledger, after.number], ["Tank Timmerson", true, numbers[s.taken]]);
+  // On the character's last ledger, tracked as done: the data has no ledger after it.
+  const last = P("l2", "Tank", [[]], { ledgerId: "tank-timmerson", done: 1, ledgerNo: numbers.length });
+  const end = fit([A, last], 100000, [], { fitNext: true, fitExtra: true, fitExtraHours: 5 });
+  assert.equal(end.next.status, "all", "past the character's last ledger there is nothing left");
+  assert.equal(end.extra.status, "all");
+});
+
+test("every past-the-limit outcome reads as a sentence, never a blank", () => {
+  const source = fs.readFileSync(path.join(ROOT, "js", "results.js"), "utf8");
+  const from = source.indexOf("// What one past-the-limit step adds"), to = source.indexOf("function fitResultHtml(");
+  assert.ok(from > 0 && to > from, "fitPastHtml is found in js/results.js");
+  const ui = vm.createContext({ FIT_NEXT_WINDOW_HOURS: 12, htmlText: String, fmtDuration: h => `${h}h`, fmtPlanClock: h => `@${h}` });
+  vm.runInContext(source.slice(from, to) + ";globalThis.render=fitPastHtml;", ui);
+  const html = res => vm.runInContext("render", ui)(Object.assign({ next: null, extra: null, inside: [] }, res));
+  assert.match(html({ next: { status: "all" }, extra: { status: "all", hours: 300, items: [] } }), /already in the answer[\s\S]*Every project/);
+  assert.match(html({ next: { status: "time" }, extra: { status: "time", hours: 5, items: [] } }), /ran out[\s\S]*The search time ran out/);
+  assert.match(html({ extra: { status: "listed", hours: 5, items: [] } }), /Nothing else in your list finishes within 5h more/);
+  const ledger = { name: "Clank", ledger: true, number: 308, ticked: false, checked: true, eta: 30, over: 2 };
+  assert.match(html({ extra: { status: "listed", hours: 5, items: [ledger] } }), /Clank ledger #308 <span class="proj-mini">· not ticked<\/span>/);
+  assert.match(html({ inside: [Object.assign({}, ledger, { eta: 20, over: 0 })] }), /Also fits inside your limit:<\/b> Clank ledger #308/);
+  assert.equal(html({}), "", "with both boxes off there is nothing to say");
+});
+
 test("the past-the-limit settings save on their own and never move a plan", () => {
   const out = JSON.parse(vm.runInContext(`(function(){
     const s=normalize(defaults());s.schemaVersion=CURRENT_SCHEMA_VERSION;s.baseTimeRev=3;
@@ -282,6 +339,7 @@ test("the Worker runs the fit task on the fit search time and refuses anything e
   worker.importScripts = (...files) => files.forEach(file =>
     vm.runInContext(fs.readFileSync(path.join(ROOT, "js", file), "utf8"), worker, { filename: file }));
   vm.runInContext(fs.readFileSync(path.join(ROOT, "js", "solver.worker.v2.js"), "utf8"), worker);
+  assert.ok(vm.runInContext("LEDGERS.length", worker) > 0, "the Worker loads the ledger data");
   const state = JSON.parse(vm.runInContext(`(function(){const s=normalize(defaults());s.mode="project";
     s.schemaVersion=CURRENT_SCHEMA_VERSION;s.baseTimeRev=3;s.fitHours=100000;
     s.projects=[{id:"a",name:"A",on:true,prio:null,from:1,to:1,done:0,levels:[{costs:[{item:"Glass",qty:"200"}]}]}];

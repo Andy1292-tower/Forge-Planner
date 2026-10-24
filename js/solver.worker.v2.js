@@ -5,7 +5,7 @@
  *
  * The Worker imports the same field/schema boundary as the page; no unvalidated snapshot can
  * become the solver's global state. */
-importScripts("decimal.js", "core.js", "fields.js", "state.js", "project-schedule.js", "solver.js");
+importScripts("decimal.js", "ledgers.js", "core.js", "fields.js", "state.js", "project-schedule.js", "solver.js");
 
 /* A shard descriptor names which slice of one request this Worker was handed. It is its own
  * top-level field rather than a widened reqId or budget because both of those are pinned to

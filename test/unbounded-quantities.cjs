@@ -214,7 +214,7 @@ function nonFinite(value, at, found, depth) {
     /postMessage\(\{[^}]*res: payload/.test(workerSource),
     "solver.worker.v2.js");
   check("the Worker imports the quantity type ahead of everything that uses it",
-    /importScripts\("decimal\.js",\s*"core\.js"/.test(workerSource), "importScripts order");
+    /importScripts\("decimal\.js",\s*"ledgers\.js",\s*"core\.js"/.test(workerSource), "importScripts order");
 
   // The daily solve cache round-trips the result through JSON as well.
   const result = api("optimize")();

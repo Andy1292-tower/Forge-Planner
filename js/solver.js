@@ -3867,27 +3867,34 @@ const FIT_LIMIT_TOLERANCE=0.01;  // of the hours: a bracket this narrow is settl
 const FIT_NEXT_WINDOW=12;        // hours past the limit the next step may run
 const FIT_EXTRA_SHARE=0.3;       // of the search time, kept back for what lies past the limit
 const FIT_EXTRA_CHECKS=8;        // full plan checks those may spend
+/* The chains a fit search takes levels from: every project in the list, ticked or not, from its
+ * next unfinished level on to its last, and each ledger on through the character's following
+ * ledgers. `chosen` is how many of those levels the project's own card asks for — its level range,
+ * or a ledger card's current ledger and the ones it includes. */
 function fitChains(){
   const chains=[];
   (S.projects||[]).forEach(p=>{
-    if(!p.on)return;
-    const lv=p.levels||[];
+    let lv=p.levels||[],name=p.name||"Project",numbers=null;
     const from=Math.max(1,Math.min(lv.length,Math.floor(num(p.from)||1)));
     const to=Math.min(lv.length,Math.max(from,Math.floor(num(p.to)||lv.length)));
     const done=Math.max(0,Math.min(to-from+1,Math.floor(num(p.done)||0))),start=from-1+done;
-    if(start>=to)return;
+    const character=p.ledgerId&&p.ledgerNo!=null?ledgerCharacter(p.ledgerId):null;
+    const entries=character?ledgerWindow(character,p.ledgerNo,character.ledgers.length):[];
+    if(entries.length){lv=entries;name=character.name;numbers=entries.map(ledgerNumber);}
+    const end=lv.length;
+    if(start>=end)return;
     const levels=[];
-    for(let i=start;i<to;i++){
+    for(let i=start;i<end;i++){
       const sub={};ALLITEMS.forEach(it=>sub[it]=DEC_ZERO);
       (lv[i].costs||[]).forEach(c=>{const q=toDec0(c.qty);if(ALLITEMS.includes(c.item)&&q.gt(DEC_ZERO))sub[c.item]=sub[c.item].add(q);});
       const direct=ALLITEMS.filter(it=>sub[it].gt(DEC_ZERO)),chain=relevantChain(direct);
-      levels.push({level:i+1,sub,uses:new Set([...direct,...chain.prods,...chain.raws])});
+      levels.push({level:i+1,number:numbers?numbers[i]:null,sub,uses:new Set([...direct,...chain.prods,...chain.raws])});
     }
     if(p.ledgerId&&levels.every(level=>!level.uses.size))return;
     // prefix[k]: how many of the first k levels have something to craft.
     const prefix=[0];levels.forEach((level,k)=>prefix.push(prefix[k]+(level.uses.size?1:0)));
-    chains.push({id:p.id||"",name:p.name||"Project",catId:p.catId||"",ledger:!!p.ledgerId,
-      prio:p.prio!=null?p.prio:null,start,levelCount:lv.length,levels,prefix});
+    chains.push({id:p.id||"",name,catId:p.catId||"",ledger:!!p.ledgerId,on:!!p.on,
+      prio:p.prio!=null?p.prio:null,start,chosen:Math.min(levels.length,Math.max(0,to-start)),levelCount:lv.length,levels,prefix});
   });
   // Gates: an in-list unlocker must be taken whole before a level using its material counts.
   const unlockerOf={},byCat={};
@@ -3913,10 +3920,11 @@ function optimizeFit(testOptions,shard){
   if(!chains.length)return {empty:true,mode:"project",task:"fit",hours,selection:[],count:0,ms:performance.now()-t0};
   const control=makeSolveControl(budget,testOptions),lpMemo=makeLpMemo(),isStatic=S.projLineMode==="static";
   const inv=projectInitialInventory(),estimates=new Map();
-  // The floor every set starts from: must-finish chains whole, then the unlocks they wait on, whole.
+  // The floor every set starts from: must-finish projects as far as their cards ask, then the
+  // unlocks those levels wait on, whole.
   const floor=chains.map(()=>0),required=chains.map(()=>null);
   const wanted=new Set(Array.isArray(S.fitForced)?S.fitForced:[]);
-  chains.forEach((c,i)=>{if(wanted.has(c.id)){floor[i]=c.levels.length;required[i]="chosen";}});
+  chains.forEach((c,i)=>{if(wanted.has(c.id)&&c.chosen>0){floor[i]=c.chosen;required[i]="chosen";}});
   for(let changed=true;changed;){
     changed=false;
     chains.forEach((c,i)=>{for(let k=0;k<floor[i];k++)c.levels[k].gates.forEach(u=>{
@@ -4118,7 +4126,7 @@ function optimizeFit(testOptions,shard){
    * estimate, a floor on any real plan, rules out whatever cannot land inside the extra hours; the
    * rest are checked as full plans, quickest estimate first, while the time lasts. One the clock
    * ran out on is listed by its estimate and marked unchecked. */
-  let next=null,extra=null;
+  let next=null,extra=null,inside=[];
   if(pastOn&&!forcedOver&&(verified||chosen.count===0)){
     const base=chosen.n,window=hours+pastWindow,options=[];
     chains.forEach((c,i)=>{
@@ -4130,35 +4138,49 @@ function optimizeFit(testOptions,shard){
     const viable=options.filter(option=>option.eta<=window).sort((a,b)=>a.eta-b.eta);
     const items=[];
     viable.forEach((option,index)=>{
-      const c=chains[option.i],now=control.readNow(),remaining=control.deadline-now,left=viable.length-index;
-      const entry={id:c.id,name:c.name,ledger:c.ledger,levelCount:c.levels.length,taken:option.n[option.i],
-        fromLevel:c.start+base[option.i]+1,toLevel:c.start+option.n[option.i],checked:false,eta:option.eta};
+      const c=chains[option.i],k=option.n[option.i],now=control.readNow(),remaining=control.deadline-now,left=viable.length-index;
+      const entry={id:c.id,name:c.name,ledger:c.ledger,ticked:c.on,number:c.levels[k-1].number,
+        fromLevel:c.start+base[option.i]+1,toLevel:c.start+k,checked:false,eta:option.eta};
       if(index<FIT_EXTRA_CHECKS&&!control.isStopped()&&remaining>0){
-        const attempt=verifyRun(option.n,now+remaining/Math.min(left,FIT_EXTRA_CHECKS-index));checks++;
-        const real=projectRunExecutable(attempt.run)?attempt.run.eta:Infinity;
-        if(!(real<=window))return;
-        Object.assign(entry,{checked:true,eta:real});
+        const checkBy=now+remaining/Math.min(left,FIT_EXTRA_CHECKS-index);
+        const attempt=verifyRun(option.n,checkBy);checks++;
+        if(projectRunExecutable(attempt.run)){
+          if(!(attempt.run.eta<=window))return;
+          Object.assign(entry,{checked:true,eta:attempt.run.eta});
+        }
+        // A plan that cannot be made is left out; one the clock cut short keeps its estimate.
+        else if(!(attempt.run&&attempt.run.partial===true)&&control.currentTime()<checkBy)return;
       }
       entry.over=Math.max(0,entry.eta-hours);
       items.push(entry);
     });
     items.sort((a,b)=>Number(b.checked)-Number(a.checked)||a.eta-b.eta);
-    const everything=!options.length&&chains.every((c,i)=>base[i]===c.levels.length);
+    // A step the search passed over can still check inside the limit; it is listed as such rather
+    // than as past the limit.
+    const isInside=item=>item.checked&&item.eta<=hours+etaCompareEpsilon(item.eta,hours);
+    inside=items.filter(isInside);
+    const past=items.filter(item=>!isInside(item)),everything=chains.every((c,i)=>base[i]===c.levels.length);
     if(nextOn){
-      const quickest=items.find(item=>item.checked&&item.eta<=hours+FIT_NEXT_WINDOW);
-      const unchecked=items.some(item=>!item.checked&&item.eta<=hours+FIT_NEXT_WINDOW);
+      const quickest=past.find(item=>item.checked&&item.eta<=hours+FIT_NEXT_WINDOW);
+      const unchecked=past.some(item=>!item.checked&&item.eta<=hours+FIT_NEXT_WINDOW);
       next=everything?{status:"all"}:quickest?Object.assign({status:"found"},quickest):{status:unchecked?"time":"none"};
     }
-    if(extraOn)extra={hours:extraHours,status:everything?"all":"listed",items:items.filter(item=>item.eta<=hours+extraHours)};
+    if(extraOn)extra={hours:extraHours,status:everything?"all":"listed",items:past.filter(item=>item.eta<=hours+extraHours)};
+  }
+  // An answer the clock ran out on before its check has nothing settled to build on.
+  else if(pastOn&&!forcedOver){
+    if(nextOn)next={status:"time"};
+    if(extraOn)extra={hours:extraHours,status:"time",items:[]};
   }
   return {empty:false,mode:"project",task:"fit",hours,strategy:exhaustive?"every set":strategy,exhaustive,tried,checks,
-    selection:chains.map((c,i)=>({id:c.id,name:c.name,ledger:c.ledger,prio:c.prio,taken:chosen.n[i],remaining:c.levels.length,
-      finished:c.prefix[chosen.n[i]],required:required[i],
+    selection:chains.map((c,i)=>({id:c.id,name:c.name,ledger:c.ledger,ticked:c.on,prio:c.prio,taken:chosen.n[i],remaining:c.levels.length,
+      chosen:c.chosen,finished:c.prefix[chosen.n[i]],required:required[i],
+      firstNumber:c.levels[0].number,lastNumber:chosen.n[i]>0?c.levels[chosen.n[i]-1].number:null,
       fromLevel:c.start+1,toLevel:c.start+chosen.n[i],levelCount:c.levelCount,finish:finish[c.id]!=null?finish[c.id]:null})),
     count:chosen.count,rank:chosen.rank,estimateEta:Number.isFinite(chosen.eta)?chosen.eta:null,
     verified:!!verified||chosen.count===0,eta:run?run.eta:(chosen.count===0?0:null),
     forcedOver:forcedOver?{real:forcedOver.real,estimate:Number.isFinite(candidate.eta)?candidate.eta:null}:null,
-    next,extra,
+    next,extra,inside,
     deadlineReached:control.deadlineReached(),ms:performance.now()-t0};
 }
 
