@@ -14,6 +14,7 @@ const tests = [
   "test/delta-eval.cjs",
   "test/feeder-plateau.cjs",
   "test/field-validation.cjs",
+  "test/fit-in-time.cjs",
   "test/forgieproject.cjs",
   "test/free-headroom.cjs",
   "test/single-output-restart.cjs",

@@ -1430,6 +1430,8 @@ function repaintProject(){
 }
 document.getElementById("results").addEventListener("input",e=>{
   const t=e.target;if(!t||!t.getAttribute)return;let v;
+  // The fit-in-time hours ask a different question of the same plan, so they only save.
+  if(t.id==="fitHours"){const result=commitFieldDraft(t,FIELD_SCHEMA.fitHours,S.fitHours,(st,value)=>{st.fitHours=value;});if(result.committed)save();return;}
   // Parse the two visible endpoints as one draft transaction. Either correction can make both
   // drafts valid; only then are both accepted together, without rebuilding the focused row.
   if((v=t.getAttribute("data-spfrom"))!=null||(v=t.getAttribute("data-spto"))!=null){
@@ -1442,6 +1444,7 @@ document.getElementById("results").addEventListener("input",e=>{
 document.getElementById("results").addEventListener("change",e=>{
   const t=e.target;if(!t||!t.getAttribute)return;let v;
   // Plan-start anchor: display-only, so repaint from cache (no solve).
+  if(t.id==="fitBudget"){const checked=validateFieldValue(FIELD_SCHEMA.fitBudget,Number(t.value));if(checked.valid){mutateState(st=>{st.fitBudget=checked.value;});save();}else t.value=String(S.fitBudget);return;}
   if(t.id==="sellAgainItem"){_sellItemChoice=t.value;repaintProject();const pick=document.getElementById("sellAgainItem");if(pick)pick.focus();return;}
   if(t.id==="spStart"){const val=t.value,ms=val?new Date(val).getTime():null;if(!val||!isNaN(ms))mutateState(st=>{st.planStart=ms;});save();repaintProject();return;}
   // Inline project controls — same fields as Projects / Track progress, kept in sync. Like every
@@ -1471,6 +1474,9 @@ document.getElementById("results").addEventListener("click",e=>{
   const lineMode=cl("[data-linemode]");
   if(lineMode){setProjectLineMode(lineMode.getAttribute("data-linemode"));return;}
   // Plan-start "Now" — re-anchor the clock to the current moment (display only).
+  if(cl("#btnFitRun")){startFit();return;}
+  if(cl("#btnFitStop")){stopFit();return;}
+  if(cl("#btnFitApply")){applyFitSelection();return;}
   if(cl("#spNow")){mutateState(st=>{st.planStart=Date.now();});save();repaintProject();return;}
   const stabilityAction=cl("[data-project-stability]");
   if(stabilityAction){setProjectStabilityPolicy(stabilityAction.getAttribute("data-project-stability"));return;}
@@ -1478,7 +1484,7 @@ document.getElementById("results").addEventListener("click",e=>{
   // fires; at click time .open is the pre-toggle state, so the new state is its inverse.
   const sm=cl("summary[data-paneltoggle]");
   if(sm){const k=sm.getAttribute("data-paneltoggle"),willOpen=!(sm.parentElement&&sm.parentElement.open);
-    if(k==="adjust")_projAdjustOpen=willOpen;else if(k==="breakdown")_breakdownOpen=willOpen;return;}
+    if(k==="adjust")_projAdjustOpen=willOpen;else if(k==="breakdown")_breakdownOpen=willOpen;else if(k==="fit")_fitOpen=willOpen;return;}
   // Granular +1/−1 level completion (issue #87 item 3) — clamped to the from→to span, reusing the
   // projSpan/projDone helpers the tracker and solver read, so every view stays in sync. Like the
   // on/off tick above, a press only repaints its own row and marks the plan stale: checking off four

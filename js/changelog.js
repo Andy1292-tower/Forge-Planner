@@ -14,6 +14,7 @@ const CHANGELOG=[
     Added:[
       "Ledgers, in Projects+Prices → Projects. Each character who posts ledgers on the Exchange has a card: pick the ledger they are on and its craftable items go into your Project plan, with any mined resources or potions it also asks for listed beside them. Turned in moves the card to the next ledger. For a ledger the planner doesn't have yet, choose Not listed and type its items in.",
       "Batch projects that share an order number. With one at a time on and the new box ticked, projects with the same order number are crafted together as one project.",
+      "What fits in a time limit, in Project plan. Enter the hours you have and press Find what fits: it looks for the most levels of your ticked projects and ledgers that finish in time, checks the best set as a full plan, and lists what finishes and when. Use this selection then unticks the rest. It is a heavy solve, so it only runs when you press the button, for up to the search time you pick, and spreads across several CPU cores where your device has them.",
       "Selling again, in Project plan. It names the item Max credits/hr would sell on your factory, when your plan stops using it, how many to keep on hand until then, and the credits/hr it earns once the plan is done. Pick another priced item from its list to see the same for that one. Sell price edits now mark a Project plan out of date too."
     ],
     Changed:[

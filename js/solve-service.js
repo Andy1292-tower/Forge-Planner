@@ -1,10 +1,10 @@
 "use strict";
 
 // The Worker receives a complete accepted-state clone so the shared schema boundary can validate it.
-// Only planStart, a Project card's disclosure state, and the saved output sets are removed from the
-// separate equivalence key that decides whether an in-flight solve remains authoritative after
-// accepted UI state changes. Naming or deleting an output set leaves S.targets — the solved input —
-// untouched, so it must not discard a solve that is already running.
+// Only planStart, a Project card's disclosure state, the saved output sets, and the fit-in-time
+// settings are removed from the separate equivalence key that decides whether an in-flight solve
+// remains authoritative after accepted UI state changes. Naming or deleting an output set leaves
+// S.targets — the solved input — untouched, so it must not discard a solve that is already running.
 function solveStateSnapshot(state){
   return JSON.parse(JSON.stringify(state||{}));
 }
@@ -45,6 +45,9 @@ function canonicalSolveJson(value){
 function solveStateKey(state){
   const snapshot=solveStateSnapshot(state);
   delete snapshot.planStart;
+  // The fit-in-time settings change only what that search asks, never a plan.
+  delete snapshot.fitHours;
+  delete snapshot.fitBudget;
   delete snapshot.targetSaved;
   delete snapshot.targetActiveId;
   if(Array.isArray(snapshot.projects))snapshot.projects.forEach(project=>{if(project&&typeof project==="object")delete project._open;});
@@ -283,12 +286,31 @@ function mergeSoloCaches(entries){
   const values={};Object.keys(collected).sort().forEach(item=>{values[item]=collected[item];});
   return {key,values};
 }
-function mergeShardResults(mode,entries){
+/* Fit-in-time shards are independent searches of the same question, so the merge keeps the best
+ * answer rather than combining them: a plan-checked answer over an estimate, then more levels
+ * finished, then lower order numbers, then less time. Shard index breaks a full tie. */
+function mergeFitResults(ordered){
+  const rank=res=>[res.verified===true?0:1,-(Number(res.count)||0),Number(res.rank)||0,
+    Number.isFinite(Number(res.eta))&&res.eta!==null?Number(res.eta):Number.isFinite(Number(res.estimateEta))&&res.estimateEta!==null?Number(res.estimateEta):Infinity];
+  const best=ordered.reduce((winner,entry)=>{
+    const a=rank(entry.res),b=rank(winner.res);
+    for(let i=0;i<a.length;i++)if(a[i]!==b[i])return a[i]<b[i]?entry:winner;
+    return winner;
+  },ordered[0]);
+  return Object.assign({},best.res,{
+    tried:ordered.reduce((sum,entry)=>sum+(Number(entry.res.tried)||0),0),
+    shards:ordered.length,
+    deadlineReached:ordered.some(entry=>entry.res.deadlineReached===true),
+    ms:ordered.reduce((high,entry)=>Math.max(high,Number(entry.res.ms)||0),0)
+  });
+}
+function mergeShardResults(mode,entries,task){
   const ordered=shardMergeOrder(entries).filter(entry=>entry.res&&typeof entry.res==="object");
   if(!ordered.length)return null;
   if(ordered.length===1)return ordered[0].res;
   const first=ordered[0].res;
-  if(mode!=="credits")return first;      // only Credits fans out today; anything else is shard 0's
+  if(task==="fit")return mergeFitResults(ordered);
+  if(mode!=="credits")return first;      // Credits and fit-in-time fan out; anything else is shard 0's
   if(ordered.some(entry=>entry.res.empty===true))return first;
   const catalogOrder=new Map((typeof PRICEABLE_ITEMS!=="undefined"?PRICEABLE_ITEMS:[]).map((item,index)=>[item,index]));
   const at=item=>catalogOrder.has(item)?catalogOrder.get(item):Number.MAX_SAFE_INTEGER;
@@ -362,10 +384,15 @@ const solveService=(()=>{
    * dies every time rather than one that died once, and the pool stops rebuilding it. */
   const POOL_CONSTRUCTION_GRACE=4;
   let poolEnabled=POOL_DEFAULT_ON;
+  /* Fit-in-time fans out unless the switch is explicitly "off". Its button is already the reader
+   * opting in to a heavy solve, and its shards are independent searches with nothing to merge but a
+   * choice of winner, so only a reader who has turned parallel solving off keeps it to one Worker. */
+  let fitPoolAllowed=true;
   try{
     if(typeof localStorage!=="undefined"){
       const flag=localStorage.getItem(POOL_FLAG_STORAGE_KEY);
       poolEnabled=flag==="on"?true:flag==="off"?false:POOL_DEFAULT_ON;
+      fitPoolAllowed=flag!=="off";
     }
   }catch(error){poolEnabled=POOL_DEFAULT_ON;}
   /* Rung 2 of the degradation ladder, in its two forms. poolDegraded is the recoverable one: the
@@ -377,13 +404,17 @@ const solveService=(()=>{
   function poolActive(){return poolEnabled&&!poolTripped&&!poolDegraded;}
   // navigator is absent from the Node harnesses and from hosts that report no core count; both read
   // as a single slot rather than as an unbounded pool.
-  function poolCap(){
-    if(!poolActive())return 1;
+  function coreCap(){
     let cores=0;
     try{if(typeof navigator!=="undefined"&&navigator)cores=Math.floor(Number(navigator.hardwareConcurrency))||0;}
     catch(error){cores=0;}
     return Math.min(POOL_MAX_SIZE,Math.max(1,cores-1));
   }
+  function poolCap(){return poolActive()?coreCap():1;}
+  function fitPoolCap(){return fitPoolAllowed&&!poolTripped&&!poolDegraded?coreCap():1;}
+  // Slots the request in flight was dispatched across, which a fit-in-time fan-out can take past
+  // poolCap() on a page whose ordinary solves use one Worker.
+  let requestSlotCap=1;
   // Sampled before anything can degrade the pool, so the construction ledger keeps one fixed base
   // for the page instead of a base that shrinks exactly when the ledger starts to matter.
   const POOL_CEILING=poolCap();
@@ -397,6 +428,13 @@ const solveService=(()=>{
   let expectedFollow=false;
   // The mode the Worker was asked to solve, which a follow-up's expectedMode (the page's) is not.
   let expectedSolveMode=null;
+  let expectedTask=null;
+  // Told when the request it came with is cancelled or superseded instead of delivered.
+  let dropCallback=null;
+  function notifyDrop(reason){
+    const hook=dropCallback;dropCallback=null;
+    if(hook)setTimeout(()=>hook(reason),0);
+  }
   let callback=null;
   /* Slot records, not one owned Worker: {worker,busy}. Membership in this array is the identity a
    * late message or error is checked against, so a disposed Worker's events are ignored by the same
@@ -485,7 +523,7 @@ const solveService=(()=>{
     const idle=pool.find(slot=>!slot.busy);
     if(idle)return idle;
     if(!poolCanConstruct())return null;
-    if(pool.length>=poolCap())throw new Error("Solver Worker pool is exhausted");
+    if(pool.length>=Math.max(poolCap(),requestSlotCap))throw new Error("Solver Worker pool is exhausted");
     const slot={worker:workerFactory(),busy:false};
     poolConstructions+=1;
     pool.push(slot);
@@ -513,16 +551,18 @@ const solveService=(()=>{
    *
    * Never more shards than priced items, or the tail of the pool is handed an empty catalog and the
    * request pays a Worker round trip for a fragment with nothing in it. */
-  function shardCountFor(mode,state){
+  function shardCountFor(mode,state,task){
+    if(task==="fit")return fitPoolCap();
     if(!poolActive()||mode!=="credits")return 1;
     const prices=state&&state.sellPrice&&typeof state.sellPrice==="object"?state.sellPrice:{};
     const priced=Object.keys(prices).filter(item=>(Number(prices[item])||0)>0).length;
     return Math.max(1,Math.min(poolCap(),priced));
   }
-  function clearRequest(){callback=null;expectedMode=null;expectedRevision=null;expectedKey=null;expectedDailyCacheKey=null;expectedFollow=false;expectedSolveMode=null;pendingShards=null;clearFallbackTimer();}
+  function clearRequest(){callback=null;expectedMode=null;expectedRevision=null;expectedKey=null;expectedDailyCacheKey=null;expectedFollow=false;expectedSolveMode=null;expectedTask=null;requestSlotCap=1;pendingShards=null;clearFallbackTimer();}
   function cancel(reason){
     generation+=1;
     lastReason=String(reason||"cancelled");
+    if(callback)notifyDrop(lastReason);else dropCallback=null;
     clearRequest();
     /* Pooling on: only the Workers still grinding on the cancelled generation are killed, and an
      * idle Worker stays for the next request to reuse — it has no obsolete work to abandon.
@@ -550,11 +590,20 @@ const solveService=(()=>{
     expectedDailyCacheKey=null;
     expectedFollow=false;
     expectedSolveMode=null;
+    dropCallback=null;
+    // A failed fit-in-time shard ends the search, so the shards still searching answer nothing now.
+    if(expectedTask==="fit"&&error)terminateBusySlots();
+    /* A fit-in-time fan-out on a page whose ordinary solves use one Worker hands the extra Workers
+     * back once it is answered, keeping the one the next ordinary solve will reuse. */
+    if(expectedTask==="fit"&&!poolActive())pool.filter(slot=>!slot.busy).slice(1).forEach(slot=>terminateSlot(slot));
+    expectedTask=null;requestSlotCap=1;
     overlay(false);
     if(done)done(result,error||null,metadata||null);
   }
   function runFallback(requestGeneration,reason){
-    if(expectedFollow){deliver(requestGeneration,null,{message:reason});return;}
+    // Neither a follow-up nor fit-in-time has a synchronous fallback: the page's own optimize() is
+    // a different solve, and a minutes-long search on the main thread would freeze the page.
+    if(expectedFollow||expectedTask==="fit"){deliver(requestGeneration,null,{message:reason});return;}
     fallbackNotice(true,reason);
     clearFallbackTimer();
     fallbackTimer=setTimeout(()=>{
@@ -633,7 +682,7 @@ const solveService=(()=>{
         if(pending.entries.length<pending.count)return;
         const entries=pending.entries;pendingShards=null;
         applySoloCache(mergeSoloCaches(entries.map(entry=>({shard:entry.shard,res:{__solo:entry.solo}}))));
-        deliver(data.generation,mergeShardResults(expectedSolveMode,entries),null);
+        deliver(data.generation,mergeShardResults(expectedSolveMode,entries,expectedTask),null);
         return;
       }
       applySoloCache(solo);
@@ -694,11 +743,19 @@ const solveService=(()=>{
     if(follow!==null&&!(typeof follow.mode==="string"&&typeof follow.key==="string")){
       throw new TypeError("solveService.request follow must be {mode,key} for the page state it serves");
     }
+    // A task asks the Worker for a solve other than the mode's own; fit-in-time is the only one.
+    const task=options.task===undefined||options.task===null?null:options.task;
+    if(task!==null&&!(task==="fit"&&mode==="project"))throw new TypeError("solveService.request task must be \"fit\" on a Project request");
+    if(options.onDrop!==undefined&&options.onDrop!==null&&typeof options.onDrop!=="function"){
+      throw new TypeError("solveService.request onDrop must be a function");
+    }
     const dailyCacheKey=(mode==="items"||mode==="credits")?dailySolveConditionKey(dispatchedState):null;
+    notifyDrop("superseded");
     const requestGeneration=++generation;
     clearFallbackTimer();
     callback=done;expectedMode=follow?follow.mode:mode;expectedRevision=revision;expectedKey=follow?follow.key:stateKey;
     expectedDailyCacheKey=dailyCacheKey;expectedFollow=follow!==null;expectedSolveMode=mode;
+    expectedTask=task;dropCallback=typeof options.onDrop==="function"?options.onDrop:null;
 
     // optimize() is synchronous inside the Worker. Superseding busy work requires termination;
     // a healthy idle Worker may be reused and receives a fresh stability snapshot below.
@@ -708,7 +765,7 @@ const solveService=(()=>{
       const cached=readDailySolveCache(dailyCacheKey,mode);
       if(cached){lastReason="Daily solve cache hit";deliver(requestGeneration,cached.result,null,{cached:true,savedAt:cached.savedAt});return requestGeneration;}
     }
-    if(!follow)overlay(true);
+    if(!follow&&options.quiet!==true)overlay(true);
     if(!shouldTryWorker()){
       runFallback(requestGeneration,typeof Worker==="undefined"?"Worker is unavailable":"Worker retry is cooling down");
       return requestGeneration;
@@ -725,7 +782,8 @@ const solveService=(()=>{
      * the service dispatches it as one message. Without one the service decides the fan-out itself,
      * and a fan-out of one is the byte-identical single-Worker message: no shard field, no pending
      * record, nothing to merge. */
-    const shardCount=shard!==null?1:shardCountFor(mode,dispatchedState);
+    const shardCount=shard!==null?1:shardCountFor(mode,dispatchedState,task);
+    requestSlotCap=shardCount;
     // seen is what makes "each shard replied at most once" — the merge's stated precondition — a
     // property the service enforces rather than one it hopes the Workers honor.
     pendingShards=shardCount>1?{generation:requestGeneration,count:shardCount,entries:[],seen:new Set()}:null;
@@ -758,6 +816,7 @@ const solveService=(()=>{
         // Both optional fields are omitted rather than nulled when there is nothing to say, so a
         // page with a cold cache and no fan-out sends the seven keys the single-Worker service sent.
         if(seedSolo)message.solo=seedSolo;
+        if(task!==null)message.task=task;
         if(shard!==null)message.shard={index:shard.index,count:shard.count};
         else if(shardCount>1)message.shard={index,count:shardCount};
         slot.worker.postMessage(message);
@@ -779,7 +838,8 @@ const solveService=(()=>{
       // poolEnabled reports whether the pool is parallel now, not what the switch said at load:
       // a degraded or tripped pool is a pool of one however the reader set the key.
       poolEnabled:poolActive(),poolSize:pool.length,poolBusy:busySlots(),poolConstructions,
-      poolTripped,poolSlotFailures:slotFailures,poolFailures,poolUnratedDisposals:unratedDisposals
+      poolTripped,poolSlotFailures:slotFailures,poolFailures,poolUnratedDisposals:unratedDisposals,
+      task:expectedTask,follow:expectedFollow,fitParallel:fitPoolCap()
     };
   }
 

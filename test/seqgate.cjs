@@ -56,6 +56,7 @@ globalThis.stepsProjControls = () => "";
 
 const read = (...p) => fs.readFileSync(path.join(__dirname, "..", ...p), "utf8");
 const coreSrc = read("js", "core.js");
+const fieldsSrc = read("js", "fields.js");
 const domSrc = read("js", "dom.js");
 const projectScheduleSrc = read("js", "project-schedule.js");
 const solverSrc = read("js", "solver.js");
@@ -707,4 +708,4 @@ globalThis.__emit = (str) => {
 // Direct eval keeps core/solver/results' top-level const/let (S, optimize, ...) visible to the
 // appended runner — the same trusted-local-source bootstrap parity.cjs and staticmode.cjs use.
 // eslint-disable-next-line no-eval
-eval(coreSrc + "\n;\n" + domSrc + "\n;\n" + projectScheduleSrc + "\n;\n" + solverSrc + "\n;\n" + sampleEverySrc + "\n;\n" + resultsSrc + "\n;\n" + stateShim + "\n;\n" + runner);
+eval(coreSrc + "\n;\n" + fieldsSrc + "\n;\n" + domSrc + "\n;\n" + projectScheduleSrc + "\n;\n" + solverSrc + "\n;\n" + sampleEverySrc + "\n;\n" + resultsSrc + "\n;\n" + stateShim + "\n;\n" + runner);

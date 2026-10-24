@@ -470,6 +470,73 @@ test("a follow-up whose Worker fails reports the failure instead of solving the 
   assert.equal(harness.elements.solveFallback.hidden, true);
 });
 
+function fitRequest(revision, onDrop) {
+  return { mode: "project", task: "fit", quiet: true, stateRevision: revision, budget: 30000, onDrop,
+    stateSnapshot: { mode: "project", solveBudget: 200, fitBudget: 30000 } };
+}
+function fitAnswer(count, eta) {
+  return { mode: "project", task: "fit", count, verified: true, eta, rank: 0, tried: 10, ms: 5 };
+}
+
+test("fit-in-time fans out across the cores on a page whose ordinary solves use one Worker", () => {
+  const harness = lifecycleHarness({ hardwareConcurrency: 5 });
+  const delivered = [];
+  harness.callRequest(fitRequest(1), (result, error) => delivered.push({ result, error }));
+  assert.equal(harness.workers.length, 4);
+  harness.workers.forEach((worker, index) => {
+    assert.equal(worker.messages[0].task, "fit");
+    assert.deepEqual(worker.messages[0].shard, { index, count: 4 });
+  });
+  assert.equal(harness.elements.solveOverlay.hidden, true, "the search runs under its own box, not the overlay");
+
+  [[3, 9], [5, 8], [5, 7], [4, 1]].forEach(([count, eta], index) =>
+    harness.workers[index].emitMessage(workerResponse(harness.workers[index], { res: fitAnswer(count, eta) })));
+  assert.equal(delivered.length, 1);
+  assert.equal(delivered[0].result.count, 5);
+  assert.equal(delivered[0].result.eta, 7);
+  assert.equal(delivered[0].result.tried, 40);
+  assert.deepEqual(harness.workers.map(worker => worker.terminated), [false, true, true, true],
+    "the extra Workers are handed back, keeping one for the next ordinary solve");
+  assert.equal(harness.status().poolSize, 1);
+});
+
+test("with parallel solving switched off, fit-in-time keeps to one Worker", () => {
+  const harness = poolFlagHarness("off", { hardwareConcurrency: 5 });
+  harness.callRequest(fitRequest(1), () => {});
+  assert.equal(harness.workers.length, 1);
+  assert.equal(harness.workers[0].messages[0].task, "fit");
+  assert.equal(harness.workers[0].messages[0].shard, undefined);
+});
+
+test("a fit-in-time search hears when a later solve supersedes it", () => {
+  const harness = lifecycleHarness({ hardwareConcurrency: 3 });
+  const drops = [];
+  harness.callRequest(fitRequest(1, reason => drops.push(reason)), () => assert.fail("a superseded search delivers nothing"));
+  harness.callRequest(request("project", 2, "plan"), () => {});
+  harness.flushTimers();
+  assert.deepEqual(drops, ["superseded"]);
+  assert.ok(harness.workers.slice(0, 2).every(worker => worker.terminated), "the superseded search's Workers stop");
+});
+
+test("a failed fit-in-time shard ends the search without a synchronous solve", () => {
+  let synchronous = 0;
+  const harness = lifecycleHarness({ hardwareConcurrency: 3, optimize: () => { synchronous += 1;return {}; } });
+  const delivered = [];
+  harness.callRequest(fitRequest(1), (result, error) => delivered.push({ result, error }));
+  harness.workers[0].emitError("worker crashed");
+  harness.flushTimers();
+  assert.equal(synchronous, 0);
+  assert.equal(delivered.length, 1);
+  assert.ok(delivered[0].error);
+  assert.ok(harness.workers.every(worker => worker.terminated), "the shard still searching is stopped too");
+});
+
+test("a fit task is only accepted on a Project request", () => {
+  const harness = lifecycleHarness();
+  assert.throws(() => harness.callRequest(Object.assign(fitRequest(1), { mode: "items",
+    stateSnapshot: { mode: "items", solveBudget: 200 } }), () => {}), /task must be "fit" on a Project request/);
+});
+
 test("a completed capped Items solve is reused after the service is recreated", () => {
   const storage = new Map();
   const state = maxItemsState();

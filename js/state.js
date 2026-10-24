@@ -479,6 +479,8 @@ function validateAndMigrate(candidate){
   if(_own(candidate,"projectBatch"))out.projectBatch=_boolean(_readData(candidate,"projectBatch","projectBatch",errors),"projectBatch",errors);
   if(strictProjectState)out.projectStability=_enum(_readData(candidate,"projectStability","projectStability",errors),FIELD_SCHEMA.projectStability,"projectStability",errors);
   if(_own(candidate,"projLineMode"))out.projLineMode=_enum(_readData(candidate,"projLineMode","projLineMode",errors),FIELD_SCHEMA.projLineMode,"projLineMode",errors);
+  if(_own(candidate,"fitHours"))out.fitHours=_number(_readData(candidate,"fitHours","fitHours",errors),FIELD_SCHEMA.fitHours,"fitHours",errors);
+  if(_own(candidate,"fitBudget"))out.fitBudget=_number(_readData(candidate,"fitBudget","fitBudget",errors),FIELD_SCHEMA.fitBudget,"fitBudget",errors);
   if(_own(candidate,"planStart"))out.planStart=_number(_readData(candidate,"planStart","planStart",errors),FIELD_SCHEMA.timestamp,"planStart",errors);
 
   if(_own(candidate,"manual")){

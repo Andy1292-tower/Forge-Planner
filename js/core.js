@@ -283,7 +283,7 @@ function defaults(){
     minedIncomeText:blankSourceText(),
     targets:tg,targetMode:"ratio",targetSaved:[],targetActiveId:null,
     projects:[],inventory:nulls(INVENTORY_ITEMS),inventoryText:{},projectSeq:true,projectGate:true,projectBatch:false,projectStability:"prefer-current",projLineMode:"split",
-    planStart:null,
+    planStart:null,fitHours:48,fitBudget:60000,
     manual:[],manualSaved:[],manualActiveId:null
   };
 }
@@ -457,6 +457,8 @@ function normalize(st){
   st.manualSaved=st.manualSaved.filter(p=>p&&typeof p==="object"&&Array.isArray(p.config)).map(p=>({id:typeof p.id==="string"?p.id:("m"+Math.random().toString(36).slice(2,9)),name:typeof p.name==="string"?p.name:"Setup",config:p.config.map(c=>({job:(c&&ALLITEMS.includes(c.job))?c.job:"Idle",lvl:(c&&LEVELS.includes(c.lvl))?c.lvl:1,sell:!!(c&&c.sell)}))}));
   if(typeof st.manualActiveId!=="string")st.manualActiveId=null;
   if(typeof st.planStart!=="number"||!isFinite(st.planStart))st.planStart=null;
+  st.fitHours=boundedPersistedField("fitHours",st.fitHours,48,0.1,100000);
+  st.fitBudget=boundedPersistedField("fitBudget",st.fitBudget,60000,10000,300000,true);
   syncManual(st);
   return st;
 }
