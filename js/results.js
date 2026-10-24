@@ -416,45 +416,55 @@ function startFit(){
   repaintFit();
 }
 function stopFit(){if(fitRunning())solveService.cancel("Fit-in-time search stopped");}
-// Tick off what does not fit and lower each partly-fitting project's end level to match — for a
-// ledger card, how many of the following ledgers it includes. The list is then exactly the answer's,
-// so the answer stays current over it.
+// Tick what the answer takes and untick the rest, and end each taken project where the answer stops
+// — for a ledger card, include as many following ledgers as it reaches. The list is then exactly the
+// answer's, so the answer stays current over it.
+function fitRowEnd(p){return p.ledgerId?Number(p.ledgerAhead)+1:Number(p.to);}
 function applyFitSelection(){
   const entry=_fitResult;if(!entry||!entry.res||!fitResultCurrent(entry))return;
-  const rows=entry.res.selection||[];
-  const off=rows.filter(r=>r.taken===0).length,trimmed=rows.filter(r=>r.taken>0&&r.taken<r.remaining).length;
+  const rows=entry.res.selection||[],listed=r=>(S.projects||[]).find(x=>x.id===r.id);
+  const on=rows.filter(r=>r.taken>0&&listed(r)&&!listed(r).on).length;
+  const off=rows.filter(r=>r.taken===0&&listed(r)&&listed(r).on).length;
+  const moved=rows.filter(r=>r.taken>0&&listed(r)&&fitRowEnd(listed(r))!==r.toLevel).length;
   const parts=[];
-  if(off)parts.push(`untick ${off} project${off===1?"":"s"} that ${off===1?"doesn't":"don't"} fit`);
-  if(trimmed)parts.push(`lower the end level of ${trimmed} that only partly ${trimmed===1?"fits":"fit"}`);
+  if(on)parts.push(`tick ${on} project${on===1?"":"s"} it takes`);
+  if(off)parts.push(`untick ${off} that ${off===1?"doesn't":"don't"} fit`);
+  if(moved)parts.push(`change where ${moved} project${moved===1?" ends":"s end"} to match it`);
   if(!parts.length)return;
-  if(!confirm(`Use this selection? This will ${parts.join(" and ")}.`))return;
+  if(!confirm(`Use this selection? This will ${parts.join(", ")}.`))return;
   mutateState(st=>{rows.forEach(r=>{
     const p=(st.projects||[]).find(x=>x.id===r.id);if(!p)return;
     if(r.taken===0){p.on=false;return;}
-    if(r.taken<r.remaining){if(p.ledgerId)p.ledgerAhead=r.toLevel-1;else p.to=r.toLevel;}
+    p.on=true;
+    if(p.ledgerId)p.ledgerAhead=r.toLevel-1;else p.to=r.toLevel;
   });});
   if(typeof markInputEdited==="function")markInputEdited("projects",["project"]);
   entry.key=solveStateKey(S);
   repaintFit();
 }
-// True once every project the answer leaves out is unticked and every partial fit ends where it stops.
+// True once every project the answer takes is ticked and ends where it stops, and the rest are unticked.
 function fitSelectionApplied(res){
   return (res.selection||[]).every(r=>{
     const p=(S.projects||[]).find(x=>x.id===r.id);if(!p)return true;
     if(r.taken===0)return !p.on;
-    if(r.taken===r.remaining)return p.on;
-    return p.on&&(p.ledgerId?Number(p.ledgerAhead)===r.toLevel-1:Number(p.to)===r.toLevel);
+    return p.on&&fitRowEnd(p)===r.toLevel;
   });
 }
-function fitSelectionRowHtml(r){
+// A ledger row is named by the ledgers it takes; a row the list has unticked says so.
+function fitRowName(r){
   const name=htmlText(r.name);
+  const label=!r.ledger||r.firstNumber==null?name
+    :r.taken>1&&r.lastNumber!=null?`${name} ledgers #${r.firstNumber}–#${r.lastNumber}`:`${name} ledger #${r.firstNumber}`;
+  return r.ticked===false?`${label} <span class="proj-mini">· not ticked</span>`:label;
+}
+function fitSelectionRowHtml(r){
   const levels=r.ledger
-    ?(r.remaining===1?"ledger":`${r.taken} of ${r.remaining} ledgers`)
+    ?`${r.taken} ledger${r.taken===1?"":"s"}`
     :r.remaining===1?`lv ${r.fromLevel}`
     :`lv ${r.fromLevel}${r.toLevel>r.fromLevel?` → ${r.toLevel}`:""} <span class="proj-mini">· ${r.taken} of ${r.remaining}</span>`;
   const why=r.required==="chosen"?' <span class="pill craft" style="font-size:9px">must finish</span>'
     :r.required==="unlock"?' <span class="pill" style="font-size:9px">needed to unlock</span>':"";
-  return `<tr><td>${name}${why}</td><td>${levels}</td><td class="num mono">${r.finish!=null?fmtPlanClock(r.finish):"—"}</td></tr>`;
+  return `<tr><td>${fitRowName(r)}${why}</td><td>${levels}</td><td class="num mono">${r.finish!=null?fmtPlanClock(r.finish):"—"}</td></tr>`;
 }
 // What one past-the-limit step adds: the ledger, or the project level, it takes the answer to.
 function fitPastLabel(item){
@@ -495,7 +505,7 @@ function fitPastHtml(res){
 function fitResultHtml(entry,current){
   if(entry.error)return `<div class="notice warn" style="font-size:11.5px"><b>The search stopped.</b> ${htmlText(entry.error)}</div>`;
   const res=entry.res;
-  if(res.empty)return `<div class="proj-mini">Nothing is ticked, so there is nothing to fit.</div>`;
+  if(res.empty)return `<div class="proj-mini">Nothing in your project list is left to craft.</div>`;
   const stale=current?"":`<div class="notice info" style="font-size:11.5px">Your projects, factory or Must finish list changed since this search ran. Run it again for an up-to-date answer.</div>`;
   const finished=r=>r.finished!=null?r.finished:r.taken;
   const ledgers=res.selection.filter(r=>r.ledger).reduce((sum,r)=>sum+finished(r),0),levels=res.count-ledgers;
@@ -511,22 +521,24 @@ function fitResultHtml(entry,current){
   else if(!res.count)head=`Nothing on your list finishes within <b>${fmtDuration(res.hours)}</b>.`;
   else if(res.verified&&Number.isFinite(res.eta))head=`<b>${named}</b> finish within <b>${fmtDuration(res.hours)}</b>. Crafted together they take <b>${fmtDuration(res.eta)}</b>, done by <b>${fmtPlanClock(res.eta)}</b>${res.hours-res.eta>1/60?`, with <b>${fmtDuration(res.hours-res.eta)}</b> to spare`:""}.`;
   else head=`<b>${named}</b> look likely to finish within <b>${fmtDuration(res.hours)}</b> (about <b>${fmtDuration(res.estimateEta)}</b>). The search time ran out before this was checked as a full plan, so treat it as a guide, or give it more search time.`;
-  const taken=res.selection.filter(r=>r.taken>0),missed=res.selection.filter(r=>r.taken<r.remaining);
+  // Doesn't fit names only what was ticked: the levels a ticked card asks for that the answer leaves out.
+  const taken=res.selection.filter(r=>r.taken>0),missed=res.selection.filter(r=>r.ticked!==false&&r.taken<r.chosen);
   const table=taken.length?`<table class="fit-table"><thead><tr><th>Finishes</th><th>Levels</th><th class="num">Done by</th></tr></thead><tbody>${taken.map(fitSelectionRowHtml).join("")}</tbody></table>`:"";
-  const missedText=missed.length?`<div class="proj-mini" style="margin-top:6px">Doesn't fit: ${missed.map(r=>htmlText(r.name)+(r.taken>0?(r.ledger?` (the last ${r.remaining-r.taken})`:` (lv ${r.toLevel+1} on)`):"")).join(", ")}.</div>`:"";
+  const missedName=r=>r.ledger&&r.firstNumber!=null?`${htmlText(r.name)} ledger #${r.firstNumber}`:htmlText(r.name);
+  const missedText=missed.length?`<div class="proj-mini" style="margin-top:6px">Doesn't fit: ${missed.map(r=>missedName(r)+(r.taken>0?(r.ledger?` (the last ${r.chosen-r.taken})`:` (lv ${r.toLevel+1} on)`):"")).join(", ")}.</div>`:"";
   const how=`<div class="proj-mini" style="margin-top:6px">${res.exhaustive?"Every combination was tried":`Tried ${res.tried} combinations${res.shards>1?` across ${res.shards} workers`:""}`}.</div>`;
-  const apply=!(current&&res.verified&&res.count>0&&missed.length>0)?""
+  const apply=!(current&&res.verified&&res.count>0)?""
     :fitSelectionApplied(res)?`<div class="proj-mini" style="margin-top:6px">Your project list matches this selection.</div>`
     :`<button class="btn ghost" type="button" id="btnFitApply" style="margin-top:8px">Use this selection</button>`;
   return `${stale}<p style="margin:0 0 8px;font-size:12px;color:var(--ink2);line-height:1.5">${head}</p>${table}${missedText}${fitPastHtml(res)}${how}${apply}`;
 }
-// The ticked projects the answer has to include, as removable chips, and a picker for the rest.
+// The projects the answer has to include, as removable chips, and a picker for the rest of the list.
 function fitForcedHtml(running){
-  const ticked=(S.projects||[]).filter(p=>p.on);
-  if(!ticked.length)return "";
+  const listed=S.projects||[];
+  if(!listed.length)return "";
   const forced=new Set(S.fitForced||[]),off=running?" disabled":"";
-  const chips=ticked.filter(p=>forced.has(p.id)).map(p=>`<span class="fit-chip">${htmlText(p.name)}<button type="button" class="fit-chip-x" data-fit-unforce="${htmlAttribute(p.id)}" title="Remove from Must finish" aria-label="Remove ${htmlAttribute(p.name)} from Must finish"${off}>×</button></span>`).join("");
-  const rest=ticked.filter(p=>!forced.has(p.id));
+  const chips=listed.filter(p=>forced.has(p.id)).map(p=>`<span class="fit-chip">${htmlText(p.name)}<button type="button" class="fit-chip-x" data-fit-unforce="${htmlAttribute(p.id)}" title="Remove from Must finish" aria-label="Remove ${htmlAttribute(p.name)} from Must finish"${off}>×</button></span>`).join("");
+  const rest=listed.filter(p=>!forced.has(p.id));
   const add=rest.length?`<select id="fitForcedAdd" aria-label="Add a project or ledger that must finish"${off}><option value="" selected>+ Add…</option>${rest.map(p=>`<option value="${htmlAttribute(p.id)}">${htmlText(p.name)}</option>`).join("")}</select>`:"";
   return `<div class="fit-forced"><span class="fit-forced-l">Must finish</span>${chips||'<span class="proj-mini">nothing yet</span>'}${add}</div>`;
 }
@@ -564,7 +576,7 @@ function fitBoxHtml(){
       </div>
       ${fitForcedHtml(running)}
       ${fitPastControlsHtml(running)}
-      <p class="help" style="margin:8px 0 10px">A heavy solve: it tries many combinations of your ticked projects and ledgers against the time limit, then checks the best as a full plan. Anything under <b>Must finish</b> is always in the answer, and the rest is fitted around it. Past the limit it looks at every project in your list, ticked or not, and each ledger character's following ledgers. It runs for up to the search time you pick on up to ${cores} CPU core${cores===1?"":"s"}, and only when you press <b>Find what fits</b>.</p>
+      <p class="help" style="margin:8px 0 10px">A heavy solve: it tries many combinations of the projects and ledgers in your list, ticked or not, with each ledger running on into the character's following ledgers, then checks the best as a full plan. Anything under <b>Must finish</b> is always in the answer, as far as its card asks, and the rest is fitted around it. It runs for up to the search time you pick on up to ${cores} CPU core${cores===1?"":"s"}, and only when you press <b>Find what fits</b>.</p>
       <div id="fitBody">${body}</div>
     </div>
   </details>`;

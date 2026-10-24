@@ -3867,25 +3867,21 @@ const FIT_LIMIT_TOLERANCE=0.01;  // of the hours: a bracket this narrow is settl
 const FIT_NEXT_WINDOW=12;        // hours past the limit the next step may run
 const FIT_EXTRA_SHARE=0.3;       // of the search time, kept back for what lies past the limit
 const FIT_EXTRA_CHECKS=8;        // full plan checks those may spend
-/* The chains a fit search takes levels from. The answer uses the ticked projects, each within its
- * chosen levels. `pool` is where what lies past the limit is looked for: every project in the list,
- * ticked or not, on to its last level, and each ledger on through the character's following
- * ledgers. */
-function fitChains(pool){
+/* The chains a fit search takes levels from: every project in the list, ticked or not, from its
+ * next unfinished level on to its last, and each ledger on through the character's following
+ * ledgers. `chosen` is how many of those levels the project's own card asks for — its level range,
+ * or a ledger card's current ledger and the ones it includes. */
+function fitChains(){
   const chains=[];
-  (S.projects||[]).forEach((p,pi)=>{
-    if(!p.on&&!pool)return;
+  (S.projects||[]).forEach(p=>{
     let lv=p.levels||[],name=p.name||"Project",numbers=null;
     const from=Math.max(1,Math.min(lv.length,Math.floor(num(p.from)||1)));
     const to=Math.min(lv.length,Math.max(from,Math.floor(num(p.to)||lv.length)));
     const done=Math.max(0,Math.min(to-from+1,Math.floor(num(p.done)||0))),start=from-1+done;
-    let end=to;
-    if(pool){
-      const character=p.ledgerId&&p.ledgerNo!=null?ledgerCharacter(p.ledgerId):null;
-      const entries=character?ledgerWindow(character,p.ledgerNo,character.ledgers.length):[];
-      if(entries.length){lv=entries;name=character.name;numbers=entries.map(ledgerNumber);}
-      end=lv.length;
-    }
+    const character=p.ledgerId&&p.ledgerNo!=null?ledgerCharacter(p.ledgerId):null;
+    const entries=character?ledgerWindow(character,p.ledgerNo,character.ledgers.length):[];
+    if(entries.length){lv=entries;name=character.name;numbers=entries.map(ledgerNumber);}
+    const end=lv.length;
     if(start>=end)return;
     const levels=[];
     for(let i=start;i<end;i++){
@@ -3897,8 +3893,8 @@ function fitChains(pool){
     if(p.ledgerId&&levels.every(level=>!level.uses.size))return;
     // prefix[k]: how many of the first k levels have something to craft.
     const prefix=[0];levels.forEach((level,k)=>prefix.push(prefix[k]+(level.uses.size?1:0)));
-    chains.push({pi,id:p.id||"",name,catId:p.catId||"",ledger:!!p.ledgerId,on:!!p.on,
-      prio:p.prio!=null?p.prio:null,start,levelCount:lv.length,levels,prefix});
+    chains.push({id:p.id||"",name,catId:p.catId||"",ledger:!!p.ledgerId,on:!!p.on,
+      prio:p.prio!=null?p.prio:null,start,chosen:Math.min(levels.length,Math.max(0,to-start)),levelCount:lv.length,levels,prefix});
   });
   // Gates: an in-list unlocker must be taken whole before a level using its material counts.
   const unlockerOf={},byCat={};
@@ -3924,10 +3920,11 @@ function optimizeFit(testOptions,shard){
   if(!chains.length)return {empty:true,mode:"project",task:"fit",hours,selection:[],count:0,ms:performance.now()-t0};
   const control=makeSolveControl(budget,testOptions),lpMemo=makeLpMemo(),isStatic=S.projLineMode==="static";
   const inv=projectInitialInventory(),estimates=new Map();
-  // The floor every set starts from: must-finish chains whole, then the unlocks they wait on, whole.
+  // The floor every set starts from: must-finish projects as far as their cards ask, then the
+  // unlocks those levels wait on, whole.
   const floor=chains.map(()=>0),required=chains.map(()=>null);
   const wanted=new Set(Array.isArray(S.fitForced)?S.fitForced:[]);
-  chains.forEach((c,i)=>{if(wanted.has(c.id)){floor[i]=c.levels.length;required[i]="chosen";}});
+  chains.forEach((c,i)=>{if(wanted.has(c.id)&&c.chosen>0){floor[i]=c.chosen;required[i]="chosen";}});
   for(let changed=true;changed;){
     changed=false;
     chains.forEach((c,i)=>{for(let k=0;k<floor[i];k++)c.levels[k].gates.forEach(u=>{
@@ -3940,8 +3937,7 @@ function optimizeFit(testOptions,shard){
   const searchOpen=()=>!control.isStopped()&&control.currentTime()<searchUntil;
   const taken=n=>n.reduce((sum,k,i)=>sum+chains[i].prefix[k],0);
   const rankOf=n=>n.reduce((sum,k,i)=>sum+chains[i].prefix[k]*(chains[i].prio!=null?chains[i].prio:FIT_UNRANKED),0);
-  const allowedIn=list=>(n,i,k)=>list[i].levels[k].gates.every(u=>n[u]===list[u].levels.length);
-  const allowed=allowedIn(chains);
+  const allowed=(n,i,k)=>chains[i].levels[k].gates.every(u=>n[u]===chains[u].levels.length);
   // Drop every level that lost its gate, from the first such level of its chain onward.
   const settle=n=>{
     const out=n.slice();let changed=true;
@@ -3950,26 +3946,25 @@ function optimizeFit(testOptions,shard){
     }
     return out;
   };
-  const demandOf=(n,list)=>{
+  const demandOf=n=>{
     const sub={};ALLITEMS.forEach(it=>sub[it]=DEC_ZERO);
-    n.forEach((k,i)=>{for(let j=0;j<k;j++)ALLITEMS.forEach(it=>{sub[it]=sub[it].add(list[i].levels[j].sub[it]);});});
+    n.forEach((k,i)=>{for(let j=0;j<k;j++)ALLITEMS.forEach(it=>{sub[it]=sub[it].add(chains[i].levels[j].sub[it]);});});
     return sub;
   };
   // Hours the pooled LP needs for set n; Infinity when it cannot be made or the search is out of time.
-  const estimateIn=(list,cache)=>n=>{
+  const estimate=n=>{
     const key=n.join(",");
-    if(cache.has(key))return cache.get(key);
-    if(n.every(k=>k===0)){cache.set(key,0);return 0;}
+    if(estimates.has(key))return estimates.get(key);
+    if(n.every(k=>k===0)){estimates.set(key,0);return 0;}
     if(!control.checkpoint("fit-candidate"))return Infinity;
     tried++;
-    const sub=demandOf(n,list);
+    const sub=demandOf(n);
     const ph=solvePhaseFor(projNetVec(sub,inv),"Fit check",isStatic?{}:projAvailVec(sub,inv),false,null,
       {scheduleControl:control,lpMemo});
     const eta=ph.evaluated!==false&&ph.feasible?ph.eta:Infinity;
-    if(ph.evaluated!==false)cache.set(key,eta);
+    if(ph.evaluated!==false)estimates.set(key,eta);
     return eta;
   };
-  const estimate=estimateIn(chains,estimates);
   const score=n=>({n,count:taken(n),rank:rankOf(n),eta:estimate(n)});
   const better=(a,b)=>!b||a.count>b.count||(a.count===b.count&&(a.rank<b.rank||(a.rank===b.rank&&a.eta<b.eta-etaCompareEpsilon(a.eta,b.eta))));
   // The hours level k of chain i adds to its own chain crafted alone.
@@ -4064,10 +4059,10 @@ function optimizeFit(testOptions,shard){
     return best;
   };
   // A set run as a real plan, crafted together, on its own slice of what is left of the clock.
-  const verifyRun=(n,deadline,list=chains)=>{
+  const verifyRun=(n,deadline)=>{
     const perProject=[],gross={};ALLITEMS.forEach(it=>gross[it]=DEC_ZERO);
     n.forEach((k,i)=>{
-      if(!k)return;const c=list[i],sub={};ALLITEMS.forEach(it=>sub[it]=DEC_ZERO);
+      if(!k)return;const c=chains[i],sub={};ALLITEMS.forEach(it=>sub[it]=DEC_ZERO);
       for(let j=0;j<k;j++)ALLITEMS.forEach(it=>{sub[it]=sub[it].add(c.levels[j].sub[it]);});
       ALLITEMS.forEach(it=>{gross[it]=gross[it].add(sub[it]);});
       perProject.push({id:c.id,name:c.name,catId:c.catId,prio:c.prio,from:c.start+1,to:c.start+k,levels:c.levelCount,sub});
@@ -4126,33 +4121,29 @@ function optimizeFit(testOptions,shard){
     const ranks=[...new Set(layers)].sort((a,b)=>a-b);
     verified.perProject.forEach((p,i)=>{const ph=run.phases[ranks.indexOf(layers[i])];finish[p.id]=ph&&Number.isFinite(ph.doneAt)?ph.doneAt:run.eta;});
   }
-  /* Past the limit, from the wider pool: every project in the list, ticked or not, and each ledger
-   * on through the character's following ledgers. Each offers its next level that finishes
-   * something — a ledger with nothing to craft is stepped over to the one after it — added to the
-   * answer on its own. The estimate, a floor on any real plan, rules out whatever cannot land inside
-   * the extra hours; the rest are checked as full plans, quickest estimate first, while the time
-   * lasts. One the clock ran out on is listed by its estimate and marked unchecked. */
+  /* Past the limit. Each chain offers its next level that finishes something — a ledger with
+   * nothing to craft is stepped over to the one after it — added to the answer on its own. The
+   * estimate, a floor on any real plan, rules out whatever cannot land inside the extra hours; the
+   * rest are checked as full plans, quickest estimate first, while the time lasts. One the clock
+   * ran out on is listed by its estimate and marked unchecked. */
   let next=null,extra=null,inside=[];
   if(pastOn&&!forcedOver&&(verified||chosen.count===0)){
-    const pool=fitChains(true),window=hours+pastWindow,options=[];
-    const answerIndex=new Map(chains.map((c,i)=>[c.pi,i]));
-    const base=pool.map(c=>answerIndex.has(c.pi)?chosen.n[answerIndex.get(c.pi)]:0);
-    const poolAllowed=allowedIn(pool),poolEstimate=estimateIn(pool,new Map());
-    pool.forEach((c,i)=>{
+    const base=chosen.n,window=hours+pastWindow,options=[];
+    chains.forEach((c,i)=>{
       let k=base[i];
-      while(k<c.levels.length&&poolAllowed(base,i,k)){k++;if(c.prefix[k]>c.prefix[base[i]])break;}
+      while(k<c.levels.length&&allowed(base,i,k)){k++;if(c.prefix[k]>c.prefix[base[i]])break;}
       if(c.prefix[k]>c.prefix[base[i]]){const n=base.slice();n[i]=k;options.push({i,n});}
     });
-    options.forEach(option=>{option.eta=poolEstimate(option.n);});
+    options.forEach(option=>{option.eta=estimate(option.n);});
     const viable=options.filter(option=>option.eta<=window).sort((a,b)=>a.eta-b.eta);
     const items=[];
     viable.forEach((option,index)=>{
-      const c=pool[option.i],k=option.n[option.i],now=control.readNow(),remaining=control.deadline-now,left=viable.length-index;
+      const c=chains[option.i],k=option.n[option.i],now=control.readNow(),remaining=control.deadline-now,left=viable.length-index;
       const entry={id:c.id,name:c.name,ledger:c.ledger,ticked:c.on,number:c.levels[k-1].number,
         fromLevel:c.start+base[option.i]+1,toLevel:c.start+k,checked:false,eta:option.eta};
       if(index<FIT_EXTRA_CHECKS&&!control.isStopped()&&remaining>0){
         const checkBy=now+remaining/Math.min(left,FIT_EXTRA_CHECKS-index);
-        const attempt=verifyRun(option.n,checkBy,pool);checks++;
+        const attempt=verifyRun(option.n,checkBy);checks++;
         if(projectRunExecutable(attempt.run)){
           if(!(attempt.run.eta<=window))return;
           Object.assign(entry,{checked:true,eta:attempt.run.eta});
@@ -4164,11 +4155,11 @@ function optimizeFit(testOptions,shard){
       items.push(entry);
     });
     items.sort((a,b)=>Number(b.checked)-Number(a.checked)||a.eta-b.eta);
-    // An unticked project or a following ledger can fit inside the limit as well; it is listed as
-    // such rather than as past the limit.
+    // A step the search passed over can still check inside the limit; it is listed as such rather
+    // than as past the limit.
     const isInside=item=>item.checked&&item.eta<=hours+etaCompareEpsilon(item.eta,hours);
     inside=items.filter(isInside);
-    const past=items.filter(item=>!isInside(item)),everything=pool.every((c,i)=>base[i]===c.levels.length);
+    const past=items.filter(item=>!isInside(item)),everything=chains.every((c,i)=>base[i]===c.levels.length);
     if(nextOn){
       const quickest=past.find(item=>item.checked&&item.eta<=hours+FIT_NEXT_WINDOW);
       const unchecked=past.some(item=>!item.checked&&item.eta<=hours+FIT_NEXT_WINDOW);
@@ -4182,8 +4173,9 @@ function optimizeFit(testOptions,shard){
     if(extraOn)extra={hours:extraHours,status:"time",items:[]};
   }
   return {empty:false,mode:"project",task:"fit",hours,strategy:exhaustive?"every set":strategy,exhaustive,tried,checks,
-    selection:chains.map((c,i)=>({id:c.id,name:c.name,ledger:c.ledger,prio:c.prio,taken:chosen.n[i],remaining:c.levels.length,
-      finished:c.prefix[chosen.n[i]],required:required[i],
+    selection:chains.map((c,i)=>({id:c.id,name:c.name,ledger:c.ledger,ticked:c.on,prio:c.prio,taken:chosen.n[i],remaining:c.levels.length,
+      chosen:c.chosen,finished:c.prefix[chosen.n[i]],required:required[i],
+      firstNumber:c.levels[0].number,lastNumber:chosen.n[i]>0?c.levels[chosen.n[i]-1].number:null,
       fromLevel:c.start+1,toLevel:c.start+chosen.n[i],levelCount:c.levelCount,finish:finish[c.id]!=null?finish[c.id]:null})),
     count:chosen.count,rank:chosen.rank,estimateEta:Number.isFinite(chosen.eta)?chosen.eta:null,
     verified:!!verified||chosen.count===0,eta:run?run.eta:(chosen.count===0?0:null),
