@@ -3825,9 +3825,11 @@ function optimizeProjectTop(testOptions){
 
 /* ---------- fit in time ----------
  * Which of the ticked levels finish inside a time limit. Every ticked project contributes its
- * remaining levels as a chain (a level only after the one before it); a ledger is one level. Sets
- * are compared by levels finished, then by lower order numbers (an unnumbered level ranks after
- * 10), then by less time.
+ * remaining levels as a chain (a level only after the one before it); a ledger card's levels are its
+ * ledgers. Sets are compared by levels finished, then by lower order numbers (an unnumbered level
+ * ranks after 10), then by less time. A level with nothing to craft — a ledger that only asks for
+ * mined resources — stays in its chain's order but finishes nothing the planner can plan, so it
+ * does not count.
  *
  * A set is scored with the pooled makespan LP — the estimate one-at-a-time ordering uses — over its
  * summed costs and the stock on hand. That LP lets the whole set share every line from the first
@@ -3870,8 +3872,10 @@ function fitChains(){
       levels.push({level:i+1,sub,uses:new Set([...direct,...chain.prods,...chain.raws])});
     }
     if(p.ledgerId&&levels.every(level=>!level.uses.size))return;
+    // prefix[k]: how many of the first k levels have something to craft.
+    const prefix=[0];levels.forEach((level,k)=>prefix.push(prefix[k]+(level.uses.size?1:0)));
     chains.push({id:p.id||"",name:p.name||"Project",catId:p.catId||"",ledger:!!p.ledgerId,
-      prio:p.prio!=null?p.prio:null,start,levelCount:lv.length,levels});
+      prio:p.prio!=null?p.prio:null,start,levelCount:lv.length,levels,prefix});
   });
   // Gates: an in-list unlocker must be taken whole before a level using its material counts.
   const unlockerOf={},byCat={};
@@ -3901,8 +3905,8 @@ function optimizeFit(testOptions,shard){
   // full plan checks show how far the estimate sits below an executable schedule.
   let tried=0,limit=hours,searchUntil=control.startedAt+budget*FIT_SEARCH_SHARE;
   const searchOpen=()=>!control.isStopped()&&control.currentTime()<searchUntil;
-  const taken=n=>n.reduce((sum,k)=>sum+k,0);
-  const rankOf=n=>n.reduce((sum,k,i)=>sum+k*(chains[i].prio!=null?chains[i].prio:FIT_UNRANKED),0);
+  const taken=n=>n.reduce((sum,k,i)=>sum+chains[i].prefix[k],0);
+  const rankOf=n=>n.reduce((sum,k,i)=>sum+chains[i].prefix[k]*(chains[i].prio!=null?chains[i].prio:FIT_UNRANKED),0);
   const allowed=(n,i,k)=>chains[i].levels[k].gates.every(u=>n[u]===chains[u].levels.length);
   // Drop every level that lost its gate, from the first such level of its chain onward.
   const settle=n=>{
@@ -3921,7 +3925,7 @@ function optimizeFit(testOptions,shard){
   const estimate=n=>{
     const key=n.join(",");
     if(estimates.has(key))return estimates.get(key);
-    if(!taken(n)){estimates.set(key,0);return 0;}
+    if(n.every(k=>k===0)){estimates.set(key,0);return 0;}
     if(!control.checkpoint("fit-candidate"))return Infinity;
     tried++;
     const sub=demandOf(n);
@@ -4080,6 +4084,7 @@ function optimizeFit(testOptions,shard){
   }
   return {empty:false,mode:"project",task:"fit",hours,strategy:exhaustive?"every set":strategy,exhaustive,tried,checks,
     selection:chains.map((c,i)=>({id:c.id,name:c.name,ledger:c.ledger,prio:c.prio,taken:chosen.n[i],remaining:c.levels.length,
+      finished:c.prefix[chosen.n[i]],
       fromLevel:c.start+1,toLevel:c.start+chosen.n[i],levelCount:c.levelCount,finish:finish[c.id]!=null?finish[c.id]:null})),
     count:chosen.count,rank:chosen.rank,estimateEta:Number.isFinite(chosen.eta)?chosen.eta:null,
     verified:!!verified||chosen.count===0,eta:run?run.eta:(chosen.count===0?0:null),

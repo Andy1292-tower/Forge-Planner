@@ -47,7 +47,7 @@ const OTHER = {
   PrecisionPotion: "Precision Potion",
   DetectionPotion: "Detection Potion",
 };
-const DISABLED = new Set(["bertha", "eidelaine-eeko", "gerbo", "minalima-lin", "the-ether-hoarder", "the-twins"]);
+const DISABLED = new Set(["bertha", "caylris-en-divalone", "eidelaine-eeko", "gerbo", "minalima-lin", "the-ether-hoarder", "the-twins"]);
 const QUANTITY = /^(?:\d+(?:\.\d+)?)(?:e\d+)?$/;
 
 const slug = name => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");

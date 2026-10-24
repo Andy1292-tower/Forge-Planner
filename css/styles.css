@@ -776,6 +776,10 @@ footer a:hover,.contrib-help a:hover{text-decoration:underline}
 .ledger-pick{max-width:230px;padding:5px 7px;font-size:11.5px;height:30px}
 .ledger-next{font-size:11px;padding:5px 10px}
 .ledger-card .cat-lvl{grid-template-columns:42px 1fr}
+.ledger-also{margin-top:2px;font-size:11px;color:var(--ink3)}
+.ledger-ahead{display:flex;align-items:center;gap:5px;font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:var(--ink3)}
+.ledger-ahead input{width:44px;text-align:center;padding:4px 5px;height:28px;font-size:11.5px}
+.ledger-ahead.disabled{opacity:.45}
 /* project catalog picker */
 .cat-panel{border:1px solid var(--line);border-radius:7px;background:var(--bg2);margin-bottom:14px;overflow:hidden}
 .cat-panel>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;font-size:12.5px;font-weight:600;color:var(--ink);user-select:none}
