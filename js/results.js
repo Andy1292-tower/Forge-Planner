@@ -306,29 +306,55 @@ function sellRankingPending(key){
   const status=solveService.status();
   return !!(_sellRankingRequest&&_sellRankingRequest.key===key&&status.active&&status.generation===_sellRankingRequest.generation);
 }
-/* From the replayed schedule: the end of the last phase that uses `item` — a project cost, a
- * pre-produced reserve, a line crafting it, or a line consuming it — and the most of the starting
- * stock the plan ever draws down. Stock between boundaries moves linearly, so its low point is a
- * boundary. `keep` is null for an item the replay does not hold as stock. */
+/* What the replayed schedule asks of `item`, and when it stops asking.
+ *
+ * `required` is everything the plan spends of it: project costs, pre-produced reserves, and what its
+ * own crafts consume — what you have to keep on hand until the plan spends it. The plan counts your
+ * stock toward that first (`counted`), and makes the rest on its lines and from Lil' Forgie;
+ * `freeAt` is the hour that making is done. Until then none of the item is spare, and from then on
+ * anything above what is still owed is. Stock and what is
+ * still owed fall together as the plan spends, so only production closes that gap, and it is
+ * closed for good the first time it is closed. A line set to one job for the whole phase can keep
+ * making the item after that; those are the spare ones.
+ *
+ * A mined resource is not held as stock in the replay: its `counted` is null, and it is free once the
+ * last phase drawing on it ends. */
 function sellAgainTiming(res,item){
   const validation=res.scheduleValidation||{},phases=validation.phases||[],boundaries=validation.boundaries||[];
-  let elapsed=0,lastUse=null,lastPhase=-1;
-  phases.forEach((ph,index)=>{
-    elapsed+=Number(ph.eta)||0;
-    const uses=Number((ph.demandSub||{})[item])>0||Number((ph.preProducedDemand||{})[item])>0||
-      (ph.plan||[]).some(line=>(line.entries||[]).some(entry=>entry.item===item||(entry.cons||[]).some(c=>c.item===item&&c.hr>0)));
-    if(uses){lastUse=elapsed;lastPhase=index;}
+  const end=Number(res.eta)||0,runs=[],drops=[];
+  let elapsed=0,required=0,lastDraw=null;
+  phases.forEach(ph=>{
+    const phaseStart=elapsed,eta=Number(ph.eta)||0;elapsed+=eta;
+    if((ph.kind||"project")==="project")required+=Math.max(0,Number((ph.demandSub||{})[item])||0);
+    required+=Math.max(0,Number((ph.preProducedDemand||{})[item])||0);
+    const supplied=Math.max(0,Number((ph.externalSupply||{})[item])||0);
+    if(supplied>0)drops.push({at:phaseStart,amount:supplied});
+    (ph.plan||[]).forEach(line=>(line.entries||[]).forEach(entry=>{
+      const frac=Number(entry.frac)||0,from=phaseStart+(Number(entry.start)||0),to=phaseStart+(Number(entry.end)||0);
+      if(entry.item===item&&frac>0&&to>from)runs.push({from,to,rate:(Number(entry.outHr)||0)/frac});
+      (entry.cons||[]).forEach(c=>{if(c.item===item&&c.hr>0){required+=c.hr*eta;lastDraw=phaseStart+eta;}});
+    }));
   });
   const tracked=boundaries.length>0&&Object.prototype.hasOwnProperty.call(boundaries[0].inventory||{},item);
-  let keep=null;
-  if(tracked){
-    const start=Number(boundaries[0].inventory[item])||0;
-    const low=boundaries.reduce((min,b)=>Math.min(min,Number((b.inventory||{})[item])||0),start);
-    // The replay's own stock tolerance: a balance it accepts as zero is not stock to hold back.
-    keep=start-low>Math.max(1e-8,Math.abs(start)*Number.EPSILON*32)?start-low:0;
+  const tolerance=Math.max(1e-8,required*1e-12);
+  if(!tracked)return {used:required>tolerance,required,counted:null,freeAt:required>tolerance?lastDraw:null,end};
+  if(!(required>tolerance))return {used:false,required:0,counted:0,freeAt:null,end};
+  const stock=Math.max(0,Number(boundaries[0].inventory[item])||0),counted=Math.min(stock,required);
+  const toMake=required-counted;
+  if(!(toMake>tolerance))return {used:true,required,counted,freeAt:0,end};
+  const forgie=typeof forgieHr==="function"&&typeof supplyRate==="function"?Math.max(0,Number(supplyRate(forgieHr(item)))||0):0;
+  const times=[...new Set([0,end,...runs.flatMap(run=>[run.from,run.to]),...drops.map(drop=>drop.at)])].filter(t=>t>=0&&t<=end).sort((a,b)=>a-b);
+  let made=0,freeAt=end;
+  for(let i=0;i<times.length;i++){
+    const t=times[i];
+    made+=drops.filter(drop=>drop.at===t).reduce((sum,drop)=>sum+drop.amount,0);
+    if(made>=toMake-tolerance){freeAt=t;break;}
+    if(i+1>=times.length)break;
+    const next=times[i+1],rate=forgie+runs.filter(run=>run.from<=t&&run.to>=next).reduce((sum,run)=>sum+run.rate,0);
+    if(rate>0&&made+rate*(next-t)>=toMake-tolerance){freeAt=t+(toMake-made)/rate;break;}
+    made+=rate*(next-t);
   }
-  const phase=lastPhase>=0?(res.executionPhases||[])[lastPhase]||phases[lastPhase]:null;
-  return {lastUse,phaseName:phase&&phase.name||"",keep,end:Number(res.eta)||0};
+  return {used:true,required,counted,freeAt,end};
 }
 function sellAgainHtml(res){
   const ranking=projectSellRanking();
@@ -344,13 +370,14 @@ function sellAgainHtml(res){
   const chosen=choices.find(c=>c.item===_sellItemChoice)||choices[0];
   const name=htmlText(minedDisplayName(chosen.item)),timing=sellAgainTiming(res,chosen.item);
   const options=choices.map((c,i)=>`<option value="${htmlAttribute(c.item)}"${c===chosen?" selected":""}>${htmlText(minedDisplayName(c.item))}${i===0?" (best)":""}</option>`).join("");
-  const rows=[];
-  rows.push(timing.lastUse===null
-    ?`<li><b>Now</b> — this plan never uses ${name}.</li>`
-    :`<li>From <b>${fmtPlanClock(timing.lastUse)}</b>, when ${timing.phaseName?`<b>${htmlText(timing.phaseName)}</b> finishes`:"its last phase finishes"} — the last step that uses ${name}.</li>`);
-  if(timing.keep!==null)rows.push(timing.keep>1e-9
-    ?`<li>Until then, keep <b>${disp(timing.keep)} ${name}</b> on hand: what the plan uses from your current stock. Anything above that you can sell now.</li>`
-    :`<li>The plan uses none of your current ${name} stock, so you can sell what you hold now.</li>`);
+  const rows=[],need=`<b>${disp(timing.required)} ${name}</b>`;
+  if(!timing.used)rows.push(`<li><b>Now</b> — this plan never uses ${name}.</li>`);
+  else if(timing.counted===null)rows.push(`<li>From <b>${fmtPlanClock(timing.freeAt)}</b>, when the plan stops drawing on ${name}.</li>`);
+  else if(timing.freeAt===0)rows.push(`<li><b>Now</b>, above ${need}: your stock already covers what the plan needs. Keep ${need} on hand until the plan spends them, and sell the rest.</li>`);
+  else{
+    rows.push(`<li>From <b>${fmtPlanClock(timing.freeAt)}</b> — by then you hold all ${need} the plan needs, and any made after that are spare.</li>`);
+    rows.push(`<li>Keep ${need} on hand until the plan spends them. Until <b>${fmtPlanClock(timing.freeAt)}</b> that means selling none: the plan needs ${timing.counted>0?`the <b>${disp(timing.counted)}</b> you hold now and `:""}every one it makes.</li>`);
+  }
   rows.push(`<li><b>${disp(chosen.credits)} credits/hr</b> selling ${name} once your lines are free${timing.end>0?` at <b>${fmtPlanClock(timing.end)}</b>`:""} — the Max credits/hr plan for it.</li>`);
   return {html:`<div class="sell-again">${head}
     <label class="sell-again-pick"><span class="proj-mini">Item</span><select id="sellAgainItem" aria-label="Item to sell again">${options}</select></label>
