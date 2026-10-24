@@ -45,7 +45,6 @@ const LEDGER_CHARACTERS=[
     {code:"CGMC-741e-324",costs:[{item:"Rods",qty:"950000000"},{item:"Glass",qty:"900000000"},{item:"Plates",qty:"1000000000"}],other:[]},
     {code:"CGMC-741e-344",costs:[{item:"Rods",qty:"7000000000"},{item:"Gel",qty:"5000000000"},{item:"Plates",qty:"9000000000"}],other:[]},
     {code:"CGMC-741e-364",costs:[{item:"Rods",qty:"650000000000"},{item:"Gel",qty:"815000000000"},{item:"Plates",qty:"500000000000"},{item:"Batteries",qty:"10000000"}],other:[]},
-    {code:"CGMC-741e-374",costs:[{item:"Rods",qty:"550000000000"},{item:"Gel",qty:"835000000000"},{item:"Bricks",qty:"500000000000"},{item:"Batteries",qty:"20000000"}],other:[]},
   ]},
   // {ledgerId:"caylris-en-divalone",name:"Caylris En Divalone",portrait:"assets/ledger-caylris-en-divalone.webp",ledgers:[
   //   {code:"CGMC-741e-228",costs:[],other:[{item:"Ardranite",qty:"10"}]},
@@ -73,8 +72,6 @@ const LEDGER_CHARACTERS=[
   //   {code:"CGMC-741e-339",costs:[],other:[{item:"Ardranite",qty:"500000000"}]},
   //   {code:"CGMC-741e-340",costs:[],other:[{item:"Azvelite",qty:"33300000"}]},
   //   {code:"CGMC-741e-356",costs:[],other:[{item:"Ardranite",qty:"325000000000"},{item:"Azvelite",qty:"925000000"}]},
-  //   {code:"CGMC-741e-381",costs:[],other:[{item:"Ardranite",qty:"10000000000000"}]},
-  //   {code:"CGMC-741e-382",costs:[],other:[{item:"Azvelite",qty:"1000000000000"}]},
   // ]},
   {ledgerId:"clank",name:"Clank",portrait:"assets/ledger-clank.webp",ledgers:[
     {code:"CGMC-741e-006",costs:[{item:"Glass",qty:"90"}],other:[]},
@@ -102,7 +99,6 @@ const LEDGER_CHARACTERS=[
     {code:"CGMC-741e-328",costs:[{item:"Batteries",qty:"4440000"},{item:"Reinforced Concrete",qty:"5550000"}],other:[]},
     {code:"CGMC-741e-348",costs:[{item:"Gel",qty:"100000000000"}],other:[]},
     {code:"CGMC-741e-368",costs:[{item:"Bits",qty:"30000000000000"},{item:"Concrete",qty:"30000000000000"},{item:"Frames",qty:"200000000000"}],other:[]},
-    {code:"CGMC-741e-378",costs:[{item:"Glass",qty:"2000000000000"},{item:"Bricks",qty:"2000000000000"},{item:"Reinforced Concrete",qty:"1000000000"}],other:[]},
   ]},
   {ledgerId:"donathan-creel",name:"Donathan Creel",portrait:"assets/ledger-donathan-creel.webp",ledgers:[
     {code:"CGMC-741e-002",costs:[{item:"Bits",qty:"325"}],other:[]},
@@ -123,7 +119,6 @@ const LEDGER_CHARACTERS=[
     {code:"CGMC-741e-322",costs:[{item:"Concrete",qty:"500000000000"},{item:"Bits",qty:"500000000000"}],other:[]},
     {code:"CGMC-741e-342",costs:[{item:"Gel",qty:"22000000000"},{item:"Bits",qty:"4000000000000"}],other:[]},
     {code:"CGMC-741e-362",costs:[{item:"Gel",qty:"650000000000"},{item:"Bits",qty:"7000000000000"},{item:"Batteries",qty:"10000000"}],other:[]},
-    {code:"CGMC-741e-372",costs:[{item:"Bits",qty:"8000000000000"},{item:"Bricks",qty:"650000000000"},{item:"Glass",qty:"200000000000"},{item:"Reinforced Concrete",qty:"30000000"}],other:[]},
   ]},
   // {ledgerId:"eidelaine-eeko",name:"Eidelaine Eeko",portrait:"assets/ledger-eidelaine-eeko.webp",ledgers:[
   //   {code:"CGMC-741e-034",costs:[],other:[{item:"Endurance Potion",qty:"3"}]},
@@ -179,7 +174,6 @@ const LEDGER_CHARACTERS=[
     {code:"CGMC-741e-327",costs:[{item:"Batteries",qty:"2000000"},{item:"Frames",qty:"7000000000"}],other:[{item:"Ardranite",qty:"800000000"},{item:"Azvelite",qty:"15000000"}]},
     {code:"CGMC-741e-347",costs:[{item:"Batteries",qty:"1750000"},{item:"Gel",qty:"33300000000"}],other:[{item:"Tokenium",qty:"5e58"}]},
     {code:"CGMC-741e-367",costs:[{item:"Bits",qty:"12000000000000"},{item:"Batteries",qty:"30000000"},{item:"Gel",qty:"333000000000"},{item:"Wire",qty:"11500000000"}],other:[]},
-    {code:"CGMC-741e-377",costs:[{item:"Plates",qty:"1200000000000"},{item:"Batteries",qty:"200000000"},{item:"Gel",qty:"6330000000000"},{item:"Wire",qty:"13500000000"}],other:[]},
   ]},
   // {ledgerId:"gerbo",name:"Gerbo",portrait:"assets/ledger-gerbo.webp",ledgers:[
   //   {code:"CGMC-741e-001",costs:[],other:[{item:"Worthless Rocks",qty:"100000"},{item:"Vespium",qty:"200"}]},
@@ -235,7 +229,6 @@ const LEDGER_CHARACTERS=[
     {code:"CGMC-741e-321",costs:[{item:"Reinforced Concrete",qty:"125000"},{item:"Batteries",qty:"88500"},{item:"Bricks",qty:"1500000000"},{item:"Glass",qty:"2000000000"}],other:[]},
     {code:"CGMC-741e-341",costs:[{item:"Reinforced Concrete",qty:"655000"},{item:"Batteries",qty:"600000"},{item:"Bricks",qty:"765000000"},{item:"Glass",qty:"1650000000"}],other:[]},
     {code:"CGMC-741e-361",costs:[{item:"Reinforced Concrete",qty:"50000000"},{item:"Bricks",qty:"200000000000"},{item:"Glass",qty:"300000000000"},{item:"Gel",qty:"500000000000"}],other:[]},
-    {code:"CGMC-741e-371",costs:[{item:"Reinforced Concrete",qty:"80000000"},{item:"Bricks",qty:"300000000000"},{item:"Glass",qty:"200000000000"},{item:"Frames",qty:"50000000000"}],other:[]},
   ]},
   // {ledgerId:"minalima-lin",name:"Minalima Lin",portrait:"assets/ledger-minalima-lin.webp",ledgers:[
   //   {code:"CGMC-741e-004",costs:[],other:[{item:"Jade",qty:"500"}]},
@@ -288,7 +281,6 @@ const LEDGER_CHARACTERS=[
     {code:"CGMC-741e-323",costs:[{item:"Reinforced Concrete",qty:"115000"},{item:"Bricks",qty:"700000000"},{item:"Batteries",qty:"70000"}],other:[]},
     {code:"CGMC-741e-343",costs:[{item:"Reinforced Concrete",qty:"1500000"}],other:[]},
     {code:"CGMC-741e-363",costs:[{item:"Reinforced Concrete",qty:"45000000"},{item:"Glass",qty:"400000000000"},{item:"Plates",qty:"200000000000"},{item:"Wire",qty:"5000000000"}],other:[]},
-    {code:"CGMC-741e-373",costs:[{item:"Reinforced Concrete",qty:"100000000"},{item:"Glass",qty:"500000000000"},{item:"Rods",qty:"225000000000"},{item:"Wire",qty:"7000000000"}],other:[]},
   ]},
   {ledgerId:"puri-puri",name:"Puri Puri",portrait:"assets/ledger-puri-puri.webp",ledgers:[
     {code:"CGMC-741e-011",costs:[{item:"Ingots",qty:"333"},{item:"Plates",qty:"333"},{item:"Rods",qty:"333"}],other:[]},
@@ -312,7 +304,6 @@ const LEDGER_CHARACTERS=[
     {code:"CGMC-741e-330",costs:[{item:"Plates",qty:"1150000000"},{item:"Rods",qty:"1300000000"},{item:"Frames",qty:"345000000"},{item:"Wire",qty:"53500000"}],other:[]},
     {code:"CGMC-741e-350",costs:[{item:"Plates",qty:"91500000000"},{item:"Rods",qty:"50000000000"},{item:"Frames",qty:"945000000"},{item:"Wire",qty:"735000000"}],other:[]},
     {code:"CGMC-741e-370",costs:[{item:"Plates",qty:"915000000000"},{item:"Rods",qty:"500000000000"},{item:"Frames",qty:"55000000000"},{item:"Wire",qty:"11500000000"}],other:[]},
-    {code:"CGMC-741e-380",costs:[{item:"Plates",qty:"815000000000"},{item:"Rods",qty:"600000000000"},{item:"Frames",qty:"65000000000"},{item:"Wire",qty:"12500000000"}],other:[]},
   ]},
   {ledgerId:"samos-sula",name:"Samos Sula",portrait:"assets/ledger-samos-sula.webp",ledgers:[
     {code:"CGMC-741e-046",costs:[{item:"Gel",qty:"50"}],other:[]},
@@ -332,7 +323,6 @@ const LEDGER_CHARACTERS=[
     {code:"CGMC-741e-326",costs:[{item:"Wire",qty:"1000000000"}],other:[]},
     {code:"CGMC-741e-346",costs:[{item:"Wire",qty:"1050000000"}],other:[]},
     {code:"CGMC-741e-366",costs:[{item:"Bits",qty:"8000000000000"},{item:"Batteries",qty:"15000000"},{item:"Wire",qty:"10000000000"}],other:[]},
-    {code:"CGMC-741e-376",costs:[{item:"Rods",qty:"800000000000"},{item:"Batteries",qty:"60000000"},{item:"Wire",qty:"20000000000"}],other:[]},
   ]},
   {ledgerId:"tank-timmerson",name:"Tank Timmerson",portrait:"assets/ledger-tank-timmerson.webp",ledgers:[
     {code:"CGMC-741e-003",costs:[{item:"Concrete",qty:"250"}],other:[]},
@@ -366,7 +356,6 @@ const LEDGER_CHARACTERS=[
     {code:"CGMC-741e-329",costs:[{item:"Plates",qty:"13000000000"},{item:"Frames",qty:"700000000"}],other:[{item:"Vespium",qty:"6.95e67"},{item:"Scorchium",qty:"9e31"}]},
     {code:"CGMC-741e-349",costs:[{item:"Plates",qty:"13000000000"},{item:"Frames",qty:"2000000000"}],other:[{item:"Vespium",qty:"2.95e71"},{item:"Scorchium",qty:"1e33"}]},
     {code:"CGMC-741e-369",costs:[{item:"Plates",qty:"400000000000"},{item:"Frames",qty:"50000000000"},{item:"Rods",qty:"200000000000"},{item:"Concrete",qty:"10000000000000"}],other:[]},
-    {code:"CGMC-741e-379",costs:[{item:"Plates",qty:"500000000000"},{item:"Frames",qty:"40000000000"},{item:"Rods",qty:"100000000000"},{item:"Glass",qty:"300000000000"}],other:[]},
   ]},
   // {ledgerId:"the-ether-hoarder",name:"The Ether Hoarder",portrait:"assets/ledger-the-ether-hoarder.webp",ledgers:[
   //   {code:"CGMC-741e-020",costs:[],other:[{item:"Ether",qty:"165"}]},
@@ -428,6 +417,5 @@ const LEDGER_CHARACTERS=[
     {code:"CGMC-741e-325",costs:[{item:"Plates",qty:"1500000000"},{item:"Batteries",qty:"100000"}],other:[{item:"Ardranite",qty:"5000000"}]},
     {code:"CGMC-741e-345",costs:[{item:"Rods",qty:"30000000000"},{item:"Batteries",qty:"1000000"}],other:[]},
     {code:"CGMC-741e-365",costs:[{item:"Gel",qty:"200000000000"},{item:"Rods",qty:"300000000000"},{item:"Batteries",qty:"20000000"},{item:"Wire",qty:"7000000000"}],other:[]},
-    {code:"CGMC-741e-375",costs:[{item:"Gel",qty:"2000000000000"},{item:"Batteries",qty:"100000000"}],other:[]},
   ]},
 ];

@@ -14,7 +14,11 @@
  *
  * DISABLED characters ask only for materials the planner does not craft. They are written as
  * commented-out entries so turning one on is a matter of removing it from this list and
- * regenerating. */
+ * regenerating.
+ *
+ * MAX_LEDGER_NUMBER keeps ledgers no player has reached yet out of the shipped data altogether, so
+ * the page cannot spoil them. A ledger's number is the trailing digits of its order code. Raise it
+ * and regenerate as players get further. */
 const fs = require("fs");
 const path = require("path");
 
@@ -48,6 +52,7 @@ const OTHER = {
   DetectionPotion: "Detection Potion",
 };
 const DISABLED = new Set(["bertha", "caylris-en-divalone", "eidelaine-eeko", "gerbo", "minalima-lin", "the-ether-hoarder", "the-twins"]);
+const MAX_LEDGER_NUMBER = 370;
 const QUANTITY = /^(?:\d+(?:\.\d+)?)(?:e\d+)?$/;
 
 const slug = name => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -71,6 +76,11 @@ function parse(csvText) {
     const cells = line.split(",");
     const name = cells[at.name].trim(), number = Number(cells[at.number]), count = Number(cells[at.count]);
     if (!name || !Number.isInteger(number) || number < 1) throw new Error(`Row ${row + 2}: unreadable character or ledger number`);
+    const code = cells[at.code].trim(), codeMatch = code.match(/(\d+)$/);
+    if (!codeMatch) throw new Error(`Row ${row + 2}: order code "${code}" has no number`);
+    // Past the cutoff the ledger is left out. Each character's ledgers rise in number, so this only
+    // ever trims the end of a character's list; a cut that left a hole fails the check below.
+    if (Number(codeMatch[1]) > MAX_LEDGER_NUMBER) return;
     const costs = [], other = [];
     for (let n = 1; n <= count; n++) {
       const material = cells[column(`material_${n}`)].trim(), amount = cells[column(`amount_${n}`)].trim();
@@ -81,7 +91,7 @@ function parse(csvText) {
     }
     const id = slug(name);
     if (!characters.has(id)) characters.set(id, { ledgerId: id, name, ledgers: [] });
-    characters.get(id).ledgers.push({ number, code: cells[at.code].trim(), costs, other });
+    characters.get(id).ledgers.push({ number, code, costs, other });
   });
   return [...characters.values()].sort((a, b) => a.name.localeCompare(b.name)).map(character => {
     character.ledgers.sort((a, b) => a.number - b.number);
@@ -140,4 +150,4 @@ if (require.main === module) {
     `${characters.reduce((sum, c) => sum + c.ledgers.length, 0)} ledgers\n`);
 }
 
-module.exports = { parse, render, CRAFTABLE, OTHER, DISABLED };
+module.exports = { parse, render, CRAFTABLE, OTHER, DISABLED, MAX_LEDGER_NUMBER };
