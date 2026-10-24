@@ -48,6 +48,7 @@ function solveStateKey(state){
   // The fit-in-time settings change only what that search asks, never a plan.
   delete snapshot.fitHours;
   delete snapshot.fitBudget;
+  delete snapshot.fitForced;
   delete snapshot.targetSaved;
   delete snapshot.targetActiveId;
   if(Array.isArray(snapshot.projects))snapshot.projects.forEach(project=>{if(project&&typeof project==="object")delete project._open;});

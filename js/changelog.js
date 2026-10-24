@@ -12,7 +12,8 @@
 const CHANGELOG=[
   {version:"2026.10.24.2",date:"2026-10-24",groups:{
     Added:[
-      "Include next, on a ledger card. Enter how many of the character's following ledgers to plan along with the one they are on, and Project plan crafts them together in one run. Turned in moves the whole run on by one ledger. What fits in a time limit counts each included ledger, and Use this selection sets Include next to the ones that fit."
+      "Include next, on a ledger card. Enter how many of the character's following ledgers to plan along with the one they are on, and Project plan crafts them together in one run. Turned in moves the whole run on by one ledger. What fits in a time limit counts each included ledger, and Use this selection sets Include next to the ones that fit.",
+      "Must finish, in What fits in a time limit. Add the projects or ledgers that have to be in the answer and the search fits everything else around them. If they can't finish in time on their own, it tells you how long they take."
     ],
     Changed:[
       "Ledgers are numbered as the game numbers them, by their order code: CGMC-741e-344 is #344.",

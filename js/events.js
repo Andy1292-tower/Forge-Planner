@@ -1477,6 +1477,10 @@ document.getElementById("results").addEventListener("input",e=>{
 document.getElementById("results").addEventListener("change",e=>{
   const t=e.target;if(!t||!t.getAttribute)return;let v;
   // Plan-start anchor: display-only, so repaint from cache (no solve).
+  if(t.id==="fitForcedAdd"){
+    const id=t.value;if(!id||!(S.projects||[]).some(p=>p.id===id))return;
+    mutateState(st=>{if(!st.fitForced.includes(id))st.fitForced.push(id);});save();repaintFit();return;
+  }
   if(t.id==="fitBudget"){const checked=validateFieldValue(FIELD_SCHEMA.fitBudget,Number(t.value));if(checked.valid){mutateState(st=>{st.fitBudget=checked.value;});save();}else t.value=String(S.fitBudget);return;}
   if(t.id==="sellAgainItem"){_sellItemChoice=t.value;repaintProject();const pick=document.getElementById("sellAgainItem");if(pick)pick.focus();return;}
   if(t.id==="spStart"){const val=t.value,ms=val?new Date(val).getTime():null;if(!val||!isNaN(ms))mutateState(st=>{st.planStart=ms;});save();repaintProject();return;}
@@ -1507,6 +1511,12 @@ document.getElementById("results").addEventListener("click",e=>{
   const lineMode=cl("[data-linemode]");
   if(lineMode){setProjectLineMode(lineMode.getAttribute("data-linemode"));return;}
   // Plan-start "Now" — re-anchor the clock to the current moment (display only).
+  const unforce=cl("[data-fit-unforce]");
+  if(unforce){
+    const id=unforce.getAttribute("data-fit-unforce");
+    mutateState(st=>{st.fitForced=(st.fitForced||[]).filter(x=>x!==id);});save();repaintFit();
+    const pick=document.getElementById("fitForcedAdd");if(pick)pick.focus();return;
+  }
   if(cl("#btnFitRun")){startFit();return;}
   if(cl("#btnFitStop")){stopFit();return;}
   if(cl("#btnFitApply")){applyFitSelection();return;}

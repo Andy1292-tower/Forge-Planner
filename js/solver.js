@@ -3842,6 +3842,10 @@ function optimizeProjectTop(testOptions){
  * limit the search works to. Search and check repeat until the limit is settled; the answer is the
  * best set whose real plan finished in time.
  *
+ * Must-finish projects (S.fitForced) are in every set, taken whole, together with any in-list
+ * unlock their levels wait on; the search fits the rest around them. When they alone miss the
+ * limit, the answer is that set and says so.
+ *
  * Each shard starts the search from a different order (FIT_STRATEGIES) and spends what is left of
  * its search time on seeded random restarts; the page keeps the best verified answer. */
 const FIT_STRATEGIES=Object.freeze(["marginal","order","standalone","random"]);
@@ -3901,6 +3905,16 @@ function optimizeFit(testOptions,shard){
   if(!chains.length)return {empty:true,mode:"project",task:"fit",hours,selection:[],count:0,ms:performance.now()-t0};
   const control=makeSolveControl(budget,testOptions),lpMemo=makeLpMemo(),isStatic=S.projLineMode==="static";
   const inv=projectInitialInventory(),estimates=new Map();
+  // The floor every set starts from: must-finish chains whole, then the unlocks they wait on, whole.
+  const floor=chains.map(()=>0),required=chains.map(()=>null);
+  const wanted=new Set(Array.isArray(S.fitForced)?S.fitForced:[]);
+  chains.forEach((c,i)=>{if(wanted.has(c.id)){floor[i]=c.levels.length;required[i]="chosen";}});
+  for(let changed=true;changed;){
+    changed=false;
+    chains.forEach((c,i)=>{for(let k=0;k<floor[i];k++)c.levels[k].gates.forEach(u=>{
+      if(floor[u]<chains[u].levels.length){floor[u]=chains[u].levels.length;required[u]=required[u]||"unlock";changed=true;}
+    });});
+  }
   // `limit` is the estimate a set must come in under. It starts at the real limit and moves once the
   // full plan checks show how far the estimate sits below an executable schedule.
   let tried=0,limit=hours,searchUntil=control.startedAt+budget*FIT_SEARCH_SHARE;
@@ -3972,7 +3986,7 @@ function optimizeFit(testOptions,shard){
     let best=score(n),moved=true;
     while(moved&&searchOpen()){
       moved=false;
-      const order=chains.map((_,i)=>i).filter(i=>best.n[i]>0);
+      const order=chains.map((_,i)=>i).filter(i=>best.n[i]>floor[i]);
       if(random)order.sort(()=>random()-0.5);
       for(const i of order){
         if(!searchOpen())break;
@@ -3983,23 +3997,25 @@ function optimizeFit(testOptions,shard){
     }
     return best;
   };
-  // A set cut back inside the limit by dropping, each time, the last level that saves the most.
+  // A set cut back inside the limit by dropping, each time, the last level that saves the most. It
+  // never cuts into the floor.
   const shrink=n=>{
     let current=score(settle(n));
-    while(current.count>0&&!(current.eta<=limit)){
+    while(!(current.eta<=limit)){
       let next=null;
       current.n.forEach((k,i)=>{
-        if(!k)return;const trial=current.n.slice();trial[i]=k-1;
+        if(k<=floor[i])return;const trial=current.n.slice();trial[i]=k-1;
         const cut=score(settle(trial));
         if(!next||cut.eta<next.eta||(cut.eta===next.eta&&better(cut,next)))next=cut;
       });
+      if(!next)break;
       current=next;
     }
     return current;
   };
   const strategy=FIT_STRATEGIES[strategyIndex%FIT_STRATEGIES.length];
-  const zero=chains.map(()=>0);
-  const space=chains.reduce((product,c)=>product*(c.levels.length+1),1);
+  const zero=floor.slice(),zeroKey=zero.join(",");
+  const space=chains.reduce((product,c,i)=>product*(c.levels.length-floor[i]+1),1);
   let exhaustive=space<=FIT_EXHAUSTIVE_SETS;
   // The best set under the current limit. Few enough sets are simply all tried; otherwise the shard's
   // strategy, then seeded random restarts until they keep landing on sets already scored.
@@ -4008,7 +4024,7 @@ function optimizeFit(testOptions,shard){
     if(exhaustive){
       const n=zero.slice();
       for(let index=0;index<space;index++){
-        let rest=index;chains.forEach((c,i)=>{n[i]=rest%(c.levels.length+1);rest=Math.floor(rest/(c.levels.length+1));});
+        let rest=index;chains.forEach((c,i)=>{const radix=c.levels.length-floor[i]+1;n[i]=floor[i]+rest%radix;rest=Math.floor(rest/radix);});
         if(settle(n).join(",")!==n.join(","))continue;
         const candidate=score(n.slice());
         if(!Number.isFinite(candidate.eta)&&!searchOpen()){exhaustive=false;break;}
@@ -4046,7 +4062,7 @@ function optimizeFit(testOptions,shard){
    * plan, so the next limit is scaled down by that much; after that the limit bisects between the
    * highest one whose set ran on time and the lowest one whose set did not. A set already checked is
    * not checked again — its answer moves the bracket directly. */
-  let candidate=search(null),verified=null,okLimit=0,failLimit=Infinity,checks=0;
+  let candidate=search(null),verified=null,okLimit=0,failLimit=Infinity,checks=0,forcedOver=null;
   const outcomes=new Map();
   for(let round=0;round<FIT_MAX_ROUNDS&&candidate.count>0&&!control.isStopped();round++){
     const key=candidate.n.join(",");
@@ -4063,6 +4079,8 @@ function optimizeFit(testOptions,shard){
         if(!verified||better(entry,verified))verified=entry;
       }
     }
+    // Every set holds the floor, so a floor that runs over on its own means nothing can fit.
+    if(!outcome.ok&&key===zeroKey){forcedOver={real:Number.isFinite(outcome.real)?outcome.real:null};break;}
     if(outcome.ok){okLimit=Math.max(okLimit,limit);if(failLimit===Infinity)break;}
     else failLimit=Math.min(failLimit,limit);
     let next=!outcome.ok&&Number.isFinite(outcome.real)&&candidate.eta>0
@@ -4084,10 +4102,11 @@ function optimizeFit(testOptions,shard){
   }
   return {empty:false,mode:"project",task:"fit",hours,strategy:exhaustive?"every set":strategy,exhaustive,tried,checks,
     selection:chains.map((c,i)=>({id:c.id,name:c.name,ledger:c.ledger,prio:c.prio,taken:chosen.n[i],remaining:c.levels.length,
-      finished:c.prefix[chosen.n[i]],
+      finished:c.prefix[chosen.n[i]],required:required[i],
       fromLevel:c.start+1,toLevel:c.start+chosen.n[i],levelCount:c.levelCount,finish:finish[c.id]!=null?finish[c.id]:null})),
     count:chosen.count,rank:chosen.rank,estimateEta:Number.isFinite(chosen.eta)?chosen.eta:null,
     verified:!!verified||chosen.count===0,eta:run?run.eta:(chosen.count===0?0:null),
+    forcedOver:forcedOver?{real:forcedOver.real,estimate:Number.isFinite(candidate.eta)?candidate.eta:null}:null,
     deadlineReached:control.deadlineReached(),ms:performance.now()-t0};
 }
 
