@@ -223,18 +223,20 @@ test("the next thing past the limit is the quickest one more step, checked as a 
   assert.equal(res.extra, null, "the extra-hours list is off");
 });
 
-test("with extra hours, every next step inside them is listed with its plan time", () => {
-  const ab = fit([A, B], 100000), abd = fit([A, B, D], 100000), abc = fit([A, B, C], 100000);
+test("with extra hours, the list grows one step at a time, each plan holding the one before", () => {
+  const ab = fit([A, B], 100000), abd = fit([A, B, D], 100000), abcd = fit([A, B, C, D], 100000);
   const hours = ab.eta * 1.001;
   const wide = fit([A, B, C, D], hours, [], { fitExtra: true, fitExtraHours: 1000 });
   assert.equal(wide.extra.hours, 1000);
-  assert.deepEqual(wide.extra.items.map(item => item.id), ["d", "c"], "quickest first");
+  assert.deepEqual(wide.extra.items.map(item => [item.id, item.count]), [["d", 3], ["c", 4]], "the quicker step first");
   assert.ok(wide.extra.items.every(item => item.checked));
-  assert.ok(Math.abs(wide.extra.items[1].eta - abc.eta) < 1e-6 * abc.eta);
+  assert.ok(Math.abs(wide.extra.items[0].eta - abd.eta) < 1e-6 * abd.eta, "the first plan is the answer and D");
+  assert.ok(Math.abs(wide.extra.items[1].eta - abcd.eta) < 1e-6 * abcd.eta, "the second adds C to that, not to the answer");
+  assert.equal(wide.extra.cut, false);
   assert.equal(wide.next, null, "the single next step is off");
   const narrow = fit([A, B, C, D], hours, [], { fitExtra: true, fitExtraHours: Math.max(0.5, (abd.eta - hours) * 1.5) });
   assert.ok(narrow.extra.items.every(item => item.eta <= hours + narrow.extra.hours));
-  assert.ok(!narrow.extra.items.some(item => item.id === "c") || abc.eta <= hours + narrow.extra.hours);
+  assert.ok(!narrow.extra.items.some(item => item.id === "c") || abcd.eta <= hours + narrow.extra.hours);
 });
 
 test("past the limit says when nothing is left, and when nothing lands inside the window", () => {
@@ -300,8 +302,11 @@ test("every past-the-limit outcome reads as a sentence, never a blank", () => {
   assert.match(html({ next: { status: "time" }, extra: { status: "time", hours: 5, items: [] } }), /ran out[\s\S]*The search time ran out/);
   assert.match(html({ extra: { status: "listed", hours: 5, items: [] } }), /Nothing else in your list finishes within 5h more/);
   const ledger = { name: "Clank", ledger: true, number: 308, ticked: false, checked: true, eta: 30, over: 2 };
-  assert.match(html({ extra: { status: "listed", hours: 5, items: [ledger] } }), /Clank ledger #308 <span class="proj-mini">· not ticked<\/span>/);
-  assert.match(html({ inside: [Object.assign({}, ledger, { eta: 20, over: 0 })] }), /Also fits inside your limit:<\/b> Clank ledger #308/);
+  const listed = html({ extra: { status: "listed", hours: 5, items: [Object.assign({ count: 6 }, ledger)] } });
+  assert.match(listed, /Clank ledger #308 <span class="proj-mini">· not ticked<\/span><\/td><td class="num mono">6<\/td>/);
+  assert.match(listed, /Each row adds one more to the plan above it/);
+  assert.match(html({ extra: { status: "listed", cut: true, hours: 5, items: [Object.assign({ count: 6 }, ledger)] } }), /ran out before the list reached 5h more/);
+  assert.match(html({ inside: [Object.assign({}, ledger, { eta: 20, over: 0 })] }), /Also fits inside your limit:<\/b> Clank ledger #308 .* — with it the plan takes <b>20h<\/b>/);
   assert.equal(html({}), "", "with both boxes off there is nothing to say");
 });
 
