@@ -1464,6 +1464,7 @@ function repaintProject(){
 document.getElementById("results").addEventListener("input",e=>{
   const t=e.target;if(!t||!t.getAttribute)return;let v;
   // The fit-in-time hours ask a different question of the same plan, so they only save.
+  if(t.id==="fitExtraHours"){const result=commitFieldDraft(t,FIELD_SCHEMA.fitExtraHours,S.fitExtraHours,(st,value)=>{st.fitExtraHours=value;});if(result.committed)save();return;}
   if(t.id==="fitHours"){const result=commitFieldDraft(t,FIELD_SCHEMA.fitHours,S.fitHours,(st,value)=>{st.fitHours=value;});if(result.committed)save();return;}
   // Parse the two visible endpoints as one draft transaction. Either correction can make both
   // drafts valid; only then are both accepted together, without rebuilding the focused row.
@@ -1477,6 +1478,9 @@ document.getElementById("results").addEventListener("input",e=>{
 document.getElementById("results").addEventListener("change",e=>{
   const t=e.target;if(!t||!t.getAttribute)return;let v;
   // Plan-start anchor: display-only, so repaint from cache (no solve).
+  if(t.id==="fitNext"||t.id==="fitExtra"){
+    const key=t.id,on=t.checked;mutateState(st=>{st[key]=on;});save();repaintFit();return;
+  }
   if(t.id==="fitForcedAdd"){
     const id=t.value;if(!id||!(S.projects||[]).some(p=>p.id===id))return;
     mutateState(st=>{if(!st.fitForced.includes(id))st.fitForced.push(id);});save();repaintFit();return;

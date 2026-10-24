@@ -394,9 +394,11 @@ function solveServiceStatus(){return typeof solveService!=="undefined"?solveServ
 function fitRunning(){const status=solveServiceStatus();return !!(_fitRun&&status.active&&status.generation===_fitRun.generation);}
 // Anything but the background sell ranking still solving would be superseded by a search.
 function fitBlockedBySolve(){const status=solveServiceStatus();return status.active&&!status.follow&&!fitRunning();}
-// The must-finish list an answer was searched with. Not part of the solve key, which is about plans,
-// so an answer also goes out of date when this list changes.
-function fitForcedKey(){return [...(S.fitForced||[])].sort().join(",");}
+// The must-finish list and past-the-limit settings an answer was searched with. Not part of the
+// solve key, which is about plans, so an answer also goes out of date when any of them changes.
+function fitForcedKey(){
+  return [[...(S.fitForced||[])].sort().join(","),S.fitNext===true,S.fitExtra===true,S.fitExtra===true?S.fitExtraHours:""].join("|");
+}
 function fitResultCurrent(entry){return !!entry&&entry.key===solveStateKey(S)&&entry.forced===fitForcedKey();}
 function startFit(){
   if(fitRunning()||fitBlockedBySolve())return;
@@ -454,6 +456,33 @@ function fitSelectionRowHtml(r){
     :r.required==="unlock"?' <span class="pill" style="font-size:9px">needed to unlock</span>':"";
   return `<tr><td>${name}${why}</td><td>${levels}</td><td class="num mono">${r.finish!=null?fmtPlanClock(r.finish):"—"}</td></tr>`;
 }
+// What one past-the-limit step adds: the project level, or the ledger, it takes the answer to.
+function fitPastLabel(item){
+  const name=htmlText(item.name);
+  if(item.ledger)return item.levelCount>1?`${name} <span class="proj-mini">· ledger ${item.taken} of ${item.levelCount}</span>`:name;
+  return `${name} lv ${item.toLevel}`;
+}
+function fitPastHtml(res){
+  let html="";
+  const next=res.next;
+  if(next&&next.status!=="all"){
+    const body=next.status==="found"
+      ?`${fitPastLabel(next)} — with it the plan takes <b>${fmtDuration(next.eta)}</b>, done by <b>${fmtPlanClock(next.eta)}</b>, <b>${fmtDuration(next.over)}</b> past your limit.`
+      :next.status==="time"?"the search time ran out before it could be checked. Give it more search time."
+      :`nothing else finishes within ${FIT_NEXT_WINDOW_HOURS} hours of your limit.`;
+    html+=`<div class="fit-next"><b>Next past the limit:</b> ${body}</div>`;
+  }
+  const extra=res.extra;
+  if(extra&&extra.status!=="all"){
+    html+=`<div class="subhead">With up to ${fmtDuration(extra.hours)} more</div>`;
+    html+=extra.items.length
+      ?`<table class="fit-table"><thead><tr><th>Adds</th><th class="num">Plan takes</th><th class="num">Past the limit</th></tr></thead><tbody>${extra.items.map(item=>
+        `<tr><td>${fitPastLabel(item)}</td><td class="num mono">${item.checked?fmtDuration(item.eta):`at least ${fmtDuration(item.eta)}`}</td><td class="num mono">${item.checked?"+"+fmtDuration(item.over):"not checked"}</td></tr>`).join("")}</tbody></table>
+        ${extra.items.some(item=>!item.checked)?'<div class="proj-mini" style="margin-top:4px">Unchecked rows ran out of search time; their time is a lower bound.</div>':""}`
+      :`<div class="proj-mini">Nothing else finishes within ${fmtDuration(extra.hours)} more.</div>`;
+  }
+  return html;
+}
 function fitResultHtml(entry,current){
   if(entry.error)return `<div class="notice warn" style="font-size:11.5px"><b>The search stopped.</b> ${htmlText(entry.error)}</div>`;
   const res=entry.res;
@@ -480,7 +509,7 @@ function fitResultHtml(entry,current){
   const apply=!(current&&res.verified&&res.count>0&&missed.length>0)?""
     :fitSelectionApplied(res)?`<div class="proj-mini" style="margin-top:6px">Your project list matches this selection.</div>`
     :`<button class="btn ghost" type="button" id="btnFitApply" style="margin-top:8px">Use this selection</button>`;
-  return `${stale}<p style="margin:0 0 8px;font-size:12px;color:var(--ink2);line-height:1.5">${head}</p>${table}${missedText}${how}${apply}`;
+  return `${stale}<p style="margin:0 0 8px;font-size:12px;color:var(--ink2);line-height:1.5">${head}</p>${table}${missedText}${fitPastHtml(res)}${how}${apply}`;
 }
 // The ticked projects the answer has to include, as removable chips, and a picker for the rest.
 function fitForcedHtml(running){
@@ -491,6 +520,17 @@ function fitForcedHtml(running){
   const rest=ticked.filter(p=>!forced.has(p.id));
   const add=rest.length?`<select id="fitForcedAdd" aria-label="Add a project or ledger that must finish"${off}><option value="" selected>+ Add…</option>${rest.map(p=>`<option value="${htmlAttribute(p.id)}">${htmlText(p.name)}</option>`).join("")}</select>`:"";
   return `<div class="fit-forced"><span class="fit-forced-l">Must finish</span>${chips||'<span class="proj-mini">nothing yet</span>'}${add}</div>`;
+}
+// Mirrors FIT_NEXT_WINDOW in js/solver.js, which this realm may not load.
+const FIT_NEXT_WINDOW_HOURS=12;
+// What to look at past the limit: the next step alone, and everything within extra hours.
+function fitPastControlsHtml(running){
+  const off=running?" disabled":"",errorId="field-fit-extra-hours-error";
+  return `<div class="fit-past">
+    <label class="fit-check"><input type="checkbox" id="fitNext"${S.fitNext?" checked":""}${off}> Show the next thing past the limit, if it finishes within ${FIT_NEXT_WINDOW_HOURS} hours of it</label>
+    <label class="fit-check"><input type="checkbox" id="fitExtra"${S.fitExtra?" checked":""}${off}> List what else finishes with up to
+      <span class="field-stack"><input type="text" id="fitExtraHours" ${htmlFieldInputAttributes(FIELD_SCHEMA.fitExtraHours)} value="${htmlAttribute(String(S.fitExtraHours))}" data-field-error="${errorId}" aria-label="Extra hours to look past the limit"${off}><span class="field-error" id="${errorId}" aria-live="polite" aria-atomic="true"></span></span> more hours</label>
+  </div>`;
 }
 function fitBoxHtml(){
   const running=fitRunning(),blocked=fitBlockedBySolve();
@@ -514,6 +554,7 @@ function fitBoxHtml(){
         ${action}
       </div>
       ${fitForcedHtml(running)}
+      ${fitPastControlsHtml(running)}
       <p class="help" style="margin:8px 0 10px">A heavy solve: it tries many combinations of your ticked projects and ledgers against the time limit, then checks the best as a full plan. Anything under <b>Must finish</b> is always in the answer, and the rest is fitted around it. It runs for up to the search time you pick on up to ${cores} CPU core${cores===1?"":"s"}, and only when you press <b>Find what fits</b>.</p>
       <div id="fitBody">${body}</div>
     </div>

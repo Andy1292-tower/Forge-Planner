@@ -62,6 +62,7 @@ const FIELD_SCHEMA=Object.freeze({
   margin:_field("number",_FIELD_DEFAULTS.margin,{min:0,max:20,allowBlank:false,notation:"decimal",inputMode:"decimal",label:"May-work margin"}),
   solveBudget:_field("integer",_FIELD_DEFAULTS.solveBudget,{min:200,max:60000,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"solve time in milliseconds"}),
   fitHours:_field("number",_FIELD_DEFAULTS.fitHours,{min:0.1,max:100000,allowBlank:false,notation:"decimal",inputMode:"decimal",label:"hours to finish within"}),
+  fitExtraHours:_field("number",_FIELD_DEFAULTS.fitExtraHours,{min:0.5,max:1000,allowBlank:false,notation:"decimal",inputMode:"decimal",label:"extra hours to look past the limit"}),
   fitBudget:_field("integer",_FIELD_DEFAULTS.fitBudget,{min:10000,max:300000,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"fit-in-time search time in milliseconds"}),
   baseTime:_field("number",null,{min:1e-6,max:1e15,allowBlank:false,notation:"decimal",inputMode:"decimal",label:"base craft time"}),
   baseTimeRev:_field("integer",CURRENT_BASE_TIME_REVISION,{min:0,max:CURRENT_BASE_TIME_REVISION+10,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"base-time revision"}),
