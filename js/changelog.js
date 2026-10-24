@@ -10,6 +10,10 @@
  * left out rather than padded in.
  */
 const CHANGELOG=[
+  {version:"2026.10.24.2",date:"2026-10-24",groups:{
+    Added:["Include next, on a ledger card. Enter how many of the character's following ledgers to plan along with the one they are on, and Project plan crafts them together in one run. Turned in moves the whole run on by one ledger. What fits in a time limit counts each included ledger, and Use this selection sets Include next to the ones that fit."],
+    Changed:["Ledgers are numbered as the game numbers them, by their order code: CGMC-741e-344 is #344."],
+    Removed:["Caylris En Divalone's ledger card. None of their ledgers ask for anything the planner crafts."]}},
   {version:"2026.10.24",date:"2026-10-24",groups:{
     Added:[
       "Ledgers, in Projects+Prices → Projects. Each character who posts ledgers on the Exchange has a card: pick the ledger they are on and its craftable items go into your Project plan, with any mined resources or potions it also asks for listed beside them. Turned in moves the card to the next ledger. For a ledger the planner doesn't have yet, choose Not listed and type its items in.",

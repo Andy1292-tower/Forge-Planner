@@ -383,8 +383,9 @@ function startFit(){
   repaintFit();
 }
 function stopFit(){if(fitRunning())solveService.cancel("Fit-in-time search stopped");}
-// Tick off what does not fit and lower each partly-fitting project's end level to match. The list
-// is then exactly the answer's, so the answer stays current over it.
+// Tick off what does not fit and lower each partly-fitting project's end level to match — for a
+// ledger card, how many of the following ledgers it includes. The list is then exactly the answer's,
+// so the answer stays current over it.
 function applyFitSelection(){
   const entry=_fitResult;if(!entry||!entry.res||entry.key!==solveStateKey(S))return;
   const rows=entry.res.selection||[];
@@ -397,7 +398,7 @@ function applyFitSelection(){
   mutateState(st=>{rows.forEach(r=>{
     const p=(st.projects||[]).find(x=>x.id===r.id);if(!p)return;
     if(r.taken===0){p.on=false;return;}
-    if(!p.ledgerId&&r.taken<r.remaining)p.to=r.toLevel;
+    if(r.taken<r.remaining){if(p.ledgerId)p.ledgerAhead=r.toLevel-1;else p.to=r.toLevel;}
   });});
   if(typeof markInputEdited==="function")markInputEdited("projects",["project"]);
   entry.key=solveStateKey(S);
@@ -408,12 +409,15 @@ function fitSelectionApplied(res){
   return (res.selection||[]).every(r=>{
     const p=(S.projects||[]).find(x=>x.id===r.id);if(!p)return true;
     if(r.taken===0)return !p.on;
-    return p.on&&(p.ledgerId||r.taken===r.remaining||Number(p.to)===r.toLevel);
+    if(r.taken===r.remaining)return p.on;
+    return p.on&&(p.ledgerId?Number(p.ledgerAhead)===r.toLevel-1:Number(p.to)===r.toLevel);
   });
 }
 function fitSelectionRowHtml(r){
   const name=htmlText(r.name);
-  const levels=r.ledger?"ledger":r.remaining===1?`lv ${r.fromLevel}`:`lv ${r.fromLevel} → ${r.toLevel} <span class="proj-mini">· ${r.taken} of ${r.remaining}</span>`;
+  const levels=r.ledger
+    ?(r.remaining===1?"ledger":`${r.taken} of ${r.remaining} ledgers`)
+    :r.remaining===1?`lv ${r.fromLevel}`:`lv ${r.fromLevel} → ${r.toLevel} <span class="proj-mini">· ${r.taken} of ${r.remaining}</span>`;
   return `<tr><td>${name}</td><td>${levels}</td><td class="num mono">${r.finish!=null?fmtPlanClock(r.finish):"—"}</td></tr>`;
 }
 function fitResultHtml(entry,current){
@@ -421,7 +425,8 @@ function fitResultHtml(entry,current){
   const res=entry.res;
   if(res.empty)return `<div class="proj-mini">Nothing is ticked, so there is nothing to fit.</div>`;
   const stale=current?"":`<div class="notice info" style="font-size:11.5px">Your projects or factory changed since this search ran. Run it again for an up-to-date answer.</div>`;
-  const ledgers=res.selection.filter(r=>r.ledger&&r.taken>0).length,levels=res.count-ledgers;
+  const finished=r=>r.finished!=null?r.finished:r.taken;
+  const ledgers=res.selection.filter(r=>r.ledger).reduce((sum,r)=>sum+finished(r),0),levels=res.count-ledgers;
   const named=[levels?`${levels} project level${levels===1?"":"s"}`:"",ledgers?`${ledgers} ledger${ledgers===1?"":"s"}`:""].filter(Boolean).join(" and ");
   let head;
   if(!res.count)head=`Nothing on your list finishes within <b>${fmtDuration(res.hours)}</b>.`;
@@ -429,7 +434,7 @@ function fitResultHtml(entry,current){
   else head=`<b>${named}</b> look likely to finish within <b>${fmtDuration(res.hours)}</b> (about <b>${fmtDuration(res.estimateEta)}</b>). The search time ran out before this was checked as a full plan, so treat it as a guide, or give it more search time.`;
   const taken=res.selection.filter(r=>r.taken>0),missed=res.selection.filter(r=>r.taken<r.remaining);
   const table=taken.length?`<table class="fit-table"><thead><tr><th>Finishes</th><th>Levels</th><th class="num">Done by</th></tr></thead><tbody>${taken.map(fitSelectionRowHtml).join("")}</tbody></table>`:"";
-  const missedText=missed.length?`<div class="proj-mini" style="margin-top:6px">Doesn't fit: ${missed.map(r=>htmlText(r.name)+(r.taken>0?` (lv ${r.toLevel+1} on)`:"")).join(", ")}.</div>`:"";
+  const missedText=missed.length?`<div class="proj-mini" style="margin-top:6px">Doesn't fit: ${missed.map(r=>htmlText(r.name)+(r.taken>0?(r.ledger?` (the last ${r.remaining-r.taken})`:` (lv ${r.toLevel+1} on)`):"")).join(", ")}.</div>`:"";
   const how=`<div class="proj-mini" style="margin-top:6px">${res.exhaustive?"Every combination was tried":`Tried ${res.tried} combinations${res.shards>1?` across ${res.shards} workers`:""}`}.</div>`;
   const apply=!(current&&res.verified&&res.count>0&&missed.length>0)?""
     :fitSelectionApplied(res)?`<div class="proj-mini" style="margin-top:6px">Your project list matches this selection.</div>`

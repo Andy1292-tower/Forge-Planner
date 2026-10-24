@@ -466,7 +466,11 @@ function validateAndMigrate(candidate){
         if(_own(copied,"catId"))_pushError(errors,path+".ledgerId","must not be set on a catalog project");
         const ledgerNo=_own(project,"ledgerNo")?_readData(project,"ledgerNo",path+".ledgerNo",errors):null;
         copied.ledgerNo=ledgerNo===null?null:_number(ledgerNo,FIELD_SCHEMA.ledgerNumber,path+".ledgerNo",errors);
-      }else if(_own(project,"ledgerNo"))_pushError(errors,path+".ledgerNo","is only valid on a ledger");
+        if(_own(project,"ledgerAhead"))copied.ledgerAhead=_number(_readData(project,"ledgerAhead",path+".ledgerAhead",errors),FIELD_SCHEMA.ledgerAhead,path+".ledgerAhead",errors);
+      }else{
+        if(_own(project,"ledgerNo"))_pushError(errors,path+".ledgerNo","is only valid on a ledger");
+        if(_own(project,"ledgerAhead"))_pushError(errors,path+".ledgerAhead","is only valid on a ledger");
+      }
       if(_own(project,"description"))copied.description=_string(_readData(project,"description",path+".description",errors),FIELD_SCHEMA.projectDescription,path+".description",errors);
       if(_own(project,"_open"))copied._open=_boolean(_readData(project,"_open",path+"._open",errors),path+"._open",errors);
       out.projects.push(copied);

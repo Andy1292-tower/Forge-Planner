@@ -98,6 +98,7 @@ const FIELD_SCHEMA=Object.freeze({
   projectPriority:_field("integer",null,{min:1,max:1e6,allowBlank:true,notation:"decimal",inputMode:"numeric",label:"project order"}),
   projectDone:_field("integer",0,{min:0,max:1e6,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"completed project levels"}),
   ledgerNumber:_field("integer",null,{min:1,max:1e6,allowBlank:true,notation:"decimal",inputMode:"numeric",label:"ledger number"}),
+  ledgerAhead:_field("integer",0,{min:0,max:1000,allowBlank:true,notation:"decimal",inputMode:"numeric",label:"following ledgers to include"}),
   item:_field("enum",PRODUCTS[0],{values:Object.freeze(ALLITEMS.slice()),allowBlank:false,label:"item"}),
   manualJob:_field("enum","Idle",{values:Object.freeze(["Idle",...ALLITEMS]),allowBlank:false,label:"Manual job"}),
   timestamp:_field("number",null,{min:0,max:Number.MAX_SAFE_INTEGER,allowBlank:true,notation:"decimal",inputMode:"numeric",label:"time"})

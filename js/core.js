@@ -107,29 +107,46 @@ function catalogLevelsToState(levels){
   }));
 }
 /* ---- ledgers ----
-   A ledger card is a project tagged with its character (ledgerId) and the ledger it is on (ledgerNo,
-   1-based). A listed ledger's costs are refreshed from LEDGER_CHARACTERS on every normalize, the way
-   a catalog project's levels are. ledgerNo null means the costs were typed in, for a ledger the data
-   does not have yet. Either way a ledger is one level. LEDGER_CHARACTERS is page-only data, so a
-   realm without it (the solver Worker) leaves ledger projects exactly as they arrive. */
+   A ledger card is a project tagged with its character (ledgerId), the ledger it is on (ledgerNo,
+   1-based within that character), and how many of the ledgers after it to plan as well
+   (ledgerAhead). A listed ledger's costs are refreshed from LEDGER_CHARACTERS on every normalize, the
+   way a catalog project's levels are: one level for the current ledger, then one for each following
+   ledger the data has, in order. ledgerNo null means the costs were typed in, for a ledger the data
+   does not have yet, and that is always one level. LEDGER_CHARACTERS is page-only data, so a realm
+   without it (the solver Worker) leaves ledger projects exactly as they arrive. */
 const LEDGERS=typeof LEDGER_CHARACTERS!=="undefined"&&Array.isArray(LEDGER_CHARACTERS)?LEDGER_CHARACTERS:[];
 function ledgerCharacter(ledgerId){return LEDGERS.find(c=>c.ledgerId===ledgerId)||null;}
 function ledgerEntry(ledgerId,ledgerNo){
   const character=ledgerCharacter(ledgerId);
   return character&&Number.isInteger(ledgerNo)&&ledgerNo>=1?character.ledgers[ledgerNo-1]||null:null;
 }
-function ledgerProjectName(name,ledgerNo){return ledgerNo!=null?`${name} ledger #${ledgerNo}`:`${name} ledger`;}
+// The ledger's number as the game shows it: the trailing digits of its order code, so
+// CGMC-741e-344 is #344.
+function ledgerNumber(entry){
+  const match=entry&&typeof entry.code==="string"?entry.code.match(/(\d+)$/):null;
+  return match?Number(match[1]):null;
+}
+// The current ledger and the following ones planned with it, as far as the data goes.
+function ledgerWindow(character,ledgerNo,ahead){
+  return character&&Number.isInteger(ledgerNo)&&ledgerNo>=1?character.ledgers.slice(ledgerNo-1,ledgerNo+Math.max(0,ahead)):[];
+}
+function ledgerProjectName(name,entries){
+  if(!entries||!entries.length)return `${name} ledger`;
+  const first=ledgerNumber(entries[0]),last=ledgerNumber(entries[entries.length-1]);
+  return entries.length>1?`${name} ledgers #${first}–#${last}`:`${name} ledger #${first}`;
+}
 function normalizeLedgerProject(p){
   if(!p.ledgerId)return;
   if(p.ledgerNo===undefined)p.ledgerNo=null;
+  p.ledgerAhead=Math.max(0,Math.floor(Number(p.ledgerAhead)||0));
   const character=ledgerCharacter(p.ledgerId);
   if(character){
-    const entry=p.ledgerNo!=null?ledgerEntry(p.ledgerId,p.ledgerNo):null;
-    if(entry)p.levels=catalogLevelsToState([{costs:entry.costs}]);else p.ledgerNo=null;
-    p.name=ledgerProjectName(character.name,p.ledgerNo);
+    const entries=p.ledgerNo!=null?ledgerWindow(character,p.ledgerNo,p.ledgerAhead):[];
+    if(entries.length)p.levels=catalogLevelsToState(entries.map(entry=>({costs:entry.costs})));else p.ledgerNo=null;
+    p.name=ledgerProjectName(character.name,entries);
   }
-  if(Array.isArray(p.levels)&&p.levels.length>1)p.levels=p.levels.slice(0,1);
-  p.from=1;p.to=1;
+  if(p.ledgerNo==null&&Array.isArray(p.levels)&&p.levels.length>1)p.levels=p.levels.slice(0,1);
+  p.from=1;p.to=Math.max(1,Array.isArray(p.levels)?p.levels.length:1);
 }
 // Free supply of a mined resource, per hour. A Decimal: a late-game Vespium rig income is already
 // around 1e99/min, and it is the single largest number the solver has to carry.
