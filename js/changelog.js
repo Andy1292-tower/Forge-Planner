@@ -10,6 +10,8 @@
  * left out rather than padded in.
  */
 const CHANGELOG=[
+  {version:"2026.10.24.6",date:"2026-10-24",groups:{
+    Changed:["List what else finishes, in What fits in a time limit, now builds on the answer one step at a time. Each row adds one more project level or ledger to the plan above it and shows how many that plan finishes and how long it takes, so the last row is the most you can finish inside the extra hours."]}},
   {version:"2026.10.24.5",date:"2026-10-24",groups:{
     Changed:["What fits in a time limit picks from every project and ledger in your list, ticked or not, and carries each ledger on into the character's following ledgers, so it finds the most you can finish rather than the most of what you ticked. Must finish keeps a project to what its card asks for. Use this selection ticks what the answer takes, unticks the rest, and sets each one's end level or Include next to match."],
     Fixed:["Past the limit showed nothing once everything you had ticked fit. It now always says what it found, and lists anything that would also fit inside your limit."]}},

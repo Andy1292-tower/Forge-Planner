@@ -476,9 +476,9 @@ const FIT_PAST_NOTHING_LEFT="every project and ledger in your list is already in
 const FIT_PAST_NO_TIME="the search time ran out before anything past the limit could be checked. Give it more search time.";
 function fitPastHtml(res){
   let html="";
+  // Each past-the-limit plan holds the one before it, so a run of them reads as one growing list.
   const inside=Array.isArray(res.inside)?res.inside:[];
-  if(inside.length)html+=`<div class="fit-next"><b>Also fits inside your limit${inside.length>1?", each on its own":""}:</b> ${inside.map(item=>
-    `${fitPastLabel(item)} (the plan takes <b>${fmtDuration(item.eta)}</b>)`).join("; ")}.</div>`;
+  if(inside.length)html+=`<div class="fit-next"><b>Also fits inside your limit:</b> ${inside.map(fitPastLabel).join(", ")} — with ${inside.length===1?"it":"them"} the plan takes <b>${fmtDuration(inside[inside.length-1].eta)}</b>.</div>`;
   const next=res.next;
   if(next){
     const body=next.status==="found"
@@ -495,9 +495,12 @@ function fitPastHtml(res){
     html+=extra.status==="all"?sentence(FIT_PAST_NOTHING_LEFT)
       :extra.status==="time"?sentence(FIT_PAST_NO_TIME)
       :extra.items.length
-      ?`<table class="fit-table"><thead><tr><th>Adds</th><th class="num">Plan takes</th><th class="num">Past the limit</th></tr></thead><tbody>${extra.items.map(item=>
-        `<tr><td>${fitPastLabel(item)}</td><td class="num mono">${item.checked?fmtDuration(item.eta):`at least ${fmtDuration(item.eta)}`}</td><td class="num mono">${item.checked?"+"+fmtDuration(item.over):"not checked"}</td></tr>`).join("")}</tbody></table>
-        ${extra.items.some(item=>!item.checked)?'<div class="proj-mini" style="margin-top:4px">Unchecked rows ran out of search time; their time is a lower bound.</div>':""}`
+      ?`<div class="proj-mini" style="margin-bottom:4px">Each row adds one more to the plan above it, starting from the answer.</div>
+        <table class="fit-table"><thead><tr><th>Adds</th><th class="num">Finishes</th><th class="num">Plan takes</th><th class="num">Past the limit</th></tr></thead><tbody>${extra.items.map(item=>
+        `<tr><td>${fitPastLabel(item)}</td><td class="num mono">${item.count}</td><td class="num mono">${item.checked?fmtDuration(item.eta):`at least ${fmtDuration(item.eta)}`}</td><td class="num mono">${item.checked?"+"+fmtDuration(item.over):"not checked"}</td></tr>`).join("")}</tbody></table>
+        ${extra.items.some(item=>!item.checked)?'<div class="proj-mini" style="margin-top:4px">Unchecked rows ran out of search time; their time is a lower bound.</div>':""}
+        ${extra.cut?`<div class="proj-mini" style="margin-top:4px">The search time ran out before the list reached ${fmtDuration(extra.hours)} more. Give it more search time to see further.</div>`:""}`
+      :extra.cut?sentence(FIT_PAST_NO_TIME)
       :`<div class="proj-mini">Nothing else in your list finishes within ${fmtDuration(extra.hours)} more.</div>`;
   }
   return html;

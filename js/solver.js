@@ -3867,6 +3867,7 @@ const FIT_LIMIT_TOLERANCE=0.01;  // of the hours: a bracket this narrow is settl
 const FIT_NEXT_WINDOW=12;        // hours past the limit the next step may run
 const FIT_EXTRA_SHARE=0.3;       // of the search time, kept back for what lies past the limit
 const FIT_EXTRA_CHECKS=8;        // full plan checks those may spend
+const FIT_LADDER_SHARE=0.4;      // of the time left past the limit, building the plans may spend
 /* The chains a fit search takes levels from: every project in the list, ticked or not, from its
  * next unfinished level on to its last, and each ledger on through the character's following
  * ledgers. `chosen` is how many of those levels the project's own card asks for — its level range,
@@ -4121,56 +4122,74 @@ function optimizeFit(testOptions,shard){
     const ranks=[...new Set(layers)].sort((a,b)=>a-b);
     verified.perProject.forEach((p,i)=>{const ph=run.phases[ranks.indexOf(layers[i])];finish[p.id]=ph&&Number.isFinite(ph.doneAt)?ph.doneAt:run.eta;});
   }
-  /* Past the limit. Each chain offers its next level that finishes something — a ledger with
-   * nothing to craft is stepped over to the one after it — added to the answer on its own. The
-   * estimate, a floor on any real plan, rules out whatever cannot land inside the extra hours; the
-   * rest are checked as full plans, quickest estimate first, while the time lasts. One the clock
-   * ran out on is listed by its estimate and marked unchecked. */
+  /* Past the limit: plans that grow from the answer one step at a time. Each step is the one, across
+   * every chain, whose plan estimates quickest — its next level that finishes something, a ledger
+   * with nothing to craft stepped over to the one after it — so each plan holds the one before it.
+   * The list grows while the estimate, a floor on any real plan, stays inside the extra hours. The
+   * plans are then checked as full plans while the time lasts: the first, which is the next step,
+   * then the last, the most that finishes, then the rest in order. A check that runs past the hours
+   * ends the list there, since every later plan holds that one; a plan the clock ran out on keeps
+   * its estimate and is marked unchecked. */
   let next=null,extra=null,inside=[];
   if(pastOn&&!forcedOver&&(verified||chosen.count===0)){
-    const base=chosen.n,window=hours+pastWindow,options=[];
-    chains.forEach((c,i)=>{
-      let k=base[i];
-      while(k<c.levels.length&&allowed(base,i,k)){k++;if(c.prefix[k]>c.prefix[base[i]])break;}
-      if(c.prefix[k]>c.prefix[base[i]]){const n=base.slice();n[i]=k;options.push({i,n});}
-    });
-    options.forEach(option=>{option.eta=estimate(option.n);});
-    const viable=options.filter(option=>option.eta<=window).sort((a,b)=>a.eta-b.eta);
-    const items=[];
-    viable.forEach((option,index)=>{
-      const c=chains[option.i],k=option.n[option.i],now=control.readNow(),remaining=control.deadline-now,left=viable.length-index;
-      const entry={id:c.id,name:c.name,ledger:c.ledger,ticked:c.on,number:c.levels[k-1].number,
-        fromLevel:c.start+base[option.i]+1,toLevel:c.start+k,checked:false,eta:option.eta};
-      if(index<FIT_EXTRA_CHECKS&&!control.isStopped()&&remaining>0){
-        const checkBy=now+remaining/Math.min(left,FIT_EXTRA_CHECKS-index);
-        const attempt=verifyRun(option.n,checkBy);checks++;
-        if(projectRunExecutable(attempt.run)){
-          if(!(attempt.run.eta<=window))return;
-          Object.assign(entry,{checked:true,eta:attempt.run.eta});
-        }
-        // A plan that cannot be made is left out; one the clock cut short keeps its estimate.
-        else if(!(attempt.run&&attempt.run.partial===true)&&control.currentTime()<checkBy)return;
+    const window=hours+pastWindow,pastStart=control.readNow();
+    const buildUntil=pastStart+Math.max(0,control.deadline-pastStart)*FIT_LADDER_SHARE;
+    const stepFrom=(n,i)=>{
+      const c=chains[i];let k=n[i];
+      while(k<c.levels.length&&allowed(n,i,k)){k++;if(c.prefix[k]>c.prefix[n[i]])break;}
+      return c.prefix[k]>c.prefix[n[i]]?k:null;
+    };
+    const plans=[];let n=chosen.n.slice(),cut=false;
+    for(;;){
+      if(control.isStopped()||control.currentTime()>=buildUntil){cut=chains.some((_,i)=>stepFrom(n,i)!=null);break;}
+      let best=null;
+      chains.forEach((c,i)=>{
+        const k=stepFrom(n,i);if(k==null)return;
+        const m=n.slice();m[i]=k;const eta=estimate(m);
+        if(eta<=window&&(!best||eta<best.eta))best={i,m,eta};
+      });
+      if(!best)break;
+      const c=chains[best.i],k=best.m[best.i];
+      plans.push({id:c.id,name:c.name,ledger:c.ledger,ticked:c.on,number:c.levels[k-1].number,
+        fromLevel:c.start+n[best.i]+1,toLevel:c.start+k,count:taken(best.m),n:best.m,checked:false,tried:false,eta:best.eta});
+      n=best.m;
+    }
+    const nextToCheck=()=>{
+      const last=plans.length-1;if(last<0)return -1;
+      if(!plans[0].tried)return 0;
+      if(!plans[last].tried)return last;
+      return plans.findIndex(plan=>!plan.tried);
+    };
+    let pastChecks=0;
+    for(let j=nextToCheck();j>=0&&pastChecks<FIT_EXTRA_CHECKS&&!control.isStopped();j=nextToCheck()){
+      const now=control.readNow(),remaining=control.deadline-now;if(!(remaining>0))break;
+      const untried=plans.filter(plan=>!plan.tried).length;
+      const checkBy=now+remaining/Math.max(1,Math.min(untried,FIT_EXTRA_CHECKS-pastChecks));
+      const plan=plans[j],attempt=verifyRun(plan.n,checkBy);checks++;pastChecks++;plan.tried=true;
+      if(projectRunExecutable(attempt.run)){
+        if(attempt.run.eta<=window)Object.assign(plan,{checked:true,eta:attempt.run.eta});
+        else plans.length=j;
       }
-      entry.over=Math.max(0,entry.eta-hours);
-      items.push(entry);
+      // A plan that cannot be made ends the list; one the clock cut short keeps its estimate.
+      else if(!(attempt.run&&attempt.run.partial===true)&&control.currentTime()<checkBy)plans.length=j;
+    }
+    const items=plans.map(plan=>{
+      const item=Object.assign({},plan,{over:Math.max(0,plan.eta-hours)});
+      delete item.n;delete item.tried;return item;
     });
-    items.sort((a,b)=>Number(b.checked)-Number(a.checked)||a.eta-b.eta);
-    // A step the search passed over can still check inside the limit; it is listed as such rather
+    // The search can pass over a plan that checks inside the limit; it is listed as such rather
     // than as past the limit.
     const isInside=item=>item.checked&&item.eta<=hours+etaCompareEpsilon(item.eta,hours);
-    inside=items.filter(isInside);
-    const past=items.filter(item=>!isInside(item)),everything=chains.every((c,i)=>base[i]===c.levels.length);
+    const lastInside=items.reduce((at,item,index)=>isInside(item)?index:at,-1);
+    inside=items.slice(0,lastInside+1);
+    const past=items.slice(lastInside+1),everything=chains.every((c,i)=>chosen.n[i]===c.levels.length);
     if(nextOn){
-      const quickest=past.find(item=>item.checked&&item.eta<=hours+FIT_NEXT_WINDOW);
-      const unchecked=past.some(item=>!item.checked&&item.eta<=hours+FIT_NEXT_WINDOW);
-      next=everything?{status:"all"}:quickest?Object.assign({status:"found"},quickest):{status:unchecked?"time":"none"};
+      const first=past[0];
+      next=everything?{status:"all"}:first&&first.eta<=hours+FIT_NEXT_WINDOW
+        ?(first.checked?Object.assign({status:"found"},first):{status:"time"})
+        :{status:cut&&!first?"time":"none"};
     }
-    if(extraOn)extra={hours:extraHours,status:everything?"all":"listed",items:past.filter(item=>item.eta<=hours+extraHours)};
-  }
-  // An answer the clock ran out on before its check has nothing settled to build on.
-  else if(pastOn&&!forcedOver){
-    if(nextOn)next={status:"time"};
-    if(extraOn)extra={hours:extraHours,status:"time",items:[]};
+    if(extraOn)extra={hours:extraHours,status:everything?"all":"listed",cut,items:past.filter(item=>item.eta<=hours+extraHours)};
   }
   return {empty:false,mode:"project",task:"fit",hours,strategy:exhaustive?"every set":strategy,exhaustive,tried,checks,
     selection:chains.map((c,i)=>({id:c.id,name:c.name,ledger:c.ledger,ticked:c.on,prio:c.prio,taken:chosen.n[i],remaining:c.levels.length,
