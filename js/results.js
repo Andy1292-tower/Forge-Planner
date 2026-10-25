@@ -397,7 +397,7 @@ function fitBlockedBySolve(){const status=solveServiceStatus();return status.act
 // The must-finish list and past-the-limit settings an answer was searched with. Not part of the
 // solve key, which is about plans, so an answer also goes out of date when any of them changes.
 function fitForcedKey(){
-  return [S.fitScope,[...(S.fitForced||[])].sort().join(","),S.fitNext===true,S.fitExtra===true,S.fitExtra===true?S.fitExtraHours:""].join("|");
+  return [S.fitScope,S.fitLedgerMax==null?"":S.fitLedgerMax,[...(S.fitForced||[])].sort().join(","),S.fitNext===true,S.fitExtra===true,S.fitExtra===true?S.fitExtraHours:""].join("|");
 }
 // What the search can pick from: ledger cards, and projects too once the switch says so.
 function fitInScope(p){return S.fitScope==="all"||!!p.ledgerId;}
@@ -480,7 +480,7 @@ const FIT_PAST_NO_TIME="the search time ran out before anything past the limit c
 // True when part of the list was outside the search, so "your list" would claim too much.
 function fitSearchLimited(res){
   const left=res&&res.leftOut;
-  return !!left&&(left.projects>0||left.blocked.length>0);
+  return !!left&&(left.projects>0||left.blocked.length>0||left.capped>0);
 }
 function fitPastHtml(res){
   let html="";
@@ -514,14 +514,19 @@ function fitPastHtml(res){
   }
   return html;
 }
-// Why part of the list was not searched: each chain that stops early because a card it waits on is
-// outside the search.
+// Why part of the list was not searched: the ledger limit, any Must finish card it cuts short, and
+// each chain that stops early because a card it waits on is outside the search.
 function fitLeftOutHtml(res){
   const left=res.leftOut;if(!left)return "";
-  const lines=left.blocked.map(b=>{
+  const lines=[];
+  if(left.capped>0&&left.ledgerMax!=null)lines.push(`Left out of the search: ledgers past #${left.ledgerMax}.`);
+  (left.forcedCut||[]).forEach(c=>lines.push(c.lastNumber!=null
+    ?`Must finish holds ${htmlText(c.name)} only as far as ledger #${c.lastNumber}, your ledger limit.`
+    :`Must finish asks for ${htmlText(c.name)}, which is past your ledger limit.`));
+  left.blocked.forEach(b=>{
     const where=b.ledger&&b.number!=null?`ledger #${b.number}`:`lv ${b.level}`;
     const why=b.material?`it needs ${htmlText(b.material)}, which ${htmlText(b.by)} unlocks`:`${htmlText(b.by)} has to be finished first`;
-    return `${htmlText(b.name)} stops before ${where}: ${why}.${b.why==="scope"?" Switch to <b>Ledgers and projects</b> to let the search build it.":""}`;
+    lines.push(`${htmlText(b.name)} stops before ${where}: ${why}.${b.why==="scope"?" Switch to <b>Ledgers and projects</b> to let the search build it.":""}`);
   });
   return lines.map(line=>`<div class="proj-mini" style="margin-top:6px">${line}</div>`).join("");
 }
@@ -587,6 +592,14 @@ function fitScopeHtml(running){
     </div>
   </div>`;
 }
+// What the search leaves out of the list: every ledger past a number.
+function fitLeaveOutHtml(running){
+  const off=running?" disabled":"",errorId="field-fit-ledger-max-error";
+  const value=S.fitLedgerMax==null?"":String(S.fitLedgerMax);
+  return `<div class="fit-leave">
+    <label class="fit-field">Exclude ledgers beyond # <span class="field-stack"><input type="text" id="fitLedgerMax" ${htmlFieldInputAttributes(FIELD_SCHEMA.fitLedgerMax)} value="${htmlAttribute(value)}" placeholder="none" data-field-error="${errorId}" aria-label="Exclude ledgers numbered beyond"${off}><span class="field-error" id="${errorId}" aria-live="polite" aria-atomic="true"></span></span></label>
+  </div>`;
+}
 // What to look at past the limit: the next step alone, and everything within extra hours.
 function fitPastControlsHtml(running){
   const off=running?" disabled":"",errorId="field-fit-extra-hours-error";
@@ -618,9 +631,10 @@ function fitBoxHtml(){
         <label class="fit-field">Search for <select id="fitBudget" aria-label="Fit-in-time search time"${running?" disabled":""}>${budgetOptions}</select></label>
         ${action}
       </div>
+      ${fitLeaveOutHtml(running)}
       ${fitForcedHtml(running)}
       ${fitPastControlsHtml(running)}
-      <p class="help" style="margin:8px 0 10px">A heavy solve: it tries many combinations of the ${S.fitScope==="all"?"projects and ledgers":"ledgers"} in your list, ticked or not, with each ledger running on into the character's following ledgers, then checks the best as a full plan. Anything under <b>Must finish</b> is always in the answer, as far as its card asks, and the rest is fitted around it. It runs for up to the search time you pick on up to ${cores} CPU core${cores===1?"":"s"}, and only when you press <b>Find what fits</b>.</p>
+      <p class="help" style="margin:8px 0 10px">A heavy solve: it tries many combinations of the ${S.fitScope==="all"?"projects and ledgers":"ledgers"} in your list, ticked or not, with each ledger running on into the character's following ledgers, then checks the best as a full plan. Ledgers numbered past the one under <b>Exclude ledgers beyond #</b> are left out. Anything under <b>Must finish</b> is always in the answer, as far as its card asks, and the rest is fitted around it. It runs for up to the search time you pick on up to ${cores} CPU core${cores===1?"":"s"}, and only when you press <b>Find what fits</b>.</p>
       <div id="fitBody">${body}</div>
     </div>
   </details>`;

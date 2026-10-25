@@ -392,6 +392,66 @@ test("what the search left out reads as sentences", () => {
   assert.match(empty({ leftOut: { scope: "all", projects: 0, blocked: [] } }), /Nothing in your project list is left to craft/);
 });
 
+const TANK_NUMBERS = vm.runInContext(`ledgerCharacter("tank-timmerson").ledgers.map(ledgerNumber)`, page);
+
+test("Exclude ledgers beyond # ends each ledger run before the first ledger numbered past it", () => {
+  const open = fit([TANK], 100000), all = row(open, "l1").remaining;
+  assert.equal(open.leftOut.ledgerMax, null);
+  assert.equal(open.leftOut.capped, 0);
+  assert.ok(all > 4, `Tank has ${all} ledgers left`);
+  const at = fit([TANK], 100000, [], { fitLedgerMax: TANK_NUMBERS[2] });
+  assert.equal(row(at, "l1").remaining, 3, "the ledger numbered exactly the limit is kept");
+  assert.equal(row(at, "l1").lastNumber, TANK_NUMBERS[2]);
+  assert.deepEqual([at.leftOut.ledgerMax, at.leftOut.capped], [TANK_NUMBERS[2], 1]);
+  const between = fit([TANK], 100000, [], { fitLedgerMax: TANK_NUMBERS[3] - 1 });
+  assert.equal(row(between, "l1").remaining, 3);
+  const later = P("l3", "Tank", [[]], { ledgerId: "tank-timmerson", ledgerNo: 5 });
+  const gone = fit([later], 100000, [], { fitLedgerMax: TANK_NUMBERS[3] });
+  assert.equal(gone.empty, true, "a card whose ledger is already past the limit is left out");
+  assert.equal(gone.leftOut.capped, 1);
+  const projects = fit([A, TANK], 100000, [], { fitLedgerMax: TANK_NUMBERS[0] });
+  assert.deepEqual(projects.selection.map(r => [r.id, r.remaining]), [["a", 1], ["l1", 1]], "projects are not cut by a ledger number");
+});
+
+test("Must finish holds a ledger card only as far as the ledger limit, and says so", () => {
+  const three = P("l1", "Tank", [[]], { ledgerId: "tank-timmerson", ledgerNo: 1, ledgerAhead: 2 });
+  const res = fit([three], 100000, ["l1"], { fitLedgerMax: TANK_NUMBERS[1] });
+  assert.deepEqual([row(res, "l1").required, row(res, "l1").chosen, row(res, "l1").taken], ["chosen", 2, 2]);
+  assert.deepEqual(res.leftOut.forcedCut, [{ id: "l1", name: "Tank Timmerson", lastNumber: TANK_NUMBERS[1] }]);
+  const wide = fit([three], 100000, ["l1"], { fitLedgerMax: TANK_NUMBERS[2] });
+  assert.deepEqual(wide.leftOut.forcedCut, [], "a limit past what the card asks cuts nothing it asks for");
+  const later = P("l3", "Tank", [[]], { ledgerId: "tank-timmerson", ledgerNo: 5 });
+  const gone = fit([later], 100000, ["l3"], { fitLedgerMax: TANK_NUMBERS[3] });
+  assert.deepEqual(gone.leftOut.forcedCut, [{ id: "l3", name: "Tank Timmerson", lastNumber: null }]);
+});
+
+test("the ledger limit saves blank or as a whole number, and never moves a plan", () => {
+  const out = JSON.parse(vm.runInContext(`(function(){
+    const s=normalize(defaults());s.schemaVersion=CURRENT_SCHEMA_VERSION;s.baseTimeRev=3;
+    const set=Object.assign(JSON.parse(JSON.stringify(s)),{fitLedgerMax:300});
+    const kept=validateAndMigrate(set),blank=validateAndMigrate(Object.assign(JSON.parse(JSON.stringify(s)),{fitLedgerMax:null}));
+    const bad=[0,2.5,"300",2e6].map(v=>validateAndMigrate(Object.assign(JSON.parse(JSON.stringify(s)),{fitLedgerMax:v})).ok);
+    return JSON.stringify({fresh:s.fitLedgerMax,kept:kept.ok&&kept.state.fitLedgerMax,blank:blank.ok&&blank.state.fitLedgerMax,bad,
+      cleaned:normalize(Object.assign(JSON.parse(JSON.stringify(s)),{fitLedgerMax:-4})).fitLedgerMax,sameKey:solveStateKey(set)===solveStateKey(s)});
+  })()`, page));
+  assert.deepEqual(out, { fresh: null, kept: 300, blank: null, bad: [false, false, false, false], cleaned: null, sameKey: true });
+});
+
+test("the ledger limit and a Must finish card it cuts read as sentences", () => {
+  const source = fs.readFileSync(path.join(ROOT, "js", "results.js"), "utf8");
+  const from = source.indexOf("// What one past-the-limit step adds"), to = source.indexOf("function fitResultHtml(");
+  const ui = vm.createContext({ FIT_NEXT_WINDOW_HOURS: 12, htmlText: String, fmtDuration: h => `${h}h`, fmtPlanClock: h => `@${h}` });
+  vm.runInContext(source.slice(from, to) + ";globalThis.ui={past:fitPastHtml,left:fitLeftOutHtml};", ui);
+  const { past, left } = vm.runInContext("ui", ui);
+  const capped = { scope: "ledgers", projects: 0, blocked: [], ledgerMax: 300, capped: 2, forcedCut: [] };
+  assert.equal(left({ leftOut: capped }), '<div class="proj-mini" style="margin-top:6px">Left out of the search: ledgers past #300.</div>');
+  assert.equal(left({ leftOut: Object.assign({}, capped, { capped: 0 }) }), "", "a limit that cuts nothing goes unsaid");
+  const cut = left({ leftOut: Object.assign({}, capped, { forcedCut: [{ id: "l1", name: "Tank Timmerson", lastNumber: 289 }, { id: "l3", name: "Clank", lastNumber: null }] }) });
+  assert.match(cut, /Must finish holds Tank Timmerson only as far as ledger #289, your ledger limit\./);
+  assert.match(cut, /Must finish asks for Clank, which is past your ledger limit\./);
+  assert.match(past({ leftOut: capped, next: { status: "all" }, inside: [], extra: null }), /everything the search can pick from/);
+});
+
 test("the shard merge keeps a checked answer, then the most finished, then the shortest", () => {
   const merge = entries => JSON.parse(JSON.stringify(vm.runInContext("mergeShardResults", page)(
     "project", entries.map((res, index) => ({ shard: { index, count: entries.length }, res })), "fit")));

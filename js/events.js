@@ -1465,6 +1465,7 @@ document.getElementById("results").addEventListener("input",e=>{
   const t=e.target;if(!t||!t.getAttribute)return;let v;
   // The fit-in-time hours ask a different question of the same plan, so they only save.
   if(t.id==="fitExtraHours"){const result=commitFieldDraft(t,FIELD_SCHEMA.fitExtraHours,S.fitExtraHours,(st,value)=>{st.fitExtraHours=value;});if(result.committed)save();return;}
+  if(t.id==="fitLedgerMax"){const result=commitFieldDraft(t,FIELD_SCHEMA.fitLedgerMax,S.fitLedgerMax,(st,value)=>{st.fitLedgerMax=value;});if(result.committed)save();return;}
   if(t.id==="fitHours"){const result=commitFieldDraft(t,FIELD_SCHEMA.fitHours,S.fitHours,(st,value)=>{st.fitHours=value;});if(result.committed)save();return;}
   // Parse the two visible endpoints as one draft transaction. Either correction can make both
   // drafts valid; only then are both accepted together, without rebuilding the focused row.

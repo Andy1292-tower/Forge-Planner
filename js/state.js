@@ -484,6 +484,7 @@ function validateAndMigrate(candidate){
   if(strictProjectState)out.projectStability=_enum(_readData(candidate,"projectStability","projectStability",errors),FIELD_SCHEMA.projectStability,"projectStability",errors);
   if(_own(candidate,"projLineMode"))out.projLineMode=_enum(_readData(candidate,"projLineMode","projLineMode",errors),FIELD_SCHEMA.projLineMode,"projLineMode",errors);
   if(_own(candidate,"fitScope"))out.fitScope=_enum(_readData(candidate,"fitScope","fitScope",errors),FIELD_SCHEMA.fitScope,"fitScope",errors);
+  if(_own(candidate,"fitLedgerMax"))out.fitLedgerMax=_number(_readData(candidate,"fitLedgerMax","fitLedgerMax",errors),FIELD_SCHEMA.fitLedgerMax,"fitLedgerMax",errors);
   if(_own(candidate,"fitHours"))out.fitHours=_number(_readData(candidate,"fitHours","fitHours",errors),FIELD_SCHEMA.fitHours,"fitHours",errors);
   if(_own(candidate,"fitForced")){
     const forced=_array(_readData(candidate,"fitForced","fitForced",errors),"fitForced",errors,STATE_LIMITS.maxProjects);

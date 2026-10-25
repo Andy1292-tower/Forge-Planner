@@ -3877,16 +3877,29 @@ const FIT_LADDER_SHARE=0.4;      // of the time left past the limit, building th
  * too. A card outside the search is in no set, but while it is unfinished it still holds back what
  * waits on it: a chain stops before its first level that needs a material an outside card unlocks,
  * or that an outside PROJECT_PREREQS prerequisite gates. `blocked` names each chain stopped so, and
- * `outside` counts the projects the switch leaves out. */
+ * `outside` counts the projects the switch leaves out.
+ *
+ * S.fitLedgerMax, when set, ends each ledger card's run before its first ledger numbered past it; a
+ * card already past it is left out. `capped` names each card it cuts, and `askedCut` marks one cut
+ * short of the ledgers its own card asks for. */
 function fitChains(){
-  const ledgersOnly=S.fitScope!=="all",chains=[];
+  const ledgersOnly=S.fitScope!=="all",chains=[],capped=[];
+  const cap=Number.isInteger(S.fitLedgerMax)&&S.fitLedgerMax>=1?S.fitLedgerMax:null;
   (S.projects||[]).forEach(p=>{
     let lv=p.levels||[],name=p.name||"Project",numbers=null;
     const from=Math.max(1,Math.min(lv.length,Math.floor(num(p.from)||1)));
     const to=Math.min(lv.length,Math.max(from,Math.floor(num(p.to)||lv.length)));
     const done=Math.max(0,Math.min(to-from+1,Math.floor(num(p.done)||0))),start=from-1+done;
     const character=p.ledgerId&&p.ledgerNo!=null?ledgerCharacter(p.ledgerId):null;
-    const entries=character?ledgerWindow(character,p.ledgerNo,character.ledgers.length):[];
+    let entries=character?ledgerWindow(character,p.ledgerNo,character.ledgers.length):[];
+    const asked=Math.max(0,to-start),past=cap!=null?entries.findIndex(entry=>ledgerNumber(entry)>cap):-1;
+    if(past>=0){
+      const kept=entries.slice(0,past);
+      capped.push({id:p.id||"",name:character.name,askedCut:asked>Math.max(0,kept.length-start),
+        lastNumber:kept.length>start?ledgerNumber(kept[kept.length-1]):null});
+      if(!kept.length)return;
+      entries=kept;
+    }
     if(entries.length){lv=entries;name=character.name;numbers=entries.map(ledgerNumber);}
     const end=lv.length;
     if(start>=end)return;
@@ -3931,7 +3944,7 @@ function fitChains(){
   }
   const kept=chains.filter(c=>!c.out),index=new Map(kept.map((c,i)=>[chains.indexOf(c),i]));
   kept.forEach(c=>c.levels.forEach(level=>{level.gates=level.gates.map(u=>index.get(u));}));
-  return {chains:kept,blocked:[...blocked.values()],outside:chains.filter(c=>c.out==="scope").length};
+  return {chains:kept,blocked:[...blocked.values()],outside:chains.filter(c=>c.out==="scope").length,capped,cap};
 }
 function fitRandom(seed){
   let a=seed>>>0;
@@ -3942,15 +3955,16 @@ function optimizeFit(testOptions,shard){
   const hours=boundedPersistedField("fitHours",S.fitHours,48,0.1,100000);
   const budget=boundedPersistedField("fitBudget",S.fitBudget,60000,10000,300000,true);
   const slice=normalizeShard(shard),strategyIndex=slice?slice.index:0;
-  const {chains,blocked,outside}=fitChains();
-  const leftOut={scope:S.fitScope==="all"?"all":"ledgers",projects:outside,blocked};
+  const {chains,blocked,outside,capped,cap}=fitChains();
+  const wanted=new Set(Array.isArray(S.fitForced)?S.fitForced:[]);
+  const leftOut={scope:S.fitScope==="all"?"all":"ledgers",projects:outside,blocked,ledgerMax:cap,capped:capped.length,
+    forcedCut:capped.filter(c=>c.askedCut&&wanted.has(c.id)).map(c=>({id:c.id,name:c.name,lastNumber:c.lastNumber}))};
   if(!chains.length)return {empty:true,mode:"project",task:"fit",hours,selection:[],count:0,leftOut,ms:performance.now()-t0};
   const control=makeSolveControl(budget,testOptions),lpMemo=makeLpMemo(),isStatic=S.projLineMode==="static";
   const inv=projectInitialInventory(),estimates=new Map();
   // The floor every set starts from: must-finish projects as far as their cards ask, then the
   // unlocks those levels wait on, whole.
   const floor=chains.map(()=>0),required=chains.map(()=>null);
-  const wanted=new Set(Array.isArray(S.fitForced)?S.fitForced:[]);
   chains.forEach((c,i)=>{if(wanted.has(c.id)&&c.chosen>0){floor[i]=c.chosen;required[i]="chosen";}});
   for(let changed=true;changed;){
     changed=false;

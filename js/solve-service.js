@@ -49,6 +49,7 @@ function solveStateKey(state){
   delete snapshot.fitHours;
   delete snapshot.fitBudget;
   delete snapshot.fitScope;
+  delete snapshot.fitLedgerMax;
   delete snapshot.fitForced;
   delete snapshot.fitNext;
   delete snapshot.fitExtra;
