@@ -483,10 +483,17 @@ function validateAndMigrate(candidate){
   if(_own(candidate,"projectBatch"))out.projectBatch=_boolean(_readData(candidate,"projectBatch","projectBatch",errors),"projectBatch",errors);
   if(strictProjectState)out.projectStability=_enum(_readData(candidate,"projectStability","projectStability",errors),FIELD_SCHEMA.projectStability,"projectStability",errors);
   if(_own(candidate,"projLineMode"))out.projLineMode=_enum(_readData(candidate,"projLineMode","projLineMode",errors),FIELD_SCHEMA.projLineMode,"projLineMode",errors);
+  if(_own(candidate,"fitScope"))out.fitScope=_enum(_readData(candidate,"fitScope","fitScope",errors),FIELD_SCHEMA.fitScope,"fitScope",errors);
+  if(_own(candidate,"fitSelectedOnly"))out.fitSelectedOnly=_boolean(_readData(candidate,"fitSelectedOnly","fitSelectedOnly",errors),"fitSelectedOnly",errors);
+  if(_own(candidate,"fitLedgerMax"))out.fitLedgerMax=_number(_readData(candidate,"fitLedgerMax","fitLedgerMax",errors),FIELD_SCHEMA.fitLedgerMax,"fitLedgerMax",errors);
   if(_own(candidate,"fitHours"))out.fitHours=_number(_readData(candidate,"fitHours","fitHours",errors),FIELD_SCHEMA.fitHours,"fitHours",errors);
   if(_own(candidate,"fitForced")){
     const forced=_array(_readData(candidate,"fitForced","fitForced",errors),"fitForced",errors,STATE_LIMITS.maxProjects);
     if(forced)out.fitForced=forced.map((id,index)=>_string(id,FIELD_SCHEMA.id,"fitForced["+index+"]",errors));
+  }
+  if(_own(candidate,"fitExcluded")){
+    const excluded=_array(_readData(candidate,"fitExcluded","fitExcluded",errors),"fitExcluded",errors,STATE_LIMITS.maxProjects);
+    if(excluded)out.fitExcluded=excluded.map((id,index)=>_string(id,FIELD_SCHEMA.id,"fitExcluded["+index+"]",errors));
   }
   if(_own(candidate,"fitNext"))out.fitNext=_boolean(_readData(candidate,"fitNext","fitNext",errors),"fitNext",errors);
   if(_own(candidate,"fitExtra"))out.fitExtra=_boolean(_readData(candidate,"fitExtra","fitExtra",errors),"fitExtra",errors);

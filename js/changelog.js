@@ -10,6 +10,12 @@
  * left out rather than padded in.
  */
 const CHANGELOG=[
+  {version:"2026.10.25",date:"2026-10-25",groups:{
+    Added:[
+      "Exclude ledgers beyond #, in What fits in a time limit. Enter a ledger number and the search leaves out every ledger numbered past it. A Must finish ledger card is held to that number too, and the answer says where it stops.",
+      "Exclude from the search, in What fits in a time limit. Tick the ledger cards, or projects when Ledgers and projects is on, that the search should leave alone. A card you exclude comes off Must finish, and Use this selection leaves it as it is.",
+      "Search only my selected ledgers, in What fits in a time limit. Tick it and the search uses only the ledger cards you have ticked, each kept to the ledger on it and the ones Include next adds, so the answer is what fits from those."],
+    Changed:["What fits in a time limit has a Pick from switch at the top, set to Just ledgers, so the search picks only from your ledger cards. Choose Ledgers and projects to have it pick from your projects too, as it did before. If a project you haven't finished unlocks a material a ledger needs, Just ledgers stops that character's ledgers there and names the project they wait on. Use this selection leaves anything outside the search, your projects included, as it is."]}},
   {version:"2026.10.24.7",date:"2026-10-24",groups:{
     Changed:["Finance Center, Jade Refinery, Hospital Wing, Off-Rock Mining Operation, Tokenium Mining Center, Vespium Drill Hub, Rig Parts Production Facility and All Round Giga-Scanner now go up to Lv 54 in the catalog. Lv 49–54 costs are estimated on the same curve as the estimated levels below them, and each project's catalog note shows its estimated range. A project already in your list keeps its end level; raise it to plan the new levels."]}},
   {version:"2026.10.24.6",date:"2026-10-24",groups:{

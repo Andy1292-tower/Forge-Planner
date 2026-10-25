@@ -1465,6 +1465,7 @@ document.getElementById("results").addEventListener("input",e=>{
   const t=e.target;if(!t||!t.getAttribute)return;let v;
   // The fit-in-time hours ask a different question of the same plan, so they only save.
   if(t.id==="fitExtraHours"){const result=commitFieldDraft(t,FIELD_SCHEMA.fitExtraHours,S.fitExtraHours,(st,value)=>{st.fitExtraHours=value;});if(result.committed)save();return;}
+  if(t.id==="fitLedgerMax"){const result=commitFieldDraft(t,FIELD_SCHEMA.fitLedgerMax,S.fitLedgerMax,(st,value)=>{st.fitLedgerMax=value;});if(result.committed)save();return;}
   if(t.id==="fitHours"){const result=commitFieldDraft(t,FIELD_SCHEMA.fitHours,S.fitHours,(st,value)=>{st.fitHours=value;});if(result.committed)save();return;}
   // Parse the two visible endpoints as one draft transaction. Either correction can make both
   // drafts valid; only then are both accepted together, without rebuilding the focused row.
@@ -1478,8 +1479,18 @@ document.getElementById("results").addEventListener("input",e=>{
 document.getElementById("results").addEventListener("change",e=>{
   const t=e.target;if(!t||!t.getAttribute)return;let v;
   // Plan-start anchor: display-only, so repaint from cache (no solve).
-  if(t.id==="fitNext"||t.id==="fitExtra"){
+  if(t.id==="fitNext"||t.id==="fitExtra"||t.id==="fitSelectedOnly"){
     const key=t.id,on=t.checked;mutateState(st=>{st[key]=on;});save();repaintFit();return;
+  }
+  const excludeId=t.getAttribute("data-fit-exclude");
+  if(excludeId!=null){
+    if(!(S.projects||[]).some(p=>p.id===excludeId))return;
+    const on=t.checked;
+    mutateState(st=>{
+      st.fitExcluded=(st.fitExcluded||[]).filter(x=>x!==excludeId);
+      if(on){st.fitExcluded.push(excludeId);st.fitForced=(st.fitForced||[]).filter(x=>x!==excludeId);}
+    });
+    save();repaintFit();return;
   }
   if(t.id==="fitForcedAdd"){
     const id=t.value;if(!id||!(S.projects||[]).some(p=>p.id===id))return;
@@ -1521,6 +1532,15 @@ document.getElementById("results").addEventListener("click",e=>{
     mutateState(st=>{st.fitForced=(st.fitForced||[]).filter(x=>x!==id);});save();repaintFit();
     const pick=document.getElementById("fitForcedAdd");if(pick)pick.focus();return;
   }
+  // The exclude dropdown's open state, kept across repaints the same way as a panel's.
+  const excludeToggle=cl("summary[data-fit-exclude-toggle]");
+  if(excludeToggle){_fitExcludeOpen=!(excludeToggle.parentElement&&excludeToggle.parentElement.open);return;}
+  const fitScope=cl("[data-fit-scope]");
+  if(fitScope){
+    const checked=validateFieldValue(FIELD_SCHEMA.fitScope,fitScope.getAttribute("data-fit-scope"));
+    if(checked.valid&&checked.value!==S.fitScope&&!fitRunning()){mutateState(st=>{st.fitScope=checked.value;});save();repaintFit();}
+    return;
+  }
   if(cl("#btnFitRun")){startFit();return;}
   if(cl("#btnFitStop")){stopFit();return;}
   if(cl("#btnFitApply")){applyFitSelection();return;}
@@ -1547,6 +1567,23 @@ document.getElementById("results").addEventListener("click",e=>{
   if(cl("#manualDelPreset")){const sel=document.getElementById("manualPreset");const id=(sel&&sel.value)||S.manualActiveId;if(id&&confirm("Delete this saved setup?"))deleteManualPreset(id);return;}
 });
 
+// The exclude dropdown closes on a click outside it or on Escape, like a select.
+function closeFitExcludeMenu(focusSummary){
+  const menu=document.getElementById("fitExcludeMenu");
+  _fitExcludeOpen=false;if(!menu||!menu.open)return;
+  menu.open=false;
+  if(focusSummary){const summary=menu.querySelector("summary");if(summary)summary.focus();}
+}
+document.addEventListener("click",e=>{
+  if(!_fitExcludeOpen||!e.target||!e.target.isConnected)return;
+  const menu=document.getElementById("fitExcludeMenu");
+  if(!menu||!menu.contains(e.target))closeFitExcludeMenu(false);
+});
+document.addEventListener("keydown",e=>{
+  if(e.key!=="Escape"||!_fitExcludeOpen)return;
+  const menu=document.getElementById("fitExcludeMenu");
+  if(menu&&menu.contains(document.activeElement)){e.preventDefault();closeFitExcludeMenu(true);}
+});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")flushPersist();});
 window.addEventListener("pagehide",()=>{
   flushPersist();

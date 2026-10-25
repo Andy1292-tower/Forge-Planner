@@ -48,6 +48,10 @@ function solveStateKey(state){
   // The fit-in-time settings change only what that search asks, never a plan.
   delete snapshot.fitHours;
   delete snapshot.fitBudget;
+  delete snapshot.fitScope;
+  delete snapshot.fitSelectedOnly;
+  delete snapshot.fitLedgerMax;
+  delete snapshot.fitExcluded;
   delete snapshot.fitForced;
   delete snapshot.fitNext;
   delete snapshot.fitExtra;

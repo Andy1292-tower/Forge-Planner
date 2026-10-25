@@ -3871,16 +3871,48 @@ const FIT_LADDER_SHARE=0.4;      // of the time left past the limit, building th
 /* The chains a fit search takes levels from: every project in the list, ticked or not, from its
  * next unfinished level on to its last, and each ledger on through the character's following
  * ledgers. `chosen` is how many of those levels the project's own card asks for — its level range,
- * or a ledger card's current ledger and the ones it includes. */
+ * or a ledger card's current ledger and the ones it includes.
+ *
+ * S.fitScope "ledgers", the default, keeps projects out of the search; "all" lets it pick from them
+ * too. S.fitExcluded keeps the cards it names out under either. A card outside the search is in no set, but while it is unfinished it still holds back what
+ * waits on it: a chain stops before its first level that needs a material an outside card unlocks,
+ * or that an outside PROJECT_PREREQS prerequisite gates. `blocked` names each chain stopped so, and
+ * `outside` counts the projects the switch leaves out, and `excluded` names the excluded cards the
+ * switch would otherwise search.
+ *
+ * S.fitSelectedOnly searches only the ledger cards that are ticked, each kept to its own ledgers — the
+ * one it is on and those its Include next adds — instead of running on through the character's
+ * following ledgers. `unselected` counts the ledger cards that leaves ledgers out of.
+ *
+ * S.fitLedgerMax, when set, ends each ledger card's run before its first ledger numbered past it; a
+ * card already past it is left out. `capped` names each card it cuts, and `askedCut` marks one cut
+ * short of the ledgers its own card asks for. */
 function fitChains(){
-  const chains=[];
+  const ledgersOnly=S.fitScope!=="all",selectedOnly=S.fitSelectedOnly===true,chains=[],capped=[];
+  let unselected=0;
+  const excluded=new Set(Array.isArray(S.fitExcluded)?S.fitExcluded:[]);
+  const cap=Number.isInteger(S.fitLedgerMax)&&S.fitLedgerMax>=1?S.fitLedgerMax:null;
   (S.projects||[]).forEach(p=>{
     let lv=p.levels||[],name=p.name||"Project",numbers=null;
     const from=Math.max(1,Math.min(lv.length,Math.floor(num(p.from)||1)));
     const to=Math.min(lv.length,Math.max(from,Math.floor(num(p.to)||lv.length)));
     const done=Math.max(0,Math.min(to-from+1,Math.floor(num(p.done)||0))),start=from-1+done;
     const character=p.ledgerId&&p.ledgerNo!=null?ledgerCharacter(p.ledgerId):null;
-    const entries=character?ledgerWindow(character,p.ledgerNo,character.ledgers.length):[];
+    let entries=character?ledgerWindow(character,p.ledgerNo,character.ledgers.length):[];
+    const out=excluded.has(p.id)?"excluded":ledgersOnly&&!p.ledgerId?"scope":selectedOnly&&p.ledgerId&&!p.on?"unticked":null;
+    if(selectedOnly&&entries.length){
+      const own=ledgerWindow(character,p.ledgerNo,Math.max(0,Math.floor(num(p.ledgerAhead)||0)));
+      if(out==="unticked"||(own.length<entries.length&&!out))unselected++;
+      entries=own;
+    }
+    const asked=Math.max(0,to-start),past=cap!=null&&!out?entries.findIndex(entry=>ledgerNumber(entry)>cap):-1;
+    if(past>=0){
+      const kept=entries.slice(0,past);
+      capped.push({id:p.id||"",name:character.name,askedCut:asked>Math.max(0,kept.length-start),
+        lastNumber:kept.length>start?ledgerNumber(kept[kept.length-1]):null});
+      if(!kept.length)return;
+      entries=kept;
+    }
     if(entries.length){lv=entries;name=character.name;numbers=entries.map(ledgerNumber);}
     const end=lv.length;
     if(start>=end)return;
@@ -3895,7 +3927,7 @@ function fitChains(){
     // prefix[k]: how many of the first k levels have something to craft.
     const prefix=[0];levels.forEach((level,k)=>prefix.push(prefix[k]+(level.uses.size?1:0)));
     chains.push({id:p.id||"",name,catId:p.catId||"",ledger:!!p.ledgerId,on:!!p.on,
-      prio:p.prio!=null?p.prio:null,start,chosen:Math.min(levels.length,Math.max(0,to-start)),levelCount:lv.length,levels,prefix});
+      prio:p.prio!=null?p.prio:null,start,chosen:Math.min(levels.length,Math.max(0,to-start)),levelCount:lv.length,levels,prefix,out});
   });
   // Gates: an in-list unlocker must be taken whole before a level using its material counts.
   const unlockerOf={},byCat={};
@@ -3906,7 +3938,27 @@ function fitChains(){
       level.gates=[...new Set([...whole,...UNLOCK_MATERIALS.map(m=>unlockerOf[m]).filter((u,k)=>u!=null&&u!==i&&level.uses.has(UNLOCK_MATERIALS[k]))])];
     });
   });
-  return chains;
+  // Each chain in the search stops before its first level that waits on a card outside it. A chain
+  // left with nothing to craft leaves the search too, so what waits on it stops in turn.
+  const blocked=new Map();
+  for(let changed=true;changed;){
+    changed=false;
+    chains.forEach((c,i)=>{
+      if(c.out)return;
+      const at=c.levels.findIndex(level=>level.gates.some(u=>chains[u].out));
+      if(at<0)return;
+      const level=c.levels[at],u=level.gates.find(g=>chains[g].out),by=chains[u];
+      blocked.set(i,{id:c.id,name:c.name,ledger:c.ledger,number:level.number,level:c.start+at+1,by:by.name,why:by.out,
+        material:UNLOCK_MATERIALS.find(m=>unlockerOf[m]===u&&level.uses.has(m))||null});
+      c.levels.length=at;c.prefix.length=at+1;c.chosen=Math.min(c.chosen,at);
+      if(!at||(c.ledger&&c.levels.every(l=>!l.uses.size)))c.out="blocked";
+      changed=true;
+    });
+  }
+  const kept=chains.filter(c=>!c.out),index=new Map(kept.map((c,i)=>[chains.indexOf(c),i]));
+  kept.forEach(c=>c.levels.forEach(level=>{level.gates=level.gates.map(u=>index.get(u));}));
+  return {chains:kept,blocked:[...blocked.values()],outside:chains.filter(c=>c.out==="scope").length,capped,cap,unselected,
+    excluded:chains.filter(c=>c.out==="excluded"&&(c.ledger||!ledgersOnly)).map(c=>c.name)};
 }
 function fitRandom(seed){
   let a=seed>>>0;
@@ -3917,14 +3969,16 @@ function optimizeFit(testOptions,shard){
   const hours=boundedPersistedField("fitHours",S.fitHours,48,0.1,100000);
   const budget=boundedPersistedField("fitBudget",S.fitBudget,60000,10000,300000,true);
   const slice=normalizeShard(shard),strategyIndex=slice?slice.index:0;
-  const chains=fitChains();
-  if(!chains.length)return {empty:true,mode:"project",task:"fit",hours,selection:[],count:0,ms:performance.now()-t0};
+  const {chains,blocked,outside,capped,cap,excluded,unselected}=fitChains();
+  const wanted=new Set(Array.isArray(S.fitForced)?S.fitForced:[]);
+  const leftOut={scope:S.fitScope==="all"?"all":"ledgers",projects:outside,blocked,excluded,unselected,ledgerMax:cap,capped:capped.length,
+    forcedCut:capped.filter(c=>c.askedCut&&wanted.has(c.id)).map(c=>({id:c.id,name:c.name,lastNumber:c.lastNumber}))};
+  if(!chains.length)return {empty:true,mode:"project",task:"fit",hours,selection:[],count:0,leftOut,ms:performance.now()-t0};
   const control=makeSolveControl(budget,testOptions),lpMemo=makeLpMemo(),isStatic=S.projLineMode==="static";
   const inv=projectInitialInventory(),estimates=new Map();
   // The floor every set starts from: must-finish projects as far as their cards ask, then the
   // unlocks those levels wait on, whole.
   const floor=chains.map(()=>0),required=chains.map(()=>null);
-  const wanted=new Set(Array.isArray(S.fitForced)?S.fitForced:[]);
   chains.forEach((c,i)=>{if(wanted.has(c.id)&&c.chosen>0){floor[i]=c.chosen;required[i]="chosen";}});
   for(let changed=true;changed;){
     changed=false;
@@ -4199,7 +4253,7 @@ function optimizeFit(testOptions,shard){
     count:chosen.count,rank:chosen.rank,estimateEta:Number.isFinite(chosen.eta)?chosen.eta:null,
     verified:!!verified||chosen.count===0,eta:run?run.eta:(chosen.count===0?0:null),
     forcedOver:forcedOver?{real:forcedOver.real,estimate:Number.isFinite(candidate.eta)?candidate.eta:null}:null,
-    next,extra,inside,
+    next,extra,inside,leftOut,
     deadlineReached:control.deadlineReached(),ms:performance.now()-t0};
 }
 
