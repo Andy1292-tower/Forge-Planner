@@ -10,6 +10,8 @@
  * left out rather than padded in.
  */
 const CHANGELOG=[
+  {version:"2026.10.24.7",date:"2026-10-24",groups:{
+    Changed:["Finance Center, Jade Refinery, Hospital Wing, Off-Rock Mining Operation, Tokenium Mining Center, Vespium Drill Hub, Rig Parts Production Facility and All Round Giga-Scanner now go up to Lv 54 in the catalog. Lv 49–54 costs are estimated on the same curve as the estimated levels below them, and each project's catalog note shows its estimated range. A project already in your list keeps its end level; raise it to plan the new levels."]}},
   {version:"2026.10.24.6",date:"2026-10-24",groups:{
     Changed:["List what else finishes, in What fits in a time limit, now builds on the answer one step at a time. Each row adds one more project level or ledger to the plan above it and shows how many that plan finishes and how long it takes, so the last row is the most you can finish inside the extra hours."]}},
   {version:"2026.10.24.5",date:"2026-10-24",groups:{
