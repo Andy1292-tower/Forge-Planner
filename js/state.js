@@ -490,6 +490,10 @@ function validateAndMigrate(candidate){
     const forced=_array(_readData(candidate,"fitForced","fitForced",errors),"fitForced",errors,STATE_LIMITS.maxProjects);
     if(forced)out.fitForced=forced.map((id,index)=>_string(id,FIELD_SCHEMA.id,"fitForced["+index+"]",errors));
   }
+  if(_own(candidate,"fitExcluded")){
+    const excluded=_array(_readData(candidate,"fitExcluded","fitExcluded",errors),"fitExcluded",errors,STATE_LIMITS.maxProjects);
+    if(excluded)out.fitExcluded=excluded.map((id,index)=>_string(id,FIELD_SCHEMA.id,"fitExcluded["+index+"]",errors));
+  }
   if(_own(candidate,"fitNext"))out.fitNext=_boolean(_readData(candidate,"fitNext","fitNext",errors),"fitNext",errors);
   if(_own(candidate,"fitExtra"))out.fitExtra=_boolean(_readData(candidate,"fitExtra","fitExtra",errors),"fitExtra",errors);
   if(_own(candidate,"fitExtraHours"))out.fitExtraHours=_number(_readData(candidate,"fitExtraHours","fitExtraHours",errors),FIELD_SCHEMA.fitExtraHours,"fitExtraHours",errors);

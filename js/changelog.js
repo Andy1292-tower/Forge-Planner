@@ -11,7 +11,9 @@
  */
 const CHANGELOG=[
   {version:"2026.10.25",date:"2026-10-25",groups:{
-    Added:["Exclude ledgers beyond #, in What fits in a time limit. Enter a ledger number and the search leaves out every ledger numbered past it. A Must finish ledger card is held to that number too, and the answer says where it stops."],
+    Added:[
+      "Exclude ledgers beyond #, in What fits in a time limit. Enter a ledger number and the search leaves out every ledger numbered past it. A Must finish ledger card is held to that number too, and the answer says where it stops.",
+      "Exclude from the search, in What fits in a time limit. Tick the ledger cards, or projects when Ledgers and projects is on, that the search should leave alone. A card you exclude comes off Must finish, and Use this selection leaves it as it is."],
     Changed:["What fits in a time limit has a Pick from switch at the top, set to Just ledgers, so the search picks only from your ledger cards. Choose Ledgers and projects to have it pick from your projects too, as it did before. If a project you haven't finished unlocks a material a ledger needs, Just ledgers stops that character's ledgers there and names the project they wait on. Use this selection leaves anything outside the search, your projects included, as it is."]}},
   {version:"2026.10.24.6",date:"2026-10-24",groups:{
     Changed:["List what else finishes, in What fits in a time limit, now builds on the answer one step at a time. Each row adds one more project level or ledger to the plan above it and shows how many that plan finishes and how long it takes, so the last row is the most you can finish inside the extra hours."]}},

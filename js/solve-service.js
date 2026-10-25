@@ -50,6 +50,7 @@ function solveStateKey(state){
   delete snapshot.fitBudget;
   delete snapshot.fitScope;
   delete snapshot.fitLedgerMax;
+  delete snapshot.fitExcluded;
   delete snapshot.fitForced;
   delete snapshot.fitNext;
   delete snapshot.fitExtra;

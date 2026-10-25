@@ -452,6 +452,61 @@ test("the ledger limit and a Must finish card it cuts read as sentences", () => 
   assert.match(past({ leftOut: capped, next: { status: "all" }, inside: [], extra: null }), /everything the search can pick from/);
 });
 
+test("an excluded card is never in the answer or past the limit, under either switch setting", () => {
+  const clank = P("lc", "Clank", [[]], { ledgerId: "clank", ledgerNo: 1 });
+  const past = { fitNext: true, fitExtra: true, fitExtraHours: 1000 };
+  const res = fit([TANK, clank, A], 100000, [], Object.assign({ fitScope: "ledgers", fitExcluded: ["lc", "a"] }, past));
+  assert.deepEqual(res.selection.map(r => r.id), ["l1"]);
+  assert.ok(res.inside.concat(res.extra.items).every(item => item.id === "l1"));
+  assert.deepEqual(res.leftOut.excluded, ["Clank"], "an excluded project goes unnamed while Just ledgers leaves projects out anyway");
+  const all = fit([TANK, clank, A], 100000, [], { fitScope: "all", fitExcluded: ["lc", "a"] });
+  assert.deepEqual(all.selection.map(r => r.id), ["l1"]);
+  assert.deepEqual(all.leftOut.excluded, ["Clank", "A"]);
+  const capped = fit([TANK, clank], 100000, [], { fitScope: "ledgers", fitExcluded: ["lc"], fitLedgerMax: TANK_NUMBERS[1] });
+  assert.equal(capped.leftOut.capped, 1, "an excluded card is not also counted as cut by the ledger limit");
+  const nothing = fit([clank], 100000, [], { fitScope: "ledgers", fitExcluded: ["lc"] });
+  assert.equal(nothing.empty, true);
+  assert.deepEqual(nothing.leftOut.excluded, ["Clank"]);
+});
+
+test("an excluded unlock project holds back what needs its material, and Must finish cannot hold it", () => {
+  const factory = P("ff", "Frame Factory", [[]], { catId: "frame-factory" });
+  const user = P("fr", "Frames user", [[["Frames", 30]]]);
+  const res = fit([factory, user, A], 100000, ["ff"], { fitScope: "all", fitExcluded: ["ff"] });
+  assert.deepEqual(res.selection.map(r => r.id), ["a"]);
+  assert.deepEqual(res.leftOut.blocked.map(b => [b.id, b.level, b.material, b.by, b.why]), [["fr", 1, "Frames", "Frame Factory", "excluded"]]);
+  assert.deepEqual(res.leftOut.excluded, ["Frame Factory"]);
+});
+
+test("the exclude list saves as project ids, keeps only projects still listed, wins over Must finish, and never moves a plan", () => {
+  const out = JSON.parse(vm.runInContext(`(function(){
+    const s=normalize(defaults());s.schemaVersion=CURRENT_SCHEMA_VERSION;s.baseTimeRev=3;s.mode="project";
+    s.projects=["a","b"].map(id=>({id,name:id.toUpperCase(),on:true,prio:null,from:1,to:1,done:0,levels:[{costs:[]}]}));
+    const set=Object.assign(JSON.parse(JSON.stringify(s)),{fitExcluded:["a","gone","a"],fitForced:["a","b"]});
+    const kept=validateAndMigrate(JSON.parse(JSON.stringify(set)));
+    const bad=validateAndMigrate(Object.assign(JSON.parse(JSON.stringify(s)),{fitExcluded:"a"}));
+    const plain=JSON.parse(JSON.stringify(set));plain.fitExcluded=[];
+    return JSON.stringify({fresh:s.fitExcluded,ok:kept.ok,excluded:kept.state.fitExcluded,forced:kept.state.fitForced,badOk:bad.ok,
+      sameKey:solveStateKey(set)===solveStateKey(plain)});
+  })()`, page));
+  assert.deepEqual(out, { fresh: [], ok: true, excluded: ["a"], forced: ["b"], badOk: false, sameKey: true });
+});
+
+test("the exclude list reads as one sentence with the ledger limit", () => {
+  const source = fs.readFileSync(path.join(ROOT, "js", "results.js"), "utf8");
+  const from = source.indexOf("// What one past-the-limit step adds"), to = source.indexOf("function fitResultHtml(");
+  const ui = vm.createContext({ FIT_NEXT_WINDOW_HOURS: 12, htmlText: String, fmtDuration: h => `${h}h`, fmtPlanClock: h => `@${h}` });
+  vm.runInContext(source.slice(from, to) + ";globalThis.left=fitLeftOutHtml;", ui);
+  const left = vm.runInContext("left", ui);
+  const base = { scope: "ledgers", projects: 0, blocked: [], excluded: [], ledgerMax: null, capped: 0, forcedCut: [] };
+  const line = leftOut => left({ leftOut: Object.assign({}, base, leftOut) });
+  assert.match(line({ excluded: ["Clank"] }), />Left out of the search: Clank\.</);
+  assert.match(line({ excluded: ["Clank", "Puri Puri"], ledgerMax: 300, capped: 1 }), />Left out of the search: Clank, Puri Puri and ledgers past #300\.</);
+  const gel = { id: "fr", name: "Frames user", ledger: false, number: null, level: 1, by: "Frame Factory", material: "Frames", why: "excluded" };
+  assert.match(line({ blocked: [gel] }), /Frames user stops before lv 1: it needs Frames, which Frame Factory unlocks, and Frame Factory is excluded from the search\.<\/div>$/);
+  assert.match(line({ blocked: [Object.assign({}, gel, { material: null })] }), /Frame Factory has to be finished first, and it is excluded from the search\.<\/div>$/);
+});
+
 test("the shard merge keeps a checked answer, then the most finished, then the shortest", () => {
   const merge = entries => JSON.parse(JSON.stringify(vm.runInContext("mergeShardResults", page)(
     "project", entries.map((res, index) => ({ shard: { index, count: entries.length }, res })), "fit")));

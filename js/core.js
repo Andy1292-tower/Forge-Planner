@@ -300,7 +300,7 @@ function defaults(){
     minedIncomeText:blankSourceText(),
     targets:tg,targetMode:"ratio",targetSaved:[],targetActiveId:null,
     projects:[],inventory:nulls(INVENTORY_ITEMS),inventoryText:{},projectSeq:true,projectGate:true,projectBatch:false,projectStability:"prefer-current",projLineMode:"split",
-    planStart:null,fitHours:48,fitBudget:60000,fitScope:"ledgers",fitLedgerMax:null,fitForced:[],fitNext:false,fitExtra:false,fitExtraHours:12,
+    planStart:null,fitHours:48,fitBudget:60000,fitScope:"ledgers",fitLedgerMax:null,fitExcluded:[],fitForced:[],fitNext:false,fitExtra:false,fitExtraHours:12,
     manual:[],manualSaved:[],manualActiveId:null
   };
 }
@@ -483,6 +483,9 @@ function normalize(st){
   // Must-finish projects for the fit-in-time search: ids of projects still in the list, once each.
   const _projectIds=new Set(st.projects.map(p=>p.id));
   st.fitForced=Array.isArray(st.fitForced)?[...new Set(st.fitForced.filter(id=>typeof id==="string"&&_projectIds.has(id)))]:[];
+  // Projects excluded from that search, the same way. A project excluded is never also a must-finish one.
+  st.fitExcluded=Array.isArray(st.fitExcluded)?[...new Set(st.fitExcluded.filter(id=>typeof id==="string"&&_projectIds.has(id)))]:[];
+  st.fitForced=st.fitForced.filter(id=>!st.fitExcluded.includes(id));
   syncManual(st);
   return st;
 }

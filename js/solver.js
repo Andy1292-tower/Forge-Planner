@@ -3874,16 +3874,18 @@ const FIT_LADDER_SHARE=0.4;      // of the time left past the limit, building th
  * or a ledger card's current ledger and the ones it includes.
  *
  * S.fitScope "ledgers", the default, keeps projects out of the search; "all" lets it pick from them
- * too. A card outside the search is in no set, but while it is unfinished it still holds back what
+ * too. S.fitExcluded keeps the cards it names out under either. A card outside the search is in no set, but while it is unfinished it still holds back what
  * waits on it: a chain stops before its first level that needs a material an outside card unlocks,
  * or that an outside PROJECT_PREREQS prerequisite gates. `blocked` names each chain stopped so, and
- * `outside` counts the projects the switch leaves out.
+ * `outside` counts the projects the switch leaves out, and `excluded` names the excluded cards the
+ * switch would otherwise search.
  *
  * S.fitLedgerMax, when set, ends each ledger card's run before its first ledger numbered past it; a
  * card already past it is left out. `capped` names each card it cuts, and `askedCut` marks one cut
  * short of the ledgers its own card asks for. */
 function fitChains(){
   const ledgersOnly=S.fitScope!=="all",chains=[],capped=[];
+  const excluded=new Set(Array.isArray(S.fitExcluded)?S.fitExcluded:[]);
   const cap=Number.isInteger(S.fitLedgerMax)&&S.fitLedgerMax>=1?S.fitLedgerMax:null;
   (S.projects||[]).forEach(p=>{
     let lv=p.levels||[],name=p.name||"Project",numbers=null;
@@ -3892,7 +3894,8 @@ function fitChains(){
     const done=Math.max(0,Math.min(to-from+1,Math.floor(num(p.done)||0))),start=from-1+done;
     const character=p.ledgerId&&p.ledgerNo!=null?ledgerCharacter(p.ledgerId):null;
     let entries=character?ledgerWindow(character,p.ledgerNo,character.ledgers.length):[];
-    const asked=Math.max(0,to-start),past=cap!=null?entries.findIndex(entry=>ledgerNumber(entry)>cap):-1;
+    const out=excluded.has(p.id)?"excluded":ledgersOnly&&!p.ledgerId?"scope":null;
+    const asked=Math.max(0,to-start),past=cap!=null&&!out?entries.findIndex(entry=>ledgerNumber(entry)>cap):-1;
     if(past>=0){
       const kept=entries.slice(0,past);
       capped.push({id:p.id||"",name:character.name,askedCut:asked>Math.max(0,kept.length-start),
@@ -3914,8 +3917,7 @@ function fitChains(){
     // prefix[k]: how many of the first k levels have something to craft.
     const prefix=[0];levels.forEach((level,k)=>prefix.push(prefix[k]+(level.uses.size?1:0)));
     chains.push({id:p.id||"",name,catId:p.catId||"",ledger:!!p.ledgerId,on:!!p.on,
-      prio:p.prio!=null?p.prio:null,start,chosen:Math.min(levels.length,Math.max(0,to-start)),levelCount:lv.length,levels,prefix,
-      out:ledgersOnly&&!p.ledgerId?"scope":null});
+      prio:p.prio!=null?p.prio:null,start,chosen:Math.min(levels.length,Math.max(0,to-start)),levelCount:lv.length,levels,prefix,out});
   });
   // Gates: an in-list unlocker must be taken whole before a level using its material counts.
   const unlockerOf={},byCat={};
@@ -3926,7 +3928,8 @@ function fitChains(){
       level.gates=[...new Set([...whole,...UNLOCK_MATERIALS.map(m=>unlockerOf[m]).filter((u,k)=>u!=null&&u!==i&&level.uses.has(UNLOCK_MATERIALS[k]))])];
     });
   });
-  // A chain left with nothing to craft leaves the search too, so what waits on it stops in turn.
+  // Each chain in the search stops before its first level that waits on a card outside it. A chain
+  // left with nothing to craft leaves the search too, so what waits on it stops in turn.
   const blocked=new Map();
   for(let changed=true;changed;){
     changed=false;
@@ -3944,7 +3947,8 @@ function fitChains(){
   }
   const kept=chains.filter(c=>!c.out),index=new Map(kept.map((c,i)=>[chains.indexOf(c),i]));
   kept.forEach(c=>c.levels.forEach(level=>{level.gates=level.gates.map(u=>index.get(u));}));
-  return {chains:kept,blocked:[...blocked.values()],outside:chains.filter(c=>c.out==="scope").length,capped,cap};
+  return {chains:kept,blocked:[...blocked.values()],outside:chains.filter(c=>c.out==="scope").length,capped,cap,
+    excluded:chains.filter(c=>c.out==="excluded"&&(c.ledger||!ledgersOnly)).map(c=>c.name)};
 }
 function fitRandom(seed){
   let a=seed>>>0;
@@ -3955,9 +3959,9 @@ function optimizeFit(testOptions,shard){
   const hours=boundedPersistedField("fitHours",S.fitHours,48,0.1,100000);
   const budget=boundedPersistedField("fitBudget",S.fitBudget,60000,10000,300000,true);
   const slice=normalizeShard(shard),strategyIndex=slice?slice.index:0;
-  const {chains,blocked,outside,capped,cap}=fitChains();
+  const {chains,blocked,outside,capped,cap,excluded}=fitChains();
   const wanted=new Set(Array.isArray(S.fitForced)?S.fitForced:[]);
-  const leftOut={scope:S.fitScope==="all"?"all":"ledgers",projects:outside,blocked,ledgerMax:cap,capped:capped.length,
+  const leftOut={scope:S.fitScope==="all"?"all":"ledgers",projects:outside,blocked,excluded,ledgerMax:cap,capped:capped.length,
     forcedCut:capped.filter(c=>c.askedCut&&wanted.has(c.id)).map(c=>({id:c.id,name:c.name,lastNumber:c.lastNumber}))};
   if(!chains.length)return {empty:true,mode:"project",task:"fit",hours,selection:[],count:0,leftOut,ms:performance.now()-t0};
   const control=makeSolveControl(budget,testOptions),lpMemo=makeLpMemo(),isStatic=S.projLineMode==="static";
