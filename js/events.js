@@ -1479,7 +1479,7 @@ document.getElementById("results").addEventListener("input",e=>{
 document.getElementById("results").addEventListener("change",e=>{
   const t=e.target;if(!t||!t.getAttribute)return;let v;
   // Plan-start anchor: display-only, so repaint from cache (no solve).
-  if(t.id==="fitNext"||t.id==="fitExtra"){
+  if(t.id==="fitNext"||t.id==="fitExtra"||t.id==="fitSelectedOnly"){
     const key=t.id,on=t.checked;mutateState(st=>{st[key]=on;});save();repaintFit();return;
   }
   const excludeId=t.getAttribute("data-fit-exclude");

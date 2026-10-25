@@ -617,6 +617,7 @@ footer a:hover,.contrib-help a:hover{text-decoration:underline}
 /* What fits in a time limit */
 .fit-scope{margin-bottom:10px}
 .fit-controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px}
+.fit-selected{margin-top:10px}
 .fit-leave{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin-top:10px}
 .fit-exclude{position:relative;min-width:0;max-width:100%;font-size:11.5px;color:var(--ink2)}
 .fit-exclude>summary{list-style:none;display:flex;align-items:center;gap:5px;min-height:30px;padding:5px 26px 5px 9px;

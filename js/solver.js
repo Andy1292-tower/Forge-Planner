@@ -3880,11 +3880,16 @@ const FIT_LADDER_SHARE=0.4;      // of the time left past the limit, building th
  * `outside` counts the projects the switch leaves out, and `excluded` names the excluded cards the
  * switch would otherwise search.
  *
+ * S.fitSelectedOnly searches only the ledger cards that are ticked, each kept to its own ledgers — the
+ * one it is on and those its Include next adds — instead of running on through the character's
+ * following ledgers. `unselected` counts the ledger cards that leaves ledgers out of.
+ *
  * S.fitLedgerMax, when set, ends each ledger card's run before its first ledger numbered past it; a
  * card already past it is left out. `capped` names each card it cuts, and `askedCut` marks one cut
  * short of the ledgers its own card asks for. */
 function fitChains(){
-  const ledgersOnly=S.fitScope!=="all",chains=[],capped=[];
+  const ledgersOnly=S.fitScope!=="all",selectedOnly=S.fitSelectedOnly===true,chains=[],capped=[];
+  let unselected=0;
   const excluded=new Set(Array.isArray(S.fitExcluded)?S.fitExcluded:[]);
   const cap=Number.isInteger(S.fitLedgerMax)&&S.fitLedgerMax>=1?S.fitLedgerMax:null;
   (S.projects||[]).forEach(p=>{
@@ -3894,7 +3899,12 @@ function fitChains(){
     const done=Math.max(0,Math.min(to-from+1,Math.floor(num(p.done)||0))),start=from-1+done;
     const character=p.ledgerId&&p.ledgerNo!=null?ledgerCharacter(p.ledgerId):null;
     let entries=character?ledgerWindow(character,p.ledgerNo,character.ledgers.length):[];
-    const out=excluded.has(p.id)?"excluded":ledgersOnly&&!p.ledgerId?"scope":null;
+    const out=excluded.has(p.id)?"excluded":ledgersOnly&&!p.ledgerId?"scope":selectedOnly&&p.ledgerId&&!p.on?"unticked":null;
+    if(selectedOnly&&entries.length){
+      const own=ledgerWindow(character,p.ledgerNo,Math.max(0,Math.floor(num(p.ledgerAhead)||0)));
+      if(out==="unticked"||(own.length<entries.length&&!out))unselected++;
+      entries=own;
+    }
     const asked=Math.max(0,to-start),past=cap!=null&&!out?entries.findIndex(entry=>ledgerNumber(entry)>cap):-1;
     if(past>=0){
       const kept=entries.slice(0,past);
@@ -3947,7 +3957,7 @@ function fitChains(){
   }
   const kept=chains.filter(c=>!c.out),index=new Map(kept.map((c,i)=>[chains.indexOf(c),i]));
   kept.forEach(c=>c.levels.forEach(level=>{level.gates=level.gates.map(u=>index.get(u));}));
-  return {chains:kept,blocked:[...blocked.values()],outside:chains.filter(c=>c.out==="scope").length,capped,cap,
+  return {chains:kept,blocked:[...blocked.values()],outside:chains.filter(c=>c.out==="scope").length,capped,cap,unselected,
     excluded:chains.filter(c=>c.out==="excluded"&&(c.ledger||!ledgersOnly)).map(c=>c.name)};
 }
 function fitRandom(seed){
@@ -3959,9 +3969,9 @@ function optimizeFit(testOptions,shard){
   const hours=boundedPersistedField("fitHours",S.fitHours,48,0.1,100000);
   const budget=boundedPersistedField("fitBudget",S.fitBudget,60000,10000,300000,true);
   const slice=normalizeShard(shard),strategyIndex=slice?slice.index:0;
-  const {chains,blocked,outside,capped,cap,excluded}=fitChains();
+  const {chains,blocked,outside,capped,cap,excluded,unselected}=fitChains();
   const wanted=new Set(Array.isArray(S.fitForced)?S.fitForced:[]);
-  const leftOut={scope:S.fitScope==="all"?"all":"ledgers",projects:outside,blocked,excluded,ledgerMax:cap,capped:capped.length,
+  const leftOut={scope:S.fitScope==="all"?"all":"ledgers",projects:outside,blocked,excluded,unselected,ledgerMax:cap,capped:capped.length,
     forcedCut:capped.filter(c=>c.askedCut&&wanted.has(c.id)).map(c=>({id:c.id,name:c.name,lastNumber:c.lastNumber}))};
   if(!chains.length)return {empty:true,mode:"project",task:"fit",hours,selection:[],count:0,leftOut,ms:performance.now()-t0};
   const control=makeSolveControl(budget,testOptions),lpMemo=makeLpMemo(),isStatic=S.projLineMode==="static";

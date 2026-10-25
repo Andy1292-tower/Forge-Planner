@@ -397,10 +397,13 @@ function fitBlockedBySolve(){const status=solveServiceStatus();return status.act
 // The must-finish list and past-the-limit settings an answer was searched with. Not part of the
 // solve key, which is about plans, so an answer also goes out of date when any of them changes.
 function fitForcedKey(){
-  return [S.fitScope,S.fitLedgerMax==null?"":S.fitLedgerMax,[...(S.fitExcluded||[])].sort().join(","),[...(S.fitForced||[])].sort().join(","),S.fitNext===true,S.fitExtra===true,S.fitExtra===true?S.fitExtraHours:""].join("|");
+  return [S.fitScope,S.fitSelectedOnly===true,S.fitLedgerMax==null?"":S.fitLedgerMax,[...(S.fitExcluded||[])].sort().join(","),[...(S.fitForced||[])].sort().join(","),S.fitNext===true,S.fitExtra===true,S.fitExtra===true?S.fitExtraHours:""].join("|");
 }
 // What the search can pick from: ledger cards, and projects too once the switch says so.
 function fitInScope(p){return S.fitScope==="all"||!!p.ledgerId;}
+// What the search would pick from before the exclude list: Search only my selected ledgers drops
+// the ledger cards that aren't ticked.
+function fitPickable(p){return fitInScope(p)&&!(S.fitSelectedOnly&&p.ledgerId&&!p.on);}
 function fitExcluded(p){return (S.fitExcluded||[]).includes(p.id);}
 function fitResultCurrent(entry){return !!entry&&entry.key===solveStateKey(S)&&entry.forced===fitForcedKey();}
 function startFit(){
@@ -481,7 +484,7 @@ const FIT_PAST_NO_TIME="the search time ran out before anything past the limit c
 // True when part of the list was outside the search, so "your list" would claim too much.
 function fitSearchLimited(res){
   const left=res&&res.leftOut;
-  return !!left&&(left.projects>0||left.blocked.length>0||left.capped>0||(left.excluded||[]).length>0);
+  return !!left&&(left.projects>0||left.blocked.length>0||left.capped>0||(left.excluded||[]).length>0||left.unselected>0);
 }
 function fitPastHtml(res){
   let html="";
@@ -522,6 +525,7 @@ function fitListText(parts){return parts.length>1?`${parts.slice(0,-1).join(", "
 function fitLeftOutHtml(res){
   const left=res.leftOut;if(!left)return "";
   const lines=[],parts=(left.excluded||[]).map(htmlText);
+  if(left.unselected>0)parts.push("ledgers you haven't selected");
   if(left.capped>0&&left.ledgerMax!=null)parts.push(`ledgers past #${left.ledgerMax}`);
   if(parts.length)lines.push(`Left out of the search: ${fitListText(parts)}.`);
   (left.forcedCut||[]).forEach(c=>lines.push(c.lastNumber!=null
@@ -576,7 +580,7 @@ function fitResultHtml(entry,current){
 // The projects the answer has to include, as removable chips, and a picker for the rest of what the
 // search can pick from.
 function fitForcedHtml(running){
-  const listed=(S.projects||[]).filter(p=>fitInScope(p)&&!fitExcluded(p));
+  const listed=(S.projects||[]).filter(p=>fitPickable(p)&&!fitExcluded(p));
   if(!listed.length)return "";
   const forced=new Set(S.fitForced||[]),off=running?" disabled":"";
   const chips=listed.filter(p=>forced.has(p.id)).map(p=>`<span class="fit-chip">${htmlText(p.name)}<button type="button" class="fit-chip-x" data-fit-unforce="${htmlAttribute(p.id)}" title="Remove from Must finish" aria-label="Remove ${htmlAttribute(p.name)} from Must finish"${off}>×</button></span>`).join("");
@@ -597,12 +601,16 @@ function fitScopeHtml(running){
     </div>
   </div>`;
 }
+// Whether a ledger card runs on into the character's following ledgers or keeps to its own.
+function fitSelectedHtml(running){
+  return `<div class="fit-selected"><label class="fit-check"><input type="checkbox" id="fitSelectedOnly"${S.fitSelectedOnly?" checked":""}${running?" disabled":""}> Search only my selected ledgers <span class="proj-mini">· the ticked ledger cards, with no ledgers after them</span></label></div>`;
+}
 // What the search leaves out of the list: every ledger past a number, and the cards ticked in a
 // dropdown of what the switch would otherwise search. The dropdown stays open across a repaint.
 function fitLeaveOutHtml(running){
   const off=running?" disabled":"",errorId="field-fit-ledger-max-error";
   const value=S.fitLedgerMax==null?"":String(S.fitLedgerMax);
-  const listed=(S.projects||[]).filter(fitInScope),count=listed.filter(fitExcluded).length;
+  const listed=(S.projects||[]).filter(fitPickable),count=listed.filter(fitExcluded).length;
   const menu=listed.length?`<details class="fit-exclude" id="fitExcludeMenu"${_fitExcludeOpen?" open":""}>
       <summary data-fit-exclude-toggle>Exclude from the search: <b>${count?`${count} excluded`:"none"}</b></summary>
       <div class="fit-exclude-list" role="group" aria-label="Exclude from the search">${listed.map(p=>
@@ -644,10 +652,11 @@ function fitBoxHtml(){
         <label class="fit-field">Search for <select id="fitBudget" aria-label="Fit-in-time search time"${running?" disabled":""}>${budgetOptions}</select></label>
         ${action}
       </div>
+      ${fitSelectedHtml(running)}
       ${fitLeaveOutHtml(running)}
       ${fitForcedHtml(running)}
       ${fitPastControlsHtml(running)}
-      <p class="help" style="margin:8px 0 10px">A heavy solve: it tries many combinations of the ${S.fitScope==="all"?"projects and ledgers":"ledgers"} in your list, ticked or not, with each ledger running on into the character's following ledgers, then checks the best as a full plan. Ledgers numbered past the one under <b>Exclude ledgers beyond #</b>, and anything ticked under <b>Exclude from the search</b>, are left out. Anything under <b>Must finish</b> is always in the answer, as far as its card asks, and the rest is fitted around it. It runs for up to the search time you pick on up to ${cores} CPU core${cores===1?"":"s"}, and only when you press <b>Find what fits</b>.</p>
+      <p class="help" style="margin:8px 0 10px">A heavy solve: it tries many combinations of the ${S.fitScope==="all"?"projects and ledgers":"ledgers"} in your list, ${S.fitSelectedOnly?"ticked ledger cards only, each kept to its own ledger and the ones Include next adds":"ticked or not, with each ledger running on into the character's following ledgers"}, then checks the best as a full plan. Ledgers numbered past the one under <b>Exclude ledgers beyond #</b>, and anything ticked under <b>Exclude from the search</b>, are left out. Anything under <b>Must finish</b> is always in the answer, as far as its card asks, and the rest is fitted around it. It runs for up to the search time you pick on up to ${cores} CPU core${cores===1?"":"s"}, and only when you press <b>Find what fits</b>.</p>
       <div id="fitBody">${body}</div>
     </div>
   </details>`;

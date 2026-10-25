@@ -1,7 +1,8 @@
 "use strict";
 /* Fit in time (Node): which ticked levels optimizeFit finishes inside a time limit, how it treats
- * level chains, ledgers and unlock gates, what the Pick from switch leaves out of the search, the
- * shard merge that picks the winner, and the Worker protocol's "fit" task.
+ * level chains, ledgers and unlock gates, what the Pick from switch, the ledger limit, the exclude
+ * list and Search only my selected ledgers leave out of the search, the shard merge that picks the
+ * winner, and the Worker protocol's "fit" task.
  *
  * fit() searches Ledgers and projects unless a test asks for fitScope "ledgers", so the tests built
  * from plain projects read as they always have.
@@ -505,6 +506,59 @@ test("the exclude list reads as one sentence with the ledger limit", () => {
   const gel = { id: "fr", name: "Frames user", ledger: false, number: null, level: 1, by: "Frame Factory", material: "Frames", why: "excluded" };
   assert.match(line({ blocked: [gel] }), /Frames user stops before lv 1: it needs Frames, which Frame Factory unlocks, and Frame Factory is excluded from the search\.<\/div>$/);
   assert.match(line({ blocked: [Object.assign({}, gel, { material: null })] }), /Frame Factory has to be finished first, and it is excluded from the search\.<\/div>$/);
+});
+
+test("Search only my selected ledgers searches the ticked ledger cards, each kept to its own ledgers", () => {
+  const two = P("l1", "Tank", [[]], { ledgerId: "tank-timmerson", ledgerNo: 1, ledgerAhead: 1 });
+  const clank = P("lc", "Clank", [[]], { ledgerId: "clank", ledgerNo: 1, on: false });
+  const past = { fitNext: true, fitExtra: true, fitExtraHours: 1000 };
+  const open = fit([two, clank], 100000, [], Object.assign({ fitScope: "ledgers" }, past));
+  assert.deepEqual(open.selection.map(r => r.id), ["l1", "lc"], "without it an unticked card is searched too");
+  assert.ok(row(open, "l1").remaining > 2, "and a card runs on into the character's following ledgers");
+  assert.equal(open.leftOut.unselected, 0);
+  const own = fit([two, clank], 100000, ["lc"], Object.assign({ fitScope: "ledgers", fitSelectedOnly: true }, past));
+  assert.deepEqual(own.selection.map(r => r.id), ["l1"], "an unticked card is left out, Must finish or not");
+  assert.deepEqual([row(own, "l1").remaining, row(own, "l1").taken], [2, 2]);
+  assert.equal(row(own, "l1").lastNumber, TANK_NUMBERS[1]);
+  assert.equal(own.leftOut.unselected, 2, "the ticked card's later ledgers and the unticked card");
+  assert.equal(own.next.status, "all", "nothing past the ticked card's own ledgers is offered");
+  assert.equal(own.extra.status, "all");
+  assert.ok(own.inside.concat(own.extra.items).every(item => item.id === "l1"));
+  const last = P("l2", "Tank", [[]], { ledgerId: "tank-timmerson", ledgerNo: TANK_NUMBERS.length });
+  assert.equal(fit([last], 100000, [], { fitScope: "ledgers", fitSelectedOnly: true }).leftOut.unselected, 0,
+    "a ticked card on the character's last ledger leaves nothing out");
+  const none = fit([clank], 100000, [], { fitScope: "ledgers", fitSelectedOnly: true });
+  assert.equal(none.empty, true);
+  assert.equal(none.leftOut.unselected, 1);
+  const three = P("l3", "Tank", [[]], { ledgerId: "tank-timmerson", ledgerNo: 1, ledgerAhead: 2 });
+  const capped = fit([three], 100000, [], { fitScope: "ledgers", fitSelectedOnly: true, fitLedgerMax: TANK_NUMBERS[1] });
+  assert.deepEqual([row(capped, "l3").remaining, capped.leftOut.capped], [2, 1], "the ledger limit still applies inside a card");
+  const project = P("f", "F", [[["Glass", 2000]], [["Glass", 2000]]], { to: 1, on: false });
+  const both = fit([project, two], 100000, [], { fitScope: "all", fitSelectedOnly: true });
+  assert.equal(row(both, "f").taken, 2, "projects, ticked or not, are searched as before");
+});
+
+test("Search only my selected ledgers saves on its own and never moves a plan", () => {
+  const out = JSON.parse(vm.runInContext(`(function(){
+    const s=normalize(defaults());s.schemaVersion=CURRENT_SCHEMA_VERSION;s.baseTimeRev=3;
+    const on=Object.assign(JSON.parse(JSON.stringify(s)),{fitSelectedOnly:true});
+    const kept=validateAndMigrate(on),bad=validateAndMigrate(Object.assign(JSON.parse(JSON.stringify(s)),{fitSelectedOnly:"yes"}));
+    return JSON.stringify({fresh:s.fitSelectedOnly,kept:kept.ok&&kept.state.fitSelectedOnly,badOk:bad.ok,sameKey:solveStateKey(on)===solveStateKey(s)});
+  })()`, page));
+  assert.deepEqual(out, { fresh: false, kept: true, badOk: false, sameKey: true });
+});
+
+test("ledgers you haven't selected are named with the rest of what was left out", () => {
+  const source = fs.readFileSync(path.join(ROOT, "js", "results.js"), "utf8");
+  const from = source.indexOf("// What one past-the-limit step adds"), to = source.indexOf("function fitResultHtml(");
+  const ui = vm.createContext({ FIT_NEXT_WINDOW_HOURS: 12, htmlText: String, fmtDuration: h => `${h}h`, fmtPlanClock: h => `@${h}` });
+  vm.runInContext(source.slice(from, to) + ";globalThis.ui={past:fitPastHtml,left:fitLeftOutHtml};", ui);
+  const { past, left } = vm.runInContext("ui", ui);
+  const leftOut = { scope: "ledgers", projects: 0, blocked: [], excluded: ["Clank"], unselected: 2, ledgerMax: 344, capped: 1, forcedCut: [] };
+  assert.match(left({ leftOut }), />Left out of the search: Clank, ledgers you haven't selected and ledgers past #344\.</);
+  assert.match(left({ leftOut: Object.assign({}, leftOut, { excluded: [], capped: 0 }) }), />Left out of the search: ledgers you haven't selected\.</);
+  assert.match(past({ leftOut: Object.assign({}, leftOut, { excluded: [], capped: 0 }), next: { status: "all" }, inside: [], extra: null }),
+    /everything the search can pick from is already in the answer/);
 });
 
 test("the shard merge keeps a checked answer, then the most finished, then the shortest", () => {
