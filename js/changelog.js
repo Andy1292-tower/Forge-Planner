@@ -10,6 +10,8 @@
  * left out rather than padded in.
  */
 const CHANGELOG=[
+  {version:"2026.10.25",date:"2026-10-25",groups:{
+    Changed:["What fits in a time limit has a Pick from switch at the top, set to Just ledgers, so the search picks only from your ledger cards. Choose Ledgers and projects to have it pick from your projects too, as it did before. If a project you haven't finished unlocks a material a ledger needs, Just ledgers stops that character's ledgers there and names the project they wait on. Use this selection leaves anything outside the search, your projects included, as it is."]}},
   {version:"2026.10.24.6",date:"2026-10-24",groups:{
     Changed:["List what else finishes, in What fits in a time limit, now builds on the answer one step at a time. Each row adds one more project level or ledger to the plan above it and shows how many that plan finishes and how long it takes, so the last row is the most you can finish inside the extra hours."]}},
   {version:"2026.10.24.5",date:"2026-10-24",groups:{

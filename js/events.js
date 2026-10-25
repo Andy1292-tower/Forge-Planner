@@ -1521,6 +1521,12 @@ document.getElementById("results").addEventListener("click",e=>{
     mutateState(st=>{st.fitForced=(st.fitForced||[]).filter(x=>x!==id);});save();repaintFit();
     const pick=document.getElementById("fitForcedAdd");if(pick)pick.focus();return;
   }
+  const fitScope=cl("[data-fit-scope]");
+  if(fitScope){
+    const checked=validateFieldValue(FIELD_SCHEMA.fitScope,fitScope.getAttribute("data-fit-scope"));
+    if(checked.valid&&checked.value!==S.fitScope&&!fitRunning()){mutateState(st=>{st.fitScope=checked.value;});save();repaintFit();}
+    return;
+  }
   if(cl("#btnFitRun")){startFit();return;}
   if(cl("#btnFitStop")){stopFit();return;}
   if(cl("#btnFitApply")){applyFitSelection();return;}

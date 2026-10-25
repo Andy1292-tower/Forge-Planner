@@ -1,7 +1,10 @@
 "use strict";
 /* Fit in time (Node): which ticked levels optimizeFit finishes inside a time limit, how it treats
- * level chains, ledgers and unlock gates, the shard merge that picks the winner, and the Worker
- * protocol's "fit" task.
+ * level chains, ledgers and unlock gates, what the Pick from switch leaves out of the search, the
+ * shard merge that picks the winner, and the Worker protocol's "fit" task.
+ *
+ * fit() searches Ledgers and projects unless a test asks for fitScope "ledgers", so the tests built
+ * from plain projects read as they always have.
  *
  * The solves run on a frozen clock. Every set here is small enough for the exhaustive path, which
  * finishes on its own, so each answer is the best set there is and the assertions are exact.
@@ -44,7 +47,7 @@ function fit(projects, hours, forced, past) {
     const s=defaults();s.dupe=0;s.margin=0;s.mode="project";
     s.lines=JSON.parse(JSON.stringify(globalThis.__setup.lines));
     s.projects=JSON.parse(JSON.stringify(globalThis.__setup.projects));
-    s.fitHours=globalThis.__setup.hours;s.fitForced=globalThis.__setup.forced.slice();
+    s.fitHours=globalThis.__setup.hours;s.fitForced=globalThis.__setup.forced.slice();s.fitScope="all";
     Object.assign(s,globalThis.__setup.past);
     normalize(s);syncManual(s);S=s;
     return JSON.parse(JSON.stringify(optimizeFit({now:()=>0})));
@@ -321,6 +324,74 @@ test("the past-the-limit settings save on their own and never move a plan", () =
   assert.deepEqual(out, { ok: true, next: true, extra: true, hours: 6, defaults: [false, false, 12], badOk: false, sameKey: true });
 });
 
+test("Just ledgers is the default for a new save and an old one, and never moves a plan", () => {
+  const out = JSON.parse(vm.runInContext(`(function(){
+    const s=normalize(defaults());s.schemaVersion=CURRENT_SCHEMA_VERSION;s.baseTimeRev=3;
+    const old=JSON.parse(JSON.stringify(s));delete old.fitScope;
+    const all=Object.assign(JSON.parse(JSON.stringify(s)),{fitScope:"all"});
+    const kept=validateAndMigrate(all),bad=validateAndMigrate(Object.assign(JSON.parse(JSON.stringify(s)),{fitScope:"projects"}));
+    return JSON.stringify({fresh:s.fitScope,old:normalize(old).fitScope,kept:kept.ok&&kept.state.fitScope,badOk:bad.ok,
+      sameKey:solveStateKey(all)===solveStateKey(s)});
+  })()`, page));
+  assert.deepEqual(out, { fresh: "ledgers", old: "ledgers", kept: "all", badOk: false, sameKey: true });
+});
+
+const TANK = P("l1", "Tank", [[]], { ledgerId: "tank-timmerson", ledgerNo: 1 });
+
+test("Just ledgers leaves projects out of the answer, Must finish and past the limit", () => {
+  const ledgers = { fitScope: "ledgers", fitNext: true, fitExtra: true, fitExtraHours: 1000 };
+  const res = fit([A, TANK, D], 100000, ["a"], ledgers);
+  assert.deepEqual(res.selection.map(r => r.id), ["l1"]);
+  assert.equal(res.leftOut.scope, "ledgers");
+  assert.equal(res.leftOut.projects, 2);
+  assert.equal(row(res, "l1").required, null, "a project in Must finish is not searched in Just ledgers");
+  assert.ok(res.inside.concat(res.extra.items).every(item => item.id === "l1"));
+  const both = fit([A, TANK, D], 100000, ["a"], Object.assign({}, ledgers, { fitScope: "all" }));
+  assert.deepEqual(both.selection.map(r => r.id), ["a", "l1", "d"]);
+  assert.equal(row(both, "a").required, "chosen");
+  assert.equal(both.leftOut.projects, 0);
+  const none = fit([A, D], 100000, [], { fitScope: "ledgers" });
+  assert.equal(none.empty, true);
+  assert.equal(none.leftOut.projects, 2);
+});
+
+test("in Just ledgers an unfinished unlock project holds back the ledgers that need its material", () => {
+  // Bhramari's first ledger, #28, asks for Rods; the next, #57, for Gel, which Gel Refinery unlocks.
+  const bhramari = P("lb", "Bhramari", [[]], { ledgerId: "bhramari", ledgerNo: 1 });
+  const refinery = P("gr", "Gel Refinery", [[]], { catId: "gel-refinery" });
+  const held = fit([refinery, bhramari], 100000, [], { fitScope: "ledgers" });
+  assert.deepEqual(held.selection.map(r => [r.id, r.remaining]), [["lb", 1]]);
+  assert.deepEqual(held.leftOut.blocked.map(b => [b.id, b.number, b.material, b.by, b.why]),
+    [["lb", 57, "Gel", "Gel Refinery", "scope"]]);
+  const open = fit([refinery, bhramari], 100000, [], { fitScope: "all" });
+  assert.deepEqual(open.leftOut.blocked, []);
+  assert.ok(row(open, "lb").remaining > 1, "with projects searched, the refinery can be built first");
+  const unlisted = fit([bhramari], 100000, [], { fitScope: "ledgers" });
+  assert.deepEqual(unlisted.leftOut.blocked, [], "an unlock not in the list counts as done");
+  assert.equal(row(unlisted, "lb").remaining, row(open, "lb").remaining);
+});
+
+test("what the search left out reads as sentences", () => {
+  const source = fs.readFileSync(path.join(ROOT, "js", "results.js"), "utf8");
+  const from = source.indexOf("// What one past-the-limit step adds"), to = source.indexOf("function fitResultHtml(");
+  const ui = vm.createContext({ FIT_NEXT_WINDOW_HOURS: 12, htmlText: String, fmtDuration: h => `${h}h`, fmtPlanClock: h => `@${h}` });
+  vm.runInContext(source.slice(from, to) + ";globalThis.ui={past:fitPastHtml,left:fitLeftOutHtml,empty:fitEmptyHtml};", ui);
+  const { past, left, empty } = vm.runInContext("ui", ui);
+  const gel = { id: "lb", name: "Bhramari", ledger: true, number: 57, level: 2, by: "Gel Refinery", material: "Gel", why: "scope" };
+  const limited = { leftOut: { scope: "ledgers", projects: 1, blocked: [] }, next: { status: "all" }, inside: [],
+    extra: { status: "listed", hours: 5, items: [] } };
+  assert.match(past(limited), /everything the search can pick from is already in the answer/);
+  assert.match(past(limited), /Nothing else the search can pick from finishes within 5h more/);
+  assert.equal(left({ leftOut: { scope: "ledgers", projects: 0, blocked: [gel] } }),
+    '<div class="proj-mini" style="margin-top:6px">Bhramari stops before ledger #57: it needs Gel, which Gel Refinery unlocks. Switch to <b>Ledgers and projects</b> to let the search build it.</div>');
+  assert.match(left({ leftOut: { scope: "all", projects: 0, blocked: [Object.assign({}, gel, { material: null, why: "blocked" })] } }),
+    /stops before ledger #57: Gel Refinery has to be finished first\.<\/div>$/);
+  assert.match(empty({ leftOut: { scope: "ledgers", projects: 2, blocked: [] } }), /no ledgers left to craft in your list\. Switch to <b>Ledgers and projects<\/b>/);
+  assert.match(empty({ leftOut: { scope: "ledgers", projects: 0, blocked: [] } }), /^<div class="proj-mini">There are no ledgers left to craft in your list\.<\/div>$/);
+  assert.match(empty({ leftOut: { scope: "ledgers", projects: 1, blocked: [gel] } }), /Nothing the search can pick from is left to craft[\s\S]*Bhramari stops before/);
+  assert.match(empty({ leftOut: { scope: "all", projects: 0, blocked: [] } }), /Nothing in your project list is left to craft/);
+});
+
 test("the shard merge keeps a checked answer, then the most finished, then the shortest", () => {
   const merge = entries => JSON.parse(JSON.stringify(vm.runInContext("mergeShardResults", page)(
     "project", entries.map((res, index) => ({ shard: { index, count: entries.length }, res })), "fit")));
@@ -346,7 +417,7 @@ test("the Worker runs the fit task on the fit search time and refuses anything e
   vm.runInContext(fs.readFileSync(path.join(ROOT, "js", "solver.worker.v2.js"), "utf8"), worker);
   assert.ok(vm.runInContext("LEDGERS.length", worker) > 0, "the Worker loads the ledger data");
   const state = JSON.parse(vm.runInContext(`(function(){const s=normalize(defaults());s.mode="project";
-    s.schemaVersion=CURRENT_SCHEMA_VERSION;s.baseTimeRev=3;s.fitHours=100000;
+    s.schemaVersion=CURRENT_SCHEMA_VERSION;s.baseTimeRev=3;s.fitHours=100000;s.fitScope="all";
     s.projects=[{id:"a",name:"A",on:true,prio:null,from:1,to:1,done:0,levels:[{costs:[{item:"Glass",qty:"200"}]}]}];
     return JSON.stringify(s);})()`, worker));
   const send = message => worker.self.onmessage({ data: Object.assign({ reqId: 1, generation: 1, mode: "project",

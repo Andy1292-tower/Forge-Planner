@@ -90,6 +90,7 @@ const FIELD_SCHEMA=Object.freeze({
   mode:_field("enum",_FIELD_DEFAULTS.mode,{values:Object.freeze(["items","credits","project","manual"]),allowBlank:false,label:"planner mode"}),
   projectStability:_field("enum",_FIELD_DEFAULTS.projectStability,{values:Object.freeze(["prefer-current","reoptimize"]),allowBlank:false,label:"Project line-job policy"}),
   projLineMode:_field("enum",_FIELD_DEFAULTS.projLineMode,{values:Object.freeze(["split","static"]),allowBlank:false,label:"Project line plan"}),
+  fitScope:_field("enum",_FIELD_DEFAULTS.fitScope,{values:Object.freeze(["ledgers","all"]),allowBlank:false,label:"what the fit-in-time search picks from"}),
   flag:_field("boolean",false,{allowBlank:false,label:"option"}),
   displayText:_field("string","",{maxLength:DISPLAY_TEXT_MAX_LENGTH,allowBlank:true,label:"display text"}),
   id:_field("string","",{maxLength:64,allowBlank:false,pattern:/^[A-Za-z][A-Za-z0-9_-]{0,63}$/,label:"ID"}),
