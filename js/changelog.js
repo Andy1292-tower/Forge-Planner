@@ -10,6 +10,8 @@
  * left out rather than padded in.
  */
 const CHANGELOG=[
+  {version:"2026.10.31",date:"2026-10-31",groups:{
+    Changed:["Ledgers #361 to #370 ask for the amounts the game changed them to in version 1.2.37. A ledger card on one of them plans the new amounts."]}},
   {version:"2026.10.25",date:"2026-10-25",groups:{
     Added:[
       "Exclude ledgers beyond #, in What fits in a time limit. Enter a ledger number and the search leaves out every ledger numbered past it. A Must finish ledger card is held to that number too, and the answer says where it stops.",

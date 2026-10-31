@@ -85,13 +85,17 @@ test("every ledger is either a craftable the planner schedules or a listed other
   }
 });
 
-test("no ledger past the cutoff ships, commented-out characters included", () => {
+test("a ledger past the cutoff is in the data file as a comment, and the page cannot offer it", () => {
   assert.equal(MAX_LEDGER_NUMBER, 370);
+  const listed = run(page, "LEDGER_CHARACTERS.flatMap(c => c.ledgers.map(ledgerNumber))");
+  assert.ok(listed.length > 0);
+  assert.ok(listed.every(n => n <= MAX_LEDGER_NUMBER), `highest listed: ${Math.max(...listed)}`);
+  assert.ok(listed.includes(MAX_LEDGER_NUMBER), "the cutoff itself is kept");
   const source = fs.readFileSync(path.join(ROOT, "js", "ledgers.js"), "utf8");
-  const numbers = [...source.matchAll(/CGMC-741e-(\d+)/g)].map(match => Number(match[1]));
-  assert.ok(numbers.length > 0);
-  assert.ok(numbers.every(n => n <= MAX_LEDGER_NUMBER), `highest shipped: ${Math.max(...numbers)}`);
-  assert.ok(numbers.includes(MAX_LEDGER_NUMBER), "the cutoff itself is kept");
+  for (const line of source.split("\n")) {
+    const match = line.match(/CGMC-741e-(\d+)/);
+    if (match && Number(match[1]) > MAX_LEDGER_NUMBER) assert.match(line, /^\s*\/\/ /, `${match[0]} is commented out`);
+  }
 });
 
 test("characters switched off in the generator stay in the data file as comments", () => {
@@ -118,9 +122,11 @@ test("the generator maps the game's material names and refuses anything it does 
   assert.throws(() => parse(csv(["1,CGMC-741e-001,Ann,Ann,1,1,Unobtainium,5,,,,,,"])), /unknown material "Unobtainium"/);
   assert.throws(() => parse(csv(["1,CGMC-741e-001,Ann,Ann,2,1,IndustrialBits,5,,,,,,"])), /ledger 1 is missing/);
   const cut = parse(csv(["370,CGMC-741e-370,Ann,Ann,1,1,IndustrialBits,5,,,,,,", "371,CGMC-741e-371,Ann,Ann,2,1,IndustrialBits,9,,,,,,"]));
-  assert.deepEqual(cut[0].ledgers.map(l => l.code), ["CGMC-741e-370"], "a ledger past the cutoff is left out");
+  assert.deepEqual(cut[0].ledgers.map(l => [l.code, l.unlisted]), [["CGMC-741e-370", false], ["CGMC-741e-371", true]]);
+  assert.match(render(cut), /^    \{code:"CGMC-741e-370"/m);
+  assert.match(render(cut), /^    \/\/ \{code:"CGMC-741e-371"/m, "a ledger past the cutoff is written commented out");
   assert.throws(() => parse(csv(["371,CGMC-741e-371,Ann,Ann,1,1,IndustrialBits,5,,,,,,", "5,CGMC-741e-005,Ann,Ann,2,1,IndustrialBits,9,,,,,,"])),
-    /ledger 1 is missing/, "a cut that would leave a hole stops the run");
+    /ledger 1 is past the cutoff but a later one is not/, "a cut that would leave a hole stops the run");
   const written = render(parse(csv(["1,CGMC-741e-001,Gerbo,Gerbo,1,1,Vespium,200,,,,,,"])));
   assert.match(written, /^  \/\/ \{ledgerId:"gerbo"/m, "a DISABLED character is written commented out");
 });
