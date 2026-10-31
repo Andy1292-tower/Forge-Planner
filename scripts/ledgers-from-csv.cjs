@@ -16,9 +16,9 @@
  * commented-out entries so turning one on is a matter of removing it from this list and
  * regenerating.
  *
- * MAX_LEDGER_NUMBER keeps ledgers no player has reached yet out of the shipped data altogether, so
- * the page cannot spoil them. A ledger's number is the trailing digits of its order code. Raise it
- * and regenerate as players get further. */
+ * Ledgers past MAX_LEDGER_NUMBER, the ones no player has reached yet, are written commented out, so
+ * the data file has them but the page cannot offer them. A ledger's number is the trailing digits
+ * of its order code. Raise it and regenerate as players get further. */
 const fs = require("fs");
 const path = require("path");
 
@@ -78,9 +78,10 @@ function parse(csvText) {
     if (!name || !Number.isInteger(number) || number < 1) throw new Error(`Row ${row + 2}: unreadable character or ledger number`);
     const code = cells[at.code].trim(), codeMatch = code.match(/(\d+)$/);
     if (!codeMatch) throw new Error(`Row ${row + 2}: order code "${code}" has no number`);
-    // Past the cutoff the ledger is left out. Each character's ledgers rise in number, so this only
-    // ever trims the end of a character's list; a cut that left a hole fails the check below.
-    if (Number(codeMatch[1]) > MAX_LEDGER_NUMBER) return;
+    // Past the cutoff the ledger is written commented out. Each character's ledgers rise in number,
+    // so this only ever comments out the end of a character's list; a cut that left a listed ledger
+    // after a commented-out one fails the check below.
+    const unlisted = Number(codeMatch[1]) > MAX_LEDGER_NUMBER;
     const costs = [], other = [];
     for (let n = 1; n <= count; n++) {
       const material = cells[column(`material_${n}`)].trim(), amount = cells[column(`amount_${n}`)].trim();
@@ -91,13 +92,16 @@ function parse(csvText) {
     }
     const id = slug(name);
     if (!characters.has(id)) characters.set(id, { ledgerId: id, name, ledgers: [] });
-    characters.get(id).ledgers.push({ number, code, costs, other });
+    characters.get(id).ledgers.push({ number, code, costs, other, unlisted });
   });
   return [...characters.values()].sort((a, b) => a.name.localeCompare(b.name)).map(character => {
     character.ledgers.sort((a, b) => a.number - b.number);
     character.ledgers.forEach((ledger, index) => {
       if (ledger.number !== index + 1) throw new Error(`${character.name}: ledger ${index + 1} is missing`);
     });
+    const firstUnlisted = character.ledgers.findIndex(ledger => ledger.unlisted);
+    if (firstUnlisted >= 0 && character.ledgers.slice(firstUnlisted).some(ledger => !ledger.unlisted))
+      throw new Error(`${character.name}: ledger ${firstUnlisted + 1} is past the cutoff but a later one is not`);
     return character;
   });
 }
@@ -111,7 +115,8 @@ function render(characters) {
     out.push(`${prefix}{ledgerId:${JSON.stringify(character.ledgerId)},name:${JSON.stringify(character.name)},` +
       `portrait:"assets/ledger-${character.ledgerId}.webp",ledgers:[`);
     character.ledgers.forEach(ledger => {
-      out.push(`${prefix}  {code:${JSON.stringify(ledger.code)},costs:${costList(ledger.costs)},other:${costList(ledger.other)}},`);
+      const line = `{code:${JSON.stringify(ledger.code)},costs:${costList(ledger.costs)},other:${costList(ledger.other)}},`;
+      out.push(ledger.unlisted && prefix === "  " ? `    // ${line}` : `${prefix}  ${line}`);
     });
     out.push(`${prefix}]},`);
   });
@@ -128,7 +133,8 @@ function render(characters) {
  * \`costs\` are the craftables the planner schedules; \`other\` are mined resources
  * and potions, shown on the ledger card but not planned. Characters whose
  * ledgers ask for no craftables are commented out; the script's DISABLED list
- * names them.
+ * names them. Ledgers past the script's MAX_LEDGER_NUMBER are commented out
+ * too, until players reach them.
  * ========================================================================== */
 const LEDGER_CHARACTERS=[
 ${out.join("\n")}
@@ -147,7 +153,8 @@ if (require.main === module) {
   fs.writeFileSync(target, render(characters));
   const enabled = characters.filter(c => !DISABLED.has(c.ledgerId));
   process.stdout.write(`Wrote ${target}: ${enabled.length} characters on, ${characters.length - enabled.length} commented out, ` +
-    `${characters.reduce((sum, c) => sum + c.ledgers.length, 0)} ledgers\n`);
+    `${characters.reduce((sum, c) => sum + c.ledgers.length, 0)} ledgers, ` +
+    `${characters.reduce((sum, c) => sum + c.ledgers.filter(l => l.unlisted).length, 0)} past #${MAX_LEDGER_NUMBER} commented out\n`);
 }
 
 module.exports = { parse, render, CRAFTABLE, OTHER, DISABLED, MAX_LEDGER_NUMBER };
