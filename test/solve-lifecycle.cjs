@@ -531,10 +531,79 @@ test("a failed fit-in-time shard ends the search without a synchronous solve", (
   assert.ok(harness.workers.every(worker => worker.terminated), "the shard still searching is stopped too");
 });
 
-test("a fit task is only accepted on a Project request", () => {
+test("a task is only accepted on a Project request, and only a known one", () => {
   const harness = lifecycleHarness();
   assert.throws(() => harness.callRequest(Object.assign(fitRequest(1), { mode: "items",
-    stateSnapshot: { mode: "items", solveBudget: 200 } }), () => {}), /task must be "fit" on a Project request/);
+    stateSnapshot: { mode: "items", solveBudget: 200 } }), () => {}), /task must be "fit" or "ledgerTimes" on a Project request/);
+  assert.throws(() => harness.callRequest(Object.assign(ledgerTimesRequest(1), { mode: "items",
+    stateSnapshot: { mode: "items", solveBudget: 200 } }), () => {}), /task must be "fit" or "ledgerTimes" on a Project request/);
+  assert.throws(() => harness.callRequest(Object.assign(fitRequest(1), { task: "plan" }), () => {}), /task must be/);
+});
+
+function ledgerTimesRequest(revision, cards, onDrop) {
+  const projects = Array.from({ length: cards === undefined ? 3 : cards }, (_, index) => ({ id: "card" + index, ledgerId: "card" + index }));
+  return { mode: "project", task: "ledgerTimes", quiet: true, stateRevision: revision, budget: 200, onDrop,
+    stateSnapshot: { mode: "project", solveBudget: 200, projects: [{ id: "project" }, ...projects] } };
+}
+function ledgerTimesAnswer(rows) {
+  return { mode: "project", task: "ledgerTimes", rows, ms: 5 };
+}
+
+test("ledger times fans out across the cores and merges its rows in list order", () => {
+  const harness = lifecycleHarness({ hardwareConcurrency: 5 });
+  const delivered = [];
+  harness.callRequest(ledgerTimesRequest(1, 6), (result, error) => delivered.push({ result, error }));
+  assert.equal(harness.workers.length, 4);
+  harness.workers.forEach((worker, index) => {
+    assert.equal(worker.messages[0].task, "ledgerTimes");
+    assert.deepEqual(worker.messages[0].shard, { index, count: 4 });
+  });
+  assert.equal(harness.elements.solveOverlay.hidden, true, "the run stays in its dialog, not under the overlay");
+
+  [[1, 5], [2, 6], [3], [4]].forEach((indexes, shard) => harness.workers[shard].emitMessage(workerResponse(harness.workers[shard],
+    { res: ledgerTimesAnswer(indexes.map(index => ({ id: "card" + (index - 1), index, eta: index }))) })));
+  assert.equal(delivered.length, 1);
+  assert.equal(delivered[0].error, null);
+  assert.deepEqual(delivered[0].result.rows.map(row => row.index), [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(harness.workers.map(worker => worker.terminated), [false, true, true, true],
+    "the extra Workers are handed back, keeping one for the next ordinary solve");
+});
+
+test("ledger times asks for no more Workers than there are cards", () => {
+  const harness = lifecycleHarness({ hardwareConcurrency: 8 });
+  harness.callRequest(ledgerTimesRequest(1, 2), () => {});
+  assert.equal(harness.workers.length, 2);
+});
+
+test("with parallel solving switched off, ledger times keeps to one Worker", () => {
+  const harness = poolFlagHarness("off", { hardwareConcurrency: 5 });
+  harness.callRequest(ledgerTimesRequest(1), () => {});
+  assert.equal(harness.workers.length, 1);
+  assert.equal(harness.workers[0].messages[0].task, "ledgerTimes");
+  assert.equal(harness.workers[0].messages[0].shard, undefined);
+});
+
+test("ledger times hears when a later solve supersedes it", () => {
+  const harness = lifecycleHarness({ hardwareConcurrency: 3 });
+  const drops = [];
+  harness.callRequest(ledgerTimesRequest(1, 3, reason => drops.push(reason)), () => assert.fail("a superseded run delivers nothing"));
+  harness.callRequest(request("project", 2, "plan"), () => {});
+  harness.flushTimers();
+  assert.deepEqual(drops, ["superseded"]);
+  assert.ok(harness.workers.slice(0, 2).every(worker => worker.terminated), "the superseded run's Workers stop");
+});
+
+test("a failed ledger times shard ends the run without a synchronous solve", () => {
+  let synchronous = 0;
+  const harness = lifecycleHarness({ hardwareConcurrency: 3, optimize: () => { synchronous += 1;return {}; } });
+  const delivered = [];
+  harness.callRequest(ledgerTimesRequest(1), (result, error) => delivered.push({ result, error }));
+  harness.workers[0].emitError("worker crashed");
+  harness.flushTimers();
+  assert.equal(synchronous, 0);
+  assert.equal(delivered.length, 1);
+  assert.ok(delivered[0].error);
+  assert.ok(harness.workers.every(worker => worker.terminated), "the shard still running is stopped too");
 });
 
 test("a completed capped Items solve is reused after the service is recreated", () => {

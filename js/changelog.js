@@ -10,6 +10,8 @@
  * left out rather than padded in.
  */
 const CHANGELOG=[
+  {version:"2026.11.05",date:"2026-11-05",groups:{
+    Added:["Ledger times, a new button in Project plan. It lists the ledger you're up to on each card, ticked or not. Press Run simulation to see how long each one takes if it's the only thing on your lines, from your current inventory, using your Line plan. It runs only when you press that button and doesn't change your plan."]}},
   {version:"2026.10.31",date:"2026-10-31",groups:{
     Changed:["Ledgers #361 to #370 ask for the amounts the game changed them to in version 1.2.37. A ledger card on one of them plans the new amounts."]}},
   {version:"2026.10.25",date:"2026-10-25",groups:{
