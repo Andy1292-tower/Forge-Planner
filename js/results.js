@@ -641,7 +641,7 @@ function fitBoxHtml(){
     :`<button class="btn primary" type="button" id="btnFitRun"${blocked?" disabled":""}>Find what fits</button>`;
   let body="";
   if(running)body=`<div class="proj-mini"><span class="spinner" aria-hidden="true"></span> Searching — up to ${budgetLabel}.</div>`;
-  else if(blocked)body=`<div class="proj-mini">Waiting for the plan to finish solving.</div>`;
+  else if(blocked)body=`<div class="proj-mini">${solveServiceStatus().task==="ledgerTimes"?"Waiting for Ledger times to finish.":"Waiting for the plan to finish solving."}</div>`;
   else if(_fitResult)body=fitResultHtml(_fitResult,fitResultCurrent(_fitResult));
   return `<details class="cat-panel fit-panel" id="fitBox" ${(_fitOpen||running||_fitResult)?"open":""}>
     <summary data-paneltoggle="fit"><span class="cat-sum-lbl">What fits in a time limit</span><span class="cat-sum-meta">heavy solve</span></summary>
@@ -664,11 +664,104 @@ function fitBoxHtml(){
 // Repaint the box alone: the search starts, stops and lands while the reader may be anywhere else
 // in the plan, so nothing outside it moves.
 function repaintFit(){
+  repaintLedgerTimes();
   const box=document.getElementById("fitBox");if(!box)return;
   const focused=document.activeElement&&box.contains(document.activeElement)?document.activeElement.id:"";
   box.outerHTML=fitBoxHtml();
   const target=focused&&document.getElementById(focused)||(focused?document.getElementById(fitRunning()?"btnFitStop":"btnFitRun"):null);
   if(target&&!target.disabled)target.focus();
+}
+/* ---------- ledger times (Project plan) ----------
+ * The solve is optimizeLedgerTimes (js/solver.js); this is its dialog. It lists the ledger each card
+ * is up to, ticked or not. A run starts only from the dialog's Run simulation button and carries on
+ * if the dialog is closed. Its answer lasts for the page session and is marked out of date when
+ * anything it read changes. */
+let _ledgerTimesRun=null,_ledgerTimes=null,_ledgerTimesDropped=false;
+function ledgerTimeCards(){return (S.projects||[]).filter(p=>ledgerUpTo(p));}
+function ledgerTimesRunning(){const status=solveServiceStatus();return !!(_ledgerTimesRun&&status.active&&status.generation===_ledgerTimesRun.generation);}
+function ledgerTimesBlocked(){const status=solveServiceStatus();return status.active&&!status.follow&&!ledgerTimesRunning();}
+// What a run reads: the factory and stock a plan reads, and the ledgers the cards are up to. A tick
+// or a project's levels move no time here, so they leave the answer current.
+function ledgerTimesKey(){
+  const snapshot=solveStateSnapshot(S);
+  snapshot.projects=ledgerTimeCards().map(p=>{const upTo=ledgerUpTo(p);return {id:p.id,name:upTo.name,costs:upTo.costs};});
+  ["projectSeq","projectGate","projectBatch","projectStability"].forEach(field=>{delete snapshot[field];});
+  return solveStateKey(snapshot);
+}
+function startLedgerTimes(){
+  if(S.mode!=="project"||ledgerTimesRunning()||ledgerTimesBlocked()||!ledgerTimeCards().length)return;
+  const snapshot=solveStateSnapshot(S),solveKey=solveStateKey(snapshot),key=ledgerTimesKey();
+  const budget=boundedPersistedField("solveBudget",snapshot.solveBudget,10000,200,60000,true);
+  _ledgerTimesDropped=false;
+  let generation=null;
+  generation=solveService.request({mode:"project",task:"ledgerTimes",quiet:true,stateRevision,budget,stateSnapshot:snapshot,solveKey,
+    onDrop:()=>{
+      if(!_ledgerTimesRun||_ledgerTimesRun.generation!==generation)return;
+      _ledgerTimesDropped=!_ledgerTimesRun.stopped;_ledgerTimesRun=null;
+      repaintFit();resumeSellRanking();
+    }},(res,error)=>{
+    _ledgerTimesRun=null;
+    _ledgerTimes=error||!res?{key,error:solveErrorMessage(error)}:{key,res};
+    repaintFit();
+    resumeSellRanking();
+  });
+  _ledgerTimesRun={generation,stopped:false};
+  repaintFit();
+}
+function stopLedgerTimes(){
+  if(!ledgerTimesRunning())return;
+  _ledgerTimesRun.stopped=true;
+  solveService.cancel("Ledger times stopped");
+}
+function ledgerTimeCellHtml(row){
+  if(row.empty)return "Nothing to craft";
+  if(row.blocked.length)return `Needs ${row.blocked.map(htmlText).join(" and ")} income`;
+  if(row.infeasible.length)return `Can't make ${row.infeasible.map(htmlText).join(" and ")}`;
+  if(row.eta===null)return "No plan found";
+  if(row.eta<=0)return "Stock covers it";
+  return htmlText(fmtDuration(row.eta))+(row.bounded?"*":"");
+}
+function ledgerTimesIntroHtml(){
+  const cards=ledgerTimeCards().length,cores=solveServiceStatus().fitParallel||1,shards=Math.max(1,Math.min(cores,cards));
+  const budget=boundedPersistedField("solveBudget",S.solveBudget,10000,200,60000,true);
+  const each=fmtDuration(budget/3600000),most=fmtDuration(Math.ceil(cards/shards)*budget/3600000);
+  return `<p class="help" style="margin-bottom:8px">How long the ledger you're up to on each card takes if it's the only thing on your lines, starting from your current inventory and not waiting on any other project. It uses your Line plan, <b>${S.projLineMode==="static"?"Set &amp; forget":"Line switching"}</b>.</p>
+    <p class="help" style="margin-bottom:10px">It runs only when you press <b>Run simulation</b>, and it doesn't change your plan. Each ledger can use your max solve time of <b>${each}</b>, so a run can take up to <b>${most}</b> on ${cores} CPU core${cores===1?"":"s"}.</p>`;
+}
+function ledgerTimesStatusHtml(){
+  const count=ledgerTimeCards().length;
+  if(ledgerTimesRunning())return `<div class="proj-mini" style="margin-bottom:10px"><span class="spinner" aria-hidden="true"></span> Timing ${count} ledger${count===1?"":"s"}…</div>`;
+  if(ledgerTimesBlocked())return `<div class="proj-mini" style="margin-bottom:10px">${solveServiceStatus().task==="fit"?"Waiting for What fits in a time limit to finish.":"Waiting for the plan to finish solving."}</div>`;
+  if(_ledgerTimesDropped)return `<div class="notice info" style="font-size:11.5px">That run stopped because the plan re-solved or an input changed. Press <b>Run simulation</b> to start it again.</div>`;
+  if(_ledgerTimes&&_ledgerTimes.error)return `<div class="notice warn" style="font-size:11.5px"><b>Ledger times failed.</b> ${htmlText(_ledgerTimes.error)}</div>`;
+  if(_ledgerTimes&&_ledgerTimes.key!==ledgerTimesKey())return `<div class="notice info" style="font-size:11.5px">Your Line plan, lines, inventory or ledgers changed after this run. Press <b>Run simulation</b> to update these times.</div>`;
+  return "";
+}
+function ledgerTimesListHtml(){
+  const cards=ledgerTimeCards();
+  if(!cards.length)return `<div class="notice info">No ledgers left to time. Pick a ledger on a card in <b>Projects+Prices</b>.</div>`;
+  const running=ledgerTimesRunning(),rows=(_ledgerTimes&&_ledgerTimes.res&&_ledgerTimes.res.rows)||[];
+  const shown=cards.map(p=>{
+    const name=ledgerUpTo(p).name;
+    return {name,row:rows.find(r=>r.id===p.id&&r.name===name)||null};
+  });
+  const body=shown.map(({name,row})=>`<tr><td>${htmlText(name)}</td><td class="num">${running?"…":row?ledgerTimeCellHtml(row):"—"}</td></tr>`).join("");
+  const bounded=!running&&shown.some(({row})=>row&&row.eta>0&&row.bounded);
+  return `<table><thead><tr><th>Ledger</th><th class="num">On its own</th></tr></thead><tbody>${body}</tbody></table>
+    ${bounded?'<div class="proj-mini" style="margin-top:8px">* The best plan found within your max solve time. A shorter one may exist.</div>':""}`;
+}
+function ledgerTimesButtonHtml(){return ledgerTimeCards().length?`<button class="btn ghost" type="button" id="btnLedgerTimes">Ledger times</button>`:"";}
+function repaintLedgerTimes(){
+  const modal=document.getElementById("ledgerTimesModal");if(!modal||modal.hidden)return;
+  const running=ledgerTimesRunning(),run=document.getElementById("btnLedgerTimesRun"),stop=document.getElementById("btnLedgerTimesStop");
+  const focused=document.activeElement;
+  document.getElementById("ledgerTimesIntro").innerHTML=ledgerTimesIntroHtml();
+  document.getElementById("ledgerTimesStatus").innerHTML=ledgerTimesStatusHtml();
+  document.getElementById("ledgerTimesList").innerHTML=ledgerTimesListHtml();
+  run.hidden=running;stop.hidden=!running;
+  run.disabled=ledgerTimesBlocked()||!ledgerTimeCards().length;
+  if(focused===run&&running)stop.focus();
+  else if(focused===stop&&!running)run.focus();
 }
 // Quick project controls (on/off, level range, mark done) — collapsed so the plan stays the hero,
 // and rendered on every Project-mode path including the empty ones, so the tick that emptied the
@@ -684,6 +777,7 @@ function projAdjustPanelHtml(forceOpen){
 function renderProjectResults(res,el,stat){
   _lastProjectRes=res;
   if(typeof refreshProgressIfOpen==="function")refreshProgressIfOpen();
+  repaintLedgerTimes();
   const scheduleExecutable=!!(res&&res.feasible&&res.lpFeasible&&res.scheduleValidation&&res.scheduleValidation.ok);
   // Seed the plan-start anchor once, the first time a real plan exists (issue #87 item 1) — moved here
   // from the old modal's open handler now that the step plan is always on screen. Display anchor only.
@@ -703,6 +797,7 @@ function renderProjectResults(res,el,stat){
         <div class="proj-mini" style="font-size:11.5px">Every ticked project is complete.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn primary" id="btnProgress">Track progress</button>
+          ${ledgerTimesButtonHtml()}
           <button class="btn ghost" type="button" data-open-projects>Edit projects</button>
         </div></div>
         <div class="notice info"><b>All projects complete 🎉</b> Nothing left to craft. Open <b>Track progress</b> to review or reopen a level, or use <b>Edit projects</b> to add another project in <b>Projects+Prices</b>.</div>${ticks}`;
@@ -710,7 +805,7 @@ function renderProjectResults(res,el,stat){
     }
     el.innerHTML=(ticks
       ?`<div class="notice info"><b>No projects ticked on.</b> Tick one back on below and press <b>Resimulate</b> to plan it, or use <b>Edit projects</b> to add another in <b>Projects+Prices</b>.
-        <div style="margin-top:10px"><button class="btn ghost" type="button" data-open-projects>Edit projects</button></div></div>`
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost" type="button" data-open-projects>Edit projects</button>${ledgerTimesButtonHtml()}</div></div>`
       :`<div class="notice info">No project demand yet. Add a project with item costs in <b>Projects+Prices</b>, tick it <b>on</b>, then come back. Enter your current <b>inventory</b> there too — it's subtracted from what you need to craft.
         <div style="margin-top:10px"><button class="btn primary" type="button" data-open-projects>Edit projects</button></div></div>`)+ticks;
     stat.textContent="Plan updated. No project demand selected.";return;
@@ -722,6 +817,7 @@ function renderProjectResults(res,el,stat){
     <div class="proj-mini" style="font-size:11.5px">${scheduleExecutable?projOrderHeader(res):'Exact replay is blocked. Review the diagnostic and analytical breakdown below.'}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn primary" id="btnProgress">Track progress</button>
+      ${ledgerTimesButtonHtml()}
     </div></div>`;
   html+=projLineModeHtml(res);
   // Plan-start anchor (promoted from the old modal header)

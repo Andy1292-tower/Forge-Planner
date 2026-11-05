@@ -312,13 +312,21 @@ function mergeFitResults(ordered){
     ms:ordered.reduce((high,entry)=>Math.max(high,Number(entry.res.ms)||0),0)
   });
 }
+// Each shard timed its own ledgers, so the rows go back together in the order of the project list.
+function mergeLedgerTimes(ordered){
+  return Object.assign({},ordered[0].res,{
+    rows:ordered.flatMap(entry=>Array.isArray(entry.res.rows)?entry.res.rows:[]).sort((a,b)=>a.index-b.index),
+    ms:ordered.reduce((high,entry)=>Math.max(high,Number(entry.res.ms)||0),0)
+  });
+}
 function mergeShardResults(mode,entries,task){
   const ordered=shardMergeOrder(entries).filter(entry=>entry.res&&typeof entry.res==="object");
   if(!ordered.length)return null;
   if(ordered.length===1)return ordered[0].res;
   const first=ordered[0].res;
   if(task==="fit")return mergeFitResults(ordered);
-  if(mode!=="credits")return first;      // Credits and fit-in-time fan out; anything else is shard 0's
+  if(task==="ledgerTimes")return mergeLedgerTimes(ordered);
+  if(mode!=="credits")return first;      // Credits and the two tasks fan out; anything else is shard 0's
   if(ordered.some(entry=>entry.res.empty===true))return first;
   const catalogOrder=new Map((typeof PRICEABLE_ITEMS!=="undefined"?PRICEABLE_ITEMS:[]).map((item,index)=>[item,index]));
   const at=item=>catalogOrder.has(item)?catalogOrder.get(item):Number.MAX_SAFE_INTEGER;
@@ -561,6 +569,11 @@ const solveService=(()=>{
    * request pays a Worker round trip for a fragment with nothing in it. */
   function shardCountFor(mode,state,task){
     if(task==="fit")return fitPoolCap();
+    // Ledger times has its own button too, so it fans out on the same terms, one shard per card at most.
+    if(task==="ledgerTimes"){
+      const cards=Array.isArray(state&&state.projects)?state.projects.filter(p=>p&&p.ledgerId).length:0;
+      return Math.max(1,Math.min(fitPoolCap(),cards));
+    }
     if(!poolActive()||mode!=="credits")return 1;
     const prices=state&&state.sellPrice&&typeof state.sellPrice==="object"?state.sellPrice:{};
     const priced=Object.keys(prices).filter(item=>(Number(prices[item])||0)>0).length;
@@ -599,19 +612,19 @@ const solveService=(()=>{
     expectedFollow=false;
     expectedSolveMode=null;
     dropCallback=null;
-    // A failed fit-in-time shard ends the search, so the shards still searching answer nothing now.
-    if(expectedTask==="fit"&&error)terminateBusySlots();
-    /* A fit-in-time fan-out on a page whose ordinary solves use one Worker hands the extra Workers
-     * back once it is answered, keeping the one the next ordinary solve will reuse. */
-    if(expectedTask==="fit"&&!poolActive())pool.filter(slot=>!slot.busy).slice(1).forEach(slot=>terminateSlot(slot));
+    // A failed shard of a task ends it, so the shards still working answer nothing now.
+    if(expectedTask!==null&&error)terminateBusySlots();
+    /* A task's fan-out on a page whose ordinary solves use one Worker hands the extra Workers back
+     * once it is answered, keeping the one the next ordinary solve will reuse. */
+    if(expectedTask!==null&&!poolActive())pool.filter(slot=>!slot.busy).slice(1).forEach(slot=>terminateSlot(slot));
     expectedTask=null;requestSlotCap=1;
     overlay(false);
     if(done)done(result,error||null,metadata||null);
   }
   function runFallback(requestGeneration,reason){
-    // Neither a follow-up nor fit-in-time has a synchronous fallback: the page's own optimize() is
-    // a different solve, and a minutes-long search on the main thread would freeze the page.
-    if(expectedFollow||expectedTask==="fit"){deliver(requestGeneration,null,{message:reason});return;}
+    // Neither a follow-up nor a task has a synchronous fallback: the page's own optimize() is a
+    // different solve, and a minutes-long search on the main thread would freeze the page.
+    if(expectedFollow||expectedTask!==null){deliver(requestGeneration,null,{message:reason});return;}
     fallbackNotice(true,reason);
     clearFallbackTimer();
     fallbackTimer=setTimeout(()=>{
@@ -751,9 +764,9 @@ const solveService=(()=>{
     if(follow!==null&&!(typeof follow.mode==="string"&&typeof follow.key==="string")){
       throw new TypeError("solveService.request follow must be {mode,key} for the page state it serves");
     }
-    // A task asks the Worker for a solve other than the mode's own; fit-in-time is the only one.
+    // A task asks the Worker for a solve other than the mode's own: fit-in-time or ledger times.
     const task=options.task===undefined||options.task===null?null:options.task;
-    if(task!==null&&!(task==="fit"&&mode==="project"))throw new TypeError("solveService.request task must be \"fit\" on a Project request");
+    if(task!==null&&!((task==="fit"||task==="ledgerTimes")&&mode==="project"))throw new TypeError("solveService.request task must be \"fit\" or \"ledgerTimes\" on a Project request");
     if(options.onDrop!==undefined&&options.onDrop!==null&&typeof options.onDrop!=="function"){
       throw new TypeError("solveService.request onDrop must be a function");
     }

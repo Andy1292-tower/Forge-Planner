@@ -416,6 +416,19 @@
   </div>
 </div>
 
+<!-- LEDGER TIMES -->
+<div class="modal-bg" id="ledgerTimesModal" hidden>
+  <div class="modal dialog-shell" style="max-width:560px" role="dialog" aria-modal="true" aria-labelledby="ledgerTimesTitle">
+    <div class="modal-h"><h3 id="ledgerTimesTitle">Ledger times</h3><button class="iconbtn" title="Close" aria-label="Close ledger times" data-dialog-close>×</button></div>
+    <div class="modal-b" data-dialog-body>
+      <div id="ledgerTimesIntro"></div>
+      <div id="ledgerTimesStatus" aria-live="polite" aria-atomic="true"></div>
+      <div id="ledgerTimesList"></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" data-dialog-close>Close</button><button class="btn ghost" id="btnLedgerTimesStop" hidden>Stop</button><button class="btn primary" id="btnLedgerTimesRun">Run simulation</button></div>
+  </div>
+</div>
+
 <!-- GAME LOADOUT CODE: EXPORT -->
 <div class="modal-bg" id="loadoutExportModal" hidden>
   <div class="modal dialog-shell loadout-modal" role="dialog" aria-modal="true" aria-labelledby="loadoutExportTitle">

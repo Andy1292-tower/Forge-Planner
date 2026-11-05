@@ -374,14 +374,15 @@ const renderState = {planStart:1,projects:[],inventory:{Bits:40000}};
 let projRows = "";
 const renderProjectResults = Function("S","mutateState","save","projectForgieNote","projPlanAnchorHtml","htmlText","disp","fmtDuration",
   "stepsProjControls","stepPlanHtml","ALLITEMS","num","resultMinedUsage","minedUsageNote","lineAssignTableHtml","idleLinesNote","projectStabilityHtml","projOrderHeader","projLineModeHtml","staticHeldFeederItems",
-  "sellAgainHtml","fitBoxHtml",
+  "sellAgainHtml","fitBoxHtml","repaintLedgerTimes","ledgerTimesButtonHtml",
   `let _lastProjectRes=null,_breakdownOpen=false,_projAdjustOpen=false;${resultsSrc.slice(renderStart,renderEnd)};return renderProjectResults;`)(
     renderState,()=>{},()=>{},()=>"",()=>"",String,testDisp,()=>"1h",()=>projRows,()=>partialCopy,[],Number,()=>[],()=>"",()=>"",()=>"",()=>"",()=>"Order",()=>"",()=>[],
-    ()=>({html:""}),()=>"");
+    ()=>({html:""}),()=>"",()=>{},()=>'<button id="btnLedgerTimes">');
 const bitsEl={innerHTML:""},bitsStat={textContent:""};
 renderProjectResults({empty:false,sequenced:false,waved:false,single:true,feasible:true,lpFeasible:true,partial:false,
   eta:3,workEta:2,ms:1,perProject:[],phases:[{name:"Frames",eta:2,demandSub:{}}],executionPhases:[partialBitsPhase],
   scheduleValidation:{ok:true,boundaries:[]},blockedMined:{},infeasItems:[],atRiskItems:[],demandItems:[],rate:{},net:{},balance:[],plan:[]},bitsEl,bitsStat);
+assert.match(bitsEl.innerHTML,/id="btnLedgerTimes"/,"a plan offers Ledger times");
 assert.match(bitsEl.innerHTML,/Pre-produce <b>40k more Bits<\/b>/);
 assert.match(bitsEl.innerHTML,/<b>80k total<\/b>/);
 assert.match(bitsEl.innerHTML,/<b>40k currently on hand<\/b>/);
@@ -420,10 +421,12 @@ assert.match(untickedAll,/class="cat-panel proj-adjust" open/,
   "an emptied plan keeps the on/off ticks, opened — a collapsed panel would hide the way back");
 assert.match(untickedAll,/No projects ticked on/,"the empty copy points at the ticks below, not at the dialog");
 assert.doesNotMatch(untickedAll,/No project demand yet/,"projects that exist are not reported as never configured");
+assert.match(untickedAll,/id="btnLedgerTimes"/,"times don't read the ticks, so an emptied plan still offers them");
 
 const allComplete = emptyRender('<div class="proj-inline-row">rows</div>', withLevels(true));
 assert.match(allComplete,/All projects complete/);
 assert.match(allComplete,/class="cat-panel proj-adjust" open/,"a completed plan keeps the ticks too");
+assert.match(allComplete,/id="btnLedgerTimes"/,"a completed plan still offers Ledger times");
 
 const nothingConfigured = emptyRender("", []);
 assert.match(nothingConfigured,/No project demand yet/,"with no project to tick, the original setup copy stands");

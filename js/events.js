@@ -1284,6 +1284,9 @@ function setProjDone(pid,newDone){
 const progressDialog=dialogController.register({root:document.getElementById("progModal"),panel:document.querySelector("#progModal .modal"),opener:null,initialFocus:()=>document.getElementById("progDone"),onOpen:renderProgress});
 function openProgress(invoker){progressDialog.open(invoker);}
 function closeProgress(){progressDialog.close();}
+const ledgerTimesDialog=dialogController.register({root:document.getElementById("ledgerTimesModal"),panel:document.querySelector("#ledgerTimesModal .modal"),opener:null,onOpen:repaintLedgerTimes});
+document.getElementById("btnLedgerTimesRun").addEventListener("click",startLedgerTimes);
+document.getElementById("btnLedgerTimesStop").addEventListener("click",stopLedgerTimes);
 document.getElementById("progList").addEventListener("click",e=>{
   const reset=e.target.closest("[data-preset]");
   if(reset){setProjDone(reset.getAttribute("data-preset"),0);return;}
@@ -1521,6 +1524,7 @@ document.getElementById("results").addEventListener("change",e=>{
 document.getElementById("results").addEventListener("click",e=>{
   const cl=sel=>e.target.closest&&e.target.closest(sel);
   if(cl("#btnProgress")){openProgress(cl("#btnProgress"));return;}
+  if(cl("#btnLedgerTimes")){ledgerTimesDialog.open(cl("#btnLedgerTimes"));return;}
   const projectEditor=cl("[data-open-projects]");
   if(projectEditor){openProjects(projectEditor);return;}
   const lineMode=cl("[data-linemode]");

@@ -135,6 +135,20 @@ function ledgerProjectName(name,entries){
   const first=ledgerNumber(entries[0]),last=ledgerNumber(entries[entries.length-1]);
   return entries.length>1?`${name} ledgers #${first}–#${last}`:`${name} ledger #${first}`;
 }
+/* The ledger a card is up to: the first one its completed count hasn't reached, running on through
+   the character's following ledgers once the card's own are done. {name,costs} for that one ledger,
+   or null when the card has none left. */
+function ledgerUpTo(p){
+  if(!p||!p.ledgerId)return null;
+  const span=Math.max(1,Array.isArray(p.levels)?p.levels.length:1);
+  const done=Math.max(0,Math.min(span,Math.floor(Number(p.done)||0)));
+  const character=p.ledgerNo!=null?ledgerCharacter(p.ledgerId):null;
+  if(character){
+    const entry=character.ledgers[p.ledgerNo-1+done];
+    return entry?{name:ledgerProjectName(character.name,[entry]),costs:entry.costs}:null;
+  }
+  return done>=1?null:{name:p.name||"Ledger",costs:((p.levels||[])[0]||{}).costs||[]};
+}
 function normalizeLedgerProject(p){
   if(!p.ledgerId)return;
   if(p.ledgerNo===undefined)p.ledgerNo=null;

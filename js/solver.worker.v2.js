@@ -41,14 +41,15 @@ self.onmessage = function (e) {
       if(shardErrors.length)throw new Error("Worker shard descriptor rejected: "+shardErrors.join("; "));
       attributed={index:shard.index,count:shard.count};
     }
-    // A task names a solve other than the mode's own. The only one is Project plan's fit-in-time
-    // search, which spends its own search time rather than the ordinary solve budget.
-    if(task!==undefined&&task!==null&&task!=="fit")throw new Error("Worker task is unknown");
-    const fit=task==="fit";
+    // A task names a solve other than the mode's own, both on Project plan: the fit-in-time search,
+    // which spends its own search time rather than the ordinary solve budget, and ledger times.
+    if(task!==undefined&&task!==null&&task!=="fit"&&task!=="ledgerTimes")throw new Error("Worker task is unknown");
+    const fit=task==="fit",ledgerTimes=task==="ledgerTimes";
     const checked=validateWorkerState(state);
     if(!checked.ok)throw new Error("Worker state rejected: "+checked.errors.join("; "));
     if(mode!==checked.state.mode)throw new Error("Worker mode does not match the validated state");
     if(fit&&mode!=="project")throw new Error("Worker fit-in-time task needs Project plan");
+    if(ledgerTimes&&mode!=="project")throw new Error("Worker ledger times task needs Project plan");
     if(budget!==undefined&&budget!==(fit?checked.state.fitBudget:checked.state.solveBudget))throw new Error("Worker budget does not match the validated state");
     if(stab!==null&&stab!==undefined){
       const stabilityErrors=workerCacheErrors(stab,"stab");
@@ -68,7 +69,7 @@ self.onmessage = function (e) {
      * thread unions them — and the key check inside mixWeights stays the correctness net, so a cache
      * describing a different factory is discarded rather than trusted. */
     if (typeof setSoloMaxCache === "function") setSoloMaxCache(solo || null);
-    const res = fit ? optimizeFit(undefined, attributed) : optimize(undefined, attributed);
+    const res = fit ? optimizeFit(undefined, attributed) : ledgerTimes ? optimizeLedgerTimes(undefined, attributed) : optimize(undefined, attributed);
     if (res && typeof getLineStability === "function") res.__stab = getLineStability();
     if (res && typeof getSoloMaxCache === "function") res.__solo = getSoloMaxCache();
     /* Serialised, not posted live. A result carries quantities — credits, project demand, stock —

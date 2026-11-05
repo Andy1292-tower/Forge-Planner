@@ -645,7 +645,7 @@ footer a:hover,.contrib-help a:hover{text-decoration:underline}
 .fit-check{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11.5px;color:var(--ink2);cursor:pointer}
 .fit-check input[type=text]{width:56px;padding:4px 6px;height:28px;font-size:11.5px;text-align:right}
 .fit-next{margin-top:8px;font-size:12px;color:var(--ink2);line-height:1.5}
-.fit-panel .spinner{width:12px;height:12px;vertical-align:-2px;margin-right:4px}
+.fit-panel .spinner,#ledgerTimesStatus .spinner{width:12px;height:12px;vertical-align:-2px;margin-right:4px}
 /* Plan-start anchor — inline in the Project-mode panel (promoted from the old step-by-step modal). */
 .plan-anchor{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;margin-bottom:12px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg2)}
 .plan-anchor label{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink3);font-weight:600}

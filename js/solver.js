@@ -4257,6 +4257,26 @@ function optimizeFit(testOptions,shard){
     deadlineReached:control.deadlineReached(),ms:performance.now()-t0};
 }
 
+/* ---------- ledger times ----------
+ * How long the ledger each card is up to takes with nothing else on the lines, ticked or not: the
+ * plan Resimulate gives that ledger ticked alone, in the selected line mode, from the stock on hand.
+ * Each ledger has the whole solve budget. Line stability is neither read nor kept. */
+function optimizeLedgerTimes(testOptions,shard){
+  const t0=performance.now(),state=S,stability=_lineStability;
+  const cards=(state.projects||[]).map((p,index)=>({p,index,upTo:ledgerUpTo(p)})).filter(card=>card.upTo);
+  try{
+    const rows=shardSlice(cards,shard).map(({p,index,upTo})=>{
+      S=Object.assign({},state,{projectStability:"reoptimize",
+        projects:[Object.assign({},p,{on:true,from:1,to:1,done:0,levels:[{costs:upTo.costs}]})]});
+      const res=optimizeProjectTop(testOptions),executable=projectRunExecutable(res);
+      return {id:p.id||"",index,name:upTo.name,empty:res.empty===true,eta:executable?res.eta:null,
+        bounded:executable&&(res.capped===true||res.searchExhaustive===false||res.staticDeadlineReached===true),
+        blocked:[...new Set(Object.values(res.blockedMined||{}).flat())],infeasible:res.infeasItems||[]};
+    });
+    return {mode:"project",task:"ledgerTimes",rows,ms:performance.now()-t0};
+  }finally{S=state;_lineStability=stability;}
+}
+
 /* `shard` is a real parameter and deliberately not a member of testOptions: testOptions is the
  * direct-source test seam and js/solver.js's own contract says it is never posted through the Worker
  * protocol, so routing a production wire field through it would make the seam load-bearing. */

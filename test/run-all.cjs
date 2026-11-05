@@ -24,6 +24,7 @@ const tests = [
   "test/gel-loadout-exact.cjs",
   "test/infusion-upgrades.cjs",
   "test/inventory.cjs",
+  "test/ledger-times.cjs",
   "test/ledgers.cjs",
   "test/legacy-worker-retirement.cjs",
   "test/lns-repair.cjs",
