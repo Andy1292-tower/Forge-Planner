@@ -138,6 +138,10 @@ const runner = `
     "two half-ULP rates must become one visible ULP when the common suffix is recomputed");
   assert.equal(stablePositiveSum([1,halfUlp]),1,
     "the same common suffix must leave the shorter multiset rounded to one");
+  const unprunedBounds={decisiveGap:Infinity,orderAdvantage:Infinity};
+  const crowdedGroup=Array.from({length:300000},(_,index)=>pruneState(index,index,index));
+  assert.equal(gelLoadoutPruneCandidates(crowdedGroup,unprunedBounds,unprunedBounds,()=>"same").length,300000,
+    "a signature group larger than the engine's argument limit must survive grouping intact");
   const reversalGelBounds={decisiveGap:1,orderAdvantage:0};
   const reversalVespBounds={decisiveGap:100,orderAdvantage:Number.EPSILON};
   assert.equal(gelLoadoutPruneCandidates([
@@ -335,11 +339,12 @@ const runner = `
       sawProductionSignaturePartition=true;
     return pruneOriginal.apply(null,arguments);
   };
-  gelLoadout([
+  const partitionRows=[
     {__i:20,max:2,spx:1,turbo:0},
     {__i:21,max:2,spx:1,turbo:0},
     {__i:22,max:2,spx:1,turbo:0},
-  ],1e30);
+  ];
+  gelLoadout(partitionRows,gelVespHr(partitionRows[0],2)*2.5);
   gelLoadoutPruneCandidates=pruneOriginal;
   assert.ok(sawProductionSignaturePartition,
     "production DP must pass distinct future-rank signatures into the pruning partition");
@@ -386,7 +391,7 @@ const runner = `
       orders.forEach((rows,orderIndex)=>{
         const fullBudget=rows.reduce((sum,row)=>sum+gelVespHr(row,row.max),0);
         const boundaryBudget=rows.reduce((sum,row,index)=>sum+(index%2===0?gelVespHr(row,1):0),0);
-        const budgets=[0,fullBudget*0.17,fullBudget*0.39,boundaryBudget,fullBudget*0.73,fullBudget];
+        const budgets=[0,fullBudget*0.17,fullBudget*0.39,boundaryBudget,fullBudget*0.73,fullBudget,fullBudget*1e6];
         budgets.forEach((candidateBudget,budgetIndex)=>{
           const oracle=exhaustive(rows,candidateBudget);
           const before=JSON.stringify(rows);
@@ -399,6 +404,28 @@ const runner = `
     }
   });
   console.log("PASS "+oracleCases+" exhaustive 1-5 line cap/budget/dupe/permutation cases");
+
+  const searchOriginal=gelLoadoutPruneCandidates;
+  let searchCalls=0;
+  gelLoadoutPruneCandidates=function(){searchCalls++;return searchOriginal.apply(null,arguments);};
+  const topRows=[65536,65536,65536,65536,32768,16384,4096,1024].map((max,index)=>
+    ({__i:index,max,spx:500000+index*137000,turbo:100}));
+  const topBudget=gelLoadoutStableSum(topRows.map(row=>gelVespHr(row,row.max)));
+  [topBudget,topBudget*1e26].forEach(coveringBudget=>{
+    const atTop=gelLoadout(topRows,coveringBudget);
+    assert.equal(searchCalls,0,"income covering every line at its top compression must skip the search");
+    assert.deepEqual(atTop.perLine.map(line=>[line.__i,line.L]),topRows.map(row=>[row.__i,row.max]),
+      "income covering every line at its top compression must run every line there");
+    assert.equal(atTop.vespHr,topBudget,"the top-compression Vespium total must be the full cost of those lines");
+  });
+  const shortRows=topRows.slice(0,3);
+  const shortFull=gelLoadoutStableSum(shortRows.map(row=>gelVespHr(row,row.max)));
+  const shortBudget=shortFull*(1-Number.EPSILON*4),shortBefore=JSON.stringify(shortRows);
+  assertLoadout("budget just short of every line at top",shortRows,shortBudget,shortBefore,
+    gelLoadout(shortRows,shortBudget),exhaustive(shortRows,shortBudget));
+  assert.ok(searchCalls>0,"income short of every line at its top compression must run the search");
+  gelLoadoutPruneCandidates=searchOriginal;
+  console.log("PASS income covering every line at its top compression skips the search");
 
   S=gelVectorState();S.dupe=0;S.maxTurbo=0;
   const subsetRows=Array.from({length:12},(_,index)=>({__i:index,max:1,spx:Math.pow(2,index),turbo:0}));
