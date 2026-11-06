@@ -10,6 +10,9 @@
  * left out rather than padded in.
  */
 const CHANGELOG=[
+  {version:"2026.11.05.3",date:"2026-11-05",groups:{
+    Fixed:[
+      "Project plan in Set & forget could run out of solve time and show Executable schedule blocked when a line was making Wire or Frames. It now returns a plan, and those builds solve much faster."]}},
   {version:"2026.11.05.2",date:"2026-11-05",groups:{
     Fixed:[
       "A build with very fast crafter lines could refuse to import, with the message Maximum call stack size exceeded. It now imports.",
