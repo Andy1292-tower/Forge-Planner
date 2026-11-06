@@ -10,6 +10,10 @@
  * left out rather than padded in.
  */
 const CHANGELOG=[
+  {version:"2026.11.05.2",date:"2026-11-05",groups:{
+    Fixed:[
+      "A build with very fast crafter lines could refuse to import, with the message Maximum call stack size exceeded. It now imports.",
+      "With enough Vespium income to run all your lines at top compression, the planner no longer pauses for a couple of seconds each time it redraws."]}},
   {version:"2026.11.05",date:"2026-11-05",groups:{
     Added:["Ledger times, a new button in Project plan. It lists the ledger you're up to on each card, ticked or not. Press Run simulation to see how long each one takes if it's the only thing on your lines, from your current inventory, using your Line plan. It runs only when you press that button and doesn't change your plan."]}},
   {version:"2026.10.31",date:"2026-10-31",groups:{

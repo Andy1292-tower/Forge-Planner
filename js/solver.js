@@ -2053,8 +2053,10 @@ function gelLoadoutPruneCandidates(candidates,gelBounds,vespBounds,signatureOf){
     groups.get(signature).push(candidate);
   });
   const next=[];
-  [...groups.keys()].sort().forEach(signature=>next.push(...
-    gelLoadoutPruneGroup(groups.get(signature),gelBounds,vespBounds)));
+  [...groups.keys()].sort().forEach(signature=>{
+    // No spread here: a group can exceed the engine's argument limit.
+    for(const state of gelLoadoutPruneGroup(groups.get(signature),gelBounds,vespBounds))next.push(state);
+  });
   return next;
 }
 function gelLoadout(rows,vespBudgetHr){
@@ -2075,6 +2077,15 @@ function gelLoadout(rows,vespBudgetHr){
     entry.options.reduce((best,option)=>Math.max(best,option.gelHr),0)));
   const vespUpperBound=gelLoadoutStableSum(ordered.map(entry=>
     entry.options.reduce((best,option)=>Math.max(best,option.vespHr),0)));
+  // Income covering every line at its top compression leaves nothing to search: that loadout makes
+  // the most Gel there is.
+  if(vespUpperBound<=vespBudgetHr){
+    const perLine=ordered.map(({row,options})=>{
+      const top=options[options.length-1];
+      return {__i:row.__i,max:row.max,L:top.L,gelHr:top.gelHr,vespHr:top.vespHr,frac:1};
+    }).filter(line=>line.gelHr>0);
+    return {gelHr:gelUpperBound,vespHr:vespUpperBound,perLine};
+  }
   const gelPruneBounds=gelLoadoutPruneBounds(gelUpperBound,ordered.length);
   // Unused income cannot enlarge any candidate sum. Basing numeric pruning on an arbitrarily huge
   // user budget makes its safety interval dwarf every attainable cost and disables dominance.
