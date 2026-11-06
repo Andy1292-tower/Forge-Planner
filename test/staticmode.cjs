@@ -275,16 +275,18 @@ const runner = `
       " exhaustive="+expired.searchExhaustive+" infeas="+JSON.stringify(expired.infeasItems));
   }
 
-  // End to end, on the shape that bites: the fixed point needs a second pass to confirm the Bits its
-  // first plan committed to, and the first pass is entitled to spend the whole slice getting there.
-  // The second pass then returns instantly with nothing. That must retain the certified first pass,
-  // not read the empty result as a disagreeing obligation of zero.
+  // End to end, on the shape that bites: the Bits the first plan commits to move the project's direct
+  // Bits demand far enough to need a second search, and the first search is entitled to spend the
+  // whole slice getting there. The second search then returns instantly with nothing. That must retain
+  // the certified first pass, not read the empty result as a disagreeing obligation of zero.
   {
     let sliceClock=0,solves=0;
     const s=defaults();s.dupe=0;s.margin=0;s.mode="project";s.projLineMode="static";s.solveBudget=10000;
-    s.lines=Array.from({length:4},(_,i)=>({max:4,spx:5-i*0.2,turbo:0}));
+    s.lines=Array.from({length:6},(_,i)=>({max:4,spx:5-i*0.2,turbo:0}));
+    s.inventory=Object.assign({},s.inventory,{Bits:900});
+    s.forgie=Object.assign({},s.forgie,{Bits:60000});
     s.projects=[{id:"a",name:"Frames",catId:"",on:true,from:1,to:1,done:0,prio:1,
-        levels:[{costs:[{item:"Frames",qty:100}]}]},
+        levels:[{costs:[{item:"Frames",qty:100},{item:"Bits",qty:1000}]}]},
       {id:"b",name:"Ingots",catId:"",on:true,from:1,to:1,done:0,prio:2,
         levels:[{costs:[{item:"Ingots",qty:100}]}]}];
     normalize(s);syncManual(s);S=s;
@@ -307,6 +309,74 @@ const runner = `
       (spent.phases[0].plan||[]).some(line=>(line.entries||[]).length>0),
       "feasible="+spent.feasible+" replay="+(spent.scheduleValidation||{}).ok+
       " jobs="+JSON.stringify((spent.phases[0].plan||[]).flatMap(line=>(line.entries||[]).map(entry=>entry.item+"@"+entry.lvl))));
+  }
+
+  /* ---- settling the Frames/Wire Bits obligation on the assignment already held ----------------
+   * The search that picks an assignment starts from the Bits the project's own Frames and Wire would
+   * charge; the jobs it picks charge whatever they charge. Line rates do not depend on demand, so the
+   * obligation settles on that assignment by arithmetic. A search stopped by the clock therefore still
+   * returns a plan that replays, and another search runs only when the direct Bits demand moved enough
+   * for a different assignment to matter. */
+  {
+    const heldSetup=(bitsHeld,bitsCost)=>{
+      const s=defaults();s.dupe=0;s.margin=0;s.mode="project";s.projLineMode="static";s.solveBudget=10000;
+      s.lines=Array.from({length:6},(_,i)=>({max:4,spx:5-i*0.2,turbo:0}));
+      s.inventory=Object.assign({},s.inventory,{Bits:bitsHeld});
+      s.forgie=Object.assign({},s.forgie,{Bits:60000});
+      s.projects=[{id:"fb",name:"Frames + Bits",catId:"",on:true,from:1,to:1,done:0,prio:null,
+        levels:[{costs:[{item:"Frames",qty:100},{item:"Bits",qty:bitsCost}]}]}];
+      normalize(s);syncManual(s);S=s;
+    };
+    const countingSearches=run=>{
+      const real=staticSchedule;let searches=0;
+      staticSchedule=function(){searches++;return real.apply(this,arguments);};
+      try{return {result:run(),searches};}finally{staticSchedule=real;}
+    };
+    const jobs=res=>JSON.stringify((res.phases[0].plan||[]).flatMap(line=>(line.entries||[]).map(entry=>entry.item+"@"+entry.lvl)));
+
+    heldSetup(100000,1000000);
+    const small=countingSearches(()=>optimize());
+    const smallPhase=small.result.phases[0];
+    const initialBits=800;
+    record("static: a small Bits shift settles on the assignment without another search",
+      small.searches===1&&small.result.feasible===true&&small.result.scheduleValidation.ok===true&&
+      smallPhase.preProducedConverged===true&&smallPhase.preProducedDemand.Bits>initialBits&&
+      Math.abs(smallPhase.preProducedDemand.Bits-smallPhase.preProducedSolveDemand.Bits)<=1e-6&&
+      !(small.result.executionPhases||[]).some(ph=>ph.kind==="warmup"),
+      "searches="+small.searches+" feasible="+small.result.feasible+" replay="+small.result.scheduleValidation.ok+
+      " assumed="+JSON.stringify(smallPhase.preProducedSolveDemand)+" planned="+JSON.stringify(smallPhase.preProducedDemand)+
+      " jobs="+jobs(small.result)+" failure="+JSON.stringify(small.result.scheduleValidation.firstFailure||null));
+
+    // The whole budget goes to the first search, as it does on a late-game factory.
+    heldSetup(100000,1000000);
+    let spentClock=0,spentNodes=0;
+    const spentFirst=optimize({now:()=>spentClock,onCheckpoint:event=>{
+      if(event.type==="checkpoint"&&event.label==="dfs-node"&&++spentNodes===1)spentClock=20000;
+    }});
+    const spentPhase=spentFirst.phases[0];
+    record("static: a search that spends the whole budget still returns a plan that replays",
+      spentNodes>=1&&spentFirst.feasible===true&&spentFirst.scheduleValidation.ok===true&&
+      spentFirst.staticDeadlineReached===true&&spentFirst.capped===true&&spentFirst.searchExhaustive===false&&
+      (spentPhase.plan||[]).some(line=>(line.entries||[]).length>0)&&
+      Math.abs(spentPhase.preProducedDemand.Bits-spentPhase.preProducedSolveDemand.Bits)<=1e-6,
+      "dfsNodes="+spentNodes+" feasible="+spentFirst.feasible+" replay="+spentFirst.scheduleValidation.ok+
+      " deadline="+spentFirst.staticDeadlineReached+" failure="+JSON.stringify(spentFirst.scheduleValidation.firstFailure||null));
+
+    heldSetup(900,1000);
+    const large=countingSearches(()=>optimize());
+    record("static: a large Bits shift searches again from the settled obligation",
+      large.searches>=2&&large.result.feasible===true&&large.result.scheduleValidation.ok===true&&
+      large.result.phases[0].preProducedConverged!==false,
+      "searches="+large.searches+" feasible="+large.result.feasible+" replay="+large.result.scheduleValidation.ok+
+      " assumed="+JSON.stringify(large.result.phases[0].preProducedSolveDemand)+
+      " planned="+JSON.stringify(large.result.phases[0].preProducedDemand)+" jobs="+jobs(large.result));
+
+    // Line switching still solves its LP per pass; only Set & forget holds an assignment.
+    heldSetup(100000,1000000);S.projLineMode="split";
+    const split=optimize();
+    record("split: the held assignment path is Set & forget only",
+      split.feasible===true&&split.scheduleValidation.ok===true&&split.projLineMode==="split",
+      "feasible="+split.feasible+" replay="+split.scheduleValidation.ok+" mode="+split.projLineMode);
   }
 
   /* ================= the newer catalog: mined Batteries, Reinforced Concrete, 16384x ==========

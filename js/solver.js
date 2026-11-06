@@ -19,6 +19,10 @@ const UNBOUNDED_PER_SEC=Number.MAX_VALUE/3600;
 const STOCK_SAFETY_FRAC=0.9;
 // Relative window the pre-produced Bits fixed point calls settled (see its use below).
 const PREPROD_CONVERGE_REL=1e-9;
+// Settling a held Set & forget assignment: how many times to re-price it, and how far its direct Bits
+// demand may move before another assignment search is worth running (see settleHeldAssignment).
+const HELD_SETTLE_PASSES=64;
+const HELD_MAX_BITS_SHIFT=0.01;
 // Line-assignment stability (issue #87 item 5). The makespan LP is rebuilt from scratch each solve
 // with no memory of the previous assignment, and LP optima are frequently near-tied at the margin —
 // so a small, unrelated edit can flip which physical line lands on which (item,level) for negligible
@@ -2700,6 +2704,14 @@ function staticSchedule(net,targets,control,maxCompression,localDeadline){
     evaluated:!cutShort||!!solved.feasible,capped:!!solved.capped,
     interrupted:cutShort,searchExhaustive:!solved.capped&&!cutShort};
 }
+// A solved static phase in the shape staticSchedule returns, for re-pricing its assignment against
+// new demand. Line rates do not depend on demand, so no search runs.
+function heldStaticSchedule(ph){
+  return {rate:phasePlanRatesHr(ph),plan:ph.plan,items:ph.items,z:ph.z,
+    stabilized:false,zFree:null,zPin:null,stabilityKey:null,stabilityUpdate:null,
+    compressionCeiling:ph.compressionCeiling,evaluated:true,capped:ph.capped,
+    interrupted:ph.interrupted,searchExhaustive:ph.searchExhaustive};
+}
 // Solve one batch of demand (a single project, or all of them combined) into a pipelined phase.
 // `avail` (optional) is the stock the LP may draw down in place of producing an item (issue #73).
 // `stabilityPolicy` opts a final visible phase into the Tier-2 line-stability pass (issue #87 item 5);
@@ -2730,7 +2742,8 @@ function solvePhaseFor(net,name,avail,stabilityPolicy,phaseKey,solveOptions){
   if(!isStatic&&solveOptions&&(solveOptions.scheduleControl||solveOptions.lpMemo))
     scheduleOptions=Object.assign({},scheduleOptions,{control:solveOptions.scheduleControl||null,lpMemo:solveOptions.lpMemo||null});
   const sch=isStatic
-    ?staticSchedule(net,targets,solveOptions.control,solveOptions.maxCompression,solveOptions.localDeadline)
+    ?(solveOptions.heldAssignment?heldStaticSchedule(solveOptions.heldAssignment)
+      :staticSchedule(net,targets,solveOptions.control,solveOptions.maxCompression,solveOptions.localDeadline))
     :projectSchedule(net,targets,avail,scheduleOptions);
   const rate={};targets.forEach(it=>rate[it]=Math.max(0,sch.rate[it]||0));
   // "This factory can't sustainably produce X" is a claim about the LINES, and only a search that
@@ -2938,6 +2951,37 @@ function retainReplaySafeFixedPointIncumbent(incumbent,candidate,sub,inv,solvedW
   if(!built.validation||built.validation.ok!==true)return incumbent;
   return {phase:candidate,solvedWith:Object.assign({},solvedWith),planned:Object.assign({},planned)};
 }
+function preProducedBitsSettled(a,b){
+  return Math.abs(a-b)<=1e-8+PREPROD_CONVERGE_REL*Math.max(1,Math.abs(a),Math.abs(b));
+}
+/* The Bits a Set & forget assignment's Frames and Wire jobs charge are its fixed Bits/hr times the
+ * phase's length, and the phase's length moves only with the direct Bits demand those charges net off.
+ * Both are arithmetic on one assignment, so the obligation settles here without a search.
+ *
+ * Returns null when the assignment cannot settle: a re-pricing that changes which items are demanded
+ * or finds one of them unmade, or jobs charging Bits about as fast as the phase receives them.
+ *
+ * `bitsShift` is how far the direct Bits demand moved from the demand the assignment was searched
+ * against. The search maximises the worst target's rate over its demand, so moving one demand by a
+ * factor of 1+shift moves every assignment's score by at most that factor, and an assignment the search
+ * rated no higher than this one can beat it on the settled demand by no more than that. */
+function settleHeldAssignment(ph,sub,inv,searchedWith,name,phaseKey){
+  const netBits=pre=>Number(projNetVec(sub,inv,pre).Bits),searchedBits=netBits(searchedWith);
+  const demanded=(ph.demandItems||[]).join("|");
+  let pre=plannedPreProducedDemand(ph);
+  for(let pass=0;pass<HELD_SETTLE_PASSES;pass++){
+    const held=solvePhaseFor(projNetVec(sub,inv,pre),name,projAvailVec(sub,inv,pre),null,phaseKey,{static:true,heldAssignment:ph});
+    if(held.feasible!==true||(held.demandItems||[]).join("|")!==demanded)return null;
+    const next=plannedPreProducedDemand(held),a=Number(pre.Bits)||0,b=Number(next.Bits)||0;
+    if(Math.abs(a-b)<=1e-8+Number.EPSILON*32*Math.max(1,a,b)){
+      const settledBits=netBits(pre);
+      return {phase:held,solvedWith:Object.assign({},pre),planned:next,
+        bitsShift:searchedBits>0?Math.abs(settledBits-searchedBits)/searchedBits:0};
+    }
+    pre=next;
+  }
+  return null;
+}
 function solveExecutableProjectPhase(sub,name,inv,stabilityPolicy,phaseKey,runOptions){
   const initialPre=phasePreProducedDemand(sub,inv);
   const isStatic=runIsStatic(runOptions);
@@ -2987,9 +3031,23 @@ function solveExecutableProjectPhase(sub,name,inv,stabilityPolicy,phaseKey,runOp
        * whole plan blocked over a third of a millionth of one Bit. A relative floor sizes the
        * window to the obligation; a genuine flip between two assignments moves whole Bits, which is
        * ten orders above it. */
-      if(Math.abs(a-b)<=1e-8+PREPROD_CONVERGE_REL*Math.max(1,Math.abs(a),Math.abs(b)))
+      if(preProducedBitsSettled(a,b))
         return {phase:ph,solvedWith,pre,converged:true,incumbent,
           observedMaxCompressions:[...observedMaxCompressions]};
+      /* A Set & forget search costs the run's budget and a re-pricing costs nothing, so the assignment
+       * just found settles its own obligation first. That result is the deadline incumbent whether or
+       * not another search follows, and another search runs only when the settled Bits demand moved
+       * far enough that a different assignment could matter. */
+      if(isStatic){
+        const settled=settleHeldAssignment(ph,sub,inv,solvedWith,name,phaseKey);
+        if(settled){
+          incumbent=retainReplaySafeFixedPointIncumbent(incumbent,settled.phase,sub,inv,settled.solvedWith,settled.planned);
+          if(settled.bitsShift<=HELD_MAX_BITS_SHIFT)
+            return {phase:settled.phase,solvedWith:settled.solvedWith,pre:settled.planned,converged:true,incumbent,
+              observedMaxCompressions:[...observedMaxCompressions]};
+          pre=Object.assign({},settled.planned);
+        }
+      }
       const key=bitsKey(pre);
       if(seen.has(key))return {phase:ph,solvedWith,pre,converged:false,cycled:true,
         incumbent,observedMaxCompressions:[...observedMaxCompressions]};

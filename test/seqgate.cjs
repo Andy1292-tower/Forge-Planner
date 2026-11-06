@@ -417,15 +417,17 @@ const runner = `
   }
 
   /* ---- L1b: a deadline during fixed-point refinement keeps the executable incumbent --------
-   * Four lines are just enough for the Frames chain once its Bits are treated as an external
-   * prerequisite. The first fixed-point pass therefore owns a replayable one-job-per-line plan.
-   * Expire the shared deadline at the start of pass two: losing pass one's incumbent used to turn
-   * a usable capped answer into a solve-budget failure with no instructions. */
+   * The Bits held pay for the Frames prerequisite first and the project's direct Bits cost after it,
+   * so the first plan's obligation moves that direct demand far enough to call for a second search.
+   * The first search's assignment, settled, is a replayable one-job-per-line plan. Expire the shared
+   * deadline at the start of the second search: losing that incumbent used to turn a usable capped
+   * answer into a solve-budget failure with no instructions. */
   {
     const events=[];let clock=0,stages=0;
-    const r=run([P("f","Frames",[["Frames",100]])],
-      {projLineMode:"static",solveBudget:2000,
-       lines:Array.from({length:4},()=>({max:4,spx:5,turbo:0}))},
+    const r=run([P("f","Frames",[["Frames",100],["Bits",1000]])],
+      {projLineMode:"static",solveBudget:2000,inventory:{Bits:900},
+       forgie:Object.assign({},defaults().forgie,{Bits:60000}),
+       lines:Array.from({length:6},()=>({max:4,spx:5,turbo:0}))},
       {now:()=>clock,onCheckpoint:event=>{
         events.push(event);
         if(event.type==="checkpoint"&&event.label==="margin-stage"&&++stages===2)clock=2000;
@@ -437,8 +439,8 @@ const runner = `
     record("L1b: deadline refinement preserves the last replay-valid static incumbent",
       r.feasible===true && r.scheduleValidation.ok===true && r.allPhasesEvaluated===true &&
       phase.evaluated===true && phase.preProducedConverged===null &&
-      qtyEq(phase.preProducedSolveDemand&&phase.preProducedSolveDemand.Bits,800) &&
-      qtyEq(plannedPreProducedDemand(phase).Bits,1200) && qtyEq(bits,1200) && supply===1200,
+      bits>800 && qtyEq(phase.preProducedSolveDemand&&phase.preProducedSolveDemand.Bits,bits) &&
+      qtyEq(plannedPreProducedDemand(phase).Bits,bits) && qtyEq(supply,Math.max(0,bits-900)),
       "feasible=" + r.feasible + " replay=" + r.scheduleValidation.ok +
       " evaluated=" + r.allPhasesEvaluated + " converged=" + phase.preProducedConverged +
       " solveBits=" + (phase.preProducedSolveDemand&&phase.preProducedSolveDemand.Bits) +
@@ -463,6 +465,27 @@ const runner = `
     record("L1b: a deadline first observed at finalization gets the same honest success notice",
       el.innerHTML.indexOf("Executable plan found")>=0 && el.innerHTML.indexOf("may not be the shortest")>=0,
       "hasFinalizeNotice="+(el.innerHTML.indexOf("Executable plan found")>=0));
+  }
+
+  /* ---- L1b: an obligation that cannot move the search's demand never searches twice ---------
+   * Four lines are just enough for the Frames chain once its Bits are treated as an external
+   * prerequisite. With no direct Bits cost the 100 Frames assumed at 800 Bits and charged at 1200
+   * leave the demand unchanged, so the first search's plan settles exactly and is not cut short. */
+  {
+    let stages=0;
+    const r=run([P("f","Frames",[["Frames",100]])],
+      {projLineMode:"static",solveBudget:2000,
+       lines:Array.from({length:4},()=>({max:4,spx:5,turbo:0}))},
+      {onCheckpoint:event=>{if(event.type==="checkpoint"&&event.label==="margin-stage")stages++;}});
+    const phase=r.phases[0]||{},bits=(phase.preProducedDemand&&phase.preProducedDemand.Bits)||0;
+    const supply=(r.executionPhases||[]).filter(ph=>ph.kind==="prerequisite")
+      .reduce((total,ph)=>total+((ph.externalSupply&&ph.externalSupply.Bits)||0),0);
+    record("L1b: a Frames obligation with no direct Bits cost settles on the first search",
+      stages===1 && r.feasible===true && r.scheduleValidation.ok===true && phase.preProducedConverged===true &&
+      qtyEq(phase.preProducedSolveDemand&&phase.preProducedSolveDemand.Bits,1200) && qtyEq(bits,1200) && supply===1200,
+      "stages=" + stages + " feasible=" + r.feasible + " replay=" + r.scheduleValidation.ok +
+      " converged=" + phase.preProducedConverged + " solveBits=" + (phase.preProducedSolveDemand&&phase.preProducedSolveDemand.Bits) +
+      " bits=" + bits + " supply=" + supply);
   }
 
   /* ---- R1 (review follow-up): surplus Frames must be charged their pre-produced Bits --------
