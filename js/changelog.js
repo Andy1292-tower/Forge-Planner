@@ -10,6 +10,8 @@
  * left out rather than padded in.
  */
 const CHANGELOG=[
+  {version:"2026.11.11",date:"2026-11-11",groups:{
+    Added:["Ledgers #371 to #380 are back in the ledger list, one more ledger for Bhramari, Clank, Donathan Creel, Gama Kamalon, Meepa Torani, Nyra Voss, Puri Puri, Samos Sula, Tank Timmerson and Wrecket. Include next and What fits in a time limit plan into them too. A card that switched to Not listed when the list stopped at #370 stays that way until you pick its ledger again."]}},
   {version:"2026.11.05.3",date:"2026-11-05",groups:{
     Fixed:[
       "Project plan in Set & forget could run out of solve time and show Executable schedule blocked when a line was making Wire or Frames. It now returns a plan, and those builds solve much faster."]}},

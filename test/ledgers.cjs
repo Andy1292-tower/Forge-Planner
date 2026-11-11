@@ -86,12 +86,13 @@ test("every ledger is either a craftable the planner schedules or a listed other
 });
 
 test("a ledger past the cutoff is in the data file as a comment, and the page cannot offer it", () => {
-  assert.equal(MAX_LEDGER_NUMBER, 370);
+  assert.equal(MAX_LEDGER_NUMBER, 382);
   const listed = run(page, "LEDGER_CHARACTERS.flatMap(c => c.ledgers.map(ledgerNumber))");
   assert.ok(listed.length > 0);
   assert.ok(listed.every(n => n <= MAX_LEDGER_NUMBER), `highest listed: ${Math.max(...listed)}`);
-  assert.ok(listed.includes(MAX_LEDGER_NUMBER), "the cutoff itself is kept");
+  for (let n = 371; n <= 380; n++) assert.ok(listed.includes(n), `#${n} is listed`);
   const source = fs.readFileSync(path.join(ROOT, "js", "ledgers.js"), "utf8");
+  assert.ok(source.includes(`CGMC-741e-${MAX_LEDGER_NUMBER}`), "the cutoff itself is kept");
   for (const line of source.split("\n")) {
     const match = line.match(/CGMC-741e-(\d+)/);
     if (match && Number(match[1]) > MAX_LEDGER_NUMBER) assert.match(line, /^\s*\/\/ /, `${match[0]} is commented out`);
@@ -121,11 +122,12 @@ test("the generator maps the game's material names and refuses anything it does 
   assert.deepEqual(characters[1].ledgers[1].other, [{ item: "Scorchium", qty: "2e16" }]);
   assert.throws(() => parse(csv(["1,CGMC-741e-001,Ann,Ann,1,1,Unobtainium,5,,,,,,"])), /unknown material "Unobtainium"/);
   assert.throws(() => parse(csv(["1,CGMC-741e-001,Ann,Ann,2,1,IndustrialBits,5,,,,,,"])), /ledger 1 is missing/);
-  const cut = parse(csv(["370,CGMC-741e-370,Ann,Ann,1,1,IndustrialBits,5,,,,,,", "371,CGMC-741e-371,Ann,Ann,2,1,IndustrialBits,9,,,,,,"]));
-  assert.deepEqual(cut[0].ledgers.map(l => [l.code, l.unlisted]), [["CGMC-741e-370", false], ["CGMC-741e-371", true]]);
-  assert.match(render(cut), /^    \{code:"CGMC-741e-370"/m);
-  assert.match(render(cut), /^    \/\/ \{code:"CGMC-741e-371"/m, "a ledger past the cutoff is written commented out");
-  assert.throws(() => parse(csv(["371,CGMC-741e-371,Ann,Ann,1,1,IndustrialBits,5,,,,,,", "5,CGMC-741e-005,Ann,Ann,2,1,IndustrialBits,9,,,,,,"])),
+  const last = MAX_LEDGER_NUMBER, past = MAX_LEDGER_NUMBER + 1;
+  const cut = parse(csv([`${last},CGMC-741e-${last},Ann,Ann,1,1,IndustrialBits,5,,,,,,`, `${past},CGMC-741e-${past},Ann,Ann,2,1,IndustrialBits,9,,,,,,`]));
+  assert.deepEqual(cut[0].ledgers.map(l => [l.code, l.unlisted]), [[`CGMC-741e-${last}`, false], [`CGMC-741e-${past}`, true]]);
+  assert.match(render(cut), new RegExp(`^    \\{code:"CGMC-741e-${last}"`, "m"));
+  assert.match(render(cut), new RegExp(`^    // \\{code:"CGMC-741e-${past}"`, "m"), "a ledger past the cutoff is written commented out");
+  assert.throws(() => parse(csv([`${past},CGMC-741e-${past},Ann,Ann,1,1,IndustrialBits,5,,,,,,`, "5,CGMC-741e-005,Ann,Ann,2,1,IndustrialBits,9,,,,,,"])),
     /ledger 1 is past the cutoff but a later one is not/, "a cut that would leave a hole stops the run");
   const written = render(parse(csv(["1,CGMC-741e-001,Gerbo,Gerbo,1,1,Vespium,200,,,,,,"])));
   assert.match(written, /^  \/\/ \{ledgerId:"gerbo"/m, "a DISABLED character is written commented out");
@@ -160,9 +162,9 @@ test("Include next plans the following ledgers as further levels, in order", () 
 });
 
 test("Include next stops at the last ledger the data has, and does nothing for typed-in items", () => {
-  const near = validate(page, savedState(page, [ledgerProject({ ledgerNo: 30, ledgerAhead: 5 })]));
+  const near = validate(page, savedState(page, [ledgerProject({ ledgerNo: 31, ledgerAhead: 5 })]));
   assert.equal(near.ok, true, near.errors && near.errors.join("; "));
-  assert.equal(near.state.projects[0].levels.length, 2, "Tank Timmerson's listed ledgers end at #31 (CGMC-741e-369)");
+  assert.equal(near.state.projects[0].levels.length, 2, "Tank Timmerson's ledgers end at #32 (CGMC-741e-379)");
   const typed = validate(page, savedState(page, [ledgerProject({ ledgerNo: null, ledgerAhead: 3,
     levels: [{ costs: [{ item: "Rods", qty: "5" }] }] })]));
   assert.equal(typed.ok, true, typed.errors && typed.errors.join("; "));
