@@ -52,7 +52,7 @@ const OTHER = {
   DetectionPotion: "Detection Potion",
 };
 const DISABLED = new Set(["bertha", "caylris-en-divalone", "eidelaine-eeko", "gerbo", "minalima-lin", "the-ether-hoarder", "the-twins"]);
-const MAX_LEDGER_NUMBER = 370;
+const MAX_LEDGER_NUMBER = 382;
 const QUANTITY = /^(?:\d+(?:\.\d+)?)(?:e\d+)?$/;
 
 const slug = name => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
