@@ -100,7 +100,17 @@ function idleLinesNote(plan,minedUsage){
   const idle=(plan||[]).filter(p=>p.entries?!p.entries.length:(p.job&&p.job.kind==="idle"));
   if(!idle.length)return "";
   const s=idle.length>1, which=idle.map(p=>"#"+p.line).join(", ");
-  const mined=[...new Set((minedUsage||[]).filter(use=>isMinedResource(use.resource)).map(use=>use.item+" / "+use.resource))];
+  // A mined income is named only when what the plan leaves of it cannot start any idle line on that
+  // craft even at 1x. With enough left for that, the income is not what keeps the line idle.
+  const usedHr={};
+  (minedUsage||[]).forEach(use=>{if(isMinedResource(use.resource))usedHr[use.resource]=(usedHr[use.resource]||0)+(Number(use.inputHr)||0);});
+  const incomeShort=use=>{
+    const left=supplyRate(minedBudgetHr(use.resource))-usedHr[use.resource];
+    const ct=craftTime(use.item,1),cost=minedCost(use.item,1)[use.resource];
+    if(!(ct>0)||!Number.isFinite(cost))return true;
+    return idle.every(p=>!Number.isFinite(p.sp)||cost*(effSpeed(p.sp,ct)/ct)*3600>left);
+  };
+  const mined=[...new Set((minedUsage||[]).filter(use=>isMinedResource(use.resource)&&incomeShort(use)).map(use=>use.item+" / "+use.resource))];
   const bottleneck=mined.length?`a material input or the <b>${mined.join("; ")}</b> mined-income budget`:`a material input`;
   return `<div class="notice info" style="font-size:11.5px"><b>${s?"Lines "+which+" are":"Line "+which+" is"} idle.</b> The plan is capped by ${bottleneck}, so spare capacity here wouldn't finish anything sooner. If you like, run ${s?"them":"it"} on <b>Bits</b> or <b>Concrete</b> to bank a surplus: those cost only abundant <b>Worthless Rocks</b>, so it's effectively free.</div>`;
 }
@@ -1078,6 +1088,9 @@ function renderSolveResult(res,el,stat,solveKey,metadata){
     const sp=lineSpeed(line),dp=dupeMult();return {line:index+1,max:line.max,spx:line.spx,dup:(dp-1)*100,sp,dp,
       job:{kind:"idle",res:null,lvl:null,prod:[],cons:[]}};});
   const canCopy=visiblePlan.some(row=>row.job.kind!=="idle"&&ALLITEMS.includes(row.job.res));
+  if(res.keptAssignment===true){
+    html+=`<div class="notice info" style="font-size:11.5px"><b>Line assignment kept.</b> The new solve found a different layout with no more output, so each line keeps its job.</div>`;
+  }
   html+=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:16px 0 8px">
     <div class="subhead" style="margin:0">Line assignment</div>${canCopy?`
     <div style="display:flex;gap:8px;flex-wrap:wrap">

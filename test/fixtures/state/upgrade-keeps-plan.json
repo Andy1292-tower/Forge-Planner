@@ -1,0 +1,175 @@
+{
+ "lines": [
+  {
+   "max": 16384,
+   "spx": 28737,
+   "turbo": 70
+  },
+  {
+   "max": 16384,
+   "spx": 19514,
+   "turbo": 70
+  },
+  {
+   "max": 16384,
+   "spx": 20351,
+   "turbo": 70
+  },
+  {
+   "max": 8192,
+   "spx": 22335,
+   "turbo": 70
+  },
+  {
+   "max": 4096,
+   "spx": 24139,
+   "turbo": 70
+  },
+  {
+   "max": 2048,
+   "spx": 14037,
+   "turbo": 70
+  },
+  {
+   "max": 512,
+   "spx": 13697,
+   "turbo": 70
+  }
+ ],
+ "maxTurbo": 70,
+ "dupe": 54.93,
+ "infusion": {
+  "ee7": false,
+  "dupeDay": false
+ },
+ "baseTime": {
+  "Ingots": 10,
+  "Bits": 6,
+  "Concrete": 9,
+  "Glass": 90,
+  "Bricks": 120,
+  "Plates": 30,
+  "Rods": 45,
+  "Frames": 300,
+  "Gel": 3200,
+  "Wire": 5400,
+  "Reinforced Concrete": 355000,
+  "Batteries": 1034000
+ },
+ "margin": 0,
+ "mode": "items",
+ "solveBudget": 20000,
+ "forgie": {
+  "Ingots": "377240000",
+  "Bits": "422870000",
+  "Concrete": "394790000",
+  "Glass": "3950000",
+  "Bricks": "3440000",
+  "Plates": "1230000",
+  "Rods": "8790000",
+  "Frames": "917510",
+  "Gel": "2980000",
+  "Wire": "62753.95",
+  "Reinforced Concrete": "537.09",
+  "Batteries": "221.66"
+ },
+ "forgieText": {
+  "Ingots": "377.24m",
+  "Bits": "422.87m",
+  "Concrete": "394.79m",
+  "Glass": "3.95m",
+  "Bricks": "3.44m",
+  "Plates": "1.23m",
+  "Rods": "8.79m",
+  "Frames": "917.51k",
+  "Gel": "2.98m",
+  "Wire": "62753.95",
+  "Reinforced Concrete": "537.09",
+  "Batteries": "221.66"
+ },
+ "minedIncome": {
+  "Rocks": {
+   "resourcesTradingPerSec": "1.8e+50"
+  },
+  "Vespium": {
+   "resourcesTradingPerSec": "5900000000000000000000000000000"
+  },
+  "Hydracite": {
+   "resourcesTradingPerSec": "1160000000000000"
+  }
+ },
+ "minedIncomeText": {
+  "Rocks": {
+   "resourcesTradingPerSec": "1.8e50"
+  },
+  "Vespium": {
+   "resourcesTradingPerSec": "5.9n"
+  },
+  "Hydracite": {
+   "resourcesTradingPerSec": "1.16qa"
+  }
+ },
+ "targets": {
+  "Glass": {
+   "on": false,
+   "w": 1,
+   "share": 100
+  },
+  "Bricks": {
+   "on": false,
+   "w": 1,
+   "share": 100
+  },
+  "Plates": {
+   "on": false,
+   "w": 1,
+   "share": 100
+  },
+  "Rods": {
+   "on": false,
+   "w": 1,
+   "share": 100
+  },
+  "Frames": {
+   "on": false,
+   "w": 1,
+   "share": 100
+  },
+  "Gel": {
+   "on": false,
+   "w": 1,
+   "share": 100
+  },
+  "Wire": {
+   "on": false,
+   "w": 1,
+   "share": 100
+  },
+  "Reinforced Concrete": {
+   "on": false,
+   "w": 1,
+   "share": 100
+  },
+  "Batteries": {
+   "on": true,
+   "w": 1,
+   "share": 100
+  },
+  "Ingots": {
+   "on": false,
+   "w": 1,
+   "share": 50
+  },
+  "Bits": {
+   "on": false,
+   "w": 9,
+   "share": 55
+  },
+  "Concrete": {
+   "on": false,
+   "w": 5,
+   "share": 55
+  }
+ },
+ "targetMode": "ratio"
+}

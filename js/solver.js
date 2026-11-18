@@ -410,6 +410,32 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   jobMax.forEach(max=>{if(!jobsByMax[max])jobsByMax[max]=buildJobs(max,resIndex,relRaws,relProds,targets,w);});
   const lineJobs=jobMax.map(max=>jobsByMax[max]);
   const N=sorted.length;
+  /* opts.assignment evaluates one given assignment instead of searching. Entry [orig] is the job
+   * {kind,res,lvl} that physical line runs, or null for idle. A feeder raw is offered at its single
+   * fastest level only, so a level the line can still run is appended to that line's own copy of
+   * its job list. A job the line cannot run rejects the whole assignment. */
+  let assignedChoice=null;
+  if(Array.isArray(opts.assignment)){
+    assignedChoice=new Array(N);
+    for(let i=0;i<N;i++){
+      const want=opts.assignment[sorted[i].orig];
+      let k;
+      if(!want||want.kind==="idle")k=lineJobs[i].findIndex(job=>job.kind==="idle");
+      else{
+        k=lineJobs[i].findIndex(job=>job.kind===want.kind&&job.res===want.res&&job.lvl===want.lvl);
+        if(k<0&&want.kind==="produce"&&relRaws.includes(want.res)&&LEVELS.includes(want.lvl)&&want.lvl<=jobMax[i]){
+          const t=craftTime(want.res,want.lvl);
+          if(t>0){
+            lineJobs[i]=lineJobs[i].concat([{label:"Produce "+want.res,kind:"produce",res:want.res,lvl:want.lvl,ct:t,
+              prod:[[resIndex[want.res],craftYield(want.res,want.lvl)/t]],cons:[],h:0}]);
+            k=lineJobs[i].length-1;
+          }
+        }
+      }
+      if(k<0)return {assignmentRejected:true};
+      assignedChoice[i]=k;
+    }
+  }
   // effective speed per (line, job): a craft can't run under 1s real time, so speed is capped at the craft's cycle seconds (ct)
   const spEff=lineJobs.map((js,i)=>{const sp=sorted[i].sp;return js.map(j=>(j.ct>0&&sp>j.ct)?j.ct:sp);});
   const sameAsPrev=sorted.map((s,i)=>i>0&&jobMax[i]===jobMax[i-1]&&s.sp===sorted[i-1].sp&&s.dp===sorted[i-1].dp);
@@ -564,6 +590,8 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   const EPS=1e-9;
 
   let nodes=0;let capped=false;const tStart=solveStarted;let tLastGain=tStart;
+  // Set by the opts.assignment path: report that assignment exactly, with no score-preserving rewrite.
+  let preserveChoice=false;
   // The budget is a ceiling, not a target: stop once the incumbent has gone this long without
   // improving, so a converged solve takes the same wall-time whether the budget is 1s or 15s
   // (the user's complaint). The window is fixed, not budget-scaled — it only needs to exceed the
@@ -812,7 +840,7 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
   let _rng=0x2545f491>>>0;const rnd=()=>{_rng^=_rng<<13;_rng^=_rng>>>17;_rng^=_rng<<5;_rng>>>=0;return _rng/4294967296;};
   function finishCoreResult(){
     // Idle whatever this plan turns out not to need, whichever way the search exited.
-    if(N>0&&best.score>EPS){
+    if(N>0&&best.score>EPS&&!preserveChoice){
       const trimmed=best.choice.slice();
       if(dropDeadLines(trimmed,best.score))adoptChoice(trimmed);
       // Items plans only, and after the trim rather than before it. Spending the headroom first
@@ -897,6 +925,15 @@ function solveCore(targets,w,relProds,relRaws,timeBudget,options){
     };
     opts.onBoundProbe({N,R,resources,lineJobs,targets,evalChoice,feasibleNow,scoreNow,setCurTol,
       prefixBound,dualReady:()=>dualN>0,rebuildPrices:buildDualPrices});
+  }
+
+  // The assignment path: one evaluation at the requested tolerance, then the result as it stands.
+  if(assignedChoice){
+    setCurTol(tol);evalChoice(assignedChoice);
+    const ok=feasibleNow();
+    best={score:ok?scoreNow():0,choice:assignedChoice.slice(),produced:produced.slice(),consumed:consumed.slice()};
+    preserveChoice=true;
+    return finishCoreResult();
   }
 
   // The Credits comparison first gives every priced product the same finite constructive baseline:
@@ -1620,6 +1657,91 @@ function idlePlan(){
   sortedLines().forEach(s=>{plan[s.orig]={line:s.orig+1,max:s.max,spx:s.sp,dup:(s.dp-1)*100,sp:s.sp,dp:s.dp,job:{kind:"idle",res:null,lvl:null,prod:[],cons:[]}};});
   return plan;
 }
+// The Max Items result for one core solve. `w` is the weight per target the solve scored against;
+// it rides along on the result so the same plan can be scored again later (keptItemsResult).
+function itemsResultFromCore(sr,targets,w,mix){
+  const {plan,balance,minedUsage,gelReserved}=planFrom(sr);
+  const out={};targets.forEach((t,k)=>{out[t]=sr.feasible?(sr.best.produced[sr.tIdx[k]]-sr.best.consumed[sr.tIdx[k]])*3600:0;});
+  // The objective is the shared weighted floor: the smallest output-to-weight ratio. Reporting it
+  // alongside which output owns it, and how far every other output sits above it, is what turns
+  // "everything came out low" into "Gel is holding the floor and the rest have room to spare".
+  const ratios=targets.map((t,k)=>(out[t]||0)/w[k]);
+  const objective=sr.feasible?Math.min(...ratios):0;
+  let binding=null,slack=null,shareOfMax=null;
+  if(sr.feasible&&objective>0){
+    binding=targets[ratios.indexOf(Math.min(...ratios))];
+    slack={};targets.forEach((t,k)=>{slack[t]=ratios[k]/objective-1;});
+  }
+  if(mix.soloMax){
+    shareOfMax={};
+    targets.forEach(t=>{const ceiling=mix.soloMax[t];if(ceiling>1e-9)shareOfMax[t]=(out[t]||0)/ceiling;});
+  }
+  // Same per-hour units as `objective`, so the two are directly comparable. Never below the
+  // objective it bounds: a rounding-scale overshoot is clamped rather than shown as a negative gap.
+  let bound=null;
+  if(sr.feasible&&Number.isFinite(sr.bound)){
+    const scaled=sr.bound*3600;
+    if(Number.isFinite(scaled))bound=Math.max(scaled,objective);
+  }
+  return {empty:false,mode:"items",issues:sr.issues,plan,balance,minedUsage,gelReserved,out,resIndex:sr.resIndex,targets,weights:w.slice(),objective,bound,
+    mixMode:S.targetMode==="share"?"share":"ratio",binding,slack,shareOfMax,soloMax:mix.soloMax,blocked:mix.blocked,
+    tol:sr.tol,usesMargin:sr.usesMargin,feasible:sr.feasible,capped:sr.capped,deadlineReached:!!sr.deadlineReached};
+}
+/* ---------- keeping the plan on screen (issue #196) ----------
+ * Max Items often has many plans tied on output, and the search keeps whichever it reaches first.
+ * A change that does not help, such as a compression upgrade on a line the plan has no use for,
+ * still changes which tie it reaches first, so the shown plan would move with nothing gained.
+ * keptItemsResult scores the shown assignment on the current factory and returns it in place of a
+ * fresh result that makes no more of any output. solve-service.js decides when to ask. */
+function itemsAssignmentOf(plan){
+  return (Array.isArray(plan)?plan:[]).map(row=>{
+    const job=row&&row.job;
+    return job&&job.kind!=="idle"?{kind:job.kind,res:job.res,lvl:job.lvl}:null;
+  });
+}
+function sameItemsAssignment(a,b){
+  if(!Array.isArray(a)||!Array.isArray(b)||a.length!==b.length)return false;
+  return a.every((job,i)=>{const other=b[i];
+    if(!job||!other)return !job&&!other;
+    return job.kind===other.kind&&job.res===other.res&&job.lvl===other.lvl;});
+}
+// The rounding a target's net output can carry: 64 ulps of the largest term summed into its row.
+function itemsOutputTolerance(res,item){
+  let scale=Math.abs((res.out&&res.out[item])||0);
+  const row=(res.balance||[]).find(entry=>entry&&entry.res===item);
+  if(row)scale=Math.max(scale,Math.abs((row.prod||0)+(row.forgie||0)),Math.abs(row.cons||0));
+  return Number.EPSILON*64*scale;
+}
+// One assignment scored on the current factory with no search: null when a line cannot run its job.
+function itemsAssignmentResult(assignment,weights,mix){
+  const targets=[...PRODUCTS,...RAWS].filter(it=>S.targets[it]&&S.targets[it].on);
+  if(!targets.length||!Array.isArray(weights)||weights.length!==targets.length||
+    !Array.isArray(assignment)||!Array.isArray(S.lines)||assignment.length!==S.lines.length)return null;
+  const rc=relevantChain(targets);
+  const sr=solveCore(targets,weights,rc.prods,rc.raws,0,{assignment});
+  if(!sr||sr.assignmentRejected)return null;
+  return itemsResultFromCore(sr,targets,weights,mix||{soloMax:null,blocked:[]});
+}
+function keptItemsResult(fresh,assignment){
+  if(!fresh||fresh.mode!=="items"||fresh.empty!==false||!Array.isArray(fresh.targets)||!Array.isArray(fresh.weights)||
+    fresh.weights.length!==fresh.targets.length||!fresh.weights.every(weight=>Number.isFinite(weight)&&weight>0))return null;
+  if(sameItemsAssignment(itemsAssignmentOf(fresh.plan),assignment))return null;
+  const targets=[...PRODUCTS,...RAWS].filter(it=>S.targets[it]&&S.targets[it].on);
+  if(targets.length!==fresh.targets.length||targets.some((t,k)=>t!==fresh.targets[k]))return null;
+  const kept=itemsAssignmentResult(assignment,fresh.weights,{soloMax:fresh.soloMax||null,blocked:Array.isArray(fresh.blocked)?fresh.blocked:[]});
+  if(!kept||!kept.feasible)return null;
+  // A plan that leans on the margin does not replace one that does not need it.
+  if(kept.usesMargin&&fresh.usesMargin===false)return null;
+  const tol=item=>Math.max(itemsOutputTolerance(fresh,item),itemsOutputTolerance(kept,item));
+  if(targets.some(t=>!(kept.out[t]>=((fresh.out&&fresh.out[t])||0)-tol(t))))return null;
+  // What the search reported about itself still describes this solve.
+  kept.issues=Array.isArray(fresh.issues)?fresh.issues:kept.issues;
+  kept.capped=!!fresh.capped;kept.deadlineReached=!!fresh.deadlineReached;
+  kept.bound=Number.isFinite(fresh.bound)?Math.max(fresh.bound,kept.objective):null;
+  kept.ms=Number.isFinite(fresh.ms)?fresh.ms:0;
+  kept.keptAssignment=true;
+  return kept;
+}
 // toDec0 rather than a direct .gte: a candidate reaching this contract check may have crossed a
 // Worker or cache boundary, which leaves its credits as a plain object or a canonical string.
 function creditsRefinementIsNondecreasing(prior,refined){return !!prior&&!!refined&&toDec0(refined.credits).gte(toDec0(prior.credits));}
@@ -1801,33 +1923,9 @@ function optimizeInner(timeBudget,testOptions,shard){
     const w=mix.weights;
     const rc=relevantChain(targets);
     const sr=solveCore(targets,w,rc.prods,rc.raws,itemsBudget,{control:itemControl,spendFreeHeadroom:true,restarts:true,lpPlacement:true});
-    const {plan,balance,minedUsage,gelReserved}=planFrom(sr);
-    const out={};targets.forEach((t,k)=>{out[t]=sr.feasible?(sr.best.produced[sr.tIdx[k]]-sr.best.consumed[sr.tIdx[k]])*3600:0;});
-    // The objective is the shared weighted floor: the smallest output-to-weight ratio. Reporting it
-    // alongside which output owns it, and how far every other output sits above it, is what turns
-    // "everything came out low" into "Gel is holding the floor and the rest have room to spare".
-    const ratios=targets.map((t,k)=>(out[t]||0)/w[k]);
-    const objective=sr.feasible?Math.min(...ratios):0;
-    let binding=null,slack=null,shareOfMax=null;
-    if(sr.feasible&&objective>0){
-      binding=targets[ratios.indexOf(Math.min(...ratios))];
-      slack={};targets.forEach((t,k)=>{slack[t]=ratios[k]/objective-1;});
-    }
-    if(mix.soloMax){
-      shareOfMax={};
-      targets.forEach(t=>{const ceiling=mix.soloMax[t];if(ceiling>1e-9)shareOfMax[t]=(out[t]||0)/ceiling;});
-    }
-    // Same per-hour units as `objective`, so the two are directly comparable. Never below the
-    // objective it bounds: a rounding-scale overshoot is clamped rather than shown as a negative gap.
-    let bound=null;
-    if(sr.feasible&&Number.isFinite(sr.bound)){
-      const scaled=sr.bound*3600;
-      if(Number.isFinite(scaled))bound=Math.max(scaled,objective);
-    }
-    return {empty:false,mode,issues:sr.issues,plan,balance,minedUsage,gelReserved,out,resIndex:sr.resIndex,targets,objective,bound,
-      mixMode:S.targetMode==="share"?"share":"ratio",binding,slack,shareOfMax,soloMax:mix.soloMax,blocked:mix.blocked,
-      tol:sr.tol,usesMargin:sr.usesMargin,feasible:sr.feasible,capped:sr.capped,deadlineReached:!!sr.deadlineReached,
-      ms:Math.max(0,itemControl.readNow()-t0)};
+    const res=itemsResultFromCore(sr,targets,w,mix);
+    res.ms=Math.max(0,itemControl.readNow()-t0);
+    return res;
   }
   // Credits is intentionally a dedicated-item comparison: each priced item gets a whole-factory
   // plan, then those plans are ranked. It is not a theorem that a mixed-sales factory is inferior.
