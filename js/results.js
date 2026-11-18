@@ -100,7 +100,17 @@ function idleLinesNote(plan,minedUsage){
   const idle=(plan||[]).filter(p=>p.entries?!p.entries.length:(p.job&&p.job.kind==="idle"));
   if(!idle.length)return "";
   const s=idle.length>1, which=idle.map(p=>"#"+p.line).join(", ");
-  const mined=[...new Set((minedUsage||[]).filter(use=>isMinedResource(use.resource)).map(use=>use.item+" / "+use.resource))];
+  // A mined income is named only when what the plan leaves of it cannot start any idle line on that
+  // craft even at 1x. With enough left for that, the income is not what keeps the line idle.
+  const usedHr={};
+  (minedUsage||[]).forEach(use=>{if(isMinedResource(use.resource))usedHr[use.resource]=(usedHr[use.resource]||0)+(Number(use.inputHr)||0);});
+  const incomeShort=use=>{
+    const left=supplyRate(minedBudgetHr(use.resource))-usedHr[use.resource];
+    const ct=craftTime(use.item,1),cost=minedCost(use.item,1)[use.resource];
+    if(!(ct>0)||!Number.isFinite(cost))return true;
+    return idle.every(p=>!Number.isFinite(p.sp)||cost*(effSpeed(p.sp,ct)/ct)*3600>left);
+  };
+  const mined=[...new Set((minedUsage||[]).filter(use=>isMinedResource(use.resource)&&incomeShort(use)).map(use=>use.item+" / "+use.resource))];
   const bottleneck=mined.length?`a material input or the <b>${mined.join("; ")}</b> mined-income budget`:`a material input`;
   return `<div class="notice info" style="font-size:11.5px"><b>${s?"Lines "+which+" are":"Line "+which+" is"} idle.</b> The plan is capped by ${bottleneck}, so spare capacity here wouldn't finish anything sooner. If you like, run ${s?"them":"it"} on <b>Bits</b> or <b>Concrete</b> to bank a surplus: those cost only abundant <b>Worthless Rocks</b>, so it's effectively free.</div>`;
 }
