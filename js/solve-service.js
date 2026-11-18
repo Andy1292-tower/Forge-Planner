@@ -249,12 +249,36 @@ function removeDailySolveCache(conditionKey,now=Date.now()){
 function writeDailySolveCache(conditionKey,result,now=Date.now()){
   try{
     const storedResult=JSON.parse(JSON.stringify(result));
+    // Whether a plan was kept is about the page that showed it, not about these inputs.
+    delete storedResult.keptAssignment;
     if(!dailySolveResultValid(storedResult,conditionKey)||storedResult.empty===true)return false;
     const record={version:DAILY_SOLVE_CACHE_VERSION,savedAt:now,id:dailySolveConditionHash(conditionKey),conditionKey,result:storedResult};
     if(JSON.stringify(record).length>DAILY_SOLVE_CACHE_RECORD_CHARS)return false;
     const entries=loadDailySolveCache(now).filter(entry=>entry.conditionKey!==conditionKey);
     return persistDailySolveCache([record,...entries]);
   }catch(error){return false;}
+}
+
+/* ---------- keeping the Items plan on screen (issue #196) ----------
+ * The inputs a Max Items solve reads, split so a change can be classed: per line, the compression
+ * cap apart from everything else about the line, and the rest of the factory as one string. The
+ * field list is the daily cache's own, minus the solve budget, which changes how long the search
+ * runs and not which plans exist. */
+function itemsKeepCondition(state){
+  const projected=JSON.parse(dailySolveConditionKey(Object.assign({},state,{mode:"items"})));
+  const lines=Array.isArray(projected.lines)?projected.lines:[];
+  delete projected.lines;delete projected.solveBudget;
+  return {
+    lines:lines.map(line=>({max:Number(line&&line.max),rest:canonicalSolveJson({spx:line&&line.spx,turbo:line&&line.turbo})})),
+    rest:canonicalSolveJson(projected)
+  };
+}
+// The plan on screen is offered back only when the factory is the same or differs only in caps that
+// stayed level or went up, so every job on it can still run exactly as shown.
+function itemsKeepAllowed(before,after){
+  if(!before||!after||before.rest!==after.rest||before.lines.length!==after.lines.length)return false;
+  return after.lines.every((line,i)=>line.rest===before.lines[i].rest&&
+    Number.isFinite(line.max)&&Number.isFinite(before.lines[i].max)&&line.max>=before.lines[i].max);
 }
 
 /* ---------- shard merge ----------
@@ -452,6 +476,24 @@ const solveService=(()=>{
     if(hook)setTimeout(()=>hook(reason),0);
   }
   let callback=null;
+  /* The Max Items plan this page delivered last, as {condition, assignment}. Delivering an Items
+   * result, fresh or cached, first offers this assignment back to the solver (keepItemsPlan), so a
+   * re-solve that gains nothing does not move lines. Import, reset, Manual mode and switching mode
+   * all clear it, through cancel() or request(). */
+  let itemsPlanOnScreen=null;
+  function keepItemsPlan(result){
+    if(!itemsPlanOnScreen||typeof keptItemsResult!=="function")return result;
+    try{
+      if(!itemsKeepAllowed(itemsPlanOnScreen.condition,itemsKeepCondition(S)))return result;
+      return keptItemsResult(result,itemsPlanOnScreen.assignment)||result;
+    }catch(error){return result;}
+  }
+  function rememberItemsPlan(shown){
+    itemsPlanOnScreen=null;
+    if(typeof itemsAssignmentOf!=="function"||!shown||shown.mode!=="items"||shown.empty!==false)return;
+    try{itemsPlanOnScreen={condition:itemsKeepCondition(S),assignment:itemsAssignmentOf(shown.plan)};}
+    catch(error){itemsPlanOnScreen=null;}
+  }
   /* Slot records, not one owned Worker: {worker,busy}. Membership in this array is the identity a
    * late message or error is checked against, so a disposed Worker's events are ignored by the same
    * test whatever else the pool holds. */
@@ -580,7 +622,11 @@ const solveService=(()=>{
     return Math.max(1,Math.min(poolCap(),priced));
   }
   function clearRequest(){callback=null;expectedMode=null;expectedRevision=null;expectedKey=null;expectedDailyCacheKey=null;expectedFollow=false;expectedSolveMode=null;expectedTask=null;requestSlotCap=1;pendingShards=null;clearFallbackTimer();}
-  function cancel(reason){
+  /* Ends the request in flight. abandon() is the service's own response to accepted state moving on
+   * under a solve: the page still shows the plan it had, so the Items plan on screen is kept. A
+   * caller's cancel() also forgets that plan. */
+  function cancel(reason){itemsPlanOnScreen=null;return abandon(reason);}
+  function abandon(reason){
     generation+=1;
     lastReason=String(reason||"cancelled");
     if(callback)notifyDrop(lastReason);else dropCallback=null;
@@ -600,10 +646,15 @@ const solveService=(()=>{
   // a factory swap both leave nothing a later request could legitimately reuse.
   function dispose(reason){cancel(reason);terminatePool();return status();}
   function deliver(requestGeneration,result,error,metadata){
-    if(!isCurrent(requestGeneration)){cancel("accepted state changed before solve completion");return;}
+    if(!isCurrent(requestGeneration)){abandon("accepted state changed before solve completion");return;}
     const done=callback;
     const dailyCacheKey=expectedDailyCacheKey;
-    if(!error&&result&&dailyCacheKey&&!(metadata&&metadata.cached))writeDailySolveCache(dailyCacheKey,result);
+    // The page's own Items plan, as opposed to a follow-up or a task on another mode's behalf.
+    const itemsShown=!error&&!!result&&expectedSolveMode==="items"&&!expectedFollow&&expectedTask===null;
+    const shown=itemsShown?keepItemsPlan(result):result;
+    // A kept plan replaces a cached one too, so a later cache hit shows the same lines.
+    if(!error&&shown&&dailyCacheKey&&(!(metadata&&metadata.cached)||shown!==result))writeDailySolveCache(dailyCacheKey,shown);
+    if(itemsShown)rememberItemsPlan(shown);
     callback=null;
     expectedMode=null;
     expectedRevision=null;
@@ -619,7 +670,7 @@ const solveService=(()=>{
     if(expectedTask!==null&&!poolActive())pool.filter(slot=>!slot.busy).slice(1).forEach(slot=>terminateSlot(slot));
     expectedTask=null;requestSlotCap=1;
     overlay(false);
-    if(done)done(result,error||null,metadata||null);
+    if(done)done(shown,error||null,metadata||null);
   }
   function runFallback(requestGeneration,reason){
     // Neither a follow-up nor a task has a synchronous fallback: the page's own optimize() is a
@@ -629,7 +680,7 @@ const solveService=(()=>{
     clearFallbackTimer();
     fallbackTimer=setTimeout(()=>{
       fallbackTimer=null;
-      if(!isCurrent(requestGeneration)){cancel("accepted state changed before fallback");return;}
+      if(!isCurrent(requestGeneration)){abandon("accepted state changed before fallback");return;}
       let result;
       try{result=optimize();}
       catch(error){deliver(requestGeneration,null,solveErrorPayload(error));return;}
@@ -661,7 +712,7 @@ const solveService=(()=>{
     owned.onmessage=event=>{
       const data=event.data||{};
       if(!ownsSlot(slot)||data.generation!==generation)return;
-      if(!isCurrent(data.generation)){cancel("accepted state changed before Worker completion");return;}
+      if(!isCurrent(data.generation)){abandon("accepted state changed before Worker completion");return;}
       if(data.mode!==expectedSolveMode||data.stateRevision!==expectedRevision){
         workerFailed(slot,data.generation,"Worker response did not match the requested mode and revision");
         return;
@@ -771,6 +822,8 @@ const solveService=(()=>{
       throw new TypeError("solveService.request onDrop must be a function");
     }
     const dailyCacheKey=(mode==="items"||mode==="credits")?dailySolveConditionKey(dispatchedState):null;
+    // Another mode's plan is about to take the panel.
+    if(mode!=="items")itemsPlanOnScreen=null;
     notifyDrop("superseded");
     const requestGeneration=++generation;
     clearFallbackTimer();

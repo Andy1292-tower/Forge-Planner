@@ -1078,6 +1078,9 @@ function renderSolveResult(res,el,stat,solveKey,metadata){
     const sp=lineSpeed(line),dp=dupeMult();return {line:index+1,max:line.max,spx:line.spx,dup:(dp-1)*100,sp,dp,
       job:{kind:"idle",res:null,lvl:null,prod:[],cons:[]}};});
   const canCopy=visiblePlan.some(row=>row.job.kind!=="idle"&&ALLITEMS.includes(row.job.res));
+  if(res.keptAssignment===true){
+    html+=`<div class="notice info" style="font-size:11.5px"><b>Line assignment kept.</b> The new solve found a different layout with no more output, so each line keeps its job.</div>`;
+  }
   html+=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:16px 0 8px">
     <div class="subhead" style="margin:0">Line assignment</div>${canCopy?`
     <div style="display:flex;gap:8px;flex-wrap:wrap">
