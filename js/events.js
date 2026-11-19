@@ -1434,9 +1434,9 @@ function stepPlanHtml(res){
   const staticInstructions=S.projLineMode==="static"
     ?" Within each timed phase, every busy line keeps one job for the whole phase; reset lines only between listed phases. The slowest required item sets that phase's duration."
     :" Every line switch and stock figure comes from the executable replay.";
-  const goesOffline=execution.some(ph=>ph.kind==="offline");
+  const goesOffline=execution.some(ph=>ph.kind==="offline"),checksIn=execution.some(ph=>ph.kind==="checkin");
   let h=valid
-    ?`<p class="help" style="margin:0 0 12px">Follow the ${goesOffline?"offline, ":""}prerequisite, warm-up, and project phases <b>in order</b>.${staticInstructions} Total ≈ <b>${fmtDuration(res.eta)}</b>. <span style="color:var(--ink3)">Clock times count from the <b>plan start</b> above.</span></p>`
+    ?`<p class="help" style="margin:0 0 12px">Follow the ${goesOffline?"offline, ":""}${checksIn?"check-in, ":""}prerequisite, warm-up, and project phases <b>in order</b>.${staticInstructions} Total ≈ <b>${fmtDuration(res.eta)}</b>. <span style="color:var(--ink3)">Clock times count from the <b>plan start</b> above.</span></p>`
     :`<div class="notice warn"><b>No executable run instructions are available.</b> The analytical LP breakdown is retained below for diagnosis, but it must not be followed as a schedule.</div>`;
   if(!valid)return h;
   const _ps=(S.planStart!=null&&isFinite(S.planStart))?new Date(S.planStart):null;
@@ -1455,7 +1455,13 @@ function stepPlanHtml(res){
       segs:p.entries
     }));
     h+=`<div class="step-phase">`;
-    const label=ph.kind==="prerequisite"?"External prerequisite":ph.kind==="warmup"?"Warm-up":ph.kind==="offline"?"Go offline":htmlText(ph.name||"Project phase");
+    const next=execution[i+1];
+    const label=ph.kind==="prerequisite"?"External prerequisite":ph.kind==="warmup"?"Warm-up":ph.kind==="offline"?"Go offline"
+      :ph.kind==="checkin"?`Check-in ${ph.checkin} of ${ph.checkinOf}`:htmlText(ph.name||"Project phase");
+    const labelNote=ph.kind==="checkin"?` <span class="proj-mini">· ${ph.from==="warmup"?"warm-up for ":""}${htmlText(ph.name||"project phase")}</span>`:"";
+    // When the step ends: a stretch away ends at a login, a check-in at going back offline.
+    const endsAt=ph.kind==="offline"?(ph.checkinNext?" · check in by ":" · back online by ")
+      :ph.kind==="checkin"&&next&&next.kind==="offline"?" · back offline by ":" · complete by ";
     // A game loadout code for each stretch of the step in which no crafter changes job.
     const codes=typeof projectStepLoadouts==="function"?projectStepLoadouts(res,i):[];
     const codeButton=(k,text)=>{
@@ -1463,10 +1469,11 @@ function stepPlanHtml(res){
       const where=`Step ${i+1} (${ph.kind==="warmup"?"warm-up":ph.name||"project phase"}), ${when}`;
       return `<button type="button" class="btn ghost step-code" id="loadoutStep${i}_${k}" data-loadout-step="${i}" data-loadout-slice="${k}" data-loadout-label="${htmlAttribute(where)}" title="${htmlAttribute("Game loadout code, "+when)}">${text}</button>`;
     };
-    h+=`<div class="step-h"><span class="step-n">${i+1}</span> <b>${label}</b> <span class="proj-mini">${ph.eta>0?"· "+fmtDuration(wallEta)+(ph.kind==="offline"?" · back online by ":" · complete by "):coveredAway?"· when you're back":"· before crafting begins"}</span>${ph.eta>0?'<span class="step-clock">~'+fmtClock(pStart+wallEta)+'</span>':""}${codes.length===1?codeButton(0,"Game code"):""}</div>`;
+    h+=`<div class="step-h"><span class="step-n">${i+1}</span> <b>${label}</b>${labelNote} <span class="proj-mini">${ph.eta>0?"· "+fmtDuration(wallEta)+endsAt:coveredAway?"· when you're back":"· before crafting begins"}</span>${ph.eta>0?'<span class="step-clock">~'+fmtClock(pStart+wallEta)+'</span>':""}${codes.length===1?codeButton(0,"Game code"):""}</div>`;
     if(codes.length>1)h+=`<div class="step-codes"><span class="proj-mini">Game codes:</span>${codes.map((c,k)=>codeButton(k,k===0?"Start":"~"+fmtClock(clockAt(c.start)))).join("")}</div>`;
-    if(ph.kind==="offline"){h+=offlineStepHtml(ph,res)+`</div>`;return;}
-    if(Number(ph.overclock)>=1/3600)
+    if(ph.kind==="offline"){h+=offlineStepHtml(ph,res,{start:pStart,fmtClock,step:i+1})+`</div>`;return;}
+    if(ph.kind==="checkin"&&Number(ph.overclock)>=1/3600)h+=checkinStepHtml(ph,next,{start:pStart,fmtClock});
+    else if(Number(ph.overclock)>=1/3600)
       h+=`<div class="notice info" style="font-size:11px;margin:4px 0 6px"><b>Overclock on.</b> The first <b>${fmtDuration(ph.overclock)}</b> of this step run at x2 game speed — <b>${fmtDuration(OVERCLOCK_SPEED*ph.overclock)}</b> of crafting. The times below count it.</div>`;
     if(ph.kind==="prerequisite"){
       const supply=Object.entries(ph.externalSupply||{}).map(([resource,amount])=>{const current=(ph.invStart&&ph.invStart[resource])||0;
@@ -1512,15 +1519,36 @@ function stepPlanHtml(res){
 /* A stretch away, as the player has to carry it out: how long to stay away, and what is waiting when
    they come back. Every amount is the replay's own — Lil' Forgie's online rate times his offline
    multiple times the hours away — so it is exactly what the steps after this one count on. */
-function offlineStepHtml(ph,res){
+function offlineStepHtml(ph,res,at){
   const hours=Number(ph.eta)||0,scale=Number(ph.forgieScale)||1,minedScale=ph.minedScale==null?1:Number(ph.minedScale)||0;
   const made=FORGIE_ITEM_ORDER.filter(it=>forgieHr(it).gt(1e-9)).map(it=>`<b>${disp(forgieHr(it).times(scale*hours))}</b> ${htmlText(it)}`);
   const list=made.length<2?made.join(""):made.slice(0,-1).join(", ")+" and "+made[made.length-1];
   const hydracite=minedBudgetHr("Hydracite"),mined=hydracite.gt(DEC_ZERO)&&minedScale>0
     ?` Hydracite mining keeps going at ${minedScale===0.5?"half":fmt(minedScale*100,0)+"%"} rate and banks <b>${disp(hydracite.times(minedScale*hours))}</b> for Batteries.`:"";
+  const fullAt=Number.isFinite(ph.overclockFullIn)&&at?` It's full at ~${at.fmtClock(at.start+ph.overclockFullIn)}.`:"";
   const bank=res&&res.offline&&res.offline.overclock&&Number.isFinite(ph.overclockBank)
-    ?` You come back with <b>${fmtDuration(ph.overclockBank)}</b> of Overclock banked — turn it on straight away.`:"";
-  return `<div class="notice info" style="font-size:11px;margin:4px 0 6px">Close the game for <b>${fmtDuration(hours)}</b>. Your crafting lines stop, and Lil' Forgie makes <b>${fmt(scale,2)}×</b> his online rate: ${list||"nothing he is set to make"} while you're away.${mined}${bank}</div>`;
+    ?(ph.checkinNext
+      ?` You come back with <b>${fmtDuration(ph.overclockBank)}</b> of Overclock banked.${fullAt} Log in, turn it on straight away and keep the lines on the jobs in the next step.`
+      :` You come back with <b>${fmtDuration(ph.overclockBank)}</b> of Overclock banked — turn it on straight away.`):"";
+  return `${ph.checkinNext===1?tryhardTrainHtml(res,at):""}<div class="notice info" style="font-size:11px;margin:4px 0 6px">Close the game for <b>${fmtDuration(hours)}</b>. Your crafting lines stop, and Lil' Forgie makes <b>${fmt(scale,2)}×</b> his online rate: ${list||"nothing he is set to make"} while you're away.${mined}${bank}</div>`;
+}
+/* The first stretch of a tryhard train says what the whole run of check-ins asks of the player:
+   how many, how often, and that the plan already counts the fudge either side of each one. */
+function tryhardTrainHtml(res,at){
+  const off=res&&res.offline,stretch=off&&at&&(off.stretches||[]).find(st=>st.checkins&&st.step===at.step);
+  if(!stretch)return "";
+  const k=stretch.checkins,fudge=Number(stretch.checkinFudge)||0;
+  const cadence=k===1?"once while you're away":`<b>${k} times</b> while you're away, about every <b>${fmtDuration(stretch.every)}</b>`;
+  const late=fudge>=1/60?` The plan counts on you logging in ${fmtDuration(fudge)} after it fills and staying on ${fmtDuration(fudge)} after it runs out.`:"";
+  return `<div class="notice offline" style="font-size:11px;margin:4px 0 6px"><b>Tryhard: check in ${cadence}.</b> Each time your Overclock is full, log in, spend it — online, everything at x2 — then go back offline.${late} The steps below say when.</div>`;
+}
+/* A tryhard check-in: the bank runs at x2 from the login, then the fudge at x1 before going offline. */
+function checkinStepHtml(ph,next,at){
+  const oc=Number(ph.overclock)||0,runsOut=at.start+oc,leaving=next&&next.kind==="offline";
+  const after=leaving?(at.start+(Number(ph.wallEta)||0)>runsOut+1/120
+    ?` It runs out at ~${at.fmtClock(runsOut)}; stay on until ~${at.fmtClock(at.start+(Number(ph.wallEta)||0))}, then close the game.`
+    :` Close the game when it runs out, at ~${at.fmtClock(runsOut)}.`):"";
+  return `<div class="notice info" style="font-size:11px;margin:4px 0 6px"><b>Overclock on.</b> Turn it on as soon as you're in: <b>${fmtDuration(oc)}</b> at x2 game speed — <b>${fmtDuration(OVERCLOCK_SPEED*oc)}</b> of crafting.${after} The times below count it.</div>`;
 }
 // ── Plan-start + inline project controls, now living in the Project-mode panel (#results) ──
 // The step plan and its controls used to be a modal; promoting them into #results means every edit
@@ -1542,6 +1570,11 @@ document.getElementById("results").addEventListener("input",e=>{
   if(t.id==="fitExtraHours"){const result=commitFieldDraft(t,FIELD_SCHEMA.fitExtraHours,S.fitExtraHours,(st,value)=>{st.fitExtraHours=value;});if(result.committed)save();return;}
   if(t.id==="fitLedgerMax"){const result=commitFieldDraft(t,FIELD_SCHEMA.fitLedgerMax,S.fitLedgerMax,(st,value)=>{st.fitLedgerMax=value;});if(result.committed)save();return;}
   if(t.id==="fitHours"){const result=commitFieldDraft(t,FIELD_SCHEMA.fitHours,S.fitHours,(st,value)=>{st.fitHours=value;});if(result.committed)save();return;}
+  // The fudge changes the plan, so like any other plan input it waits for Resimulate (or Enter).
+  if(t.id==="projTryhardFudge"){
+    const result=commitFieldDraft(t,FIELD_SCHEMA.tryhardFudgeHours,S.tryhardFudgeHours,(st,value)=>{st.tryhardFudgeHours=value;});
+    if(result.committed)markStale("schedule");return;
+  }
   // Parse the two visible endpoints as one draft transaction. Either correction can make both
   // drafts valid; only then are both accepted together, without rebuilding the focused row.
   if((v=t.getAttribute("data-spfrom"))!=null||(v=t.getAttribute("data-spto"))!=null){
@@ -1551,12 +1584,17 @@ document.getElementById("results").addEventListener("input",e=>{
     const result=commitProjectRangeDrafts(fromInput,toInput,p);if(result.committed)save();return;
   }
 });
+// Enter in the fudge applies it, as Enter in a crafter line field does.
+document.getElementById("results").addEventListener("keydown",e=>{
+  const t=e.target;
+  if(e.key==="Enter"&&t&&t.id==="projTryhardFudge"){e.preventDefault();if(t.getAttribute("aria-invalid")!=="true")resimulate();}
+});
 document.getElementById("results").addEventListener("change",e=>{
   const t=e.target;if(!t||!t.getAttribute)return;let v;
   // Plan-start anchor: display-only, so repaint from cache (no solve).
   // Offline crafting changes the plan itself, so it re-plans at once, as the line plan switch does.
-  if(t.id==="projOffline"||t.id==="projOverclock"){
-    const key=t.id==="projOffline"?"projectOffline":"projectOverclock",on=t.checked;
+  if(t.id==="projOffline"||t.id==="projOverclock"||t.id==="projTryhard"){
+    const key={projOffline:"projectOffline",projOverclock:"projectOverclock",projTryhard:"projectTryhard"}[t.id],on=t.checked;
     mutateState(st=>{st[key]=on;});persistNow();doSolve();return;
   }
   if(t.id==="fitNext"||t.id==="fitExtra"||t.id==="fitSelectedOnly"){

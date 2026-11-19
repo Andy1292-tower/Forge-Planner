@@ -96,6 +96,7 @@ const FIELD_SCHEMA=Object.freeze({
   forgieOfflineBoost:_field("integer",0,{min:0,max:OFFLINE_BOOST_MAX_LEVEL,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"Forgie upgrade offline boost level"}),
   ocMaxLevel:_field("integer",0,{min:0,max:OVERCLOCK_MAX_LEVEL_CAP,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"Max time stored level"}),
   ocRateLevel:_field("integer",0,{min:0,max:OVERCLOCK_RATE_LEVEL_CAP,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"Conversion rate level"}),
+  tryhardFudgeHours:_field("number",2,{min:0,max:TRYHARD_FUDGE_MAX_HOURS,allowBlank:false,notation:"decimal",inputMode:"decimal",label:"fudge hours"}),
   ocStoredMin:_field("integer",0,{min:0,max:OC_STORED_MAX_MIN,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"Overclock stored, in minutes"}),
   ocStoredHours:_field("integer",0,{min:0,max:Math.floor(OC_STORED_MAX_MIN/60),allowBlank:false,notation:"decimal",inputMode:"numeric",label:"Overclock stored hours"}),
   ocStoredMinutes:_field("integer",0,{min:0,max:59,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"Overclock stored minutes"}),

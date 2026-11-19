@@ -2789,12 +2789,15 @@ function projectSchedule(net,targets,avail,opts){
  *   ψ ≤ ω,  ψ ≤ c·φ + z·bank/D0,  ψ ≤ z·cap/D0
  *                                   Overclock runs while online, out of the bank plus what the time
  *                                   away converts at c an hour, never past the cap
+ * With `checkin` given — tryhard, checking in to spend the bank whenever it fills — the cap row goes,
+ * the time away converts at checkin.earn an hour (the conversion rate net of the fudge), and every
+ * hour of Overclock brings the fudge's share of an hour online at x1 with it: ψ·online/(online − fudge) ≤ ω.
  * The time away comes first. It only adds stock, so the online part after it is at least as startable
  * as the phase was without it. This is the Line switching relaxation, so in either line mode it is a
  * floor on what a phase with that stretch can take, and the plan is only ever built from a real
  * re-solve of the phase. Returns {hours, tau} — the hours away and the real hours of the phase — or
  * null when the LP gives no answer. */
-function offlineStretchLP(sub,inv,cfg,bank,control){
+function offlineStretchLP(sub,inv,cfg,bank,control,checkin){
   if(!cfg)return null;
   const net=projNetVec(sub,inv),avail=projAvailVec(sub,inv);
   const targets=ALLITEMS.filter(it=>net[it]>1e-9&&!chainMinedBlockers(it,null,avail).length);
@@ -2817,9 +2820,10 @@ function offlineStretchLP(sub,inv,cfg,bank,control){
     A.push(r);b.push(0);
   }
   if(oc){
-    {const r=row();r[PSI]=1;r[OMEGA]=-1;A.push(r);b.push(0);}
-    {const r=row();r[PSI]=1;r[PHI]=-oc.rate;r[Z]=-finiteCoefficient(toDec0(bank).div(D0));A.push(r);b.push(0);}
-    {const r=row();r[PSI]=1;r[Z]=-finiteCoefficient(toDec0(oc.cap).div(D0));A.push(r);b.push(0);}
+    const uncapped=!!(checkin&&checkin.earn>0);
+    {const r=row();r[PSI]=uncapped?checkin.online/Math.max(1e-9,checkin.online-checkin.fudge):1;r[OMEGA]=-1;A.push(r);b.push(0);}
+    {const r=row();r[PSI]=1;r[PHI]=-(uncapped?checkin.earn:oc.rate);r[Z]=-finiteCoefficient(toDec0(bank).div(D0));A.push(r);b.push(0);}
+    if(!uncapped){const r=row();r[PSI]=1;r[Z]=-finiteCoefficient(toDec0(oc.cap).div(D0));A.push(r);b.push(0);}
   }
   const c=new Array(n).fill(0);c[Z]=1;
   const sol=lpMaximizeScaled(c,A,b,control);
@@ -2832,6 +2836,88 @@ function offlineStretchLP(sub,inv,cfg,bank,control){
  * its reduced rate. The replay owns what it makes. */
 function offlinePhase(hours,cfg){
   return {kind:"offline",name:"Offline",eta:hours,plan:[],demandSub:{},forgieScale:cfg.forgieMult,minedScale:cfg.minedFrac};
+}
+/* ---------- tryhard: checking in to spend Overclock ----------
+ * A stretch of `hours` away followed by `online` — the executable phases of the phase it speeds up —
+ * re-cut into check-ins. Away until the bank is full and the fudge has passed; then the next
+ * cycle.game hours of `online` from where it got to, the bank at x2 and the fudge at x1; then away
+ * again, until the time away is used up and the rest of `online` runs as before. It is the same time
+ * away and the same crafting in a different order, so it ends where the plain stretch does; what it
+ * changes is that Overclock keeps converting, and that crafting moves earlier, ahead of stock the
+ * full stretch would have banked first. So every arrangement is replayed. When one comes up short,
+ * the whole train starts later (`delay`) — more time away up front, less at the end — by as little
+ * as replays, found by bisection: starting later only adds stock ahead of every check-in, so the
+ * replay passes from some delay on. Returns one arrangement per number of check-ins that replays:
+ * {checkins, delay, phases, finalInventory, wall, bank}. */
+function tryhardArrangements(hours,online,inventory,cfg,bank,context,train){
+  const oc=cfg&&cfg.overclock,cycle=tryhardCycle(oc);
+  if(!cycle||!(hours>0)||!Array.isArray(online)||!online.length)return [];
+  const total=online.reduce((sum,ph)=>sum+Math.max(0,Number(ph.eta)||0),0);
+  const first=Math.max(0,(oc.cap-Math.min(oc.cap,Math.max(0,Number(bank)||0)))/oc.rate)+cycle.fudge;
+  const eps=1e-9*Math.max(1,hours,total);
+  let most=0;
+  while(first+most*cycle.away<hours-eps&&(most+1)*cycle.game<total-eps)most++;
+  if(!most)return [];
+  // The part of `online` between game hours `from` and `to`. A check-in's share runs as check-in
+  // steps; the rest keeps its own kinds, demand and notes, cut only where a check-in took the start.
+  const windowOf=(from,to,checkin,checkins)=>{
+    const out=[];let start=0;
+    online.forEach(ph=>{
+      const eta=Math.max(0,Number(ph.eta)||0),end=start+eta,phaseStart=start;start=end;
+      if(!(eta>0)){
+        if(phaseStart>=from-eps&&(checkin?phaseStart<to-eps:true))out.push(ph);
+        return;
+      }
+      const a=Math.max(from,phaseStart),b=Math.min(to,end);
+      if(!(b-a>eps))return;
+      if(!checkin&&a<=phaseStart+eps){out.push(ph);return;}
+      const piece=sliceSchedulePhase(ph,a-phaseStart,b-phaseStart,context);
+      if(!piece)return;
+      if(checkin){
+        piece.from=ph.kind||"project";piece.kind="checkin";piece.checkin=checkin;piece.checkinOf=checkins;
+        ["idleFill","lookAhead","minedUsage","offline"].forEach(key=>{delete piece[key];});
+      }
+      piece.tryhardTrain=train;
+      out.push(piece);
+    });
+    return out;
+  };
+  const awayFor=(h,next,checkins)=>Object.assign(offlinePhase(h,cfg),{tryhardTrain:train,checkinNext:next,checkinOf:checkins,
+    checkinFudge:next?cycle.fudge:0});
+  const build=(checkins,delay)=>{
+    const seq=[];let cut=0;
+    for(let j=1;j<=checkins;j++){
+      seq.push(awayFor(j===1?first+delay:cycle.away,j,checkins));
+      seq.push(...windowOf(cut,cut+cycle.game,j,checkins));
+      cut+=cycle.game;
+    }
+    const last=hours-first-delay-(checkins-1)*cycle.away;
+    if(last>eps)seq.push(awayFor(last,null,checkins));
+    seq.push(...windowOf(cut,total,0,checkins));
+    return seq;
+  };
+  const run=(checkins,delay)=>{
+    const replay=replayProjectSchedule(build(checkins,delay),inventory,context);
+    return replay.ok?replay:null;
+  };
+  const found=[];
+  for(let checkins=1;checkins<=most;checkins++){
+    const room=hours-first-(checkins-1)*cycle.away;
+    let delay=0,replay=run(checkins,0);
+    if(!replay){
+      let lo=0,hi=room,best=null;
+      const late=run(checkins,hi);if(!late)continue;
+      best={delay:hi,replay:late};
+      for(let step=0;step<14&&hi-lo>1/60;step++){
+        const mid=(lo+hi)/2,attempt=run(checkins,mid);
+        if(attempt){hi=mid;best={delay:mid,replay:attempt};}else lo=mid;
+      }
+      delay=best.delay;replay=best.replay;
+    }
+    const clock=overclockTimeline(replay.phases,oc,bank);
+    found.push({checkins,delay,phases:replay.phases,finalInventory:replay.finalInventory,wall:clock.wall,bank:clock.bank});
+  }
+  return found;
 }
 
 /* One-job-per-line Project scheduling. The discrete core already models exactly that assignment;
@@ -3767,12 +3853,17 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
    * offline LP says how long, the phase is re-solved from the stock that stretch banks, and the pair
    * replaces the phase only if it finishes at least offline.minSaving sooner in real time — counting
    * warm-ups, and the Overclock the time away earns. `bank` follows the Overclock bank through the
-   * run in real hours. A phase the stretch does not shorten enough runs exactly as it would have. */
+   * run in real hours. A phase the stretch does not shorten enough runs exactly as it would have.
+   *
+   * With tryhard on, the LP also sizes the stretch as if check-ins kept the bank converting, and each
+   * stretch built is tried with check-ins too. A check-in arrangement is used only if it beats every
+   * plain stretch by TRYHARD_CHECKIN_MIN_SAVING for each check-in it asks for: staying offline wins
+   * any tie, and any arrangement that is slower. */
   const offline=runOptions&&runOptions.offline||null;
   let bank=offline&&offline.overclock?Math.min(offline.overclock.cap,offline.overclock.stored||0):0;
   // The stretch that came closest without qualifying, for the plan's note. `bound` marks a saving
   // only the LP has priced, which no real phase can beat.
-  let bestMiss=null;
+  let bestMiss=null,trains=0;
   const noteMiss=(saved,hours,name,bound)=>{if(saved>=1/60&&(!bestMiss||saved>bestMiss.saved))bestMiss={saved,hours,name,bound};};
   const PHASE_LABEL_KEYS=["semanticIndex","members","demandSub","wave","invStart","prio"];
   const placePhase=(ph,warmOptions,where)=>{
@@ -3783,24 +3874,56 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
     const baseWall=overclockTimeline(base.built.phases,oc,bank).wall;
     const lpControl=runOptions.scheduleControl||null;
     if(lpControl&&lpControl.isStopped())return keep();
-    const stretch=offlineStretchLP(where.sub,exactInventory,offline,bank,lpControl);
-    if(!stretch||!(stretch.hours>1e-6*stretch.tau))return keep();
-    if(baseWall-stretch.tau<offline.minSaving){noteMiss(baseWall-stretch.tau,stretch.hours,ph.name,true);return keep();}
-    const away=replayProjectSchedule([offlinePhase(stretch.hours,offline)],exactInventory,context);
-    if(!away.ok||!away.phases[0])return keep();
-    const stock=away.finalInventory,bankBack=oc?Math.min(oc.cap,bank+oc.rate*stretch.hours):0;
-    const options=where.options();
-    const alt=solveExecutableProjectPhase(where.sub,ph.name,stock,stabilityPolicy,where.phaseKey,options);
-    PHASE_LABEL_KEYS.forEach(key=>{if(Object.prototype.hasOwnProperty.call(ph,key))alt[key]=ph[key];});
-    if(alt.evaluated===false||alt.preProducedConverged===false||alt.feasible!==true)return keep();
-    putIdleLinesToWork(alt,where.later,stock,context,options,where.index,where.total);
-    const altTrial=trialPhase(alt,stock,warmOptions);
-    if(altTrial.outOfBudget||!altTrial.built.validation.ok)return keep();
-    const altClock=overclockTimeline(altTrial.built.phases,oc,bankBack),saved=baseWall-(stretch.hours+altClock.wall);
-    if(!(saved>=offline.minSaving)){noteMiss(saved,stretch.hours,ph.name,false);return keep();}
-    executionPhases.push(away.phases[0]);exactInventory=stock;
-    commitPhase(altTrial);bank=altClock.bank;
-    alt.offline={hours:stretch.hours,saved};
+    const cycle=tryhardCycle(oc),stretches=[];
+    [offlineStretchLP(where.sub,exactInventory,offline,bank,lpControl),
+      cycle?offlineStretchLP(where.sub,exactInventory,offline,bank,lpControl,cycle):null].forEach(stretch=>{
+      if(stretch&&stretch.hours>1e-6*stretch.tau&&!stretches.some(seen=>Math.abs(seen.hours-stretch.hours)<=Math.max(1/60,1e-3*stretch.hours)))
+        stretches.push(stretch);
+    });
+    if(!stretches.length)return keep();
+    const floor=stretches.reduce((best,stretch)=>stretch.tau<best.tau?stretch:best);
+    if(baseWall-floor.tau<offline.minSaving){noteMiss(baseWall-floor.tau,floor.hours,ph.name,true);return keep();}
+    // The stretch built for real: away, then the phase re-solved from what the time away banked.
+    const buildStretch=hours=>{
+      const away=replayProjectSchedule([offlinePhase(hours,offline)],exactInventory,context);
+      if(!away.ok||!away.phases[0])return null;
+      const stock=away.finalInventory,bankBack=oc?Math.min(oc.cap,bank+oc.rate*hours):0;
+      const options=where.options();
+      const alt=solveExecutableProjectPhase(where.sub,ph.name,stock,stabilityPolicy,where.phaseKey,options);
+      PHASE_LABEL_KEYS.forEach(key=>{if(Object.prototype.hasOwnProperty.call(ph,key))alt[key]=ph[key];});
+      if(alt.evaluated===false||alt.preProducedConverged===false||alt.feasible!==true)return null;
+      putIdleLinesToWork(alt,where.later,stock,context,options,where.index,where.total);
+      const altTrial=trialPhase(alt,stock,warmOptions);
+      if(altTrial.outOfBudget||!altTrial.built.validation.ok)return null;
+      const clock=overclockTimeline(altTrial.built.phases,oc,bankBack);
+      return {hours,away:away.phases[0],stock,alt,altTrial,wall:hours+clock.wall,bank:clock.bank,checkins:0};
+    };
+    // Each check-in is charged its minimum saving, so one only wins by paying for itself.
+    const cost=option=>option.wall+TRYHARD_CHECKIN_MIN_SAVING*option.checkins;
+    let best=null;
+    for(const stretch of stretches){
+      if(baseWall-stretch.tau<offline.minSaving||(lpControl&&lpControl.isStopped()))continue;
+      const plain=buildStretch(stretch.hours);
+      if(!plain)continue;
+      if(!best||cost(plain)<cost(best))best=plain;
+      if(!cycle)continue;
+      tryhardArrangements(plain.hours,plain.altTrial.built.phases,exactInventory,offline,bank,context,trains+1).forEach(option=>{
+        const candidate=Object.assign({},option,{hours:plain.hours,alt:plain.alt});
+        if(cost(candidate)<cost(best))best=candidate;
+      });
+    }
+    if(!best)return keep();
+    const saved=baseWall-best.wall;
+    if(!(saved>=offline.minSaving)){noteMiss(saved,best.hours,ph.name,false);return keep();}
+    const alt=best.alt;
+    if(best.checkins){
+      trains++;executionPhases.push(...best.phases);exactInventory=best.finalInventory;
+      alt.offline={hours:best.hours,saved,checkins:best.checkins};
+    }else{
+      executionPhases.push(best.away);exactInventory=best.stock;commitPhase(best.altTrial);
+      alt.offline={hours:best.hours,saved};
+    }
+    bank=best.bank;
     return alt;
   };
   if(!seq){
@@ -4109,32 +4232,47 @@ function optimizeProjectTop(testOptions){
    * rebuild runs only when offlineProspect finds a phase the offline LP says could gain enough. Each
    * stretch has to save OFFLINE_MIN_SAVING_FRAC of the online plan's real time, and the whole plan
    * has to come out at least that much sooner, or the online plan stands. Both are measured in real
-   * time, with the Overclock the player has banked spent as soon as they are online. */
+   * time, with the Overclock the player has banked spent as soon as they are online.
+   *
+   * With tryhard on, that rebuild uses plain stretches only, and a second one allows check-ins. Each
+   * phase picks its own best, blind to the Overclock it leaves banked for the next, so only the
+   * whole plan can say whether checking in won: the check-in plan is used only if it finishes
+   * TRYHARD_CHECKIN_MIN_SAVING sooner for each check-in it asks for than staying offline does. */
   const offlineCfg=projectOfflineConfig();
   let offlineCheck=null;
   if(offlineCfg&&projectRunExecutable(selected)){
     const oc=offlineCfg.overclock,startBank=oc?oc.stored:0;
     const onlineEta=overclockTimeline(selected.executionPhases,oc,startBank).wall,minSaving=OFFLINE_MIN_SAVING_FRAC*onlineEta;
     const prospect=offlineProspect(selected,offlineCfg,minSaving);
-    offlineCheck={onlineEta,minSaving,miss:prospect.miss};
+    offlineCheck={onlineEta,minSaving,miss:prospect.miss,checkins:prospect.checkins};
   }
   if(offlineCheck&&offlineCheck.miss===undefined){
-    const oc=offlineCfg.overclock,startBank=oc?oc.stored:0,{onlineEta,minSaving}=offlineCheck;
-    const offControl=makeSolveControl(projectBudget,testOptions),offStatic=runIsStatic(best.options);
-    const offOptions=Object.assign({},best.options,{staticControl:offStatic?offControl:null,scheduleControl:offControl,
-      idleWork:{budget:Math.max(projectBudget*STATIC_FILL_TIME_SHARE,STATIC_FILL_TIME_FLOOR),options:testOptions,control:null},
-      offline:Object.assign({},offlineCfg,{minSaving})});
-    const run=solveProjectRun(seq,net,perProject,
-      {readStability:projectStability==="prefer-current",rememberStability:true,stabilityCache:cacheSnapshot},offOptions);
-    const away=projectRunExecutable(run)?run.executionPhases.filter(ph=>ph.kind==="offline"):[];
-    const runEta=away.length?overclockTimeline(run.executionPhases,oc,startBank).wall:Infinity;
+    const oc=offlineCfg.overclock,startBank=oc?oc.stored:0,{onlineEta,minSaving}=offlineCheck,offStatic=runIsStatic(best.options);
+    const rebuild=cfg=>{
+      const offControl=makeSolveControl(projectBudget,testOptions);
+      const offOptions=Object.assign({},best.options,{staticControl:offStatic?offControl:null,scheduleControl:offControl,
+        idleWork:{budget:Math.max(projectBudget*STATIC_FILL_TIME_SHARE,STATIC_FILL_TIME_FLOOR),options:testOptions,control:null},
+        offline:Object.assign({},cfg,{minSaving})});
+      const run=solveProjectRun(seq,net,perProject,
+        {readStability:projectStability==="prefer-current",rememberStability:true,stabilityCache:cacheSnapshot},offOptions);
+      const away=projectRunExecutable(run)?run.executionPhases.filter(ph=>ph.kind==="offline"):[];
+      return {run,away,wall:away.length?overclockTimeline(run.executionPhases,oc,startBank).wall:Infinity,
+        checkins:away.filter(ph=>ph.checkinNext!=null).length,deadline:offStatic&&offControl.deadlineReached()};
+    };
+    const tryhard=!!(oc&&oc.tryhard);
+    let built=rebuild(tryhard?Object.assign({},offlineCfg,{overclock:Object.assign({},oc,{tryhard:null})}):offlineCfg);
+    if(tryhard&&offlineCheck.checkins){
+      const checkedIn=rebuild(offlineCfg);
+      if(checkedIn.away.length&&checkedIn.wall+TRYHARD_CHECKIN_MIN_SAVING*checkedIn.checkins<built.wall)built=checkedIn;
+    }
+    const {run,away,wall:runEta}=built;
     offlineCheck.miss=run.offlineMiss||null;
     if(away.length&&runEta<=onlineEta-minSaving){
       delete selected._stabilityUpdates;
       run.gross=gross;
       if(selected.progressWaves)run.progressWaves=true;
       if(selected.noSwitchFallback)run.noSwitchFallback=true;
-      staticDeadlineReached=staticDeadlineReached||(offStatic&&offControl.deadlineReached());
+      staticDeadlineReached=staticDeadlineReached||built.deadline;
       selected=run;stabilityComparison=null;
     }
   }
@@ -4151,24 +4289,30 @@ function optimizeProjectTop(testOptions){
  * carries into the phase. Rebuilding the plan with stretches allowed costs a whole second solve, and
  * a Set & forget search spends all the time it is given, so a plan no phase of which can save
  * minSaving even on the LP's terms is answered here without one. Returns {miss: undefined} when a
- * rebuild is worth running, else the closest any phase came. */
+ * rebuild is worth running, else the closest any phase came, and `checkins` when a stretch that
+ * qualifies runs past the first tryhard login. */
 function offlineProspect(run,cfg,minSaving){
-  const oc=cfg.overclock;let bank=oc?Math.min(oc.cap,oc.stored):0,segment=[],miss=null;
+  const oc=cfg.overclock,cycle=tryhardCycle(oc);let bank=oc?Math.min(oc.cap,oc.stored):0,segment=[],miss=null,qualifies=false,checkins=false;
   for(const ph of run.executionPhases||[]){
     segment.push(ph);
     if(ph.kind!=="project")continue;
     const semantic=ph.semanticIndex!=null?run.phases[ph.semanticIndex]:null,clock=overclockTimeline(segment,oc,bank);
     if(semantic&&semantic.invStart&&semantic.demandSub){
-      const stretch=offlineStretchLP(semantic.demandSub,semantic.invStart,cfg,bank,null);
-      if(stretch&&stretch.hours>1e-6*stretch.tau){
+      const capped=offlineStretchLP(semantic.demandSub,semantic.invStart,cfg,bank,null);
+      const uncapped=cycle?offlineStretchLP(semantic.demandSub,semantic.invStart,cfg,bank,null,cycle):null;
+      const stretch=[capped,uncapped].filter(st=>st&&st.hours>1e-6*st.tau).reduce((best,st)=>!best||st.tau<best.tau?st:best,null);
+      if(stretch){
         const saved=clock.wall-stretch.tau;
-        if(saved>=minSaving)return {miss:undefined};
-        if(saved>=1/60&&(!miss||saved>miss.saved))miss={saved,hours:stretch.hours,name:semantic.name,bound:true};
+        if(saved>=minSaving){
+          qualifies=true;
+          // Away past the first login: a check-in has somewhere to go.
+          if(uncapped&&uncapped.hours>(oc.cap-Math.min(oc.cap,bank))/oc.rate+cycle.fudge)checkins=true;
+        }else if(saved>=1/60&&(!miss||saved>miss.saved))miss={saved,hours:stretch.hours,name:semantic.name,bound:true};
       }
     }
     bank=clock.bank;segment=[];
   }
-  return {miss};
+  return {miss:qualifies?undefined:miss,checkins};
 }
 /* What the player reads off a plan that considered going offline. Every phase keeps its game-time
  * `eta`, which is what the replay checked; this adds the real time each one takes once the banked
@@ -4177,22 +4321,53 @@ function offlineProspect(run,cfg,minSaving){
 function applyOfflineClock(res,cfg,check){
   const oc=cfg.overclock,startBank=oc?oc.stored:0;
   const clock=overclockTimeline(res.executionPhases,oc,startBank);
-  let wall=0;
+  let wall=0;const counted=new Set();
   res.executionPhases.forEach((ph,i)=>{
     const step=clock.steps[i];ph.overclock=step.overclock;ph.wallEta=step.wallEta;wall+=step.wallEta;ph.doneAt=wall;
-    if(ph.kind==="offline"&&oc)ph.overclockBank=step.bank;
-    const semantic=ph.kind==="project"&&ph.semanticIndex!=null?res.phases[ph.semanticIndex]:null;
-    if(semantic){semantic.doneAt=wall;semantic.wallEta=step.wallEta;}
+    if(ph.kind==="offline"&&oc){
+      ph.overclockBank=step.bank;
+      // Hours into the stretch the bank is full, if it fills: a check-in's login is due from then.
+      const fill=(oc.cap-Math.min(oc.cap,clockBankBefore(clock,i,startBank)))/oc.rate;
+      ph.overclockFullIn=oc.rate>0&&fill<=ph.eta?fill:null;
+    }
+    // A project's own crafting time, check-ins included: what the breakdown shows beside it.
+    const own=ph.kind==="project"||(ph.kind==="checkin"&&ph.from==="project");
+    const semantic=own&&ph.semanticIndex!=null?res.phases[ph.semanticIndex]:null;
+    if(semantic){
+      if(!counted.has(ph.semanticIndex)){counted.add(ph.semanticIndex);semantic.wallEta=0;}
+      semantic.wallEta+=step.wallEta;if(ph.kind==="project")semantic.doneAt=wall;
+    }
   });
-  const stretches=res.executionPhases.map((ph,index)=>({ph,index})).filter(({ph})=>ph.kind==="offline")
-    .map(({ph,index})=>{const next=res.executionPhases.slice(index+1).find(p=>p.kind==="project");
-      return {step:index+1,hours:ph.eta,before:next&&next.semanticIndex!=null&&res.phases[next.semanticIndex]?res.phases[next.semanticIndex].name:null};});
+  // One stretch per time away; a tryhard train is one stretch, however many check-ins break it up.
+  const stretches=[];
+  res.executionPhases.forEach((ph,index)=>{
+    if(ph.kind!=="offline")return;
+    const train=ph.tryhardTrain,open=train!=null?stretches.find(st=>st.train===train):null;
+    if(open){open.hours+=ph.eta;open.last=index;return;}
+    stretches.push({step:index+1,hours:ph.eta,train:train!=null?train:null,last:index,checkins:Number(ph.checkinOf)||0,
+      checkinFudge:Number(ph.checkinFudge)||0});
+  });
+  stretches.forEach(st=>{
+    const next=res.executionPhases.slice(st.last+1).find(p=>p.kind==="project");
+    st.before=next&&next.semanticIndex!=null&&res.phases[next.semanticIndex]?res.phases[next.semanticIndex].name:null;
+    // Hours from one login to the next, the same for every check-in after the first.
+    const cycle=st.checkins?tryhardCycle(oc):null;
+    st.every=cycle?cycle.away+cycle.online:null;
+    // Long enough away that the bank sat full: what tryhard exists for, and what its note answers.
+    const away=res.executionPhases[st.step-1];
+    st.bankFilled=!!oc&&!st.checkins&&Number.isFinite(away&&away.overclockBank)&&away.overclockBank>=oc.cap-1e-9&&
+      st.hours>(oc.cap-Math.min(oc.cap,clockBankBefore(clock,st.step-1,startBank)))/oc.rate+1/60;
+    delete st.train;delete st.last;
+  });
   res.gameEta=res.eta;res.eta=clock.wall;res.objective=res.eta>0?1/res.eta:0;
   res.offline={considered:true,overclock:!!oc,startBank,overclockUsed:clock.used,stretches,
     awayHours:stretches.reduce((sum,s)=>sum+s.hours,0),forgieMult:cfg.forgieMult,minedFrac:cfg.minedFrac,
     onlineEta:check?check.onlineEta:clock.wall,minSaving:check?check.minSaving:0,miss:check?check.miss:null,
-    minSavingFrac:OFFLINE_MIN_SAVING_FRAC};
+    minSavingFrac:OFFLINE_MIN_SAVING_FRAC,
+    tryhard:oc&&oc.tryhard?{fudge:oc.tryhard.fudge,checkins:stretches.reduce((sum,st)=>sum+st.checkins,0)}:null};
 }
+// The Overclock banked going into execution phase `index`.
+function clockBankBefore(clock,index,startBank){return index>0?clock.steps[index-1].bank:startBank;}
 
 
 /* ---------- fit in time ----------

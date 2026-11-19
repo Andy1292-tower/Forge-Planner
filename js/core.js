@@ -50,13 +50,37 @@ function overclockStoredHours(state=S){
   const minutes=Number(state&&state.ocStoredMin);
   return Number.isFinite(minutes)&&minutes>0?Math.min(overclockCapHours(state),minutes/60):0;
 }
+/* ---- Tryhard mode ----
+   Away for longer than the bank takes to fill, Overclock stops converting. Tryhard has the player
+   check in when it is full, spend it — online, so the lines run and everything goes x2 — and go
+   offline again. Nobody times that perfectly: the fudge is how late they log in, the hours the bank
+   sits full, and again how long they stay on once the Overclock runs out. Each check-in still has to
+   pay for the login: it is used only if it finishes the plan at least TRYHARD_CHECKIN_MIN_SAVING
+   sooner than the same time away without it. */
+const TRYHARD_FUDGE_MAX_HOURS=24;
+const TRYHARD_CHECKIN_MIN_SAVING=0.5;
+function tryhardFudgeHours(state=S){
+  const hours=Number(state&&state.tryhardFudgeHours);
+  return Number.isFinite(hours)&&hours>0?Math.min(TRYHARD_FUDGE_MAX_HOURS,hours):0;
+}
+/* One check-in cycle for an Overclock config with tryhard on: `away` real hours offline from an
+   empty bank to the login (fill plus fudge), `game` hours of crafting the check-in runs (the bank at
+   x2, then the fudge at x1), `online` the real hours that takes, and `earn` the Overclock the cycle's
+   time away converts per hour away. */
+function tryhardCycle(overclock){
+  if(!overclock||!overclock.tryhard||!(overclock.rate>0)||!(overclock.cap>0))return null;
+  const fudge=Math.max(0,Number(overclock.tryhard.fudge)||0),fill=overclock.cap/overclock.rate;
+  return {fill,fudge,away:fill+fudge,game:OVERCLOCK_SPEED*overclock.cap+fudge,online:overclock.cap+fudge,
+    earn:overclock.cap/(fill+fudge)};
+}
 /* The offline settings a Project plan runs with, or null when offline crafting is not being
    considered. Overclock is nested under it: the player only spends Overclock on crafting when they
-   say so, because the same time can go to other upgrades. */
+   say so, because the same time can go to other upgrades. Tryhard nests under Overclock. */
 function projectOfflineConfig(state=S){
   if(!state||state.projectOffline!==true)return null;
   const overclock=state.projectOverclock===true
-    ?{cap:overclockCapHours(state),rate:overclockRatePerHour(state),stored:overclockStoredHours(state)}:null;
+    ?{cap:overclockCapHours(state),rate:overclockRatePerHour(state),stored:overclockStoredHours(state),
+      tryhard:state.projectTryhard===true?{fudge:tryhardFudgeHours(state)}:null}:null;
   return {forgieMult:offlineForgieMult(state),minedFrac:OFFLINE_MINED_FRAC,overclock};
 }
 /* How Overclock turns a run of plan phases into time on the clock. A phase's `eta` is game time —
@@ -394,7 +418,7 @@ function defaults(){
     targets:tg,targetMode:"ratio",targetSaved:[],targetActiveId:null,
     forgieOfflineBoost:0,ocMaxLevel:0,ocRateLevel:0,ocStoredMin:0,
     projects:[],inventory:nulls(INVENTORY_ITEMS),inventoryText:{},projectSeq:true,projectGate:true,projectBatch:false,projectStability:"prefer-current",projLineMode:"split",
-    projectOffline:false,projectOverclock:false,
+    projectOffline:false,projectOverclock:false,projectTryhard:false,tryhardFudgeHours:2,
     planStart:null,fitHours:48,fitBudget:60000,fitScope:"ledgers",fitSelectedOnly:false,fitLedgerMax:null,fitExcluded:[],fitForced:[],fitNext:false,fitExtra:false,fitExtraHours:12,
     manual:[],manualSaved:[],manualActiveId:null
   };
@@ -567,6 +591,8 @@ function normalize(st){
   if(st.projLineMode!=="static")st.projLineMode="split";
   st.projectOffline=st.projectOffline===true;
   st.projectOverclock=st.projectOverclock===true;
+  st.projectTryhard=st.projectTryhard===true;
+  st.tryhardFudgeHours=boundedPersistedField("tryhardFudgeHours",st.tryhardFudgeHours,2,0,TRYHARD_FUDGE_MAX_HOURS);
   st.forgieOfflineBoost=forgieOfflineBoostLevel(st);
   st.ocMaxLevel=overclockLevel(st.ocMaxLevel,OVERCLOCK_MAX_LEVEL_CAP);
   st.ocRateLevel=overclockLevel(st.ocRateLevel,OVERCLOCK_RATE_LEVEL_CAP);
