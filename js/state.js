@@ -483,6 +483,12 @@ function validateAndMigrate(candidate){
   if(_own(candidate,"projectBatch"))out.projectBatch=_boolean(_readData(candidate,"projectBatch","projectBatch",errors),"projectBatch",errors);
   if(strictProjectState)out.projectStability=_enum(_readData(candidate,"projectStability","projectStability",errors),FIELD_SCHEMA.projectStability,"projectStability",errors);
   if(_own(candidate,"projLineMode"))out.projLineMode=_enum(_readData(candidate,"projLineMode","projLineMode",errors),FIELD_SCHEMA.projLineMode,"projLineMode",errors);
+  // Offline crafting and Overclocking are additive: a save from before them plans online, as it did.
+  if(_own(candidate,"projectOffline"))out.projectOffline=_boolean(_readData(candidate,"projectOffline","projectOffline",errors),"projectOffline",errors);
+  if(_own(candidate,"projectOverclock"))out.projectOverclock=_boolean(_readData(candidate,"projectOverclock","projectOverclock",errors),"projectOverclock",errors);
+  ["forgieOfflineBoost","ocMaxLevel","ocRateLevel","ocStoredMin"].forEach(key=>{
+    if(_own(candidate,key))out[key]=_number(_readData(candidate,key,key,errors),FIELD_SCHEMA[key],key,errors);
+  });
   if(_own(candidate,"fitScope"))out.fitScope=_enum(_readData(candidate,"fitScope","fitScope",errors),FIELD_SCHEMA.fitScope,"fitScope",errors);
   if(_own(candidate,"fitSelectedOnly"))out.fitSelectedOnly=_boolean(_readData(candidate,"fitSelectedOnly","fitSelectedOnly",errors),"fitSelectedOnly",errors);
   if(_own(candidate,"fitLedgerMax"))out.fitLedgerMax=_number(_readData(candidate,"fitLedgerMax","fitLedgerMax",errors),FIELD_SCHEMA.fitLedgerMax,"fitLedgerMax",errors);

@@ -92,6 +92,13 @@ const FIELD_SCHEMA=Object.freeze({
   projLineMode:_field("enum",_FIELD_DEFAULTS.projLineMode,{values:Object.freeze(["split","static"]),allowBlank:false,label:"Project line plan"}),
   fitScope:_field("enum",_FIELD_DEFAULTS.fitScope,{values:Object.freeze(["ledgers","all"]),allowBlank:false,label:"what the fit-in-time search picks from"}),
   fitLedgerMax:_field("integer",null,{min:1,max:1e6,allowBlank:true,notation:"decimal",inputMode:"numeric",label:"highest ledger number to search"}),
+  // Upgrade levels as the game counts them, and the Overclock bank as the clock shows it.
+  forgieOfflineBoost:_field("integer",0,{min:0,max:OFFLINE_BOOST_MAX_LEVEL,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"Forgie upgrade offline boost level"}),
+  ocMaxLevel:_field("integer",0,{min:0,max:OVERCLOCK_MAX_LEVEL_CAP,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"Max time stored level"}),
+  ocRateLevel:_field("integer",0,{min:0,max:OVERCLOCK_RATE_LEVEL_CAP,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"Conversion rate level"}),
+  ocStoredMin:_field("integer",0,{min:0,max:OC_STORED_MAX_MIN,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"Overclock stored, in minutes"}),
+  ocStoredHours:_field("integer",0,{min:0,max:Math.floor(OC_STORED_MAX_MIN/60),allowBlank:false,notation:"decimal",inputMode:"numeric",label:"Overclock stored hours"}),
+  ocStoredMinutes:_field("integer",0,{min:0,max:59,allowBlank:false,notation:"decimal",inputMode:"numeric",label:"Overclock stored minutes"}),
   flag:_field("boolean",false,{allowBlank:false,label:"option"}),
   displayText:_field("string","",{maxLength:DISPLAY_TEXT_MAX_LENGTH,allowBlank:true,label:"display text"}),
   id:_field("string","",{maxLength:64,allowBlank:false,pattern:/^[A-Za-z][A-Za-z0-9_-]{0,63}$/,label:"ID"}),

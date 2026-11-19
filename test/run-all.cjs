@@ -40,6 +40,7 @@ const tests = [
   "test/minedrender.cjs",
   "test/minedsolver.cjs",
   "test/minedui.cjs",
+  "test/offline-crafting.cjs",
   "test/optimality-gap.cjs",
   "test/outputs-solve-scope.cjs",
   "test/perf-harness.cjs",

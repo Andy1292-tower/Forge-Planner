@@ -205,6 +205,43 @@
           </label>
           <p class="infusion-desc">Lets the <b>dupe %</b> field go above 100%. Past that point a crafter starts rolling a third copy instead of a second, then a fourth, and so on — the planner already averages that correctly, so enter your total duplication as the game reports it. Switching this back off returns the field to 100%.</p>
         </section>
+        <section class="infusion-card">
+          <div class="infusion-field">
+            <label class="infusion-name" for="infForgieOffline">Forgie upgrade offline boost</label>
+            <input type="number" id="infForgieOffline" aria-describedby="infForgieOfflineDesc" data-field-error="field-forgie-offline-error">
+          </div>
+          <div class="field-error" id="field-forgie-offline-error" aria-live="polite" aria-atomic="true"></div>
+          <p class="infusion-desc" id="infForgieOfflineDesc">Your upgrade level, 0 to 20. Each level adds 0.5% to Lil' Forgie's offline crafting speed. Offline, your crafting lines stop and Lil' Forgie makes twice his online rate, times this boost: <b id="infForgieOfflineMult">2×</b> right now. <b>Consider offline crafting</b> in Project plan uses it.</p>
+        </section>
+      </div>
+      <h4 class="infusion-h">Overclocking</h4>
+      <p class="help">Read these off the game's Overclocking screen. Project plan uses them when <b>Use Overclock when back online</b> is ticked.</p>
+      <div class="infusion-grid">
+        <section class="infusion-card">
+          <div class="infusion-field">
+            <label class="infusion-name" for="infOcMax">Max time stored</label>
+            <input type="number" id="infOcMax" aria-describedby="infOcMaxOut" data-field-error="field-oc-max-error">
+          </div>
+          <div class="field-error" id="field-oc-max-error" aria-live="polite" aria-atomic="true"></div>
+          <p class="infusion-desc">Upgrade level, 0 to 300. <span id="infOcMaxOut"></span></p>
+          <div class="infusion-field">
+            <label class="infusion-name" for="infOcRate">Conversion rate</label>
+            <input type="number" id="infOcRate" aria-describedby="infOcRateOut" data-field-error="field-oc-rate-error">
+          </div>
+          <div class="field-error" id="field-oc-rate-error" aria-live="polite" aria-atomic="true"></div>
+          <p class="infusion-desc">Upgrade level, 0 to 15. <span id="infOcRateOut"></span></p>
+        </section>
+        <section class="infusion-card">
+          <div class="infusion-field">
+            <span class="infusion-name" id="infOcStoredLabel">Stored now</span>
+            <span class="infusion-time" role="group" aria-labelledby="infOcStoredLabel">
+              <input type="number" id="infOcStoredH" aria-label="Overclock stored now, hours" data-field-error="field-oc-stored-error"><span>h</span>
+              <input type="number" id="infOcStoredM" aria-label="Overclock stored now, minutes" data-field-error="field-oc-stored-error"><span>m</span>
+            </span>
+          </div>
+          <div class="field-error" id="field-oc-stored-error" aria-live="polite" aria-atomic="true"></div>
+          <p class="infusion-desc">The Overclock banked right now, from the clock on the Overclocking screen. A plan that uses Overclock spends this first, then fills the bank toward your cap while you're offline. <span id="infOcStoredOut"></span></p>
+        </section>
       </div>
     </div>
   </div>

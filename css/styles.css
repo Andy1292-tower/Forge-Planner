@@ -1010,3 +1010,17 @@ button.btn.step-code{padding:4px 10px;font-size:11px}
 .infusion-toggle input{width:16px;height:16px;flex:0 0 auto;cursor:pointer;accent-color:var(--copper)}
 .infusion-name{font-size:12px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--ink)}
 .infusion-desc{margin:8px 0 0;font-size:11px;line-height:1.55;color:var(--ink3)}
+/* A level or time field sits on the card's title row; the value it gives is read in the line below. */
+.infusion-field{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px}
+.infusion-card>.infusion-field:first-child{margin-top:0}
+.infusion-field input[type=number]{width:72px;flex:0 0 auto;text-align:right}
+.infusion-time{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--ink3)}
+.infusion-time input[type=number]{width:56px}
+.infusion-h{margin:18px 0 6px;font-size:12px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--ink2)}
+/* The offline plan note is the one thing in the plan that asks the player to leave the game, so it
+   reads apart from the grey notes around it. */
+.notice.offline{background:rgba(210,129,58,.1);border:1px solid var(--copper);color:var(--ink);font-size:13px}
+.notice.offline b{color:var(--amber)}
+.offline-opts{margin:0 0 12px}
+.offline-opts .seq-toggle{margin-bottom:8px}
+.offline-opts .seq-toggle.nested{margin-left:24px}

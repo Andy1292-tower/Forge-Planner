@@ -10,6 +10,12 @@
  * left out rather than padded in.
  */
 const CHANGELOG=[
+  {version:"2026.11.19",date:"2026-11-19",groups:{
+    Added:[
+      "Consider offline crafting, a new checkbox in Project plan. Tick it and the planner checks, last, whether going offline for part of the plan gets it done sooner. While you're away your crafting lines stop, Lil' Forgie makes twice his online rate and mined income comes in at half rate. A stretch is only used if it saves at least 10% of the plan's time. When the plan uses one, a note at the top says how long you'll be offline and how much sooner it finishes, and a Go offline step says when to leave, when to come back and what Lil' Forgie makes while you're gone.",
+      "Use Overclock when back online?, under Consider offline crafting. Tick it and the plan spends Overclock on crafting at x2 game speed: what you have stored first, then what each stretch offline converts. Every time in the plan counts it.",
+      "Forgie upgrade offline boost, in Infusion Upgrades. Enter your level from 0 to 20. Each level adds 0.5% to Lil' Forgie's offline speed, so at level 14 he makes 2.14 times his online rate while you're away.",
+      "Overclocking, in Infusion Upgrades. Enter your Max time stored and Conversion rate levels and the Overclock you have stored now, as the game's Overclocking screen shows them. Each level field shows the time it gives so you can check it against the game."]}},
   {version:"2026.11.17",date:"2026-11-17",groups:{
     Fixed:[
       "Raising a line's max compression could rearrange several lines in Max items/hr for the same output. Lines now keep their jobs unless the new plan makes more of something, and Resimulate works the same way. When lines are kept, a note above the line assignment says so.",
