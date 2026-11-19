@@ -558,6 +558,35 @@ function renderInfusion(){
     if(box)box.checked=!!S.infusion[key];
   });
   syncDupeField();
+  Object.entries(OFFLINE_LEVEL_FIELDS).forEach(([id,key])=>{
+    const input=document.getElementById(id);if(!input)return;
+    applyFieldInputAttributes(input,FIELD_SCHEMA[key]);input.value=String(S[key]??0);
+  });
+  const stored=Math.max(0,Math.floor(Number(S.ocStoredMin)||0));
+  [["infOcStoredH",FIELD_SCHEMA.ocStoredHours,Math.floor(stored/60)],["infOcStoredM",FIELD_SCHEMA.ocStoredMinutes,stored%60]].forEach(([id,rule,value])=>{
+    const input=document.getElementById(id);if(!input)return;
+    applyFieldInputAttributes(input,rule);input.value=String(value);
+  });
+  renderOfflineReadouts();
+}
+/* The level fields read as levels, which is how the game counts them; the line under each says what
+   that level gives, so it can be checked against the screen it came from. */
+const OFFLINE_LEVEL_FIELDS=Object.freeze({infForgieOffline:"forgieOfflineBoost",infOcMax:"ocMaxLevel",infOcRate:"ocRateLevel"});
+function fmtClockTime(hours){
+  const minutes=Math.round(Math.max(0,Number(hours)||0)*60);
+  return `${Math.floor(minutes/60)}h ${String(minutes%60).padStart(2,"0")}m`;
+}
+function renderOfflineReadouts(){
+  const set=(id,html)=>{const el=document.getElementById(id);if(el)el.innerHTML=html;};
+  set("infForgieOfflineMult",`${fmt(offlineForgieMult(S),2)}×`);
+  set("infOcMaxOut",`Holds up to <b>${fmtClockTime(overclockCapHours(S))}</b> of Overclock.`);
+  set("infOcRateOut",`Converts <b>${Math.round(overclockRatePerHour(S)*60)}m</b> of Overclock per hour away.`);
+  const entered=Math.max(0,Number(S.ocStoredMin)||0)/60,cap=overclockCapHours(S);
+  set("infOcStoredOut",entered>cap+1e-9?`That is more than your <b>${fmtClockTime(cap)}</b> cap, so plans count <b>${fmtClockTime(cap)}</b>.`:"");
+}
+// Offline settings only reach a Project plan that is considering going offline.
+function markOfflineInputEdited(){
+  if(S.projectOffline===true)markInputEdited("infusion",READ_BY_PROJECT);else save();
 }
 const infusionDialog=dialogController.register({root:document.getElementById("infusionModal"),panel:document.querySelector("#infusionModal .modal"),opener:document.getElementById("btnInfusion"),initialFocus:()=>document.getElementById("infEe7"),onOpen:renderInfusion});
 function openInfusion(invoker){infusionDialog.open(invoker);}
@@ -585,6 +614,26 @@ document.getElementById("infusionModal").addEventListener("change",e=>{
   renderRecipes();
   renderInputState();
   markInputEdited("infusion");
+});
+
+document.getElementById("infusionModal").addEventListener("input",e=>{
+  const id=e.target&&e.target.id,key=OFFLINE_LEVEL_FIELDS[id];
+  if(key){
+    const result=commitFieldDraft(e.target,FIELD_SCHEMA[key],S[key],(st,value)=>{st[key]=value;});
+    if(result.committed){renderOfflineReadouts();renderInputState();markOfflineInputEdited();}
+    return;
+  }
+  if(id!=="infOcStoredH"&&id!=="infOcStoredM")return;
+  // One bank, entered as the hours and minutes the game's clock shows. Each half commits on its own
+  // and keeps the other as it stands.
+  const hours=id==="infOcStoredH",stored=Math.max(0,Math.floor(Number(S.ocStoredMin)||0));
+  const rule=hours?FIELD_SCHEMA.ocStoredHours:FIELD_SCHEMA.ocStoredMinutes;
+  const result=commitFieldDraft(e.target,rule,hours?Math.floor(stored/60):stored%60,(st,value)=>{
+    const now=Math.max(0,Math.floor(Number(st.ocStoredMin)||0));
+    const h=hours?value:Math.floor(now/60),m=hours?now%60:value;
+    st.ocStoredMin=Math.min(OC_STORED_MAX_MIN,h*60+m);
+  });
+  if(result.committed){renderOfflineReadouts();if(S.projectOverclock===true)markOfflineInputEdited();else save();}
 });
 
 /* ---------- mined resources modal ---------- */
@@ -685,11 +734,12 @@ function renderInputState(){
   // Via minedBudgetHr so the badge keeps working as income sources are added. Every mined resource
   // the player declares an income for is named, including Rocks, which no craft budgets but which
   // Max credits/hr ranks — the modal collects it, so the badge has to report it.
-  const active=INFUSION_KEYS.filter(key=>S.infusion&&S.infusion[key]);
+  const active=INFUSION_KEYS.filter(key=>S.infusion&&S.infusion[key]).map(key=>INFUSION_LABELS[key]);
+  if(forgieOfflineBoostLevel(S)>0)active.push("Offline boost "+forgieOfflineBoostLevel(S));
   seg("btnInfusion","stInfusion",active.length>0,
-    active.length?active.map(key=>INFUSION_LABELS[key]).join(" · "):"None active",
+    active.length?active.join(" · "):"None active",
     active.length?active.length+" active":"None",
-    "Infusion Upgrades — "+(active.length?active.map(key=>INFUSION_LABELS[key]).join(" and ")+" active":"none active"));
+    "Infusion Upgrades — "+(active.length?active.join(" and ")+" active":"none active"));
 
   const mined=MINED_INCOME_RESOURCES.filter(r=>minedBudgetHr(r).gt(DEC_ZERO)).map(minedDisplayName);
   seg("btnMined","stMined",mined.length>0,
@@ -1384,8 +1434,9 @@ function stepPlanHtml(res){
   const staticInstructions=S.projLineMode==="static"
     ?" Within each timed phase, every busy line keeps one job for the whole phase; reset lines only between listed phases. The slowest required item sets that phase's duration."
     :" Every line switch and stock figure comes from the executable replay.";
+  const goesOffline=execution.some(ph=>ph.kind==="offline");
   let h=valid
-    ?`<p class="help" style="margin:0 0 12px">Follow the prerequisite, warm-up, and project phases <b>in order</b>.${staticInstructions} Total ≈ <b>${fmtDuration(res.eta)}</b>. <span style="color:var(--ink3)">Clock times count from the <b>plan start</b> above.</span></p>`
+    ?`<p class="help" style="margin:0 0 12px">Follow the ${goesOffline?"offline, ":""}prerequisite, warm-up, and project phases <b>in order</b>.${staticInstructions} Total ≈ <b>${fmtDuration(res.eta)}</b>. <span style="color:var(--ink3)">Clock times count from the <b>plan start</b> above.</span></p>`
     :`<div class="notice warn"><b>No executable run instructions are available.</b> The analytical LP breakdown is retained below for diagnosis, but it must not be followed as a schedule.</div>`;
   if(!valid)return h;
   const _ps=(S.planStart!=null&&isFinite(S.planStart))?new Date(S.planStart):null;
@@ -1394,29 +1445,36 @@ function stepPlanHtml(res){
   let phaseStart=0;
   const allBoundaries=res.scheduleValidation.boundaries||[];
   execution.forEach((ph,i)=>{
-    const pStart=phaseStart; phaseStart+=ph.eta||0;
+    // Clock time, not game time: a step that runs on Overclock takes less real time than its eta.
+    const pStart=phaseStart,wallEta=Number.isFinite(ph.wallEta)?ph.wallEta:(ph.eta||0); phaseStart+=wallEta;
+    const clockAt=g=>pStart+phaseWallOffset(ph,g);
+    // A project the time away fully stocked has nothing left to craft: it is handed in on return.
+    const coveredAway=ph.kind==="project"&&!(ph.eta>0)&&i>0&&execution[i-1].kind==="offline";
     const lines=(ph.plan||[]).filter(p=>p.entries&&p.entries.length).map(p=>({
       line:p.line,max:p.max,
       segs:p.entries
     }));
     h+=`<div class="step-phase">`;
-    const label=ph.kind==="prerequisite"?"External prerequisite":ph.kind==="warmup"?"Warm-up":htmlText(ph.name||"Project phase");
+    const label=ph.kind==="prerequisite"?"External prerequisite":ph.kind==="warmup"?"Warm-up":ph.kind==="offline"?"Go offline":htmlText(ph.name||"Project phase");
     // A game loadout code for each stretch of the step in which no crafter changes job.
     const codes=typeof projectStepLoadouts==="function"?projectStepLoadouts(res,i):[];
     const codeButton=(k,text)=>{
-      const when=(k===0?"from the start of the step":"from ~"+fmtClock(pStart+codes[k].start))+" until ~"+fmtClock(pStart+codes[k].end);
+      const when=(k===0?"from the start of the step":"from ~"+fmtClock(clockAt(codes[k].start)))+" until ~"+fmtClock(clockAt(codes[k].end));
       const where=`Step ${i+1} (${ph.kind==="warmup"?"warm-up":ph.name||"project phase"}), ${when}`;
       return `<button type="button" class="btn ghost step-code" id="loadoutStep${i}_${k}" data-loadout-step="${i}" data-loadout-slice="${k}" data-loadout-label="${htmlAttribute(where)}" title="${htmlAttribute("Game loadout code, "+when)}">${text}</button>`;
     };
-    h+=`<div class="step-h"><span class="step-n">${i+1}</span> <b>${label}</b> <span class="proj-mini">${ph.eta>0?"· "+fmtDuration(ph.eta)+" · complete by ":"· before crafting begins"}</span>${ph.eta>0?'<span class="step-clock">~'+fmtClock(pStart+(ph.eta||0))+'</span>':""}${codes.length===1?codeButton(0,"Game code"):""}</div>`;
-    if(codes.length>1)h+=`<div class="step-codes"><span class="proj-mini">Game codes:</span>${codes.map((c,k)=>codeButton(k,k===0?"Start":"~"+fmtClock(pStart+c.start))).join("")}</div>`;
+    h+=`<div class="step-h"><span class="step-n">${i+1}</span> <b>${label}</b> <span class="proj-mini">${ph.eta>0?"· "+fmtDuration(wallEta)+(ph.kind==="offline"?" · back online by ":" · complete by "):coveredAway?"· when you're back":"· before crafting begins"}</span>${ph.eta>0?'<span class="step-clock">~'+fmtClock(pStart+wallEta)+'</span>':""}${codes.length===1?codeButton(0,"Game code"):""}</div>`;
+    if(codes.length>1)h+=`<div class="step-codes"><span class="proj-mini">Game codes:</span>${codes.map((c,k)=>codeButton(k,k===0?"Start":"~"+fmtClock(clockAt(c.start)))).join("")}</div>`;
+    if(ph.kind==="offline"){h+=offlineStepHtml(ph,res)+`</div>`;return;}
+    if(Number(ph.overclock)>=1/3600)
+      h+=`<div class="notice info" style="font-size:11px;margin:4px 0 6px"><b>Overclock on.</b> The first <b>${fmtDuration(ph.overclock)}</b> of this step run at x2 game speed — <b>${fmtDuration(OVERCLOCK_SPEED*ph.overclock)}</b> of crafting. The times below count it.</div>`;
     if(ph.kind==="prerequisite"){
       const supply=Object.entries(ph.externalSupply||{}).map(([resource,amount])=>{const current=(ph.invStart&&ph.invStart[resource])||0;
         const total=(ph.prerequisiteDemand&&ph.prerequisiteDemand[resource])||current+amount;
         return `Pre-produce <b>${disp(amount)} more ${htmlText(resource)}</b> (<b>${disp(total)} total</b>; <b>${disp(current)} currently on hand</b>)`;}).join(" and ");
       h+=`<div class="notice info" style="font-size:11px;margin:4px 0 6px">${supply} before starting. Same-phase production cannot satisfy this prerequisite.</div></div>`;return;
     }
-    if(!lines.length){h+=`<div class="proj-mini" style="padding:2px 0">No line activity.</div></div>`;return;}
+    if(!lines.length){h+=`<div class="proj-mini" style="padding:2px 0">${coveredAway?"Lil' Forgie made everything this needs while you were away. Complete it as soon as you're back.":"No line activity."}</div></div>`;return;}
     if(ph.idleFill&&(ph.idleFill.lines||[]).length){
       const many=ph.idleFill.lines.length>1;
       h+=`<div class="notice info" style="font-size:11px;margin:4px 0 6px"><b>Spare lines put to work.</b> Line${many?"s":""} ${ph.idleFill.lines.map(line=>"#"+line).join(", ")} ${many?"were":"was"} left with nothing that finishes this phase sooner, so ${many?"they are":"it is"} building more of what it still needs — ${itemListText(ph.idleFill.items)} — out of what the other lines leave spare${ph.idleFill.shortened?", which shortened this phase":". The phase's duration is unchanged"}.</div>`;
@@ -1429,12 +1487,13 @@ function stepPlanHtml(res){
     lines.forEach(L=>{
       const parts=L.segs.map(s=>{
         const elapsed=s.end;
-        const at=fmtClock(pStart+elapsed);
+        const at=fmtClock(clockAt(elapsed));
         const tag=at?` <span class="proj-mini">· until </span><span class="step-clock">~${at}</span>`:"";
         const onHand=onHandAt(s.item,elapsed),stock=onHand!=null?` <span class="proj-mini">· <b>${disp(onHand)}</b> on hand</span>`:"";
         const verb=RAWS.includes(s.item)?"produce":"craft";
         const cfg=MINED_CRAFTS[s.item],mined=cfg?` <span class="proj-mini">· uses ${cfg.resource} income</span>`:"";
-        return `${verb} <b>${s.item}</b> @${compressionLabel(s.lvl)}${s.frac>=0.999?" (whole phase)":` for ~${fmtDuration(s.frac*ph.eta)}`}${mined}${tag}${stock}`;
+        const span=phaseWallOffset(ph,s.end)-phaseWallOffset(ph,Number.isFinite(s.start)?s.start:s.end-s.frac*ph.eta);
+        return `${verb} <b>${s.item}</b> @${compressionLabel(s.lvl)}${s.frac>=0.999?" (whole phase)":` for ~${fmtDuration(span)}`}${mined}${tag}${stock}`;
       });
       const segHtml=parts.map((p,idx)=>`<div class="step-seg">${idx===0?'<span class="step-then">→</span>':'<span class="step-then">then</span>'} ${p}</div>`).join('');
       // A filled line is not part of what makes the phase's own clock — say so, or it reads as a
@@ -1449,6 +1508,19 @@ function stepPlanHtml(res){
     h+=`</ol>${minedUsageNote(ph.minedUsage||[])}</div>`;
   });
   return h;
+}
+/* A stretch away, as the player has to carry it out: how long to stay away, and what is waiting when
+   they come back. Every amount is the replay's own — Lil' Forgie's online rate times his offline
+   multiple times the hours away — so it is exactly what the steps after this one count on. */
+function offlineStepHtml(ph,res){
+  const hours=Number(ph.eta)||0,scale=Number(ph.forgieScale)||1,minedScale=ph.minedScale==null?1:Number(ph.minedScale)||0;
+  const made=FORGIE_ITEM_ORDER.filter(it=>forgieHr(it).gt(1e-9)).map(it=>`<b>${disp(forgieHr(it).times(scale*hours))}</b> ${htmlText(it)}`);
+  const list=made.length<2?made.join(""):made.slice(0,-1).join(", ")+" and "+made[made.length-1];
+  const hydracite=minedBudgetHr("Hydracite"),mined=hydracite.gt(DEC_ZERO)&&minedScale>0
+    ?` Hydracite mining keeps going at ${minedScale===0.5?"half":fmt(minedScale*100,0)+"%"} rate and banks <b>${disp(hydracite.times(minedScale*hours))}</b> for Batteries.`:"";
+  const bank=res&&res.offline&&res.offline.overclock&&Number.isFinite(ph.overclockBank)
+    ?` You come back with <b>${fmtDuration(ph.overclockBank)}</b> of Overclock banked — turn it on straight away.`:"";
+  return `<div class="notice info" style="font-size:11px;margin:4px 0 6px">Close the game for <b>${fmtDuration(hours)}</b>. Your crafting lines stop, and Lil' Forgie makes <b>${fmt(scale,2)}×</b> his online rate: ${list||"nothing he is set to make"} while you're away.${mined}${bank}</div>`;
 }
 // ── Plan-start + inline project controls, now living in the Project-mode panel (#results) ──
 // The step plan and its controls used to be a modal; promoting them into #results means every edit
@@ -1482,6 +1554,11 @@ document.getElementById("results").addEventListener("input",e=>{
 document.getElementById("results").addEventListener("change",e=>{
   const t=e.target;if(!t||!t.getAttribute)return;let v;
   // Plan-start anchor: display-only, so repaint from cache (no solve).
+  // Offline crafting changes the plan itself, so it re-plans at once, as the line plan switch does.
+  if(t.id==="projOffline"||t.id==="projOverclock"){
+    const key=t.id==="projOffline"?"projectOffline":"projectOverclock",on=t.checked;
+    mutateState(st=>{st[key]=on;});persistNow();doSolve();return;
+  }
   if(t.id==="fitNext"||t.id==="fitExtra"||t.id==="fitSelectedOnly"){
     const key=t.id,on=t.checked;mutateState(st=>{st[key]=on;});save();repaintFit();return;
   }

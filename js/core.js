@@ -14,6 +14,85 @@ const INFUSION_KEYS=Object.freeze(["ee7","dupeDay"]);
    and a product added to the planner later must not be swept in until an upgrade says so. */
 const EE7_PRODUCTS=Object.freeze(["Glass","Bricks","Plates","Rods","Frames","Gel","Wire","Reinforced Concrete","Batteries"]);
 function infusionOn(key,state=S){const flags=state&&state.infusion;return !!(flags&&flags[key]);}
+/* ---- offline crafting ----
+   While the player is away every crafting line stops and Lil' Forgie makes twice his online rate,
+   raised further by the Forgie upgrade offline boost: +0.5% a level, so level 14 is 1.07 and he
+   makes 2 × 1.07 = 2.14 times what he does online. Mined income keeps coming in at a reduced rate
+   the game does not state; half is the working figure. */
+const OFFLINE_FORGIE_MULT=2;
+const OFFLINE_BOOST_PER_LEVEL=0.005;
+const OFFLINE_BOOST_MAX_LEVEL=20;
+const OFFLINE_MINED_FRAC=0.5;
+/* An offline stretch has to earn its place in a plan: one that saves less than this share of the
+   plan's total time is left out, so a plan never asks the player to go away for a negligible gain. */
+const OFFLINE_MIN_SAVING_FRAC=0.10;
+function forgieOfflineBoostLevel(state=S){
+  const level=Math.floor(Number(state&&state.forgieOfflineBoost));
+  return Number.isFinite(level)?Math.max(0,Math.min(OFFLINE_BOOST_MAX_LEVEL,level)):0;
+}
+function offlineForgieMult(state=S){return OFFLINE_FORGIE_MULT*(1+OFFLINE_BOOST_PER_LEVEL*forgieOfflineBoostLevel(state));}
+/* ---- Overclocking ----
+   Time away converts into Overclock, banked up to a cap, and Overclock runs the whole game at x2:
+   lines, Lil' Forgie and mined income all go twice as fast, and it does not count down while
+   offline. Both upgrades read off the game's Overclocking screen: Max time stored is 4h 40m plus
+   5m a level (11:45:00 at level 85), and Conversion rate is 15m of Overclock per hour away plus
+   1m a level (28m at level 13). Hours throughout. */
+const OVERCLOCK_SPEED=2;
+const OVERCLOCK_MAX_LEVEL_CAP=300;
+const OVERCLOCK_RATE_LEVEL_CAP=15;
+function overclockLevel(value,cap){const level=Math.floor(Number(value));return Number.isFinite(level)?Math.max(0,Math.min(cap,level)):0;}
+function overclockCapHours(state=S){return (280+5*overclockLevel(state&&state.ocMaxLevel,OVERCLOCK_MAX_LEVEL_CAP))/60;}
+function overclockRatePerHour(state=S){return (15+overclockLevel(state&&state.ocRateLevel,OVERCLOCK_RATE_LEVEL_CAP))/60;}
+// The bank as entered, in minutes. Bounded by the cap at the top upgrade level, the most any save
+// can legitimately hold; overclockStoredHours() clamps it to the player's own cap.
+const OC_STORED_MAX_MIN=280+5*OVERCLOCK_MAX_LEVEL_CAP;
+function overclockStoredHours(state=S){
+  const minutes=Number(state&&state.ocStoredMin);
+  return Number.isFinite(minutes)&&minutes>0?Math.min(overclockCapHours(state),minutes/60):0;
+}
+/* The offline settings a Project plan runs with, or null when offline crafting is not being
+   considered. Overclock is nested under it: the player only spends Overclock on crafting when they
+   say so, because the same time can go to other upgrades. */
+function projectOfflineConfig(state=S){
+  if(!state||state.projectOffline!==true)return null;
+  const overclock=state.projectOverclock===true
+    ?{cap:overclockCapHours(state),rate:overclockRatePerHour(state),stored:overclockStoredHours(state)}:null;
+  return {forgieMult:offlineForgieMult(state),minedFrac:OFFLINE_MINED_FRAC,overclock};
+}
+/* How Overclock turns a run of plan phases into time on the clock. A phase's `eta` is game time —
+   the replay's unit — and Overclock only changes how much real time that takes. It is spent the
+   moment the player is online with some banked, because an hour spent now saves the same hour as one
+   spent later, and spending it frees room under the cap for the next stretch away. Away, the bank
+   fills at the conversion rate up to the cap. Each phase gets `overclock`, the hours at x2 it starts
+   with, `wallEta`, the real time it takes, and `bank`, what is left banked after it. */
+function overclockTimeline(phases,overclock,bank){
+  let left=overclock?Math.max(0,Math.min(overclock.cap,Number(bank)||0)):0,wall=0,used=0;
+  const steps=(phases||[]).map(ph=>{
+    const eta=Math.max(0,Number(ph&&ph.eta)||0);
+    if(!overclock){wall+=eta;return {overclock:0,wallEta:eta,bank:0};}
+    if(ph&&ph.kind==="offline"){left=Math.min(overclock.cap,left+overclock.rate*eta);wall+=eta;return {overclock:0,wallEta:eta,bank:left};}
+    const spend=Math.min(left,eta/OVERCLOCK_SPEED);
+    left-=spend;used+=spend;wall+=eta-spend;
+    return {overclock:spend,wallEta:eta-spend,bank:left};
+  });
+  return {steps,wall,bank:left,used};
+}
+// Real hours into a phase for `g` hours of its game time: x2 while its Overclock lasts, then x1.
+function phaseWallOffset(ph,g){
+  const o=Math.max(0,Number(ph&&ph.overclock)||0),t=Math.max(0,Number(g)||0);
+  if(!(o>0))return t;
+  return t<=OVERCLOCK_SPEED*o?t/OVERCLOCK_SPEED:t-o;
+}
+// Real hours from the plan's start for `t` hours of its game time, across every phase in order.
+function planWallTime(phases,t){
+  let game=0,wall=0;const target=Math.max(0,Number(t)||0);
+  for(const ph of phases||[]){
+    const eta=Math.max(0,Number(ph&&ph.eta)||0);
+    if(target<=game+eta)return wall+phaseWallOffset(ph,target-game);
+    game+=eta;wall+=ph&&Number.isFinite(Number(ph.wallEta))?Number(ph.wallEta):eta;
+  }
+  return wall+(target-game);
+}
 // Gel is crafted on a crafter line, spending budgeted Vespium plus informational Rocks.
 const GEL="Gel";
 const RECIPE={
@@ -313,7 +392,9 @@ function defaults(){
     minedIncome:blankSources(),
     minedIncomeText:blankSourceText(),
     targets:tg,targetMode:"ratio",targetSaved:[],targetActiveId:null,
+    forgieOfflineBoost:0,ocMaxLevel:0,ocRateLevel:0,ocStoredMin:0,
     projects:[],inventory:nulls(INVENTORY_ITEMS),inventoryText:{},projectSeq:true,projectGate:true,projectBatch:false,projectStability:"prefer-current",projLineMode:"split",
+    projectOffline:false,projectOverclock:false,
     planStart:null,fitHours:48,fitBudget:60000,fitScope:"ledgers",fitSelectedOnly:false,fitLedgerMax:null,fitExcluded:[],fitForced:[],fitNext:false,fitExtra:false,fitExtraHours:12,
     manual:[],manualSaved:[],manualActiveId:null
   };
@@ -484,6 +565,12 @@ function normalize(st){
   if(typeof st.projectBatch!=="boolean")st.projectBatch=false;
   if(st.projectStability!=="reoptimize"&&st.projectStability!=="prefer-current")st.projectStability="prefer-current";
   if(st.projLineMode!=="static")st.projLineMode="split";
+  st.projectOffline=st.projectOffline===true;
+  st.projectOverclock=st.projectOverclock===true;
+  st.forgieOfflineBoost=forgieOfflineBoostLevel(st);
+  st.ocMaxLevel=overclockLevel(st.ocMaxLevel,OVERCLOCK_MAX_LEVEL_CAP);
+  st.ocRateLevel=overclockLevel(st.ocRateLevel,OVERCLOCK_RATE_LEVEL_CAP);
+  {const stored=Math.floor(Number(st.ocStoredMin));st.ocStoredMin=Number.isFinite(stored)&&stored>0?Math.min(OC_STORED_MAX_MIN,stored):0;}
   if(!Array.isArray(st.manualSaved))st.manualSaved=[];
   st.manualSaved=st.manualSaved.filter(p=>p&&typeof p==="object"&&Array.isArray(p.config)).map(p=>({id:typeof p.id==="string"?p.id:("m"+Math.random().toString(36).slice(2,9)),name:typeof p.name==="string"?p.name:"Setup",config:p.config.map(c=>({job:(c&&ALLITEMS.includes(c.job))?c.job:"Idle",lvl:(c&&LEVELS.includes(c.lvl))?c.lvl:1,sell:!!(c&&c.sell)}))}));
   if(typeof st.manualActiveId!=="string")st.manualActiveId=null;

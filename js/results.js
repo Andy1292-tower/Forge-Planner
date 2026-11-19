@@ -136,6 +136,28 @@ function lineAssignTableHtml(plan){
   });
   return h+`</tbody></table>`;
 }
+/* What the offline check did to this plan. A plan that goes offline says so first and loudest: the
+   times below all assume the player is away for those stretches. A plan that stays online says why,
+   so a ticked box with no visible effect is not a mystery. */
+function projectOfflineNote(res){
+  const off=res&&res.offline;if(!off||!off.considered)return "";
+  const pct=Math.round((off.minSavingFrac||OFFLINE_MIN_SAVING_FRAC)*100);
+  const ocText=off.overclock&&off.overclockUsed>1/120
+    ?` Turn on <b>Overclock</b> (x2 game speed) whenever you're back online: the plan spends <b>${fmtDuration(off.overclockUsed)}</b> of it${off.startBank>1/120?`, starting with the <b>${fmtDuration(off.startBank)}</b> you have stored`:""}.`
+    :"";
+  if(off.stretches&&off.stretches.length){
+    const n=off.stretches.length,steps=off.stretches.map(st=>st.step);
+    const stepText=n===1?`step ${steps[0]}`:`steps ${steps.slice(0,-1).join(", ")} and ${steps[n-1]}`;
+    const saved=Math.max(0,(off.onlineEta||0)-(res.eta||0));
+    return `<div class="notice offline" role="note"><b>This plan has you offline for ${fmtDuration(off.awayHours)}.</b> `+
+      `${n===1?"It goes offline once":`It goes offline ${n} times`}, at ${stepText}: close the game for the time shown and come back when it says. `+
+      `While you're away your crafting lines stop and Lil' Forgie makes <b>${fmt(off.forgieMult,2)}×</b> his online rate. `+
+      `That finishes <b>${fmtDuration(saved)}</b> sooner than staying online (${fmtDuration(off.onlineEta)}), and every time below counts the time away.${ocText}</div>`;
+  }
+  const miss=off.miss&&off.miss.saved>0
+    ?` The best stretch found, ${fmtDuration(off.miss.hours)} offline before <b>${htmlText(off.miss.name||"a phase")}</b>, saves ${off.miss.bound?"at most":"only"} ${fmtDuration(off.miss.saved)}.`:"";
+  return `<div class="notice info" style="font-size:11.5px"><b>Offline crafting checked.</b> Going offline doesn't finish this plan at least ${pct}% sooner, so it stays online.${miss}${ocText}</div>`;
+}
 // Lil' Forgie's passive supply of the items these projects actually use (issue #77). Works in
 // every project sub-mode (sequenced/waved have no balance table), so his contribution is always
 // visible: it's already credited into the plan below, so it's crafting the player doesn't do.
@@ -173,6 +195,15 @@ function projOrderHeader(res){
     case "waves":return 'Order: <b style="color:var(--ink2)">all together, in unlock waves</b> — material unlocks first, then the rest. Change this in the <b>Projects</b> tab of <b>Projects+Prices</b>.';
     default:return 'Order: <b style="color:var(--ink2)">all projects together</b> in one shared '+(res.projLineMode==="static"?'set &amp; forget':'line-switching')+' schedule. Change this in the <b>Projects</b> tab of <b>Projects+Prices</b>.';
   }
+}
+/* Offline crafting is asked of the plan, so it is set beside the line plan rather than in a dialog.
+   Overclock nests under it: the player only spends Overclock on crafting when they say so. */
+function projOfflineHtml(){
+  const on=S.projectOffline===true,oc=S.projectOverclock===true;
+  return `<div class="offline-opts">
+    <label class="seq-toggle"><input type="checkbox" id="projOffline" ${on?"checked":""}><span><b>Consider offline crafting</b> — check last whether going offline for part of the plan finishes it sooner. Offline, your lines stop and Lil' Forgie makes <b>${fmt(offlineForgieMult(S),2)}×</b> his online rate; set his boost in <b>Infusion Upgrades</b>. A stretch has to save at least ${Math.round(OFFLINE_MIN_SAVING_FRAC*100)}% of the plan's time to be used.</span></label>
+    <label class="seq-toggle nested${on?"":" disabled"}"><input type="checkbox" id="projOverclock" ${oc?"checked":""} ${on?"":"disabled"}><span><b>Use Overclock when back online?</b> — spend banked Overclock on crafting at x2 game speed: what's stored now, then what each stretch offline earns. Set the levels and what's stored in <b>Infusion Upgrades</b>.</span></label>
+  </div>`;
 }
 function projLineModeHtml(res){
   const isStatic=res&&res.projLineMode==="static";
@@ -329,12 +360,20 @@ function sellRankingPending(key){
  *
  * A mined resource is not held as stock in the replay: its `counted` is null, and it is free once the
  * last phase drawing on it ends. */
+/* Every hour above is game time, the replay's own unit; the clock times the player reads are real
+ * time, which is shorter wherever the plan spends Overclock. */
 function sellAgainTiming(res,item){
+  const timing=sellAgainGameTiming(res,item),clock=t=>t==null?t:planWallTime(res.executionPhases,t);
+  return Object.assign({},timing,{freeAt:clock(timing.freeAt),end:clock(timing.end)});
+}
+function sellAgainGameTiming(res,item){
   const validation=res.scheduleValidation||{},phases=validation.phases||[],boundaries=validation.boundaries||[];
-  const end=Number(res.eta)||0,runs=[],drops=[];
+  const end=Number(res.gameEta!=null?res.gameEta:res.eta)||0,runs=[],drops=[],away=[];
   let elapsed=0,required=0,lastDraw=null;
   phases.forEach(ph=>{
     const phaseStart=elapsed,eta=Number(ph.eta)||0;elapsed+=eta;
+    // Away, the lines are stopped and Lil' Forgie runs at his offline multiple.
+    if(ph.kind==="offline"&&eta>0)away.push({from:phaseStart,to:phaseStart+eta,scale:Number(ph.forgieScale)||1});
     if((ph.kind||"project")==="project")required+=Math.max(0,Number((ph.demandSub||{})[item])||0);
     required+=Math.max(0,Number((ph.preProducedDemand||{})[item])||0);
     const supplied=Math.max(0,Number((ph.externalSupply||{})[item])||0);
@@ -353,14 +392,15 @@ function sellAgainTiming(res,item){
   const toMake=required-counted;
   if(!(toMake>tolerance))return {used:true,required,counted,freeAt:0,end};
   const forgie=typeof forgieHr==="function"&&typeof supplyRate==="function"?Math.max(0,Number(supplyRate(forgieHr(item)))||0):0;
-  const times=[...new Set([0,end,...runs.flatMap(run=>[run.from,run.to]),...drops.map(drop=>drop.at)])].filter(t=>t>=0&&t<=end).sort((a,b)=>a-b);
+  const times=[...new Set([0,end,...runs.flatMap(run=>[run.from,run.to]),...drops.map(drop=>drop.at),...away.flatMap(a=>[a.from,a.to])])].filter(t=>t>=0&&t<=end).sort((a,b)=>a-b);
   let made=0,freeAt=end;
   for(let i=0;i<times.length;i++){
     const t=times[i];
     made+=drops.filter(drop=>drop.at===t).reduce((sum,drop)=>sum+drop.amount,0);
     if(made>=toMake-tolerance){freeAt=t;break;}
     if(i+1>=times.length)break;
-    const next=times[i+1],rate=forgie+runs.filter(run=>run.from<=t&&run.to>=next).reduce((sum,run)=>sum+run.rate,0);
+    const next=times[i+1],stretch=away.find(a=>a.from<=t&&a.to>=next);
+    const rate=forgie*(stretch?stretch.scale:1)+runs.filter(run=>run.from<=t&&run.to>=next).reduce((sum,run)=>sum+run.rate,0);
     if(rate>0&&made+rate*(next-t)>=toMake-tolerance){freeAt=t+(toMake-made)/rate;break;}
     made+=rate*(next-t);
   }
@@ -830,10 +870,12 @@ function renderProjectResults(res,el,stat){
       ${ledgerTimesButtonHtml()}
     </div></div>`;
   html+=projLineModeHtml(res);
+  html+=projOfflineHtml();
   // Plan-start anchor (promoted from the old modal header)
   if(scheduleExecutable)html+=projPlanAnchorHtml();
   // Key notices — the ones that change what you actually do. The old verbose "Project plan." explainer
   // is dropped; the step-plan intro below already tells you how to run it.
+  if(scheduleExecutable)html+=projectOfflineNote(res);
   html+=projectForgieNote(res);
   html+=projectStabilityHtml(res);
   if(scheduleExecutable&&res.noSwitchFallback===true)
@@ -851,7 +893,7 @@ function renderProjectResults(res,el,stat){
       return `Pre-produce <b>${disp(amount)} more ${htmlText(resource)}</b> (<b>${disp(total)} total</b>; <b>${disp(current)} currently on hand</b>)`;})).join(" and ");
     html+=`<div class="notice info"><b>External pre-produced prerequisite:</b> ${needs} before the timed work begins. This is an explicit zero-time execution step and cannot be supplied by the same phase.</div>`;
   }
-  if(scheduleExecutable&&warmups.length){const warmEta=warmups.reduce((sum,ph)=>sum+(ph.eta||0),0);
+  if(scheduleExecutable&&warmups.length){const warmEta=warmups.reduce((sum,ph)=>sum+(Number.isFinite(ph.wallEta)?ph.wallEta:(ph.eta||0)),0);
     html+=`<div class="notice info"><b>Startup warm-up included:</b> ${fmtDuration(warmEta)} builds the ordinary input stock needed to avoid a material shortage beyond replay tolerance. The total and finish clocks include this time.</div>`;}
   if(res.scheduleValidation&&!res.scheduleValidation.ok){
     const f=res.scheduleValidation.firstFailure||{},when=isFinite(f.time)?` at ${fmtDuration(f.time)}`:"";
@@ -874,7 +916,7 @@ function renderProjectResults(res,el,stat){
   if(res.partial)html+=`<div class="notice warn"><b>Partial plan only.</b> The blocked items remain excluded, so the ticked projects are <b>not fully finishable</b> with the current mined incomes. The time shown is for currently plannable work only.</div>`;
   // Summary metrics
   html+=`<div class="metrics">
-    <div class="metric"><div class="l">${res.partial?"Partial plan time":scheduleExecutable?"Executable total time":"Analytical LP time"}</div><div class="v">${fmtDuration(scheduleExecutable?res.eta:res.workEta)}</div><div class="u">${res.partial?"currently plannable work only":scheduleExecutable?(res.sequenced?"includes warm-ups; finishes every project":"includes warm-ups and prerequisites"):"not executable — see blocking diagnostic"}</div></div>
+    <div class="metric"><div class="l">${res.partial?"Partial plan time":scheduleExecutable?"Executable total time":"Analytical LP time"}</div><div class="v">${fmtDuration(scheduleExecutable?res.eta:res.workEta)}</div><div class="u">${res.partial?"currently plannable work only":scheduleExecutable?(res.offline&&res.offline.awayHours>0?`includes ${fmtDuration(res.offline.awayHours)} offline`:res.sequenced?"includes warm-ups; finishes every project":"includes warm-ups and prerequisites"):"not executable — see blocking diagnostic"}</div></div>
     <div class="metric"><div class="l">Projects</div><div class="v">${res.perProject.length}</div><div class="u">${scheduleExecutable?(res.sequenced?"one at a time":res.waved?res.phases.length+(res.progressWaves?" stages":" unlock waves"):res.single?"all in one phase":"scheduled together"):res.phases.length+" analytical phase"+(res.phases.length===1?"":"s")}</div></div>
     ${!res.sequenced&&!res.waved&&res.bottleneck?`<div class="metric"><div class="l">Bottleneck</div><div class="v" style="font-size:17px">${res.bottleneck}</div><div class="u">${scheduleExecutable?`sets the ${res.partial?"partial plan":"finish"} time`:"analytical LP bottleneck only"}</div></div>`:""}
   </div>`;
@@ -898,7 +940,7 @@ function renderProjectResults(res,el,stat){
       const nm=htmlText(ph.members&&ph.members.length>1?ph.members.join(" + "):ph.name);
       bd+=`<tr><td class="mono">${i+1}</td><td>${nm}${badge}${warn}</td>
         <td style="color:var(--ink2);font-size:11.5px">${needs||"—"}</td>
-        <td class="num mono">${ph.eta>0?fmtDuration(ph.eta):"—"}</td><td class="num mono" style="color:${ph.feasible?'var(--amber)':'var(--danger)'}">${ph.feasible?fmtDuration(ph.doneAt):ph.partial?fmtDuration(ph.doneAt)+" partial":"blocked"}</td></tr>`;
+        <td class="num mono">${ph.eta>0?fmtDuration(Number.isFinite(ph.wallEta)?ph.wallEta:ph.eta):"—"}</td><td class="num mono" style="color:${ph.feasible?'var(--amber)':'var(--danger)'}">${ph.feasible?fmtDuration(ph.doneAt):ph.partial?fmtDuration(ph.doneAt)+" partial":"blocked"}</td></tr>`;
     });
     bd+=`</tbody></table>`;
   } else {

@@ -171,9 +171,9 @@ const clockStart = resultsSrc.indexOf("function fmtPlanClock("), clockEnd = resu
 const stepState = { planStart: Date.UTC(2026, 9, 9, 12), projLineMode: "split" };
 const fmtPlanClock = Function("S", resultsSrc.slice(clockStart, clockEnd) + "\nreturn fmtPlanClock;")(stepState);
 const stepPlanHtml = Function("S", "fmtDuration", "htmlText", "htmlAttribute", "disp", "RAWS", "MINED_CRAFTS", "compressionLabel",
-  "minedUsageNote", "projectStepLoadouts", "fmtPlanClock", eventsSrc.slice(stepStart, stepEnd) + "\nreturn stepPlanHtml;")(
+  "minedUsageNote", "projectStepLoadouts", "fmtPlanClock", "phaseWallOffset", "OVERCLOCK_SPEED", eventsSrc.slice(stepStart, stepEnd) + "\nreturn stepPlanHtml;")(
   stepState, h => h + "h", api("htmlText"), api("htmlAttribute"), String,
-  api("RAWS"), {}, api("compressionLabel"), () => "", api("projectStepLoadouts"), fmtPlanClock);
+  api("RAWS"), {}, api("compressionLabel"), () => "", api("projectStepLoadouts"), fmtPlanClock, api("phaseWallOffset"), api("OVERCLOCK_SPEED"));
 const entry = (item, lvl, start, end, eta) => ({ item, lvl, frac: (end - start) / eta, start, end, outHr: 1, cons: [] });
 const stepRes = (overrides = {}) => ({
   empty: false, phases: [{}], feasible: true, lpFeasible: true, eta: 4,

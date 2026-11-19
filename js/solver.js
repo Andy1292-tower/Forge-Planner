@@ -2647,21 +2647,9 @@ function solveScheduleLP(part,control,memo){
   if(memo&&!sol.interrupted)memo.store(part.c,part.A,part.b,sol);
   return sol;
 }
-// Build & solve the makespan LP: each line splits its time-fraction across (item,level) jobs so that
-// net production meets the demand ratio. z = throughput multiplier (1/hr); makespan = 1/z.
-// `avail` (optional) is per-item stock that may be DRAWN DOWN over the project instead of produced —
-// e.g. Ingots held in inventory but never a direct project cost. Modelled as extra supply of
-// avail[it]/T units/hr (T=makespan), which linearises to a +avail[it]·z/D0 term on the supply side,
-// so a material fully covered by stock earns no crafting line at all (issue #73).
-// Stability is explicit input/output: opts.readStability may consult the immutable cache snapshot,
-// while opts.rememberStability returns a proposed record for the controller to commit only after the
-// complete selected Project run succeeds. This low-level LP never mutates either cache.
-function projectSchedule(net,targets,avail,opts){
-  // The run's solve control and its tableau memo ride in beside the stability policy: both are
-  // per-run, and threading them as extra positional arguments through solvePhaseFor's five callers
-  // would put two more slots on a signature that already has one optional trailing options object.
-  const control=(opts&&opts.control)||null,memo=(opts&&opts.lpMemo)||null;
-  const lns=sortedLines();
+// The items a phase's makespan LP covers: the recipe chain behind its product targets, its raw
+// targets, and the mined resources those crafts draw on.
+function scheduleItems(targets,avail){
   const prodT=targets.filter(it=>PRODUCTS.includes(it));
   const rawT=targets.filter(it=>RAWS.includes(it));
   const rc=relevantChain(prodT);
@@ -2669,10 +2657,11 @@ function projectSchedule(net,targets,avail,opts){
   // Active mined resources join independently as constrained supplies from the user's incomes.
   const products=[...new Set([...rc.prods,...prodT])];
   const mined=activeMinedResources(products,avail);
-  const items=[...new Set([...rc.raws,...rawT,...products,...mined])];
-  const itemIdx={};items.forEach((it,i)=>itemIdx[it]=i);
-  // jobs: one variable per (line,item,level<=cap). Letting the LP pick the level finds the true
-  // makespan-optimal compression (leans high for raw speed, eases off when materials bottleneck).
+  return [...new Set([...rc.raws,...rawT,...products,...mined])];
+}
+// jobs: one variable per (line,item,level<=cap). Letting the LP pick the level finds the true
+// makespan-optimal compression (leans high for raw speed, eases off when materials bottleneck).
+function scheduleJobVars(lns,items){
   const vars=[];
   lns.forEach((ln,li)=>{
     items.forEach(it=>{
@@ -2692,6 +2681,25 @@ function projectSchedule(net,targets,avail,opts){
       });
     });
   });
+  return vars;
+}
+// Build & solve the makespan LP: each line splits its time-fraction across (item,level) jobs so that
+// net production meets the demand ratio. z = throughput multiplier (1/hr); makespan = 1/z.
+// `avail` (optional) is per-item stock that may be DRAWN DOWN over the project instead of produced —
+// e.g. Ingots held in inventory but never a direct project cost. Modelled as extra supply of
+// avail[it]/T units/hr (T=makespan), which linearises to a +avail[it]·z/D0 term on the supply side,
+// so a material fully covered by stock earns no crafting line at all (issue #73).
+// Stability is explicit input/output: opts.readStability may consult the immutable cache snapshot,
+// while opts.rememberStability returns a proposed record for the controller to commit only after the
+// complete selected Project run succeeds. This low-level LP never mutates either cache.
+function projectSchedule(net,targets,avail,opts){
+  // The run's solve control and its tableau memo ride in beside the stability policy: both are
+  // per-run, and threading them as extra positional arguments through solvePhaseFor's five callers
+  // would put two more slots on a signature that already has one optional trailing options object.
+  const control=(opts&&opts.control)||null,memo=(opts&&opts.lpMemo)||null;
+  const lns=sortedLines();
+  const items=scheduleItems(targets,avail);
+  const vars=scheduleJobVars(lns,items);
   // Normalize demand to keep the LP coefficients sane. A Decimal, because the demand it is taken
   // from is one; the z-column division above lands back in float64.
   const D0=targets.reduce((peak,it)=>{const q=toDec0(net[it]);return q.gt(peak)?q:peak;},DEC_ONE);
@@ -2765,6 +2773,65 @@ function projectSchedule(net,targets,avail,opts){
   plan.sort((a,b)=>a.line-b.line);
   const stabilityUpdate=stabKey&&opts.rememberStability?makeLineStabilityUpdate(stabKey,plan):null;
   return {rate,plan,items,z:(y[zCol]||0)/D0,stabilized,zFree:zFree/D0,zPin,stabilityKey:stabKey,stabilityUpdate};
+}
+
+/* ---------- offline crafting: how long to be away before a phase ----------
+ * The makespan LP above with time away as one more choice. A phase of τ real hours is t hours away
+ * then w hours online, and Overclock adds o hours at x2 to the online part, so the lines get w + o
+ * hours of game time. In fractions of τ (φ = t/τ, ω = w/τ, ψ = o/τ) every row stays homogeneous and
+ * z = D0/τ is still the throughput being maximised:
+ *   φ + ω ≤ 1                       the phase is its time away plus its time online
+ *   Σ y − ω − ψ ≤ 0                 per line: it works only while online, twice as fast under Overclock
+ *   Σ y·(in − out) − f·(ω + ψ) − f·k·φ + z·need/D0 ≤ 0
+ *                                   per item: the lines, Lil' Forgie online, and Lil' Forgie away at
+ *                                   k times his rate, against what the phase needs; a mined row the
+ *                                   same, with its income at minedFrac while away
+ *   ψ ≤ ω,  ψ ≤ c·φ + z·bank/D0,  ψ ≤ z·cap/D0
+ *                                   Overclock runs while online, out of the bank plus what the time
+ *                                   away converts at c an hour, never past the cap
+ * The time away comes first. It only adds stock, so the online part after it is at least as startable
+ * as the phase was without it. This is the Line switching relaxation, so in either line mode it is a
+ * floor on what a phase with that stretch can take, and the plan is only ever built from a real
+ * re-solve of the phase. Returns {hours, tau} — the hours away and the real hours of the phase — or
+ * null when the LP gives no answer. */
+function offlineStretchLP(sub,inv,cfg,bank,control){
+  if(!cfg)return null;
+  const net=projNetVec(sub,inv),avail=projAvailVec(sub,inv);
+  const targets=ALLITEMS.filter(it=>net[it]>1e-9&&!chainMinedBlockers(it,null,avail).length);
+  if(!targets.length)return null;
+  const lns=sortedLines(),items=scheduleItems(targets,avail),vars=scheduleJobVars(lns,items);
+  const D0=targets.reduce((peak,it)=>{const q=toDec0(net[it]);return q.gt(peak)?q:peak;},DEC_ONE);
+  const oc=cfg.overclock,nY=vars.length,PHI=nY,OMEGA=nY+1,PSI=oc?nY+2:-1,Z=oc?nY+3:nY+2,n=Z+1;
+  const A=[],b=[],row=()=>new Array(n).fill(0);
+  {const r=row();r[PHI]=1;r[OMEGA]=1;A.push(r);b.push(1);}
+  lns.forEach((ln,li)=>{const r=row();vars.forEach((v,vi)=>{if(v.li===li)r[vi]=1;});r[OMEGA]=-1;if(oc)r[PSI]=-1;A.push(r);b.push(0);});
+  for(const it of items){
+    const r=row();
+    vars.forEach((v,vi)=>{if(v.item===it)r[vi]-=v.rate;v.cons.forEach(c=>{if(c.item===it)r[vi]+=c.perHr;});});
+    const mined=isMinedResource(it),online=supplyRate(mined?minedBudgetHr(it):forgieHr(it));
+    // A supply past ~1e300 is one nothing here could exhaust, and as a tableau coefficient it would
+    // overflow the first pivot that scaled it. Being away cannot help a phase that has it.
+    if(!(online<1e300))return null;
+    r[OMEGA]=-online;if(oc)r[PSI]=-online;r[PHI]=-online*(mined?cfg.minedFrac:cfg.forgieMult);
+    r[Z]=finiteCoefficient(toDec0(net[it]).sub(toDec0(avail&&avail[it]).times(STOCK_SAFETY_FRAC)).div(D0));
+    A.push(r);b.push(0);
+  }
+  if(oc){
+    {const r=row();r[PSI]=1;r[OMEGA]=-1;A.push(r);b.push(0);}
+    {const r=row();r[PSI]=1;r[PHI]=-oc.rate;r[Z]=-finiteCoefficient(toDec0(bank).div(D0));A.push(r);b.push(0);}
+    {const r=row();r[PSI]=1;r[Z]=-finiteCoefficient(toDec0(oc.cap).div(D0));A.push(r);b.push(0);}
+  }
+  const c=new Array(n).fill(0);c[Z]=1;
+  const sol=lpMaximizeScaled(c,A,b,control);
+  if(!sol||sol.interrupted||!sol.x)return null;
+  const z=sol.x[Z]||0;if(!(z>1e-15))return null;
+  const tau=D0.div(z).toNumber();if(!(Number.isFinite(tau)&&tau>0))return null;
+  return {hours:Math.max(0,(sol.x[PHI]||0)*tau),tau};
+}
+/* A stretch away as a schedule phase: no lines, Lil' Forgie at his offline multiple, mined income at
+ * its reduced rate. The replay owns what it makes. */
+function offlinePhase(hours,cfg){
+  return {kind:"offline",name:"Offline",eta:hours,plan:[],demandSub:{},forgieScale:cfg.forgieMult,minedScale:cfg.minedFrac};
 }
 
 /* One-job-per-line Project scheduling. The discrete core already models exactly that assignment;
@@ -3656,17 +3723,15 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
   };
   // Warm-ups are solves too, so they take their own fresh share of what is left rather than the
   // phase search's leftovers — a phase that used all of its slice can still be made startable.
-  const executePhase=(ph,warmOptions)=>{
-    if(scheduleBlocked)return;
-    if(ph.evaluated===false){scheduleBlocked=solveBudgetFailure();return;}
-    if(ph.preProducedConverged===false){scheduleBlocked=ph.preProducedFailure;return;}
+  // The warm-ups and replay that make one solved phase executable from `inventory`. Nothing here
+  // touches exactInventory, executionPhases or ph, which is what makes it safe to run as a trial.
+  const trialPhase=(ph,inventory,warmOptions)=>{
     const control=runOptions&&runOptions.staticControl;
-    // The warm-up solver reports budget exhaustion locally, so a retry can clear it. Nothing here
-    // touches exactInventory or ph, which is what makes running it twice safe.
+    // The warm-up solver reports budget exhaustion locally, so a retry can clear it.
     const attempt=options=>{
       let outOfBudget=null;
-      const built=buildExecutableProjectSchedule([ph],exactInventory,context,
-        (deficit,inventory,info)=>{const warm=solveProjectBuffer(deficit,inventory,info,options);
+      const built=buildExecutableProjectSchedule([ph],inventory,context,
+        (deficit,stock,info)=>{const warm=solveProjectBuffer(deficit,stock,info,options);
           if(warm.evaluated===false&&!outOfBudget)outOfBudget=solveBudgetFailure();return warm;});
       return {built,outOfBudget};
     };
@@ -3676,6 +3741,10 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
     // protect the phases behind it, not to fail a plan the budget could actually have covered.
     if(!attempted.built.validation.ok&&warmOptions&&warmOptions!==runOptions&&control&&!control.isStopped())
       attempted=attempt(runOptions);
+    return attempted;
+  };
+  const commitPhase=attempted=>{
+    const control=runOptions&&runOptions.staticControl;
     executionPhases.push(...attempted.built.phases);
     if(attempted.outOfBudget){scheduleBlocked=attempted.outOfBudget;return;}
     if(attempted.built.validation.ok)exactInventory=attempted.built.validation.finalInventory;
@@ -3686,6 +3755,53 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
       scheduleBlocked=(failure&&failure.kind==="warmup"&&control&&control.isStopped())
         ?solveBudgetFailure():failure;
     }
+  };
+  const executePhase=(ph,warmOptions)=>{
+    if(scheduleBlocked)return;
+    if(ph.evaluated===false){scheduleBlocked=solveBudgetFailure();return;}
+    if(ph.preProducedConverged===false){scheduleBlocked=ph.preProducedFailure;return;}
+    commitPhase(trialPhase(ph,exactInventory,warmOptions));
+  };
+  /* ---- offline crafting ----
+   * With runOptions.offline set, each phase is also tried with a stretch away in front of it: the
+   * offline LP says how long, the phase is re-solved from the stock that stretch banks, and the pair
+   * replaces the phase only if it finishes at least offline.minSaving sooner in real time — counting
+   * warm-ups, and the Overclock the time away earns. `bank` follows the Overclock bank through the
+   * run in real hours. A phase the stretch does not shorten enough runs exactly as it would have. */
+  const offline=runOptions&&runOptions.offline||null;
+  let bank=offline&&offline.overclock?Math.min(offline.overclock.cap,offline.overclock.stored||0):0;
+  // The stretch that came closest without qualifying, for the plan's note. `bound` marks a saving
+  // only the LP has priced, which no real phase can beat.
+  let bestMiss=null;
+  const noteMiss=(saved,hours,name,bound)=>{if(saved>=1/60&&(!bestMiss||saved>bestMiss.saved))bestMiss={saved,hours,name,bound};};
+  const PHASE_LABEL_KEYS=["semanticIndex","members","demandSub","wave","invStart","prio"];
+  const placePhase=(ph,warmOptions,where)=>{
+    if(!offline||scheduleBlocked||ph.evaluated===false||ph.preProducedConverged===false){executePhase(ph,warmOptions);return ph;}
+    const oc=offline.overclock,base=trialPhase(ph,exactInventory,warmOptions);
+    const keep=()=>{commitPhase(base);bank=overclockTimeline(base.built.phases,oc,bank).bank;return ph;};
+    if(base.outOfBudget||!base.built.validation.ok)return keep();
+    const baseWall=overclockTimeline(base.built.phases,oc,bank).wall;
+    const lpControl=runOptions.scheduleControl||null;
+    if(lpControl&&lpControl.isStopped())return keep();
+    const stretch=offlineStretchLP(where.sub,exactInventory,offline,bank,lpControl);
+    if(!stretch||!(stretch.hours>1e-6*stretch.tau))return keep();
+    if(baseWall-stretch.tau<offline.minSaving){noteMiss(baseWall-stretch.tau,stretch.hours,ph.name,true);return keep();}
+    const away=replayProjectSchedule([offlinePhase(stretch.hours,offline)],exactInventory,context);
+    if(!away.ok||!away.phases[0])return keep();
+    const stock=away.finalInventory,bankBack=oc?Math.min(oc.cap,bank+oc.rate*stretch.hours):0;
+    const options=where.options();
+    const alt=solveExecutableProjectPhase(where.sub,ph.name,stock,stabilityPolicy,where.phaseKey,options);
+    PHASE_LABEL_KEYS.forEach(key=>{if(Object.prototype.hasOwnProperty.call(ph,key))alt[key]=ph[key];});
+    if(alt.evaluated===false||alt.preProducedConverged===false||alt.feasible!==true)return keep();
+    putIdleLinesToWork(alt,where.later,stock,context,options,where.index,where.total);
+    const altTrial=trialPhase(alt,stock,warmOptions);
+    if(altTrial.outOfBudget||!altTrial.built.validation.ok)return keep();
+    const altClock=overclockTimeline(altTrial.built.phases,oc,bankBack),saved=baseWall-(stretch.hours+altClock.wall);
+    if(!(saved>=offline.minSaving)){noteMiss(saved,stretch.hours,ph.name,false);return keep();}
+    executionPhases.push(away.phases[0]);exactInventory=stock;
+    commitPhase(altTrial);bank=altClock.bank;
+    alt.offline={hours:stretch.hours,saved};
+    return alt;
   };
   if(!seq){
     // Single combined phase when nothing is gated, or when the user has turned unlock gating
@@ -3699,7 +3815,8 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
       // Nothing comes after the one phase, so there is nobody to bank for — but its own shopping list
       // is still the whole list, and an idle line can always be working on part of it.
       if(!scheduleBlocked)putIdleLinesToWork(ph,[],exactInventory,context,runOptions,0,1);
-      ph.doneAt=ph.eta;executePhase(ph);return {phases:[ph],executionPhases,finalInventory:exactInventory,scheduleBlocked};
+      const placed=placePhase(ph,undefined,{sub:sumSub,phaseKey:combKey,later:[],index:0,total:1,options:()=>runOptions});
+      placed.doneAt=placed.eta;return {phases:[placed],executionPhases,finalInventory:exactInventory,scheduleBlocked,offlineMiss:bestMiss};
     }
     // unlocks force ordered "waves": combine within a layer, sequence the layers, carrying
     // crafted surplus forward as inventory so later waves only make what's still missing.
@@ -3715,10 +3832,11 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
       // unlock order is already fixed above, so neither can reshuffle anything.
       if(!scheduleBlocked)putIdleLinesToWork(ph,[].concat(...waves.slice(index+1)),exactInventory,context,
         slicedRunOptions(index,waves.length),index,waves.length);
-      executePhase(ph,slicedRunOptions(index,waves.length));
-      cum+=ph.eta;ph.doneAt=cum;phases.push(ph);
+      const placed=placePhase(ph,slicedRunOptions(index,waves.length),{sub:sumSub,phaseKey:members.map(m=>m.id).sort().join("+"),
+        later:[].concat(...waves.slice(index+1)),index,total:waves.length,options:()=>slicedRunOptions(index,waves.length)});
+      cum+=placed.eta;placed.doneAt=cum;phases.push(placed);
     });
-    return {phases,executionPhases,finalInventory:exactInventory,scheduleBlocked};
+    return {phases,executionPhases,finalInventory:exactInventory,scheduleBlocked,offlineMiss:bestMiss};
   }
   // Sequenced: one project per phase, ordered by unlock layer, manual priority, then an estimated
   // completion time. Static phases do not draw held intermediates into their one-job assignment, so
@@ -3753,10 +3871,11 @@ function buildProjectPhases(seq,net,perProject,stabilityPolicy,runOptions){
     // banking for: it only puts lines this phase left idle to work on this project, then on what
     // comes next.
     if(!scheduleBlocked)putIdleLinesToWork(ph,order.slice(index+1).map(rest=>rest.p),exactInventory,context,sliced,index,order.length);
-    executePhase(ph,slicedRunOptions(index,order.length));
-    cum+=ph.eta;ph.doneAt=cum;phases.push(ph);
+    const placed=placePhase(ph,slicedRunOptions(index,order.length),{sub:p.sub,phaseKey:p.id,
+      later:order.slice(index+1).map(rest=>rest.p),index,total:order.length,options:()=>slicedRunOptions(index,order.length)});
+    cum+=placed.eta;placed.doneAt=cum;phases.push(placed);
   });
-  return {phases,executionPhases,finalInventory:exactInventory,scheduleBlocked};
+  return {phases,executionPhases,finalInventory:exactInventory,scheduleBlocked,offlineMiss:bestMiss};
 }
 // Display summary of the Gel a phase's LP chose to forge (which lines, total Gel/hr and vespium
 // burn), derived from the solution — Gel is a normal LP output now, not a reserved subset.
@@ -3822,6 +3941,7 @@ function solveProjectRun(seq,net,perProject,stabilityPolicy,runOptions){
   let elapsed=0;executable.phases.forEach(ph=>{elapsed+=ph.eta||0;ph.doneAt=elapsed;if(ph.kind==="project"&&ph.semanticIndex!=null&&phases[ph.semanticIndex])phases[ph.semanticIndex].doneAt=elapsed;});
   const eta=executable.eta;
   const warmupEta=executionPhases.filter(ph=>ph.kind==="warmup").reduce((sum,ph)=>sum+(ph.eta||0),0);
+  const offlineEta=executionPhases.filter(ph=>ph.kind==="offline").reduce((sum,ph)=>sum+(ph.eta||0),0);
   const feasible=lpFeasible&&executable.validation.ok;
   const unsat=[...new Set([].concat(...phases.map(ph=>ph.unsat||[])))];
   const blockedMined={};phases.forEach(ph=>Object.entries(ph.blockedMined||{}).forEach(([it,resources])=>{
@@ -3841,7 +3961,7 @@ function solveProjectRun(seq,net,perProject,stabilityPolicy,runOptions){
     phases,executionPhases:executable.phases,perProject,net,
     plan:main.plan,balance:main.balance,
     demandItems:(seq||waved)?ALLITEMS.filter(it=>net[it]>1e-9):main.demandItems,
-    rate:main.rate,bottleneck:main.bottleneck,eta,workEta,warmupEta,lpFeasible,scheduleValidation:executable.validation,
+    rate:main.rate,bottleneck:main.bottleneck,eta,workEta,warmupEta,offlineEta,offlineMiss:builtPhases.offlineMiss||null,lpFeasible,scheduleValidation:executable.validation,
     unsat,blockedMined,infeasItems,atRiskItems,partial,feasible,
     minedUsage:main.minedUsage||[],
     gelReserved:gelReservedFromPlan(main.plan),
@@ -3945,7 +4065,7 @@ function optimizeProjectTop(testOptions){
      * factory with enough stock to tempt the LP into a fraction it cannot execute (issue #150). With
      * the candidate in hand the two modes are ordered again by construction: Line switching considers
      * everything Set & forget does, so it can never come out slower. */
-    let staticSearchControl=staticControl;
+    let staticSearchControl=staticControl,selectedOptions=runOptions;
     if(!isStatic&&projectRunExecutable(selected)&&selected.warmupEta>0){
       staticSearchControl=projectControl;
       // scheduleControl stays on the run control: the candidate solves its phases through the discrete
@@ -3959,11 +4079,11 @@ function optimizeProjectTop(testOptions){
         delete selected._stabilityUpdates;
         // The plan being returned switches no line, so the prefer-current comparison — which is a
         // statement about which line kept which job across an edit — has nothing left to describe.
-        selected=held;stabilityComparison=null;
+        selected=held;stabilityComparison=null;selectedOptions=heldOptions;
       }
     }
     // Later candidates advance the same clock; freeze this run's status while it still owns it.
-    return {selected,stabilityComparison,staticDeadlineReached:staticSearchControl?staticSearchControl.deadlineReached():false};
+    return {selected,stabilityComparison,staticDeadlineReached:staticSearchControl?staticSearchControl.deadlineReached():false,options:selectedOptions};
   };
   const groupings=[null,...projectProgressLayers(perProject)];
   let best=null;
@@ -3981,12 +4101,97 @@ function optimizeProjectTop(testOptions){
     if(!best||(projectRunExecutable(candidate.selected)&&(!projectRunExecutable(best.selected)||
       candidate.selected.eta<best.selected.eta-etaCompareEpsilon(candidate.selected.eta,best.selected.eta))))best=candidate;
   }
-  const {selected,stabilityComparison,staticDeadlineReached}=best;
+  let {selected,stabilityComparison,staticDeadlineReached}=best;
+  /* ---------- offline crafting, checked last ----------
+   * The plan above is the best one staying online. With offline crafting ticked, the same plan —
+   * same order, grouping and line mode — is built again with a stretch away allowed in front of each
+   * phase, on a clock of its own so the online search above keeps every millisecond it had. That
+   * rebuild runs only when offlineProspect finds a phase the offline LP says could gain enough. Each
+   * stretch has to save OFFLINE_MIN_SAVING_FRAC of the online plan's real time, and the whole plan
+   * has to come out at least that much sooner, or the online plan stands. Both are measured in real
+   * time, with the Overclock the player has banked spent as soon as they are online. */
+  const offlineCfg=projectOfflineConfig();
+  let offlineCheck=null;
+  if(offlineCfg&&projectRunExecutable(selected)){
+    const oc=offlineCfg.overclock,startBank=oc?oc.stored:0;
+    const onlineEta=overclockTimeline(selected.executionPhases,oc,startBank).wall,minSaving=OFFLINE_MIN_SAVING_FRAC*onlineEta;
+    const prospect=offlineProspect(selected,offlineCfg,minSaving);
+    offlineCheck={onlineEta,minSaving,miss:prospect.miss};
+  }
+  if(offlineCheck&&offlineCheck.miss===undefined){
+    const oc=offlineCfg.overclock,startBank=oc?oc.stored:0,{onlineEta,minSaving}=offlineCheck;
+    const offControl=makeSolveControl(projectBudget,testOptions),offStatic=runIsStatic(best.options);
+    const offOptions=Object.assign({},best.options,{staticControl:offStatic?offControl:null,scheduleControl:offControl,
+      idleWork:{budget:Math.max(projectBudget*STATIC_FILL_TIME_SHARE,STATIC_FILL_TIME_FLOOR),options:testOptions,control:null},
+      offline:Object.assign({},offlineCfg,{minSaving})});
+    const run=solveProjectRun(seq,net,perProject,
+      {readStability:projectStability==="prefer-current",rememberStability:true,stabilityCache:cacheSnapshot},offOptions);
+    const away=projectRunExecutable(run)?run.executionPhases.filter(ph=>ph.kind==="offline"):[];
+    const runEta=away.length?overclockTimeline(run.executionPhases,oc,startBank).wall:Infinity;
+    offlineCheck.miss=run.offlineMiss||null;
+    if(away.length&&runEta<=onlineEta-minSaving){
+      delete selected._stabilityUpdates;
+      run.gross=gross;
+      if(selected.progressWaves)run.progressWaves=true;
+      if(selected.noSwitchFallback)run.noSwitchFallback=true;
+      staticDeadlineReached=staticDeadlineReached||(offStatic&&offControl.deadlineReached());
+      selected=run;stabilityComparison=null;
+    }
+  }
   if(projectRunExecutable(selected))commitLineStabilityUpdates(selected._stabilityUpdates,cacheSnapshot);
   delete selected._stabilityUpdates;
   selected.staticDeadlineReached=staticDeadlineReached;
-  selected.projectStability=projectStability;selected.stabilityComparison=stabilityComparison;selected.ms=performance.now()-t0;
+  selected.projectStability=projectStability;selected.stabilityComparison=stabilityComparison;
+  if(offlineCfg&&projectRunExecutable(selected))applyOfflineClock(selected,offlineCfg,offlineCheck);
+  selected.ms=performance.now()-t0;
   return selected;
+}
+/* Whether any phase of an online plan could take a stretch away and qualify, priced by the offline
+ * LP alone — a floor on the time a phase with that stretch takes — from the stock the plan actually
+ * carries into the phase. Rebuilding the plan with stretches allowed costs a whole second solve, and
+ * a Set & forget search spends all the time it is given, so a plan no phase of which can save
+ * minSaving even on the LP's terms is answered here without one. Returns {miss: undefined} when a
+ * rebuild is worth running, else the closest any phase came. */
+function offlineProspect(run,cfg,minSaving){
+  const oc=cfg.overclock;let bank=oc?Math.min(oc.cap,oc.stored):0,segment=[],miss=null;
+  for(const ph of run.executionPhases||[]){
+    segment.push(ph);
+    if(ph.kind!=="project")continue;
+    const semantic=ph.semanticIndex!=null?run.phases[ph.semanticIndex]:null,clock=overclockTimeline(segment,oc,bank);
+    if(semantic&&semantic.invStart&&semantic.demandSub){
+      const stretch=offlineStretchLP(semantic.demandSub,semantic.invStart,cfg,bank,null);
+      if(stretch&&stretch.hours>1e-6*stretch.tau){
+        const saved=clock.wall-stretch.tau;
+        if(saved>=minSaving)return {miss:undefined};
+        if(saved>=1/60&&(!miss||saved>miss.saved))miss={saved,hours:stretch.hours,name:semantic.name,bound:true};
+      }
+    }
+    bank=clock.bank;segment=[];
+  }
+  return {miss};
+}
+/* What the player reads off a plan that considered going offline. Every phase keeps its game-time
+ * `eta`, which is what the replay checked; this adds the real time each one takes once the banked
+ * Overclock is spent (wallEta, and the hours at x2 it starts with), moves every finish clock onto
+ * real time, and records what the offline check found for the plan's notes. */
+function applyOfflineClock(res,cfg,check){
+  const oc=cfg.overclock,startBank=oc?oc.stored:0;
+  const clock=overclockTimeline(res.executionPhases,oc,startBank);
+  let wall=0;
+  res.executionPhases.forEach((ph,i)=>{
+    const step=clock.steps[i];ph.overclock=step.overclock;ph.wallEta=step.wallEta;wall+=step.wallEta;ph.doneAt=wall;
+    if(ph.kind==="offline"&&oc)ph.overclockBank=step.bank;
+    const semantic=ph.kind==="project"&&ph.semanticIndex!=null?res.phases[ph.semanticIndex]:null;
+    if(semantic){semantic.doneAt=wall;semantic.wallEta=step.wallEta;}
+  });
+  const stretches=res.executionPhases.map((ph,index)=>({ph,index})).filter(({ph})=>ph.kind==="offline")
+    .map(({ph,index})=>{const next=res.executionPhases.slice(index+1).find(p=>p.kind==="project");
+      return {step:index+1,hours:ph.eta,before:next&&next.semanticIndex!=null&&res.phases[next.semanticIndex]?res.phases[next.semanticIndex].name:null};});
+  res.gameEta=res.eta;res.eta=clock.wall;res.objective=res.eta>0?1/res.eta:0;
+  res.offline={considered:true,overclock:!!oc,startBank,overclockUsed:clock.used,stretches,
+    awayHours:stretches.reduce((sum,s)=>sum+s.hours,0),forgieMult:cfg.forgieMult,minedFrac:cfg.minedFrac,
+    onlineEta:check?check.onlineEta:clock.wall,minSaving:check?check.minSaving:0,miss:check?check.miss:null,
+    minSavingFrac:OFFLINE_MIN_SAVING_FRAC};
 }
 
 

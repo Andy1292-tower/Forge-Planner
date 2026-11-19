@@ -81,6 +81,13 @@
     const external=validateResourceMap(phase.externalSupply,"externalSupply",c,index,c.ordinaryResources);if(external.error)return external;
     const prerequisite=validateResourceMap(phase.prerequisiteDemand,"prerequisiteDemand",c,index,c.ordinaryResources);if(prerequisite.error)return prerequisite;
     if(Object.keys(external.value).length&&(phase.kind||"project")!=="prerequisite")return {error:malformed("externalSupply is allowed only on scheduler prerequisite phases",index)};
+    /* Time away. Every line is stopped, so the phase carries no plan and no demand; Lil' Forgie runs
+     * at forgieScale times his online rate and mined income at minedScale times its own. */
+    const scale=(key)=>phase[key]===undefined?1:phase[key];
+    if(!finite(scale("forgieScale"))||scale("forgieScale")<0)return {error:malformed("forgieScale must be a finite nonnegative number",index)};
+    if(!finite(scale("minedScale"))||scale("minedScale")<0)return {error:malformed("minedScale must be a finite nonnegative number",index)};
+    if(phase.kind==="offline"&&(phase.plan.length||Object.keys(demand.value).length))
+      return {error:malformed("An offline phase cannot contain line entries or project demand",index)};
     if(Object.keys(external.value).length&&eta!==0)return {error:malformed("A phase with externalSupply must have zero ETA",index)};
     for(const [resource,supply] of Object.entries(external.value)){
       if(!own(prerequisite.value,resource))return {error:malformed(`externalSupply.${resource} requires a matching prerequisiteDemand total`,index,{resource})};
@@ -245,7 +252,8 @@
           ordinaryRates[resource]=(ordinaryRates[resource]||0)+amount;
           ordinaryGross[resource]=(ordinaryGross[resource]||0)+Math.abs(amount);
         };
-        c.ordinaryResources.forEach(r=>addRate(r,Number(c.forgieRates[r])||0));
+        const forgieScale=phase.forgieScale===undefined?1:phase.forgieScale;
+        c.ordinaryResources.forEach(r=>addRate(r,(Number(c.forgieRates[r])||0)*forgieScale));
         phase.plan.forEach(line=>{
           const entry=line.entries.find(e=>e.start<=from+timeTol&&e.end>from+timeTol);
           if(!entry)return;
@@ -281,8 +289,18 @@
        * from it is gone for every phase behind it, which is why the bank is carried in `inv` rather
        * than recomputed per phase. `rate` and `excess` stay per-hour so the reader compares them
        * against the income they entered. */
+      const minedScale=phase.minedScale===undefined?1:phase.minedScale;
       for(const resource of c.minedResources){
-        const drawn=minedDrawn[resource]||0,cap=Math.max(0,Number(c.minedIncomeRates[resource])||0);
+        const drawn=minedDrawn[resource]||0,cap=Math.max(0,Number(c.minedIncomeRates[resource])||0)*minedScale;
+        /* Time away draws nothing, so what it mines is all surplus. A crafting phase's unspent income
+         * is not carried — its accrual is settled against its own draw — but a stretch away exists to
+         * bank, so its income goes into the stockpile a later phase can spend. */
+        if(phase.kind==="offline"){
+          if(c.minedStockResources.includes(resource)&&cap*phase.eta>0){
+            const accrued=cap*phase.eta;inv[resource]=Math.max(0,Number(inv[resource])||0)+accrued;charge(resource,accrued);
+          }
+          continue;
+        }
         const banked=c.minedStockResources.includes(resource)?Math.max(0,Number(inv[resource])||0):0;
         const accrued=cap*phase.eta,overdraw=drawn-accrued-banked;
         if(overdraw>stockTol(c,drawn,accrued,banked)){
