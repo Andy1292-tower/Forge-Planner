@@ -711,7 +711,7 @@ function parseGameNum(str){
   if(str==null)return null;
   if(str instanceof Decimal)return str.isFinite()?str:null;
   if(typeof str==="number")return isFinite(str)?new Decimal(str):null;
-  let s=String(str).trim().toLowerCase().replace(/,/g,"").replace(/\s+/g,"");
+  let s=String(str).trim().toLowerCase().replace(/,/g,".").replace(/\s+/g,"");
   if(s===""||s==="-"||s==="+")return null;
   const m=s.match(/^([+-]?\d*\.?\d+(?:e[+-]?\d+)?)([a-z]*)$/);
   if(!m)return null;

@@ -104,11 +104,13 @@ test("parses decimal exponents and readable trailing decimals, but preserves par
   }
 });
 
-test("parses game commas, suffix case, and exponents while distinguishing partial suffixes", () => {
+test("parses comma decimals, suffix case, and exponents while distinguishing partial suffixes", () => {
   const rule = api("FIELD_SCHEMA.projectQuantity");
   // A quantity parses to a Decimal, so assert on its value rather than deep-equalling the object.
   const parsedValue = (raw) => { const r = parse(rule, raw); assert.equal(r.status, "valid", raw); return String(r.value); };
-  assert.equal(parsedValue("1,234.5"), "1234.5");
+  assert.equal(parsedValue("2,5m"), "2500000");
+  assert.equal(parsedValue("1234,5"), "1234.5");
+  assert.equal(parse(rule, "1,234,567").status, "invalid");
   assert.equal(parsedValue("2.5QA"), "2500000000000000");
   assert.equal(parsedValue("1.3e6"), "1300000");
   for (const raw of ["1q", "1s"]) assert.equal(parse(rule, raw).status, "incomplete");
@@ -128,6 +130,7 @@ test("rejects syntax, negative, fractional integer, range, and overflow failures
   assert.equal(parse(api("FIELD_SCHEMA.sellPrice"), "-1").status, "invalid");
   assert.equal(parse(api("FIELD_SCHEMA.targetWeight"), "1.5").status, "invalid");
   assert.equal(parse(api("FIELD_SCHEMA.dupe"), "100.01").status, "invalid");
+  assert.deepEqual(parse(api("FIELD_SCHEMA.dupe"), "12,5"), { status: "valid", value: 12.5 });
   assert.equal(parse(api("FIELD_SCHEMA.solveBudget"), "60001").status, "invalid");
   // 1e309 overflows a float64 but is an ordinary quantity now — the ceiling it used to hit is gone.
   assert.equal(parse(api("FIELD_SCHEMA.projectQuantity"), "1e309").status, "valid");
