@@ -10,6 +10,8 @@
  * left out rather than padded in.
  */
 const CHANGELOG=[
+  {version:"2026.11.20",date:"2026-11-20",groups:{
+    Fixed:["A comma now works as a decimal point in every number field, so 2,5m is 2.5m and 12,5 is 12.5. Fields like duplication chance used to refuse it, and quantity fields dropped it, so 2,5m came out as 25m. A comma used to group thousands, as in 1,234,567, is now refused instead of read."]}},
   {version:"2026.11.19.2",date:"2026-11-19",groups:{
     Added:[
       "Tryhard mode, under Use Overclock when back online?. On a long stretch offline your Overclock stops building once it's full. Tick Tryhard mode and the plan has you check in each time it fills: log in, spend it with your lines running at x2, then go back offline. The Go offline steps say when to check in, and each Check-in step says when to close the game again. Check-ins are only used when they finish the plan sooner than staying offline, by at least 30 minutes for each one.",

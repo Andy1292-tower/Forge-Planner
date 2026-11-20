@@ -204,7 +204,8 @@ function _parseDecimalSyntax(value,asDecimal){
   return Number.isFinite(number)?number:null;
 }
 function _parseGameSyntax(raw,asDecimal){
-  const value=raw.toLowerCase().replace(/,/g,"").replace(/\s+/g,"");
+  // A comma is a decimal point: 2,5m reads as 2.5m.
+  const value=raw.toLowerCase().replace(/,/g,".").replace(/\s+/g,"");
   if(_decimalIncomplete(value))return {incomplete:true};
   const match=value.match(/^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)([a-z]*)$/);
   if(!match)return {invalid:true};
@@ -246,8 +247,9 @@ function parseFieldDraft(rule,raw,options={}){
     if(parsed.invalid)return {status:"invalid",message:_fieldMessage(rule)};
     parsed=parsed.value;
   }else{
-    if(_decimalIncomplete(text))return {status:"incomplete",message:_fieldMessage(rule,"Finish entering")};
-    parsed=_parseDecimalSyntax(text,asDecimal);
+    const plain=text.replace(/,/g,".");
+    if(_decimalIncomplete(plain))return {status:"incomplete",message:_fieldMessage(rule,"Finish entering")};
+    parsed=_parseDecimalSyntax(plain,asDecimal);
     if(parsed===null)return {status:"invalid",message:_fieldMessage(rule)};
   }
   const checked=validateFieldValue(rule,parsed);
