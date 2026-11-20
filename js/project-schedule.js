@@ -124,7 +124,9 @@
         if(frac<=c.assignmentEpsilon)continue;
         entries.push({item:raw.item,lvl:raw.lvl,frac,outHr,cons,_stable:serial++});
       }
-      entries.sort(entryCompare(c));
+      // A phase cut out of a longer one keeps the order its jobs ran in: re-sorting by the clipped
+      // fractions could move a job that ran last to the front of the window.
+      if(phase.entryOrder!=="given")entries.sort(entryCompare(c));
       let cursor=0;
       for(const entry of entries){
         entry.start=cursor;cursor+=entry.frac*eta;entry.end=cursor;
@@ -469,7 +471,36 @@
     return {phases:execution,eta:execution.reduce((sum,p)=>sum+(p.eta||0),0),validation};
   }
 
+  /* The part of a phase from `from` to `to` hours into it, as a phase of its own: each line's jobs
+   * clipped to that window, in the order they ran. The canonical layout packs a line's jobs from the
+   * phase start, so the clipped ones are packed from the window start too, and entryOrder "given"
+   * stops canonicalizePhase re-sorting them. Project demand is debited when a phase ends, so only the
+   * window that ends it keeps the demand; pre-produced stock is reserved when it starts, so only the
+   * window that starts it reserves any. Returns null for an empty window or a malformed phase. */
+  function sliceSchedulePhase(phase,from,to,context){
+    const c=copyContext(context),one=canonicalizePhase(phase,c,0);
+    if(one.error)return null;
+    const ph=one.phase,eta=ph.eta,timeTol=Number.EPSILON*32*Math.max(1,eta);
+    const a=Math.max(0,Math.min(eta,Number(from)||0)),b=Math.max(a,Math.min(eta,Number(to)||0)),span=b-a;
+    if(!(span>timeTol))return null;
+    const plan=ph.plan.map(line=>{
+      const entries=[];
+      line.entries.forEach(entry=>{
+        const overlap=Math.min(entry.end,b)-Math.max(entry.start,a);
+        if(!(overlap>timeTol)||!(entry.frac>0))return;
+        const frac=Math.min(1,overlap/span),scale=frac/entry.frac;
+        entries.push({item:entry.item,lvl:entry.lvl,frac,outHr:entry.outHr*scale,cons:entry.cons.map(x=>({item:x.item,hr:x.hr*scale}))});
+      });
+      return {line:line.line,max:line.max,sp:line.sp,dp:line.dp,entries};
+    });
+    const starts=a<=timeTol,ends=b>=eta-timeTol;
+    const none=map=>Object.fromEntries(Object.keys(map||{}).map(key=>[key,0]));
+    return Object.assign({},ph,{eta:span,plan,entryOrder:"given",demandSub:ends?copyMap(ph.demandSub):{},
+      preProducedDemand:starts?copyMap(ph.preProducedDemand):none(ph.preProducedDemand)});
+  }
+
   root.replayProjectSchedule=replayProjectSchedule;
   root.buildExecutableProjectSchedule=buildExecutableProjectSchedule;
-  if(typeof module!=="undefined"&&module.exports)module.exports={replayProjectSchedule,buildExecutableProjectSchedule};
+  root.sliceSchedulePhase=sliceSchedulePhase;
+  if(typeof module!=="undefined"&&module.exports)module.exports={replayProjectSchedule,buildExecutableProjectSchedule,sliceSchedulePhase};
 })(typeof globalThis!=="undefined"?globalThis:this);

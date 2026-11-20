@@ -145,14 +145,23 @@ function projectOfflineNote(res){
   const ocText=off.overclock&&off.overclockUsed>1/120
     ?` Turn on <b>Overclock</b> (x2 game speed) whenever you're back online: the plan spends <b>${fmtDuration(off.overclockUsed)}</b> of it${off.startBank>1/120?`, starting with the <b>${fmtDuration(off.startBank)}</b> you have stored`:""}.`
     :"";
+  const th=off.tryhard,checkins=th?th.checkins:0,train=(off.stretches||[]).find(st=>st.checkins>1);
+  const fudged=th&&th.fudge>=1/60;
+  const tryText=!th?"":checkins
+    ?` <b>Tryhard:</b> check in ${checkins===1?"once":`<b>${checkins} times</b>`} while you're away${train?`, about every <b>${fmtDuration(train.every)}</b>`:""}. Each time your Overclock is full, log in, spend it at x2 and go back offline. The steps say when${fudged?`, and count your ${fmtDuration(th.fudge)} fudge either side`:""}.`
+    :(off.stretches||[]).some(st=>st.bankFilled)
+    ?` <b>Tryhard checked:</b> checking in to spend Overclock doesn't finish ${fmtDuration(TRYHARD_CHECKIN_MIN_SAVING)} sooner per check-in than staying offline${fudged?` with your ${fmtDuration(th.fudge)} fudge`:""}, so the plan stays offline.`
+    :(off.stretches||[]).length?` <b>Tryhard checked:</b> no stretch offline is long enough to fill your Overclock, so there's nothing to check in for.`:"";
   if(off.stretches&&off.stretches.length){
     const n=off.stretches.length,steps=off.stretches.map(st=>st.step);
     const stepText=n===1?`step ${steps[0]}`:`steps ${steps.slice(0,-1).join(", ")} and ${steps[n-1]}`;
+    // A stretch broken up by check-ins starts at its step and runs on through the ones after it.
+    const where=checkins?"from":"at";
     const saved=Math.max(0,(off.onlineEta||0)-(res.eta||0));
     return `<div class="notice offline" role="note"><b>This plan has you offline for ${fmtDuration(off.awayHours)}.</b> `+
-      `${n===1?"It goes offline once":`It goes offline ${n} times`}, at ${stepText}: close the game for the time shown and come back when it says. `+
+      `${n===1?"It goes offline once":`It goes offline ${n} times`}, ${where} ${stepText}: close the game for the time shown and come back when it says. `+
       `While you're away your crafting lines stop and Lil' Forgie makes <b>${fmt(off.forgieMult,2)}×</b> his online rate. `+
-      `That finishes <b>${fmtDuration(saved)}</b> sooner than staying online (${fmtDuration(off.onlineEta)}), and every time below counts the time away.${ocText}</div>`;
+      `That finishes <b>${fmtDuration(saved)}</b> sooner than staying online (${fmtDuration(off.onlineEta)}), and every time below counts the time away.${ocText}${tryText}</div>`;
   }
   const miss=off.miss&&off.miss.saved>0
     ?` The best stretch found, ${fmtDuration(off.miss.hours)} offline before <b>${htmlText(off.miss.name||"a phase")}</b>, saves ${off.miss.bound?"at most":"only"} ${fmtDuration(off.miss.saved)}.`:"";
@@ -197,12 +206,16 @@ function projOrderHeader(res){
   }
 }
 /* Offline crafting is asked of the plan, so it is set beside the line plan rather than in a dialog.
-   Overclock nests under it: the player only spends Overclock on crafting when they say so. */
+   Overclock nests under it: the player only spends Overclock on crafting when they say so. Tryhard
+   nests under Overclock, with its fudge beside it. */
 function projOfflineHtml(){
-  const on=S.projectOffline===true,oc=S.projectOverclock===true;
+  const on=S.projectOffline===true,oc=S.projectOverclock===true,tryhard=S.projectTryhard===true,ocOn=on&&oc,fudgeOn=ocOn&&tryhard;
+  const fudgeRule=FIELD_SCHEMA.tryhardFudgeHours,fudgeError="field-tryhard-fudge-error";
   return `<div class="offline-opts">
     <label class="seq-toggle"><input type="checkbox" id="projOffline" ${on?"checked":""}><span><b>Consider offline crafting</b> — check last whether going offline for part of the plan finishes it sooner. Offline, your lines stop and Lil' Forgie makes <b>${fmt(offlineForgieMult(S),2)}×</b> his online rate; set his boost in <b>Infusion Upgrades</b>. A stretch has to save at least ${Math.round(OFFLINE_MIN_SAVING_FRAC*100)}% of the plan's time to be used.</span></label>
     <label class="seq-toggle nested${on?"":" disabled"}"><input type="checkbox" id="projOverclock" ${oc?"checked":""} ${on?"":"disabled"}><span><b>Use Overclock when back online?</b> — spend banked Overclock on crafting at x2 game speed: what's stored now, then what each stretch offline earns. Set the levels and what's stored in <b>Infusion Upgrades</b>.</span></label>
+    <label class="seq-toggle nested deep${ocOn?"":" disabled"}"><input type="checkbox" id="projTryhard" ${tryhard?"checked":""} ${ocOn?"":"disabled"}><span><b>Tryhard mode</b> — when a stretch offline runs longer than your Overclock takes to fill, check in each time it's full, spend it online at x2, then go back offline. Only used if it finishes sooner than staying offline, by at least ${fmtDuration(TRYHARD_CHECKIN_MIN_SAVING)} for every check-in.</span></label>
+    <div class="offline-fudge${fudgeOn?"":" disabled"}"><label for="projTryhardFudge">Fudge</label><span class="field-stack"><input type="text" id="projTryhardFudge" ${htmlFieldInputAttributes(fudgeRule)} value="${htmlAttribute(String(S.tryhardFudgeHours))}" data-field-error="${fudgeError}" ${fudgeOn?"":"disabled"} aria-label="Tryhard fudge, in hours"><span class="field-error" id="${fudgeError}" aria-live="polite" aria-atomic="true"></span></span><span>hours. How late you're likely to log back in each time, and how long you'll stay on after the Overclock runs out. The plan counts both.</span></div>
   </div>`;
 }
 function projLineModeHtml(res){
@@ -886,7 +899,7 @@ function renderProjectResults(res,el,stat){
   const heldFeeders=scheduleExecutable?staticHeldFeederItems(res):[];
   if(heldFeeders.length)html+=`<div class="notice info" style="font-size:11.5px"><b>Held stock does not remove Set &amp; forget feeder jobs.</b> ${heldFeeders.map(htmlText).join(", ")} ${heldFeeders.length===1?"is":"are"} on hand in enough quantity for the phase, but this mode still keeps a sustainable feeder assignment. Exact replay still accounts for and carries that inventory; <b>Line switching</b> can use held intermediates to reduce feeder time.</div>`;
   const prerequisites=(res.executionPhases||[]).filter(ph=>ph.kind==="prerequisite");
-  const warmups=(res.executionPhases||[]).filter(ph=>ph.kind==="warmup");
+  const warmups=(res.executionPhases||[]).filter(ph=>ph.kind==="warmup"||(ph.kind==="checkin"&&ph.from==="warmup"));
   if(scheduleExecutable&&prerequisites.length){
     const needs=prerequisites.flatMap(ph=>Object.entries(ph.externalSupply||{}).map(([resource,amount])=>{const current=(ph.invStart&&ph.invStart[resource])||0;
       const total=(ph.prerequisiteDemand&&ph.prerequisiteDemand[resource])||current+amount;

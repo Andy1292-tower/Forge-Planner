@@ -10,6 +10,10 @@
  * left out rather than padded in.
  */
 const CHANGELOG=[
+  {version:"2026.11.19.2",date:"2026-11-19",groups:{
+    Added:[
+      "Tryhard mode, under Use Overclock when back online?. On a long stretch offline your Overclock stops building once it's full. Tick Tryhard mode and the plan has you check in each time it fills: log in, spend it with your lines running at x2, then go back offline. The Go offline steps say when to check in, and each Check-in step says when to close the game again. Check-ins are only used when they finish the plan sooner than staying offline, by at least 30 minutes for each one.",
+      "Fudge, beside Tryhard mode. Enter how many hours late you're likely to log back in. The plan assumes you log in that late every time and stay on that long after the Overclock runs out."]}},
   {version:"2026.11.19",date:"2026-11-19",groups:{
     Added:[
       "Consider offline crafting, a new checkbox in Project plan. Tick it and the planner checks, last, whether going offline for part of the plan gets it done sooner. While you're away your crafting lines stop, Lil' Forgie makes twice his online rate and mined income comes in at half rate. A stretch is only used if it saves at least 10% of the plan's time. When the plan uses one, a note at the top says how long you'll be offline and how much sooner it finishes, and a Go offline step says when to leave, when to come back and what Lil' Forgie makes while you're gone.",

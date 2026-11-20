@@ -7,7 +7,8 @@
  * "Consider offline crafting" ticked, the plan is checked last for a stretch away in front of any
  * phase that finishes it sooner; a stretch has to save OFFLINE_MIN_SAVING_FRAC of the online plan's
  * time to be used. Overclock, nested under it, banks time away at the conversion rate up to the cap
- * and runs everything at x2 once the player is back.
+ * and runs everything at x2 once the player is back. Tryhard, nested under that, checks in to spend
+ * the bank whenever it fills, and is used only when it beats staying offline.
  *
  * Usage: node test/offline-crafting.cjs */
 
@@ -43,12 +44,13 @@ function factory(options = {}) {
   state.dupe = 0;state.mode = "project";state.solveBudget = 2000;
   state.lines = options.lines || [{ max: 4, spx: 1, turbo: 0 }, { max: 4, spx: 1, turbo: 0 }];
   state.projects = options.projects || [{ id: "a", name: "Brick Yard", catId: "", on: true, from: 1, to: 1, done: 0, prio: null,
-    levels: [{ costs: [{ item: "Bricks", qty: 5000 }] }] }];
+    levels: [{ costs: [{ item: "Bricks", qty: options.qty || 5000 }] }] }];
   state.forgie.Bricks = options.forgieBricks == null ? 200 : options.forgieBricks;
   state.projectSeq = options.seq !== false;
   state.projLineMode = options.lineMode || "split";
   state.projectOffline = options.offline !== false;
   state.projectOverclock = !!options.overclock;
+  state.projectTryhard = !!options.tryhard;state.tryhardFudgeHours = options.fudge == null ? 2 : options.fudge;
   state.forgieOfflineBoost = options.boost == null ? 14 : options.boost;
   state.ocMaxLevel = options.ocMax || 0;state.ocRateLevel = options.ocRate || 0;state.ocStoredMin = options.stored || 0;
   api("normalize")(state);api("syncManual")(state);
@@ -187,24 +189,136 @@ test("stored Overclock is spent from the start even when no stretch qualifies", 
   close(res.gameEta - res.eta, 1, 1e-9, "an hour of Overclock saves an hour");
 });
 
+// Overclock at the levels on the game's screen: 11h 45m cap, 28m an hour away.
+const OC = { overclock: true, ocMax: 85, ocRate: 13 };
+const CAP = 11.75, RATE = 28 / 60;
+const checkinCount = res => res.executionPhases.filter(ph => ph.kind === "checkin").length;
+
+test("tryhard checks in each time the bank fills on a long stretch, and finishes sooner than staying offline", () => {
+  const offline = plan({ qty: 200000, ...OC, stored: 5 });
+  const res = plan({ qty: 200000, ...OC, stored: 5, tryhard: true, fudge: 2 });
+  assert.equal(res.scheduleValidation.ok, true, "the plan with check-ins passes exact replay");
+  const k = res.offline.tryhard.checkins;
+  assert.ok(k >= 2, `a stretch of days gets several check-ins: ${k}`);
+  assert.equal(checkinCount(res), k, "one check-in step per check-in");
+  assert.ok(res.eta < offline.eta - api("TRYHARD_CHECKIN_MIN_SAVING") * k,
+    `each check-in saves its half hour: ${res.eta} vs ${offline.eta}`);
+  assert.equal(res.offline.stretches.length, 1, "the check-ins break up one stretch away");
+  const phases = res.executionPhases;
+  phases.forEach((ph, i) => {
+    if (ph.kind !== "checkin") return;
+    const away = phases[i - 1];
+    assert.equal(away.kind, "offline", "every check-in comes straight after time away");
+    assert.equal(away.checkinNext, ph.checkin);
+    close(away.overclockBank, CAP, 1e-9, "the bank is full at every login");
+    const fill = ph.checkin === 1 ? CAP - 5 / 60 : CAP;
+    close(away.eta, fill / RATE + 2, 1e-6, `stretch ${ph.checkin} is the fill plus the 2h fudge`);
+    close(ph.overclock, CAP, 1e-9, "the check-in spends the whole bank");
+    close(ph.eta, 2 * CAP + 2, 1e-6, "the bank at x2, then the fudge at x1");
+    close(ph.wallEta, CAP + 2, 1e-6, "and takes the bank plus the fudge in real time");
+  });
+  close(res.offline.awayHours, phases.filter(ph => ph.kind === "offline").reduce((sum, ph) => sum + ph.eta, 0), 1e-9,
+    "time away counts every stretch between check-ins");
+  close(res.offline.stretches[0].every, CAP / RATE + 2 + CAP + 2, 1e-9, "logins come one fill, one bank and two fudges apart");
+  close(phases.reduce((sum, ph) => sum + ph.wallEta, 0), res.eta, 1e-9, "every step's real time adds up to the total");
+  const last = phases[phases.length - 1];
+  assert.equal(last.kind, "project", "the project finishes online after the last stretch away");
+  assert.ok(phases.filter(ph => ph.kind === "project").length === 1, "and is the only step that completes it");
+});
+
+test("with a fudge that eats the gain, tryhard leaves the plan exactly as staying offline", () => {
+  const offline = plan({ qty: 200000, ...OC });
+  const res = plan({ qty: 200000, ...OC, tryhard: true, fudge: 8 });
+  assert.equal(checkinCount(res), 0);
+  assert.equal(res.offline.tryhard.checkins, 0);
+  close(res.eta, offline.eta, 1e-9, "the same plan, the same time");
+  assert.equal(res.offline.stretches[0].bankFilled, true, "the note can say why: the bank sat full and checking in lost");
+});
+
+test("tryhard is never slower than staying offline, and every check-in pays for itself", () => {
+  for (const qty of [20000, 60000])
+    for (const fudge of [0, 2])
+      for (const lineMode of ["split", "static"]) {
+        const offline = plan({ qty, ...OC, lineMode });
+        const res = plan({ qty, ...OC, lineMode, tryhard: true, fudge });
+        const label = `${qty} Bricks, ${fudge}h fudge, ${lineMode}`;
+        assert.equal(res.scheduleValidation.ok, true, label);
+        const k = checkinCount(res);
+        if (!k) close(res.eta, offline.eta, 1e-9, `${label}: no check-ins means staying offline`);
+        else assert.ok(res.eta <= offline.eta - api("TRYHARD_CHECKIN_MIN_SAVING") * k + 1e-9,
+          `${label}: ${k} check-ins finish at ${res.eta} vs ${offline.eta}`);
+      }
+});
+
+test("one at a time, each project's stretch gets its own check-ins", () => {
+  const projects = [
+    { id: "a", name: "Brick Yard", catId: "", on: true, from: 1, to: 1, done: 0, prio: 1, levels: [{ costs: [{ item: "Bricks", qty: 80000 }] }] },
+    { id: "b", name: "Plate Shop", catId: "", on: true, from: 1, to: 1, done: 0, prio: 2, levels: [{ costs: [{ item: "Plates", qty: 3000 }] }] },
+    { id: "c", name: "Brick Two", catId: "", on: true, from: 1, to: 1, done: 0, prio: 3, levels: [{ costs: [{ item: "Bricks", qty: 60000 }] }] }];
+  const offline = plan({ projects, ...OC });
+  const res = plan({ projects, ...OC, tryhard: true });
+  assert.equal(res.scheduleValidation.ok, true);
+  assert.ok(res.eta < offline.eta, `${res.eta} vs ${offline.eta}`);
+  assert.deepEqual(res.offline.stretches.map(st => st.before), ["Brick Yard", "Brick Two"]);
+  assert.ok(res.offline.stretches.every(st => st.checkins > 0));
+  res.executionPhases.filter(ph => ph.kind === "checkin").forEach(ph =>
+    assert.ok(ph.name === "Brick Yard" || ph.name === "Brick Two", `${ph.name} is checked in on`));
+  const semantic = res.phases.find(ph => ph.name === "Brick Yard");
+  const own = res.executionPhases.filter(ph => ph.semanticIndex === semantic.semanticIndex && (ph.kind === "project" || ph.from === "project"));
+  close(semantic.wallEta, own.reduce((sum, ph) => sum + ph.wallEta, 0), 1e-9, "a project's time counts its check-ins");
+});
+
+test("a phase cut into windows keeps its jobs in order, reserves at the start and completes at the end", () => {
+  const context = { ordinaryResources: api("[...ALLITEMS]"), minedResources: [], informationalResources: [], forgieRates: { Concrete: 30 } };
+  // Bricks run first for 7h, then Glass for 3h. A window from 5h holds 2h of Bricks and 3h of Glass:
+  // sorted by fraction, Glass would wrongly run first.
+  const phase = { kind: "project", name: "P", eta: 10, demandSub: { Bricks: 50 }, preProducedDemand: { Bits: 4 },
+    plan: [{ line: 1, max: 4, entries: [
+      { item: "Bricks", lvl: 1, frac: 0.7, outHr: 7, cons: [{ item: "Concrete", hr: 14 }] },
+      { item: "Glass", lvl: 1, frac: 0.3, outHr: 3, cons: [{ item: "Bits", hr: 3 }] }] }] };
+  const slice = api("sliceSchedulePhase");
+  const first = slice(phase, 0, 5, context), second = slice(phase, 5, 10, context);
+  assert.deepEqual(second.plan[0].entries.map(e => e.item), ["Bricks", "Glass"], "the order the jobs ran in");
+  close(second.plan[0].entries[0].frac, 0.4, 1e-12, "2h of the 5h window");
+  close(second.plan[0].entries[0].outHr / second.plan[0].entries[0].frac, 10, 1e-12, "the job's rate is unchanged");
+  assert.deepEqual(first.demandSub, {}, "only the window that ends the phase completes it");
+  assert.deepEqual(second.demandSub, { Bricks: 50 });
+  assert.deepEqual(first.preProducedDemand, { Bits: 4 }, "the reserve is taken when the phase starts");
+  assert.deepEqual(second.preProducedDemand, { Bits: 0 });
+  const start = { Concrete: 100, Bits: 40, Bricks: 10 };
+  const whole = api("replayProjectSchedule")([phase], start, context);
+  const cut = api("replayProjectSchedule")([first, second], start, context);
+  assert.equal(whole.ok, true, whole.firstFailure && whole.firstFailure.message);
+  assert.equal(cut.ok, true, cut.firstFailure && cut.firstFailure.message);
+  for (const item of ["Bricks", "Glass", "Concrete", "Bits"])
+    close(cut.finalInventory[item] || 0, whole.finalInventory[item] || 0, 1e-9, `${item} ends where the whole phase leaves it`);
+});
+
 test("saves keep the offline settings, and reject levels the game does not have", () => {
   const state = api("normalize(defaults())");
   state.schemaVersion = api("CURRENT_SCHEMA_VERSION");state.baseTimeRev = 3;
-  Object.assign(state, { projectOffline: true, projectOverclock: true, forgieOfflineBoost: 14, ocMaxLevel: 85, ocRateLevel: 13, ocStoredMin: 300 });
+  Object.assign(state, { projectOffline: true, projectOverclock: true, projectTryhard: true, tryhardFudgeHours: 1.5,
+    forgieOfflineBoost: 14, ocMaxLevel: 85, ocRateLevel: 13, ocStoredMin: 300 });
+  const keys = ["projectOffline", "projectOverclock", "projectTryhard", "tryhardFudgeHours", "forgieOfflineBoost", "ocMaxLevel", "ocRateLevel", "ocStoredMin"];
   const kept = api("validateAndMigrate")(JSON.parse(JSON.stringify(state)));
   assert.equal(kept.ok, true, kept.errors && kept.errors.join("; "));
-  ["projectOffline", "projectOverclock", "forgieOfflineBoost", "ocMaxLevel", "ocRateLevel", "ocStoredMin"]
-    .forEach(key => assert.deepEqual(kept.state[key], state[key], key));
+  keys.forEach(key => assert.deepEqual(kept.state[key], state[key], key));
   const absent = JSON.parse(JSON.stringify(state));
-  ["projectOffline", "projectOverclock", "forgieOfflineBoost", "ocMaxLevel", "ocRateLevel", "ocStoredMin"].forEach(key => delete absent[key]);
+  keys.forEach(key => delete absent[key]);
   const older = api("validateAndMigrate")(absent);
   assert.equal(older.ok, true, "a save from before offline crafting still loads");
   assert.equal(older.state.projectOffline, false);
   assert.equal(older.state.forgieOfflineBoost, 0);
+  assert.equal(older.state.projectTryhard, false);
+  assert.equal(older.state.tryhardFudgeHours, 2);
   const bad = JSON.parse(JSON.stringify(state));bad.forgieOfflineBoost = 21;
   const rejected = api("validateAndMigrate")(bad);
   assert.equal(rejected.ok, false);
   assert.ok(rejected.errors.some(error => /forgieOfflineBoost/.test(error)), rejected.errors.join("; "));
+  const late = JSON.parse(JSON.stringify(state));late.tryhardFudgeHours = 25;
+  const lateRejected = api("validateAndMigrate")(late);
+  assert.equal(lateRejected.ok, false, "a fudge past a day is not a login time");
+  assert.ok(lateRejected.errors.some(error => /tryhardFudgeHours/.test(error)), lateRejected.errors.join("; "));
 });
 
 let failed = 0;
