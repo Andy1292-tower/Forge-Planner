@@ -12,7 +12,7 @@
 const CHANGELOG=[
   {version:"2026.11.22",date:"2026-11-22",groups:{
     Added:[
-      "Forge Planner has moved to Chadquarters, at chadquarters.com. The whole planner is there, along with other new tools for the game. To bring your build, press Export build in Settings here, then Import a save in Chadquarters' Settings. A banner at the top of the page links there, and a notice says the same the first time you open this version.",
+      "Forge Planner has moved to Chadquarters, at chadquarters.com. The whole planner is there, along with other new tools for the game. To bring your build, press Export build in Settings here, then Import a save in Chadquarters' Settings or on the Forge Planner tool page. A banner at the top of the page links there, and a notice says the same the first time you open this version.",
       "This site stays up for now, but it won't get any more updates. New features and fixes for Forge Planner go to Chadquarters."]}},
   {version:"2026.11.19.2",date:"2026-11-19",groups:{
     Added:[
