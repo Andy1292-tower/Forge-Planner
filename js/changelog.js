@@ -10,6 +10,10 @@
  * left out rather than padded in.
  */
 const CHANGELOG=[
+  {version:"2026.11.22",date:"2026-11-22",groups:{
+    Added:[
+      "Forge Planner has moved to Chadquarters, at chadquarters.com. The whole planner is there, along with other new tools for the game. To bring your build, press Export build in Settings here, then Import a save in Chadquarters' Settings. A banner at the top of the page links there, and a notice says the same the first time you open this version.",
+      "This site stays up for now, but it won't get any more updates. New features and fixes for Forge Planner go to Chadquarters."]}},
   {version:"2026.11.19.2",date:"2026-11-19",groups:{
     Added:[
       "Tryhard mode, under Use Overclock when back online?. On a long stretch offline your Overclock stops building once it's full. Tick Tryhard mode and the plan has you check in each time it fills: log in, spend it with your lines running at x2, then go back offline. The Go offline steps say when to check in, and each Check-in step says when to close the game again. Check-ins are only used when they finish the plan sooner than staying offline, by at least 30 minutes for each one.",
