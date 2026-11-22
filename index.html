@@ -18,6 +18,10 @@
 <body>
 <a class="skip-link" href="#plannerMain">Skip to planner results</a>
 <div class="wrap">
+  <aside class="moved-bar" aria-labelledby="movedBarTitle">
+    <p class="moved-bar-msg"><b id="movedBarTitle">Forge Planner has moved to Chadquarters.</b> The whole planner is there, along with other new tools and features for the game. To bring your build, press Export build in Settings here, then Import a save in Chadquarters&rsquo; Settings. This site stays up for now, but it won&rsquo;t get any more updates.</p>
+    <a class="btn primary" href="https://chadquarters.com/" target="_blank" rel="noopener">Go to Chadquarters</a>
+  </aside>
   <header class="top">
     <div class="brand">
       <h1>Forge<span class="spark">·</span>Planner</h1>
@@ -171,6 +175,25 @@
     <div class="modal-b" data-dialog-body>
       <div id="changelogBody" class="changelog"></div>
     </div>
+  </div>
+</div>
+
+<!-- MOVED NOTICE — opened once by js/moved-notice.js -->
+<div class="modal-bg" id="movedModal" hidden>
+  <div class="modal dialog-shell moved-modal" role="dialog" aria-modal="true" aria-labelledby="movedTitle" aria-describedby="movedLead">
+    <div class="modal-h"><h3 id="movedTitle">Forge Planner has moved</h3><button class="iconbtn" id="movedClose" title="Close" aria-label="Close this notice" data-dialog-close>&times;</button></div>
+    <div class="modal-b" data-dialog-body>
+      <p id="movedLead">Forge Planner is now part of <b>Chadquarters</b>, at <a href="https://chadquarters.com/" target="_blank" rel="noopener">chadquarters.com</a>. The whole planner is there.</p>
+      <h4 class="moved-h">Bring your build</h4>
+      <ol class="moved-steps">
+        <li>Here, open <b>Settings</b> and press <b>Export build</b>.</li>
+        <li>On Chadquarters, open <b>Settings</b>, press <b>Import a save</b> and pick that file.</li>
+      </ol>
+      <h4 class="moved-h">More than the planner</h4>
+      <p>Chadquarters also has the Canister Spend Planner, a Level-Up Calculator, a Non-Crafter Ledger Calculator and more, with new tools and features on the way.</p>
+      <p class="moved-last">This site stays up for now, but it won&rsquo;t get any more updates. New features and fixes for Forge Planner go to Chadquarters.</p>
+    </div>
+    <div class="modal-f"><button class="btn ghost" type="button" data-dialog-close>Stay here</button><a class="btn primary" id="movedGo" href="https://chadquarters.com/" target="_blank" rel="noopener">Go to Chadquarters</a></div>
   </div>
 </div>
 
@@ -520,5 +543,6 @@
 <script src="js/loadout-ui.js"></script>
 <script src="js/feedback.js"></script>
 <script src="js/update-check.js"></script>
+<script src="js/moved-notice.js"></script>
 </body>
 </html>

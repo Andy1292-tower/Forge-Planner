@@ -25,6 +25,7 @@ const PAGE_SCRIPTS = [
   "loadout-ui.js",
   "feedback.js",
   "update-check.js",
+  "moved-notice.js",
 ];
 const WORKER_SCRIPTS = ["decimal.js", "ledgers.js", "core.js", "fields.js", "state.js", "project-schedule.js", "solver.js"];
 // The game's loadout icons, in icon-id order. js/loadout-ui.js names each one once, and the app is
